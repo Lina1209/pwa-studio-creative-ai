@@ -2,11 +2,110 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const API_URL_KEY = "pwa-studio-api-url";
+  // Supabase Auth: only the public publishable key is used in the browser.
+  const authGate = $("#authGate");
+  const authFeedback = $("#authFeedback");
+  const supabaseConfig = window.PWA_SUPABASE_CONFIG || {};
+  const supabaseClient = window.supabase && supabaseConfig.url && supabaseConfig.publishableKey
+    ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.publishableKey)
+    : null;
+  let authSession = null;
+  const setAuthMessage = (message, isError = false) => {
+    if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
+  };
+  const setAuthMode = mode => {
+    $("#loginForm").hidden = mode !== "login";
+    $("#signupForm").hidden = mode !== "signup";
+    $("#resetForm").hidden = mode !== "reset";
+    $("#showLogin").classList.toggle("active", mode === "login");
+    $("#showSignup").classList.toggle("active", mode === "signup");
+    $("#authTitle").textContent = mode === "signup" ? "Создайте аккаунт" : mode === "reset" ? "Восстановление пароля" : "Добро пожаловать!";
+    $("#authDescription").textContent = mode === "signup" ? "Ваше личное пространство для творчества." : mode === "reset" ? "Отправим письмо со ссылкой для восстановления доступа." : "Войдите в своё творческое пространство.";
+    setAuthMessage("");
+  };
+  const refreshAuthUI = session => {
+    authSession = session;
+    const user = session && session.user;
+    authGate.hidden = !!user;
+    if (user) {
+      const label = user.user_metadata?.display_name || user.email || "Creator";
+      const profile = $(".profile");
+      if (profile) { $("b", profile).textContent = label; $("small", profile).textContent = "Аккаунт активен"; }
+      const avatar = $(".profile .avatar");
+      if (avatar) avatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
+      const topAvatar = $(".top-avatar");
+      if (topAvatar) topAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
+    }
+  };
+  if (!supabaseClient) {
+    authGate.hidden = false;
+    setAuthMessage("Не найдена конфигурация Supabase. Проверьте файл supabase-config.js.", true);
+  } else {
+    supabaseClient.auth.getSession().then(({data,error}) => {
+      if (error) setAuthMessage(error.message, true);
+      refreshAuthUI(data?.session || null);
+    });
+    supabaseClient.auth.onAuthStateChange((_event, session) => refreshAuthUI(session));
+  }
+  $("#showLogin").addEventListener("click", () => setAuthMode("login"));
+  $("#showSignup").addEventListener("click", () => setAuthMode("signup"));
+  $("#showReset").addEventListener("click", () => setAuthMode("reset"));
+  $("#backToLogin").addEventListener("click", () => setAuthMode("login"));
+  $("#loginForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!supabaseClient) return;
+    const button = $("#loginForm button[type=submit]"); button.disabled = true; setAuthMessage("Выполняем вход…");
+    try {
+      const {data,error} = await supabaseClient.auth.signInWithPassword({email:$("#loginEmail").value.trim(),password:$("#loginPassword").value});
+      if (error) throw error;
+      refreshAuthUI(data.session);
+    } catch(error) { setAuthMessage(error.message || "Не удалось войти.", true); }
+    finally { button.disabled = false; }
+  });
+  $("#signupForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!supabaseClient) return;
+    const button = $("#signupForm button[type=submit]"); button.disabled = true; setAuthMessage("Создаём аккаунт…");
+    try {
+      const {data,error} = await supabaseClient.auth.signUp({
+        email:$("#signupEmail").value.trim(), password:$("#signupPassword").value,
+        options:{data:{display_name:$("#signupName").value.trim()},emailRedirectTo:location.origin + location.pathname}
+      });
+      if (error) throw error;
+      if (data.session) refreshAuthUI(data.session);
+      else setAuthMessage("Аккаунт создан. Проверьте почту и подтвердите адрес, затем войдите.");
+    } catch(error) { setAuthMessage(error.message || "Не удалось создать аккаунт.", true); }
+    finally { button.disabled = false; }
+  });
+  $("#resetForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!supabaseClient) return;
+    const button = $("#resetForm button[type=submit]"); button.disabled = true; setAuthMessage("Отправляем письмо…");
+    try {
+      const {error} = await supabaseClient.auth.resetPasswordForEmail($("#resetEmail").value.trim(),{redirectTo:location.origin + location.pathname});
+      if (error) throw error;
+      setAuthMessage("Если адрес зарегистрирован, на него придёт письмо со ссылкой для восстановления.");
+    } catch(error) { setAuthMessage(error.message || "Не удалось отправить письмо.", true); }
+    finally { button.disabled = false; }
+  });
+  const authLogoutButton = document.createElement("button");
+  authLogoutButton.type = "button"; authLogoutButton.className = "auth-link"; authLogoutButton.textContent = "Выйти из аккаунта";
+  authLogoutButton.addEventListener("click", async () => {
+    if (!supabaseClient) return;
+    const {error} = await supabaseClient.auth.signOut();
+    if (error) setAuthMessage(error.message, true);
+    else { refreshAuthUI(null); setAuthMode("login"); }
+  });
+  const profileBlock = $(".profile");
+  if (profileBlock) profileBlock.appendChild(authLogoutButton);
+
+
   const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "").trim().replace(/\/+$/, "");
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
     if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
-    const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+    const token = authSession?.access_token;
+    const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(options.headers || {}) } });
     let data = {};
     try { data = await response.json(); } catch {}
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
