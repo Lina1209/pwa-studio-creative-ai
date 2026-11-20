@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0a16">
-  <meta name="description" content="PWA Studio — творческая AI-видеостудия: от идеи и промта до готового видео.">
+  <meta name="description" content="PWA Studio — творческая AI-студия для разработки идей, сценариев и кинопроектов.">
   <title>PWA Studio — Creative AI</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
@@ -97,9 +97,9 @@
         </div>
         <div class="movie-tools-grid">
           <button class="movie-tool-card" data-movie-tool="story"><span>✎</span><b>Сценарий и раскадровка</b><small>История, диалоги, план сцен и кадров</small><em>Открыть раздел ↗</em></button>
-          <button class="movie-tool-card" data-movie-tool="characters"><span>♙</span><b>Персонажи и аватары</b><small>Создавайте героев и сохраняйте их образы</small><em>Открыть раздел ↗</em></button>
-          <button class="movie-tool-card" data-movie-tool="voice"><span>♫</span><b>Голоса и озвучка</b><small>Реплики, языки, музыка и звуковой мир</small><em>Открыть раздел ↗</em></button>
-          <button class="movie-tool-card" data-movie-tool="edit"><span>▤</span><b>Монтаж и экспорт</b><small>Соберите сцены в цельный фильм</small><em>Открыть раздел ↗</em></button>
+          <button class="movie-tool-card" data-movie-tool="characters"><span>♙</span><b>Персонажи и аватары</b><small>Описывайте внешность, характер и постоянство образов героев</small><em>Открыть раздел ↗</em></button>
+          <button class="movie-tool-card" data-movie-tool="voice"><span>♫</span><b>Голоса и озвучка</b><small>Планируйте реплики, языки, музыку и звуковой мир</small><em>Открыть раздел ↗</em></button>
+          <button class="movie-tool-card" data-movie-tool="edit"><span>▤</span><b>Монтаж и экспорт</b><small>План монтажа, порядок сцен и подготовка к экспорту</small><em>Открыть раздел ↗</em></button>
         </div>
         <div class="movie-projects">
           <div class="movie-section-head"><div><div class="eyebrow">YOUR FILM COLLECTION</div><h2>Мои фильмы</h2><p>Сохранённые проекты будут доступны для продолжения.</p></div><span class="movie-count" id="movieCount">0 проектов</span></div>
@@ -115,7 +115,7 @@
 
       <section class="view" id="view-prompts">
         <div class="page-heading"><div class="eyebrow">PROMPT ENGINEERING</div><h1>Prompt <span class="gradient-text">Studio</span></h1><p>Превращайте простые описания в точные и выразительные запросы для ИИ.</p></div>
-        <div class="prompt-layout"><div class="panel"><label for="promptIdea">Опишите, что хотите получить</label><textarea id="promptIdea" rows="7" placeholder="Например: кинематографичный кадр старинного города после дождя, тёплый свет окон, камера медленно движется вперёд..."></textarea><div class="form-row"><div><label for="promptType">Для чего промт?</label><select id="promptType"><option>Генерация видео</option><option>Генерация изображения</option><option>Музыка и звук</option><option>Сценарий</option></select></div><div><label for="promptLanguage">Язык результата</label><select id="promptLanguage"><option>English</option><option>Русский</option></select></div></div><button class="primary-button" id="buildPrompt">✦ Сформировать промт</button><p class="helper-text" id="promptFeedback">Пока доступна демонстрационная сборка шаблона. Подключение языковой модели будет добавлено через защищённый API.</p></div><div class="panel prompt-result"><div class="result-head"><b>Ваш промт</b><span class="draft-badge">DRAFT</span></div><div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button></div></div>
+        <div class="prompt-layout"><div class="panel"><label for="promptIdea">Опишите, что хотите получить</label><textarea id="promptIdea" rows="7" placeholder="Например: кинематографичный кадр старинного города после дождя, тёплый свет окон, камера медленно движется вперёд..."></textarea><div class="form-row"><div><label for="promptType">Для чего промт?</label><select id="promptType"><option>Генерация видео</option><option>Генерация изображения</option><option>Музыка и звук</option><option>Сценарий</option></select></div><div><label for="promptLanguage">Язык результата</label><select id="promptLanguage"><option>English</option><option>Русский</option></select></div></div><button class="primary-button" id="buildPrompt">✦ Сформировать промт</button><p class="helper-text" id="promptFeedback">Промт формируется через настроенный backend и выбранную языковую модель. Для работы необходим вход в аккаунт и действующий ключ AI-провайдера.</p></div><div class="panel prompt-result"><div class="result-head"><b>Ваш промт</b><span class="draft-badge">DRAFT</span></div><div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button></div></div>
       </section>
 
       <section class="view" id="view-assistant">
