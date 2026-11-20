@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     deepseek_api_key: str | None = None
     anthropic_api_key: str | None = None
+    ollama_api_base: str = "http://localhost:11434"
 
     model_config = SettingsConfigDict(
         env_file=".env",
