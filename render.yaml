@@ -13,9 +13,9 @@ services:
       - key: CORS_ORIGINS
         value: https://lina1209.github.io
       - key: AI_PROVIDER
-        sync: false
+        value: deepseek
       - key: AI_MODEL
-        sync: false
+        value: deepseek-flash
       - key: OPENAI_API_KEY
         sync: false
       - key: DEEPSEEK_API_KEY
