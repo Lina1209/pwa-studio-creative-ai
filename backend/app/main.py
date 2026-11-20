@@ -1,16 +1,17 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse
 from app.services.ai_service import AIConfigurationError, ask_ai
+from app.services.auth import StudioUser, get_current_user, require_admin
 
 settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
     description="Private API for PWA Studio — Creative AI.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -29,7 +30,6 @@ def root():
 
 @app.get(f"{settings.api_prefix}/health")
 def health():
-    # Never return secrets or API keys from this endpoint.
     provider = settings.ai_provider.strip().lower()
     ai_configured = (
         bool(settings.openai_api_key) if provider == "openai"
@@ -44,7 +44,18 @@ def health():
         "environment": settings.app_env,
         "ai_provider": provider,
         "ai_configured": ai_configured,
+        "authentication_configured": bool(settings.supabase_url),
     }
+
+
+@app.get(f"{settings.api_prefix}/auth/me")
+def auth_me(user: StudioUser = Depends(get_current_user)):
+    return {"id": user.user_id, "email": user.email, "role": user.role}
+
+
+@app.get(f"{settings.api_prefix}/admin/me")
+def admin_me(user: StudioUser = Depends(require_admin)):
+    return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
 
 
 @app.post(f"{settings.api_prefix}/chat", response_model=ChatResponse)
@@ -62,7 +73,6 @@ def chat(payload: ChatRequest):
     except AIConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        # Keep provider internals and credentials out of public error responses.
         raise HTTPException(status_code=502, detail="The AI provider could not complete the request.") from exc
 
 
