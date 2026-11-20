@@ -45,10 +45,10 @@ Open `http://127.0.0.1:8000/docs` for interactive API documentation.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Configure `AI_PROVIDER`, `AI_MODEL`, and the matching provider key. Supported provider values in this initial adapter: `openai`, `deepseek`, `anthropic` and `ollama`.
+Copy `.env.example` to `.env`. Configure `AI_PROVIDER`, `AI_MODEL`, and the matching provider key. Supported provider values in this initial adapter: `openai`, `deepseek`, `anthropic` and `ollama`. For Ollama, set `OLLAMA_API_BASE` to an address reachable from the backend host (the default is `http://localhost:11434`). A local Ollama instance on your phone or computer is not automatically reachable from a cloud host.
 
 For production, set `CORS_ORIGINS` to the exact frontend origin(s), use HTTPS, configure secrets in the hosting provider's environment settings, and add authentication/rate limiting before opening the API to public use. Do not expose provider keys in frontend code or health responses.
 
-## Current scope
+## Connect the frontend\n\nAfter deploying this API, open PWA Studio → Settings, enter the API base URL (for example `https://your-service.example.com`), save it and use **Проверить соединение**. The frontend calls `/api/health`, `/api/chat` and `/api/prompts`. Configure the deployed frontend origin in `CORS_ORIGINS`.\n\n## Current scope
 
 This is the first backend foundation. It does not yet include video rendering, uploads, task queues, persistent projects or user accounts.
