@@ -124,7 +124,20 @@
       <section class="view" id="view-library"><div class="page-heading"><div class="eyebrow">YOUR ASSETS</div><h1>Медиатека</h1><p>Единое пространство для изображений, видео, аудио и готовых проектов.</p></div><div class="empty-workspace panel"><div class="empty-icon">▧</div><h2>Ваша медиатека</h2><p>Загрузка файлов и управление материалами будут подключены вместе с системой хранения.</p></div></section>
       <section class="view" id="view-voice"><div class="page-heading"><div class="eyebrow">AUDIO LAB</div><h1>Голос и музыка</h1><p>Озвучивание, голоса, музыкальные дорожки и звуковой дизайн.</p></div><div class="empty-workspace panel"><div class="empty-icon">♫</div><h2>Звуковая мастерская</h2><p>Здесь будут настройки TTS, выбор голосов, предпрослушивание и микширование аудио.</p></div></section>
       <section class="view" id="view-scenes"><div class="page-heading"><div class="eyebrow">STORYBOARD</div><h1>Сценарий и сцены</h1><p>Собирайте историю по кадрам и управляйте визуальным повествованием.</p></div><div class="empty-workspace panel"><div class="empty-icon">▦</div><h2>Ваша раскадровка</h2><p>Редактор сцен, визуальные подсказки и управление последовательностью появятся здесь.</p></div></section>
-      <section class="view" id="view-settings"><div class="page-heading"><div class="eyebrow">PREFERENCES</div><h1>Настройки</h1><p>Персонализация студии и подключение сервисов.</p></div><div class="panel settings-list"><div><b>Внешний вид</b><span>Тёмная тема включена по умолчанию</span></div><div><b>AI-провайдеры</b><span>Подключение через защищённый сервер — будет добавлено</span></div><div><b>Backend API</b><span>Не настроен</span></div><div><b>Хранение проектов</b><span>Локальная и серверная медиатека — в планах</span></div></div></section>
+      <section class="view" id="view-settings">
+        <div class="page-heading"><div class="eyebrow">PREFERENCES & CONNECTIONS</div><h1>Настройки</h1><p>Подключите сервер студии. Секретные ключи AI-провайдера вводятся только в окружении backend, не здесь.</p></div>
+        <div class="panel settings-list">
+          <div><b>Внешний вид</b><span>Тёмная и светлая темы сохраняются в этом браузере.</span></div>
+          <div><b>AI-провайдеры</b><span>OpenAI, DeepSeek, Anthropic или доступный Ollama настраиваются на сервере.</span></div>
+          <div class="backend-setup">
+            <label for="backendUrl"><b>Адрес Backend API</b></label>
+            <input id="backendUrl" type="url" inputmode="url" placeholder="https://your-api.example.com" autocomplete="url">
+            <div class="backend-actions"><button class="secondary-button" id="saveBackend" type="button">Сохранить адрес</button><button class="primary-button" id="testBackend" type="button">Проверить соединение</button></div>
+            <p class="helper-text" id="backendStatus" aria-live="polite">Backend пока не подключён. Укажите HTTPS-адрес развёрнутого API.</p>
+          </div>
+          <div><b>Хранение проектов</b><span>Черновики Миникиностудии пока сохраняются локально в браузере.</span></div>
+        </div>
+      </section>
 
       <footer class="footer"><span>✦ PWA STUDIO · CREATIVE AI</span><span>Made for curious minds <b>♥</b></span></footer>
     </main>
