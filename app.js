@@ -532,7 +532,10 @@
     const actions=document.createElement("div"); actions.className="movie-stage-actions";
     const draft=document.createElement("button"); draft.type="button"; draft.className="secondary-button"; draft.textContent="Сохранить черновик";
     const draftStatus=document.createElement("p"); draftStatus.className="movie-stage-feedback"; draftStatus.setAttribute("role","status"); draftStatus.setAttribute("aria-live","polite"); draftStatus.style.cssText="display:block;flex-basis:100%;margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,.12);font-size:14px;";
+    let draftStatusTimer=null;
     draft.addEventListener("click",()=>{
+      if(draftStatusTimer)clearTimeout(draftStatusTimer);
+      draftStatus.textContent="";
       draft.disabled=true; draftStatus.textContent="Сохраняю черновик…";
       try{
         const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId);
@@ -542,7 +545,9 @@
         current.updatedAt=new Date().toISOString();
         if(!movieWrite(latest)){draftStatus.textContent="Сохранение не удалось. Проверьте сообщение вверху страницы.";return;}
         draftStatus.textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап не отмечен завершённым.";
-        const feedback=$("#movieFeedback"); if(feedback)feedback.textContent=draftStatus.textContent;
+        const savedMessage=draftStatus.textContent;
+        draftStatusTimer=setTimeout(()=>{if(draftStatus.textContent===savedMessage)draftStatus.textContent="";},4000);
+        const feedback=$("#movieFeedback"); if(feedback)feedback.textContent=savedMessage;
         renderMovieProjects();
       }catch(error){
         draftStatus.textContent="Ошибка сохранения: "+(error&&error.message?error.message:"неизвестная ошибка");
