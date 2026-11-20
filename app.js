@@ -36,6 +36,11 @@
       if (profile) { $("b", profile).textContent = label; $("small", profile).textContent = "Аккаунт активен"; }
       const avatar = $(".profile .avatar");
       if (avatar) avatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
+      const accountName = $("#accountName"); if (accountName) accountName.textContent = label;
+      const accountEmail = $("#accountEmail"); if (accountEmail) accountEmail.textContent = user.email || "Адрес почты не указан";
+      const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
+      const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Пользователь";
+      $("#accountLogin").hidden = true; $("#accountLogout").hidden = false;
       const topAvatar = $(".top-avatar");
       if (topAvatar) topAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
     }
@@ -139,7 +144,7 @@
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
 
 
-  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "").trim().replace(/\/+$/, "");
+  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "https://pwa-studio-creative-ai.onrender.com").trim().replace(/\/+$/, "");
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
     if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
@@ -150,7 +155,7 @@
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
     return data;
   };
-  const labels = {home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  const labels = {account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
@@ -164,6 +169,9 @@
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
   $$("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
+  $(".profile").addEventListener("click", () => navigate("account"));
+  $("#accountLogin").addEventListener("click", () => setAuthMode("login"));
+  $("#accountLogout").addEventListener("click", async () => { if (supabaseClient) await supabaseClient.auth.signOut(); });
   $("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   document.addEventListener("click", event => {
     if (window.innerWidth <= 720 && !event.target.closest("#sidebar") && !event.target.closest("#mobileMenu")) $("#sidebar").classList.remove("open");
@@ -190,6 +198,7 @@
   });
 
   $("#prepareIdea").addEventListener("click", () => {
+    if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите, чтобы создавать и сохранять материалы."); return; }
     const topic = $("#topic").value.trim();
     $("#createFeedback").textContent = topic
       ? "Идея сохранена в форме. Следующий этап — подключение AI-сценариста и генерации сцен."
@@ -197,6 +206,7 @@
   });
 
   $("#buildPrompt").addEventListener("click", async () => {
+    if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы пользоваться AI-инструментами."); return; }
     const idea = $("#promptIdea").value.trim();
     if (!idea) {
       $("#promptFeedback").textContent = "Добавьте описание вашей задумки, чтобы сформировать промт.";
@@ -241,6 +251,7 @@
     const input = $("#assistantInput");
     const value = input.value.trim();
     if (!value) return;
+    if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
     const button = $("#assistantForm button");
     button.disabled = true;
     input.disabled = true;
@@ -300,6 +311,7 @@
     $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
   });
   $("#movieForm").addEventListener("submit", event => {
+    if (!authSession?.user) { event.preventDefault(); setAuthMode("signup"); setAuthMessage("Создайте аккаунт, чтобы сохранять собственные фильмы."); return; }
     event.preventDefault();
     const name = $("#movieName").value.trim();
     if (!name) {
