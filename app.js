@@ -143,7 +143,7 @@
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
     return data;
   };
-  const labels = {home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",settings:"Настройки"};
+  const labels = {home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
