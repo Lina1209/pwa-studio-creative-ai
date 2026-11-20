@@ -67,7 +67,7 @@
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(loadAccountRole, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); }, 0); });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -318,130 +318,205 @@
   });
 
 
-  // Mini Movie Studio: project drafts are stored locally until cloud storage is connected.
+  // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
-  const readMovieProjects = () => {
-    try { return JSON.parse(localStorage.getItem(movieStorageKey()) || "[]"); }
-    catch { return []; }
+  let activeMovieId = null;
+  let editingMovieId = null;
+  const movieStages = [
+    {key:"story",title:"Сценарий и раскадровка",fields:[["story","Сценарий","Напишите историю, действия и диалоги по сценам."],["storyboard","Раскадровка","Опишите кадры, планы камеры, движение и переходы."]]},
+    {key:"characters",title:"Персонажи и аватары",fields:[["characters","Персонажи","Опишите героев: внешность, одежду, характер и особенности образа."]]},
+    {key:"voices",title:"Голоса и озвучка",fields:[["voices","Голоса и звук","Назначьте голос каждому персонажу, укажите язык, манеру речи, реплики, музыку и звуковые эффекты."]]},
+    {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
+  ];
+  const movieRead = () => {
+    try {
+      const value = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
+      return Array.isArray(value) ? value.filter(item => item && typeof item === "object" && item.id) : [];
+    } catch { return []; }
+  };
+  const movieWrite = projects => {
+    try { localStorage.setItem(movieStorageKey(), JSON.stringify(projects)); return true; }
+    catch (error) {
+      console.error("Movie project storage failed:", error);
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Не удалось сохранить изменения в памяти браузера. Проверьте свободное место и настройки приватности.";
+      return false;
+    }
+  };
+  const movieId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "movie-" + Date.now() + "-" + Math.random().toString(36).slice(2,9);
+  const movieSnapshot = project => { const copy={...project}; delete copy.versions; return copy; };
+  const addMovieVersion = project => {
+    const versions=Array.isArray(project.versions)?project.versions:[];
+    versions.unshift({savedAt:new Date().toISOString(),data:movieSnapshot(project)});
+    project.versions=versions.slice(0,20);
+  };
+  const movieDate = value => {
+    const date=new Date(value || Date.now());
+    return Number.isNaN(date.getTime())?"Дата не указана":date.toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"});
+  };
+  const ensureMovieWorkflowPanel = () => {
+    let panel=$("#movieWorkflowPanel"); if(panel)return panel;
+    const tools=$(".movie-tools-grid"); if(!tools)return null;
+    panel=document.createElement("section"); panel.id="movieWorkflowPanel"; panel.className="panel movie-workflow-panel"; panel.hidden=true;
+    tools.parentNode.insertBefore(panel,tools); return panel;
+  };
+  const movieProgress = project => {
+    const done=Array.isArray(project.completedSteps)?project.completedSteps:[];
+    return done.length+" из 4 этапов завершено";
+  };
+  const updateMovieStageCards = () => {
+    const project=movieRead().find(item=>item.id===activeMovieId);
+    $$(".movie-tool-card[data-movie-tool]").forEach((button,index)=>{
+      const unlocked=!!project && (index===0 || (project.completedSteps||[]).includes(movieStages[index-1].key));
+      button.disabled=!unlocked; button.setAttribute("aria-disabled",String(!unlocked)); button.classList.toggle("is-locked",!unlocked);
+      const hint=$("em",button);
+      if(hint)hint.textContent=!project?"Сначала создайте или выберите фильм":unlocked?((project.completedSteps||[]).includes(movieStages[index].key)?"Открыть и изменить этап ↗":"Начать этап ↗"):"🔒 Сначала завершите предыдущий этап";
+    });
+  };
+  const openMovieStage = (projectId,stageIndex) => {
+    const projects=movieRead(); const project=projects.find(item=>item.id===projectId); const panel=ensureMovieWorkflowPanel();
+    if(!project||!panel||stageIndex<0||stageIndex>=movieStages.length)return;
+    const done=Array.isArray(project.completedSteps)?project.completedSteps:[];
+    if(stageIndex>0&&!done.includes(movieStages[stageIndex-1].key)){const feedback=$("#movieFeedback");if(feedback)feedback.textContent="Сначала завершите предыдущий этап.";return;}
+    activeMovieId=projectId; updateMovieStageCards();
+    const stage=movieStages[stageIndex]; panel.replaceChildren();
+    const head=document.createElement("div"); head.className="movie-workflow-head";
+    const title=document.createElement("h2"); title.textContent="Этап "+(stageIndex+1)+" из 4 · "+stage.title;
+    const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+project.name+" · "+(done.includes(stage.key)?"Этап сохранён — его можно редактировать.":"Заполните материалы и сохраните, чтобы открыть следующий этап.");
+    head.append(title,subtitle);
+    const form=document.createElement("div"); form.className="movie-stage-fields"; const inputs={};
+    stage.fields.forEach(([key,labelText,placeholder])=>{
+      const wrap=document.createElement("label"); wrap.className="movie-stage-field";
+      const label=document.createElement("span"); label.textContent=labelText;
+      const textarea=document.createElement("textarea"); textarea.rows=(key==="story"||key==="storyboard")?7:6; textarea.maxLength=30000; textarea.placeholder=placeholder;
+      textarea.value=project[key]||(key==="story"?project.idea||"":""); inputs[key]=textarea; wrap.append(label,textarea); form.append(wrap);
+    });
+    const actions=document.createElement("div"); actions.className="movie-stage-actions";
+    const close=document.createElement("button"); close.type="button"; close.className="secondary-button"; close.textContent="← К проекту"; close.addEventListener("click",()=>{panel.hidden=true;});
+    const save=document.createElement("button"); save.type="button"; save.className="primary-button"; save.textContent=stageIndex===3?"Сохранить этап":"Сохранить и открыть следующий этап →";
+    save.addEventListener("click",()=>{
+      const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
+      const current=latest[index]; addMovieVersion(current);
+      stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+      current.completedSteps=(Array.isArray(current.completedSteps)?current.completedSteps:[]).filter(key=>movieStages.findIndex(item=>item.key===key)<=stageIndex);
+      if(!current.completedSteps.includes(stage.key))current.completedSteps.push(stage.key);
+      current.workflowStep=Math.min(stageIndex+1,4); current.updatedAt=new Date().toISOString();
+      if(!movieWrite(latest))return;
+      renderMovieProjects(); $("#movieFeedback").textContent="✓ Этап «"+stage.title+"» сохранён в фильме «"+current.name+"».";
+      if(stageIndex<3)openMovieStage(projectId,stageIndex+1);
+      else {
+        panel.hidden=false; panel.replaceChildren();
+        const complete=document.createElement("div"); complete.className="movie-workflow-complete";
+        const h=document.createElement("h2"); h.textContent="✓ Подготовительные этапы завершены";
+        const p=document.createElement("p"); p.textContent="Все материалы фильма сохранены. Генерация видео и реальный экспорт пока не подключены.";
+        const back=document.createElement("button"); back.type="button"; back.className="secondary-button"; back.textContent="Вернуться к проекту"; back.addEventListener("click",()=>{panel.hidden=true;});
+        complete.append(h,p,back); panel.append(complete);
+      }
+    });
+    actions.append(close,save); panel.append(head,form,actions); panel.hidden=false; panel.scrollIntoView({behavior:"smooth",block:"start"});
   };
   const renderMovieProjects = () => {
-    const list = $("#movieProjectList");
-    if (!list) return;
-    let projects = readMovieProjects();
-    // Older test clicks may have created duplicate drafts. Keep one latest entry per title.
-    const seenTitles = new Set();
-    projects = projects.filter(project => {
-      const key = String(project.name || "").trim().toLocaleLowerCase("ru-RU");
-      if (!key || seenTitles.has(key)) return false;
-      seenTitles.add(key);
-      return true;
-    });
-    localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
-    $("#movieCount").textContent = projects.length + (projects.length === 1 ? " проект" : projects.length > 1 && projects.length < 5 ? " проекта" : " проектов");
-    if (!projects.length) {
-      list.innerHTML = '<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
-      return;
+    const list=$("#movieProjectList"); if(!list)return;
+    const projects=movieRead(); const count=$("#movieCount");
+    if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
+    if(!projects.length){
+      list.innerHTML='<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
+      activeMovieId=null; updateMovieStageCards(); return;
     }
-    list.innerHTML = "";
-    projects.forEach((project, index) => {
-      const card = document.createElement("article");
-      card.className = "movie-project-card movie-project-accordion";
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "movie-project-toggle";
-      toggle.setAttribute("aria-expanded", "false");
-      const number = document.createElement("span");
-      number.className = "movie-project-number";
-      number.textContent = String(index + 1).padStart(2, "0");
-      const heading = document.createElement("span");
-      heading.className = "movie-project-heading";
-      const title = document.createElement("b");
-      title.textContent = project.name;
-      const details = document.createElement("small");
-      details.textContent = project.genre + " · " + project.duration + " мин · " + project.frame;
-      heading.append(title, details);
-      const chevron = document.createElement("span");
-      chevron.className = "movie-project-chevron";
-      chevron.textContent = "⌄";
-      toggle.append(number, heading, chevron);
-      const panel = document.createElement("div");
-      panel.className = "movie-project-details";
-      panel.hidden = true;
-      const idea = document.createElement("p");
-      idea.textContent = project.idea || "Описание пока не добавлено.";
-      const date = document.createElement("span");
-      date.className = "movie-project-date";
-      date.textContent = "Черновик · " + new Date(project.createdAt).toLocaleDateString("ru-RU");
-      const actions = document.createElement("div");
-      actions.className = "movie-project-actions";
-      const resume = document.createElement("button");
-      resume.type = "button";
-      resume.className = "secondary-button";
-      resume.textContent = "Продолжить работу над фильмом →";
-      resume.addEventListener("click", () => {
-        $("#movieName").value = project.name || "";
-        $("#movieIdea").value = project.idea || "";
-        $("#movieGenre").value = project.genre || "Приключения";
-        $("#movieDuration").value = String(project.duration || 5);
-        $("#movieFrame").value = project.frame || "16:9";
-        $("#movieFeedback").textContent = "Открыт проект «" + project.name + "». Измените данные и сохраните обновления.";
+    if(!projects.some(item=>item.id===activeMovieId))activeMovieId=projects[0].id;
+    list.replaceChildren();
+    projects.forEach((project,index)=>{
+      const card=document.createElement("article"); card.className="movie-project-card movie-project-accordion"; card.classList.toggle("is-active",project.id===activeMovieId);
+      const toggle=document.createElement("button"); toggle.type="button"; toggle.className="movie-project-toggle"; toggle.setAttribute("aria-expanded","false");
+      const number=document.createElement("span"); number.className="movie-project-number"; number.textContent=String(index+1).padStart(2,"0");
+      const heading=document.createElement("span"); heading.className="movie-project-heading";
+      const title=document.createElement("b"); title.textContent=project.name||"Без названия";
+      const details=document.createElement("small"); details.textContent=(project.genre||"Жанр не указан")+" · "+(project.duration||5)+" мин · "+(project.frame||"16:9");
+      heading.append(title,details); const chevron=document.createElement("span"); chevron.className="movie-project-chevron"; chevron.textContent="⌄"; toggle.append(number,heading,chevron);
+      const panel=document.createElement("div"); panel.className="movie-project-details"; panel.hidden=true;
+      const idea=document.createElement("p"); idea.textContent=project.idea||"Описание пока не добавлено.";
+      const progress=document.createElement("small"); progress.className="movie-project-progress"; progress.textContent=movieProgress(project);
+      const date=document.createElement("span"); date.className="movie-project-date"; date.textContent="Изменён: "+movieDate(project.updatedAt||project.createdAt);
+      const actions=document.createElement("div"); actions.className="movie-project-actions";
+      const makeAction=(label,style,handler)=>{const button=document.createElement("button");button.type="button";button.className=style;button.textContent=label;button.addEventListener("click",handler);return button;};
+      const edit=makeAction("✎ Редактировать","secondary-button",()=>{
+        activeMovieId=project.id; editingMovieId=project.id;
+        $("#movieName").value=project.name||""; $("#movieIdea").value=project.idea||""; $("#movieGenre").value=project.genre||"Приключения";
+        $("#movieDuration").value=String(project.duration||5); $("#movieFrame").value=project.frame||"16:9";
+        const submit=$('#movieForm button[type="submit"]'); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
+        $("#movieFeedback").textContent="Редактирование проекта «"+project.name+"». Сохранение обновит эту запись, а не создаст копию.";
         $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
       });
-      actions.append(resume);
-      panel.append(idea, date, actions);
-      toggle.addEventListener("click", () => {
-        const opening = panel.hidden;
-        panel.hidden = !opening;
-        toggle.setAttribute("aria-expanded", String(opening));
-        chevron.textContent = opening ? "⌃" : "⌄";
+      const copy=makeAction("⧉ Создать копию","secondary-button",()=>{
+        const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
+        const clone={...movieSnapshot(original),id:movieId(),name:(original.name||"Фильм")+" — копия",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),completedSteps:[],workflowStep:0,story:"",storyboard:"",characters:"",voices:"",edit:"",versions:[]};
+        latest.unshift(clone); if(movieWrite(latest)){activeMovieId=clone.id;renderMovieProjects();$("#movieFeedback").textContent="Копия создана. Оригинальный фильм не изменён.";}
       });
-      card.append(toggle, panel);
-      list.append(card);
+      const version=makeAction("↶ История версий ("+(project.versions||[]).length+")","secondary-button",()=>{
+        const latest=movieRead(); const current=latest.find(item=>item.id===project.id); if(!current)return;
+        const versions=Array.isArray(current.versions)?current.versions:[];
+        if(!versions.length){$("#movieFeedback").textContent="Пока нет сохранённых версий. Они создаются автоматически перед изменениями.";return;}
+        const choice=window.prompt("Введите номер версии для восстановления:\n"+versions.map((v,i)=>(i+1)+". "+movieDate(v.savedAt)).join("\n"));
+        if(choice===null)return; const n=Number(choice);
+        if(!Number.isInteger(n)||n<1||n>versions.length){$("#movieFeedback").textContent="Номер версии указан неверно.";return;}
+        const restored=versions[n-1].data; addMovieVersion(current); const keepVersions=current.versions;
+        latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
+        if(movieWrite(latest)){renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
+      });
+      const remove=makeAction("🗑 Удалить","danger-button",()=>{
+        if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"»? Это действие нельзя отменить, если нет сохранённой версии."))return;
+        const latest=movieRead().filter(item=>item.id!==project.id);
+        if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent="Проект удалён.";}
+      });
+      const stageButton=makeAction("Продолжить работу · "+movieProgress(project),"primary-button",()=>{
+        activeMovieId=project.id; const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key)); openMovieStage(project.id,next<0?3:next);
+      });
+      actions.append(edit,copy,version,remove,stageButton); panel.append(idea,progress,date,actions);
+      toggle.addEventListener("click",()=>{
+        const opening=panel.hidden; panel.hidden=!opening; toggle.setAttribute("aria-expanded",String(opening)); chevron.textContent=opening?"⌃":"⌄";
+        if(opening){activeMovieId=project.id;updateMovieStageCards();$$(".movie-project-card").forEach(item=>item.classList.remove("is-active"));card.classList.add("is-active");}
+      });
+      card.append(toggle,panel); list.append(card);
     });
+    updateMovieStageCards();
   };
-  $("#movieStart").addEventListener("click", () => {
-    $("#movieName").focus();
-    $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
+  $("#movieStart").addEventListener("click",()=>{
+    editingMovieId=null; $("#movieForm").reset();
+    const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
+    $("#movieFeedback").textContent="Задайте основу нового фильма. Уже существующие проекты останутся без изменений.";
+    $("#movieName").focus(); $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
   });
-  $("#movieForm").addEventListener("submit", event => {
-    if (!authSession?.user) { event.preventDefault(); setAuthMode("signup"); setAuthMessage("Создайте аккаунт, чтобы сохранять собственные фильмы."); return; }
+  $("#movieForm").addEventListener("submit",event=>{
     event.preventDefault();
-    const name = $("#movieName").value.trim();
-    if (!name) {
-      $("#movieFeedback").textContent = "Укажите название будущего фильма.";
-      return;
+    if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите или зарегистрируйтесь, чтобы сохранять собственные фильмы. Введённые поля останутся на месте.");return;}
+    const name=$("#movieName").value.trim(); if(!name){$("#movieFeedback").textContent="Укажите название будущего фильма.";return;}
+    const projects=movieRead(); const existingIndex=editingMovieId?projects.findIndex(item=>item.id===editingMovieId):-1; const now=new Date().toISOString();
+    let savedProject;
+    if(existingIndex>=0){
+      savedProject=projects[existingIndex]; addMovieVersion(savedProject);
+      const ideaChanged=(savedProject.idea||"")!==$("#movieIdea").value.trim();
+      Object.assign(savedProject,{name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,updatedAt:now});
+      if(ideaChanged){savedProject.completedSteps=[];savedProject.workflowStep=0;}
+      projects[existingIndex]=savedProject;
+    }else{
+      savedProject={id:movieId(),name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,createdAt:now,updatedAt:now,workflowStep:0,completedSteps:[],story:"",storyboard:"",characters:"",voices:"",edit:"",versions:[]};
+      projects.unshift(savedProject);
     }
-    const projects = readMovieProjects();
-    const existingIndex = projects.findIndex(project => String(project.name || "").trim().toLocaleLowerCase("ru-RU") === name.toLocaleLowerCase("ru-RU"));
-    const savedProject = {
-      id: existingIndex >= 0 ? projects[existingIndex].id : ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())),
-      name,
-      idea: $("#movieIdea").value.trim(),
-      genre: $("#movieGenre").value,
-      duration: Number($("#movieDuration").value),
-      frame: $("#movieFrame").value,
-      createdAt: existingIndex >= 0 ? projects[existingIndex].createdAt : new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    try {
-      if (existingIndex >= 0) projects[existingIndex] = savedProject;
-      else projects.unshift(savedProject);
-      localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
-      renderMovieProjects();
-      $("#movieFeedback").textContent = existingIndex >= 0
-        ? "✓ Проект «" + name + "» обновлён. Повторное сохранение не создаёт копию."
-        : "✓ Проект «" + name + "» создан. Он появится отдельной раскрывающейся строкой в разделе «Мои фильмы».";
-      $("#movieFeedback").setAttribute("role", "status");
-      // Keep the form values so the creator can review or continue editing them.
-      // Do not reset the form or change the page scroll position after saving.
-    } catch {
-      $("#movieFeedback").textContent = "Не удалось сохранить проект в памяти браузера. Проверьте свободное место и настройки приватности.";
-    }
+    if(!movieWrite(projects))return;
+    activeMovieId=savedProject.id; editingMovieId=null;
+    const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
+    renderMovieProjects();
+    $("#movieFeedback").textContent=existingIndex>=0?"✓ Изменения сохранены в проекте «"+name+"».":"✓ Фильм «"+name+"» создан. Теперь доступен этап 1 — сценарий и раскадровка.";
+    const workflow=$("#movieWorkflowPanel"); if(workflow)workflow.hidden=true;
   });
-  $("[data-movie-tool]").forEach(button => button.addEventListener("click", () => {
-    const destinations = {story:"scenes",characters:"library",voice:"voice",edit:"editor"};
-    navigate(destinations[button.dataset.movieTool] || "movie");
+  $$(".movie-tool-card[data-movie-tool]").forEach((button,index)=>button.addEventListener("click",()=>{
+    if(button.disabled)return; const project=movieRead().find(item=>item.id===activeMovieId);
+    if(!project){$("#movieFeedback").textContent="Сначала создайте фильм или выберите его в разделе «Мои фильмы».";return;}
+    openMovieStage(project.id,index);
   }));
+  const workflowStyle=document.createElement("style");
+  workflowStyle.textContent=".movie-project-accordion{padding:0!important;overflow:hidden}.movie-project-toggle{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;text-align:left;color:inherit;background:transparent;border:0;cursor:pointer}.movie-project-toggle:hover,.movie-project-card.is-active .movie-project-toggle{background:rgba(160,130,230,.08)}.movie-project-number{display:grid;place-items:center;flex:0 0 36px;height:36px;border-radius:11px;background:rgba(157,121,235,.15);color:#c8aaff;font-weight:800;font-size:12px}.movie-project-heading{display:grid;gap:5px;min-width:0;flex:1}.movie-project-heading b{font-size:15px;overflow-wrap:anywhere}.movie-project-heading small,.movie-project-date,.movie-project-progress{color:var(--muted);font-size:12px}.movie-project-chevron{font-size:22px;color:#c8aaff}.movie-project-details{padding:0 18px 18px 68px}.movie-project-details[hidden],.movie-workflow-panel[hidden]{display:none}.movie-project-details p{white-space:pre-wrap;line-height:1.65;margin:0 0 10px;color:var(--text)}.movie-project-progress{display:block;margin:8px 0}.movie-project-actions,.movie-stage-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.movie-project-actions button,.movie-stage-actions button{min-height:40px}.movie-tool-card:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.5)}.movie-tool-card.is-locked em{font-style:normal}.movie-workflow-panel{margin:24px 0;padding:22px}.movie-workflow-head h2{margin:0 0 8px}.movie-workflow-head p,.movie-workflow-complete p{color:var(--muted);line-height:1.6}.movie-stage-fields{display:grid;gap:16px;margin-top:18px}.movie-stage-field{display:grid;gap:8px;font-weight:600}.movie-stage-field textarea{width:100%;min-height:130px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font:inherit;resize:vertical}.movie-stage-actions{justify-content:space-between}.movie-workflow-complete h2{margin-top:0}.danger-button{border:1px solid rgba(255,90,90,.35);color:#ff9292;background:rgba(255,70,70,.08);border-radius:10px;padding:9px 12px}@media(max-width:520px){.movie-project-toggle{padding:14px 12px;gap:10px}.movie-project-details{padding:0 12px 14px 58px}.movie-project-heading b{font-size:14px}.movie-project-actions button{font-size:12px;padding:8px 10px}.movie-workflow-panel{padding:15px}}";
+  document.head.appendChild(workflowStyle);
   renderMovieProjects();
 
   // Store only the backend URL in this browser; provider secrets stay server-side.
