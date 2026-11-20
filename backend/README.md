@@ -1,54 +1,45 @@
 # PWA Studio API
 
-FastAPI backend for Studio AI Companion and Prompt Studio. The frontend remains a static PWA on GitHub Pages; this API must run on a separate Python host.
+FastAPI backend for PWA Studio — Creative AI.
 
-## Requirements
+## Current endpoints
 
-- Python 3.11+
-- An API key for the selected AI provider (unless using a reachable local Ollama instance)
+- `GET /` — service status
+- `GET /api/health` — safe health/configuration status (never returns secrets)
+- `GET /api/auth/me` — validates a Supabase access token and returns the user's server-assigned role
+- `GET /api/admin/me` — owner-only authorization check
+- `POST /api/chat` — Studio AI Companion
+- `POST /api/prompts` — AI prompt generation
+
+## Accounts and database foundation
+
+The account system uses **Supabase Auth + PostgreSQL**. Supabase handles sign-up, sign-in, email verification and password recovery; this API validates Supabase JWTs using the project's public JWKS endpoint. The owner role is assigned on the server only when the verified account email exactly matches `OWNER_EMAIL`. A visitor cannot request or set the admin role.
+
+1. Create a Supabase project.
+2. In Supabase SQL Editor, run `supabase/migrations/0001_initial_schema.sql`.
+3. In Render environment settings, add `SUPABASE_URL` (Project URL) and `OWNER_EMAIL` (the email used by the platform owner account).
+4. Keep Supabase service-role keys private. They must never be added to GitHub Pages or browser JavaScript.
+
+The initial database includes profiles, projects, characters, scenes and media metadata. Row Level Security ensures authenticated users can access only rows whose `user_id` is their own. Actual browser sign-up/sign-in screens and persistent project APIs are the next integration step; the current static frontend has not yet been switched to account-required mode.
 
 ## Local setup
+
+Python 3.11+ is recommended.
 
 ```bash
 cd backend
 python -m venv .venv
-```
-
-Activate the environment:
-
-- Windows PowerShell: `.venv\\Scripts\\Activate.ps1`
-- macOS/Linux: `source .venv/bin/activate`
-
-Install and configure:
-
-```bash
 pip install -r requirements.txt
 cp .env.example .env
-```
-
-On Windows, copy `.env.example` to `.env` manually if `cp` is unavailable. Edit `.env` locally and add your provider key. Never commit `.env`.
-
-Run the API from the `backend` directory:
-
-```bash
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/docs` for interactive API documentation.
+On Windows, copy `.env.example` to `.env` manually if `cp` is unavailable.
 
-## Endpoints
+## AI configuration
 
-- `GET /` — service status
-- `GET /api/health` — safe health/configuration status (never returns secrets)
-- `POST /api/chat` — Studio AI Companion
-- `POST /api/prompts` — AI prompt generation
+Set `AI_PROVIDER`, `AI_MODEL` and the matching provider secret in the host's environment settings. Supported initial providers: `openai`, `deepseek`, `anthropic` and `ollama`. Never expose provider keys in frontend code or health responses.
 
-## Configuration
+## Security status
 
-The starter configuration uses **DeepSeek Flash** (`AI_PROVIDER=deepseek`, `AI_MODEL=deepseek-flash`) as a cost-conscious default for chat, prompt writing and screenplay assistance. Create an API key in the DeepSeek platform and store it as `DEEPSEEK_API_KEY` in your local `.env` or hosting secrets. You can switch to another supported provider by changing `AI_PROVIDER`, `AI_MODEL` and its matching secret. Supported provider values in this initial adapter: `openai`, `deepseek`, `anthropic` and `ollama`. For Ollama, set `OLLAMA_API_BASE` to an address reachable from the backend host (the default is `http://localhost:11434`). A local Ollama instance on your phone or computer is not automatically reachable from a cloud host.
-
-For production, set `CORS_ORIGINS` to the exact frontend origin(s), use HTTPS, configure secrets in the hosting provider's environment settings, and add authentication/rate limiting before opening the API to public use. Do not expose provider keys in frontend code or health responses.
-
-## Connect the frontend\n\nAfter deploying this API, open PWA Studio → Settings, enter the API base URL (for example `https://your-service.example.com`), save it and use **Проверить соединение**. The frontend calls `/api/health`, `/api/chat` and `/api/prompts`. Configure the deployed frontend origin in `CORS_ORIGINS`.\n\n## Current scope
-
-This is the first backend foundation. It does not yet include video rendering, uploads, task queues, persistent projects or user accounts.
+The authentication verification endpoints and database/RLS schema are now prepared. The existing chat and prompt endpoints remain in their compatibility mode until the frontend registration/login flow is integrated; do not treat the app as ready for public multi-user launch yet.
