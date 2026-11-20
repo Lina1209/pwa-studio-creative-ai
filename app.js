@@ -30,6 +30,8 @@
     authGate.hidden = true;
     $("#openLogin").hidden = !!user;
     $("#openSignup").hidden = !!user;
+    const statusPill = $(".backend-pill");
+    if (statusPill) statusPill.innerHTML = `<i></i> ${user ? "Аккаунт активен" : "Гостевой режим"}`;
     if (user) {
       const label = user.user_metadata?.display_name || user.email || "Creator";
       const profile = $(".profile");
@@ -213,6 +215,7 @@
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
   $$("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
   $(".profile").addEventListener("click", () => navigate("account"));
+  $("#topAvatar")?.addEventListener("click", () => navigate("account"));
   $("#accountLogin").addEventListener("click", () => setAuthMode("login"));
   $("#accountLogout").addEventListener("click", async () => { if (supabaseClient) await supabaseClient.auth.signOut(); });
   $("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
