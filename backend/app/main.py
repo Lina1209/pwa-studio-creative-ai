@@ -30,18 +30,20 @@ def root():
 @app.get(f"{settings.api_prefix}/health")
 def health():
     # Never return secrets or API keys from this endpoint.
+    provider = settings.ai_provider.strip().lower()
+    ai_configured = (
+        bool(settings.openai_api_key) if provider == "openai"
+        else bool(settings.deepseek_api_key) if provider == "deepseek"
+        else bool(settings.anthropic_api_key) if provider in {"anthropic", "claude"}
+        else bool(settings.ollama_api_base) if provider == "ollama"
+        else False
+    )
     return {
         "status": "ok",
         "service": settings.app_name,
         "environment": settings.app_env,
-        "ai_provider": settings.ai_provider,
-        "ai_configured": (
-            bool(settings.openai_api_key) if settings.ai_provider == "openai"
-            else bool(settings.deepseek_api_key) if settings.ai_provider == "deepseek"
-            else bool(settings.anthropic_api_key) if settings.ai_provider in {"anthropic", "claude"}
-            else bool(settings.ollama_api_base) if settings.ai_provider == "ollama"
-            else False
-        ),
+        "ai_provider": provider,
+        "ai_configured": ai_configured,
     }
 
 
