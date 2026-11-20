@@ -309,26 +309,77 @@
   const renderMovieProjects = () => {
     const list = $("#movieProjectList");
     if (!list) return;
-    const projects = readMovieProjects();
+    let projects = readMovieProjects();
+    // Older test clicks may have created duplicate drafts. Keep one latest entry per title.
+    const seenTitles = new Set();
+    projects = projects.filter(project => {
+      const key = String(project.name || "").trim().toLocaleLowerCase("ru-RU");
+      if (!key || seenTitles.has(key)) return false;
+      seenTitles.add(key);
+      return true;
+    });
+    localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
     $("#movieCount").textContent = projects.length + (projects.length === 1 ? " проект" : projects.length > 1 && projects.length < 5 ? " проекта" : " проектов");
     if (!projects.length) {
       list.innerHTML = '<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
       return;
     }
-    list.innerHTML = projects.map(project => {
+    list.innerHTML = "";
+    projects.forEach((project, index) => {
       const card = document.createElement("article");
-      card.className = "movie-project-card";
+      card.className = "movie-project-card movie-project-accordion";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "movie-project-toggle";
+      toggle.setAttribute("aria-expanded", "false");
+      const number = document.createElement("span");
+      number.className = "movie-project-number";
+      number.textContent = String(index + 1).padStart(2, "0");
+      const heading = document.createElement("span");
+      heading.className = "movie-project-heading";
       const title = document.createElement("b");
       title.textContent = project.name;
       const details = document.createElement("small");
       details.textContent = project.genre + " · " + project.duration + " мин · " + project.frame;
+      heading.append(title, details);
+      const chevron = document.createElement("span");
+      chevron.className = "movie-project-chevron";
+      chevron.textContent = "⌄";
+      toggle.append(number, heading, chevron);
+      const panel = document.createElement("div");
+      panel.className = "movie-project-details";
+      panel.hidden = true;
       const idea = document.createElement("p");
       idea.textContent = project.idea || "Описание пока не добавлено.";
       const date = document.createElement("span");
+      date.className = "movie-project-date";
       date.textContent = "Черновик · " + new Date(project.createdAt).toLocaleDateString("ru-RU");
-      card.append(title, details, idea, date);
-      return card.outerHTML;
-    }).join("");
+      const actions = document.createElement("div");
+      actions.className = "movie-project-actions";
+      const resume = document.createElement("button");
+      resume.type = "button";
+      resume.className = "secondary-button";
+      resume.textContent = "Продолжить работу над фильмом →";
+      resume.addEventListener("click", () => {
+        $("#movieName").value = project.name || "";
+        $("#movieIdea").value = project.idea || "";
+        $("#movieGenre").value = project.genre || "Приключения";
+        $("#movieDuration").value = String(project.duration || 5);
+        $("#movieFrame").value = project.frame || "16:9";
+        $("#movieFeedback").textContent = "Открыт проект «" + project.name + "». Измените данные и сохраните обновления.";
+        $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
+      });
+      actions.append(resume);
+      panel.append(idea, date, actions);
+      toggle.addEventListener("click", () => {
+        const opening = panel.hidden;
+        panel.hidden = !opening;
+        toggle.setAttribute("aria-expanded", String(opening));
+        chevron.textContent = opening ? "⌃" : "⌄";
+      });
+      card.append(toggle, panel);
+      list.append(card);
+    });
   };
   $("#movieStart").addEventListener("click", () => {
     $("#movieName").focus();
@@ -343,19 +394,25 @@
       return;
     }
     const projects = readMovieProjects();
-    projects.unshift({
-      id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+    const existingIndex = projects.findIndex(project => String(project.name || "").trim().toLocaleLowerCase("ru-RU") === name.toLocaleLowerCase("ru-RU"));
+    const savedProject = {
+      id: existingIndex >= 0 ? projects[existingIndex].id : ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())),
       name,
       idea: $("#movieIdea").value.trim(),
       genre: $("#movieGenre").value,
       duration: Number($("#movieDuration").value),
       frame: $("#movieFrame").value,
-      createdAt: new Date().toISOString()
-    });
+      createdAt: existingIndex >= 0 ? projects[existingIndex].createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
     try {
+      if (existingIndex >= 0) projects[existingIndex] = savedProject;
+      else projects.unshift(savedProject);
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
       renderMovieProjects();
-      $("#movieFeedback").textContent = "✓ Проект «" + name + "» успешно создан и сохранён в этом браузере. Все заполненные поля оставлены на месте — вы можете продолжить работу или перейти к списку фильмов.";
+      $("#movieFeedback").textContent = existingIndex >= 0
+        ? "✓ Проект «" + name + "» обновлён. Повторное сохранение не создаёт копию."
+        : "✓ Проект «" + name + "» создан. Он появится отдельной раскрывающейся строкой в разделе «Мои фильмы».";
       $("#movieFeedback").setAttribute("role", "status");
       // Keep the form values so the creator can review or continue editing them.
       // Do not reset the form or change the page scroll position after saving.
