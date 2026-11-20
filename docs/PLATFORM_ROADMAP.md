@@ -17,7 +17,7 @@ PWA Studio is a multi-user creative platform with a public guest-facing area, pr
 - Backend AI chat and prompt-generation routes now require a valid Supabase access token.
 - The backend has an initial text safety guard for a limited set of clearly harmful request patterns.
 - A Supabase migration has been added for private storage buckets, per-user storage policies, moderation reports and an admin audit log.
-- PWA shell cache is v11; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback.
+- PWA shell cache is v12; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback.
 
 ## Important gaps — do not describe these as finished
 
