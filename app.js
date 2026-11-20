@@ -503,7 +503,7 @@
     return done.length+" из 4 этапов завершено";
   };
   // Keep collection cards focused on the synopsis, not stage-specific production notes.
-  const isMovieProductionNotes = value => /(?:Музыка и звуковое оформление|План монтажа|Монтаж\\s*\\n|Визуальный стиль\\s*\\n|Титры\\s*\\n|\\bFull HD\\b|\\b24 кадра\\/с\\b)/i.test(String(value || ""));
+  const isMovieProductionNotes = value => /(?:Музыка и звуковое оформление|План монтажа|Монтаж\s*\n|Визуальный стиль\s*\n|Титры\s*\n|Full HD|24 кадра)/i.test(String(value || ""));
   const movieCardDescription = project => {
     const current = String(project.idea || "").trim();
     if (current && !isMovieProductionNotes(current)) return current;
