@@ -505,7 +505,7 @@
   // Keep collection cards focused on the synopsis, not stage-specific production notes.
   const isMovieProductionNotes = value => /(?:Музыка и звуковое оформление|План монтажа|Монтаж\s*\n|Визуальный стиль\s*\n|Титры\s*\n|Full HD|24 кадра)/i.test(String(value || ""));
   const movieCardDescription = project => {
-    const current = String(project.idea || "").trim();
+    const current = String(project.story || project.idea || "").trim();
     if (current && !isMovieProductionNotes(current)) return current;
     const previous = (Array.isArray(project.versions) ? project.versions : [])
       .map(version => version && version.data ? String(version.data.idea || "").trim() : "")
@@ -552,6 +552,7 @@
         if(index<0){draftStatus.textContent="Не удалось найти этот фильм. Вернитесь к проекту и откройте этап снова.";return;}
         const current=latest[index]; addMovieVersion(current);
         stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+        if(stage.key==="story" && current.story) current.idea=current.story;
         current.updatedAt=new Date().toISOString();
         if(!movieWrite(latest)){draftStatus.textContent="Сохранение не удалось. Проверьте сообщение вверху страницы.";return;}
         draftStatus.textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап не отмечен завершённым.";
