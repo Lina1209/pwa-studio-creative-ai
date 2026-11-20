@@ -36,7 +36,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   const isShellAsset = request.mode === "navigate" ||
-    /\\/(?:index\\.html|app\\.js|styles\\.css|supabase-config\\.js)$/.test(url.pathname);
+    ["/index.html", "/app.js", "/styles.css", "/supabase-config.js"].some(asset => url.pathname.endsWith(asset));
 
   if (isShellAsset) {
     event.respondWith(
