@@ -26,6 +26,7 @@
         <button class="nav-item" data-view="editor"><span>▤</span> Видеоредактор</button>
         <button class="nav-item" data-view="prompts"><span>⌘</span> Prompt Studio <i>NEW</i></button>
         <button class="nav-item" data-view="library"><span>▧</span> Медиатека</button>
+        <button class="nav-item" data-view="account"><span>♙</span> Личный кабинет</button>
       </nav>
       <div class="workspace-label tools-label">ТВОРЧЕСКИЕ ИНСТРУМЕНТЫ</div>
       <nav class="main-nav">
@@ -33,6 +34,7 @@
         <button class="nav-item" data-view="scenes"><span>▦</span> Сценарий и сцены</button>
         <button class="nav-item" data-view="assistant"><span>✦</span> AI Companion</button>
         <button class="nav-item" data-view="guide"><span>📖</span> Путеводитель</button>
+        <button class="nav-item" data-view="rules"><span>⚖</span> Правила и безопасность</button>
       </nav>
       <div class="sidebar-bottom">
         <div class="status-card"><span class="status-dot"></span><div><b>Творческая мастерская</b><small>Локальный интерфейс готов</small></div></div>
@@ -174,6 +176,23 @@
         </div>
       </section>
 
+      <section class="view" id="view-account">
+        <div class="page-heading"><div class="eyebrow">YOUR PRIVATE WORKSPACE</div><h1>Личный <span class="gradient-text">кабинет</span></h1><p>Ваш аккаунт, проекты и личные материалы. Каждый автор видит только своё пространство.</p></div>
+        <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
+        <div class="account-grid"><article class="account-tile"><span>🎬</span><b>Мои фильмы</b><p>Проекты, сценарии и версии фильмов.</p><button data-go="movie">Открыть Миникиностудию →</button></article><article class="account-tile"><span>♙</span><b>Мои персонажи</b><p>Личная библиотека цифровых героев и их образов.</p><button data-go="library">Открыть медиатеку →</button></article><article class="account-tile"><span>♫</span><b>Мои голоса и материалы</b><p>Аудио, изображения и файлы проектов.</p><button data-go="voice">Открыть раздел →</button></article></div>
+        <div class="account-notice" id="accountStorageNotice">Сейчас черновики фильмов сохраняются только в этом браузере. Облачная синхронизация и файловое хранилище ещё подключаются.</div>
+        <div class="account-admin panel" id="adminPanel" hidden><div class="eyebrow">OWNER WORKSPACE</div><h2>Панель владельца</h2><p>Административные инструменты будут доступны только владельцу после серверной проверки роли. Просмотр личных проектов пользователей не является открытым по умолчанию.</p><span class="account-role">Доступ владельца подтверждён сервером</span></div>
+      </section>
+
+      <section class="view" id="view-rules">
+        <div class="page-heading"><div class="eyebrow">COMMUNITY & SAFETY</div><h1>Правила и <span class="gradient-text">безопасность</span></h1><p>Свобода творчества важна. Безопасность, согласие и уважение к другим — обязательны.</p></div>
+        <div class="rules-intro panel"><h2>Можно создавать смело — но ответственно</h2><p>Правила распространяются на запросы к ИИ, изображения, видео, голоса, цифровых персонажей, загружаемые файлы и публикации, если они появятся.</p></div>
+        <div class="rules-grid"><article class="rules-card allowed"><h3>✓ Разрешено</h3><ul><li>Оригинальные истории, фантастика, ужасы и художественные конфликты.</li><li>Обучающие, документальные и творческие материалы.</li><li>Собственные фотографии, голос и цифровые персонажи.</li><li>Изображение другого человека при его согласии.</li><li>Критика, обсуждение сложных тем и безопасное просвещение.</li></ul></article><article class="rules-card prohibited"><h3>✕ Запрещено</h3><ul><li>Сексуальный контент с несовершеннолетними или их сексуализация.</li><li>Интимные изображения реального человека без его явного согласия.</li><li>Выдавать синтетическое видео или голос за подлинное доказательство или слова человека с целью обмана.</li><li>Угрозы, целенаправленная травля, доксинг и призывы к реальному насилию.</li><li>Инструкции по созданию оружия, причинению вреда, самоубийству, мошенничеству или вредоносному ПО.</li><li>Контент, нарушающий права, приватность или закон.</li></ul></article></div>
+        <div class="rules-card"><h3>Фото, голос и цифровые двойники</h3><p>Используйте собственные материалы либо получите разрешение человека. Нельзя создавать обманчивые интимные, унижающие или мошеннические материалы с использованием чужой личности. Для клонирования голоса и реалистичного цифрового двойника требуется подтверждённое согласие.</p></div>
+        <div class="rules-card"><h3>Как работает модерация</h3><p>Платформа должна сочетать автоматическую проверку запросов и материалов, жалобы пользователей и ручную проверку спорных случаев. Возможны отказ в генерации, ограничение функций, удаление нарушающего материала и блокировка аккаунта. Пользователь должен иметь возможность запросить пересмотр решения.</p><p class="rules-small">Важно: сейчас это опубликованные правила и начальный технический слой ограничений. Полноценная автоматическая модерация изображений/видео, очередь жалоб, апелляции и журнал действий ещё не подключены.</p></div>
+        <div class="rules-footer panel"><b>Приватность</b><p>Личные проекты по умолчанию приватны. Администратор не должен просматривать все личные работы без причины. Доступ для проверки должен ограничиваться жалобами, сигналами безопасности и необходимыми действиями модерации с записью таких действий.</p></div>
+      </section>
+
       <section class="view" id="view-settings">
         <div class="page-heading"><div class="eyebrow">PREFERENCES & CONNECTIONS</div><h1>Настройки</h1><p>Подключите сервер студии. Секретные ключи AI-провайдера вводятся только в окружении backend, не здесь.</p></div>
         <div class="panel settings-list">
@@ -198,6 +217,8 @@
         <div class="footer-links">
           <button type="button" data-go="about">✧ О студии</button>
           <button type="button" data-go="guide">📖 Путеводитель</button>
+          <button type="button" data-go="rules">⚖ Правила и безопасность</button>
+          <button type="button" data-go="account">♙ Личный кабинет</button>
           <a href="https://github.com/Lina1209/pwa-studio-creative-ai" target="_blank" rel="noopener noreferrer">⌘ GitHub проекта ↗</a>
         </div>
         <div class="footer-bottom"><span>© 2026 PWA Studio · Creative AI</span><span>Создано с любовью к творчеству <b>♥</b></span></div>
