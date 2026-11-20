@@ -39,7 +39,8 @@ def health():
             bool(settings.openai_api_key) if settings.ai_provider == "openai"
             else bool(settings.deepseek_api_key) if settings.ai_provider == "deepseek"
             else bool(settings.anthropic_api_key) if settings.ai_provider in {"anthropic", "claude"}
-            else settings.ai_provider == "ollama"
+            else bool(settings.ollama_api_base) if settings.ai_provider == "ollama"
+            else False
         ),
     }
 
