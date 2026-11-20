@@ -1,71 +1,71 @@
 # PWA Studio — Creative AI
 
-Творческая AI-видеостудия: от идеи и промта до готового видео.
+Творческая веб-студия для разработки видеоидей и кинопроектов.
 
-## Проект сейчас
+## Текущая архитектура
 
-### Frontend (GitHub Pages)
-Адаптивная PWA-оболочка на Vanilla JavaScript:
-- Главная творческая панель и разделы видеостудии.
-- Отдельная **Миникиностудия** с собственным экраном, формой создания фильма, выбором жанра/длительности/формата и списком локально сохранённых черновиков.
-- Prompt Studio и Studio AI Companion.
-- Медиатека, голосовая мастерская, сценарий и редактор (интерфейсные разделы).
-- Светлая/тёмная тема, мобильная навигация и базовая офлайн-оболочка.
+- **Frontend:** Vanilla JavaScript, HTML, CSS, Tailwind utilities; публикация через GitHub Pages.
+- **Backend:** Python 3.12, FastAPI, LiteLLM; отдельное развёртывание через Render.
+- **Authentication:** Supabase Auth; frontend использует только публичный publishable key.
+- **Database / Storage:** Supabase SQL foundation and private storage policies. Cloud project CRUD and media upload UI are not implemented yet.
 
-### Backend (Python / FastAPI)
-Добавлен первый серверный каркас в папке `backend/`:
-- `GET /` — статус API.
-- `GET /api/health` — проверка сервиса и безопасный статус AI-конфигурации.
-- `POST /api/chat` — endpoint для Studio AI Companion.
-- `POST /api/prompts` — генерация промтов через AI.
-- LiteLLM-адаптер для OpenAI, DeepSeek, Anthropic и Ollama.
-- Настройки через переменные окружения; секреты не хранятся во frontend.\n- Frontend уже подключён к `/api/chat`, `/api/prompts` и `/api/health`; адрес API задаётся в разделе **Настройки**.
+## Что уже реализовано
 
-## Быстрый запуск backend локально
+### Frontend
+- Адаптивная PWA-оболочка, мобильная навигация, светлая и тёмная темы.
+- Разделы студии: главная, создание видео, Миникиностудия, Prompt Studio, медиатека, голосовая мастерская, сценарий и сцены, AI Companion, личный кабинет, путеводитель и правила.
+- Supabase sign-in, sign-up and password reset request.
+- Mini Movie Studio: создание локальных черновиков, компактный список, редактирование параметров, копирование проекта, удаление с подтверждением, история версий и последовательные этапы сценария, персонажей, голосов и плана монтажа.
+- Черновики Миникиностудии хранятся в localStorage отдельно для каждого вошедшего пользователя на конкретном устройстве.
+
+### Backend
+- FastAPI health endpoint.
+- JWT verification against Supabase JWKS.
+- Authenticated AI Companion and prompt-generation endpoints.
+- LiteLLM adapter for configured OpenAI, DeepSeek, Anthropic or Ollama provider.
+- Initial text safety checks. This is not full multimodal moderation.
+
+## Важные ограничения
+
+- Локальные проекты Миникиностудии пока не синхронизируются между устройствами и не являются облачными записями.
+- AI-сценарист внутри этапов Миникиностудии, генерация изображений/видео, клонирование голоса, timeline editor and MP4 rendering are not connected yet. The stage editor currently saves and edits production notes/text locally.
+- История версий хранится вместе с локальным проектом в браузере; очистка данных браузера может удалить её.
+- AI endpoints require a deployed backend, valid Supabase URL, provider credentials and a signed-in session.
+- A service worker provides offline shell fallback. Core HTML/JS/CSS assets use network-first updates with cached fallback.
+- Supabase migration files are source-of-truth drafts; do not rerun old migrations blindly against an already configured live project.
+
+## Локальный запуск backend
 
 Требуется Python 3.11+.
 
 ```bash
 cd backend
 python -m venv .venv
-```
-
-Активируйте окружение, установите зависимости и подготовьте локальную конфигурацию:
-
-```bash
 pip install -r requirements.txt
-```
-
-Скопируйте `.env.example` в `.env`, укажите выбранного AI-провайдера и его API-ключ. Файл `.env` игнорируется Git и не должен публиковаться.
-
-Запуск из папки `backend`:
-
-```bash
+cp .env.example .env
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Документация API: `http://127.0.0.1:8000/docs`.
+Заполните `.env` локальными значениями. Не публикуйте Supabase service-role key или ключи AI-провайдера.
 
-Подробная инструкция: [backend/README.md](backend/README.md).
+## Развёртывание
 
-## Развёртывание backend\n\nВ корне репозитория добавлен `render.yaml`, а `backend/Dockerfile` собирает API в контейнер. Для развёртывания через Render используйте Blueprint из этого репозитория, задайте `AI_PROVIDER`, `AI_MODEL` и секрет выбранного провайдера в настройках сервиса. После успешного запуска скопируйте публичный URL сервиса, откройте PWA Studio → Настройки, сохраните адрес API и проверьте соединение. Не задавайте ключи в GitHub Pages или frontend.\n\nДля Ollama нужен адрес, доступный с сервера; `localhost` в облачном контейнере не указывает на ваш домашний компьютер.\n\n## Архитектура и безопасность
+- Frontend: GitHub Pages, ветка `main`, каталог `/(root)`.
+- Backend: Render Blueprint из `render.yaml`.
+- Укажите `SUPABASE_URL`, `OWNER_EMAIL`, `AI_PROVIDER`, `AI_MODEL` и секрет выбранного AI-провайдера в настройках Render.
+- Для production CORS укажите точный frontend origin.
+- В frontend `supabase-config.js` допускается только публичный Supabase publishable/anon key.
 
-GitHub Pages размещает только frontend. FastAPI должен работать на отдельном Python-хостинге с HTTPS. В production необходимо указать точные frontend origins в `CORS_ORIGINS`, хранить ключи в секретах хостинга и добавить аутентификацию/ограничение частоты запросов перед публичным запуском.
+## Следующие крупные этапы
 
-## Что ещё предстоит
+1. Облачный CRUD проектов и версий с проверкой владельца.
+2. Загрузка и безопасное хранение медиафайлов в private Supabase Storage.
+3. AI-сценарист и раскадровка с сохранением результатов в проекте.
+4. Character Library, согласие на использование внешности и голоса, Voice Studio.
+5. Подключение видеогенераторов, очереди задач, scene-level regeneration и MP4 export.
+6. Комплексная модерация, лимиты, резервное копирование, безопасность и тестирование перед публичным запуском.
 
-1. Развернуть backend, настроить ключ AI-провайдера и указать API URL в настройках frontend.
-2. Добавить авторизацию, лимиты запросов и защиту публичных endpoint.
-3. Расширить AI-сценариста и Prompt Studio (история, шаблоны, сохранение).
-4. Добавить Edge TTS, голоса и субтитры.
-5. Подключить загрузку медиа, очередь задач и рендеринг MP4 через FFmpeg/MoviePy.
-6. Создать полноценную медиатеку и редактор сцен.
-7. Развить Миникиностудию: AI-сценарист, раскадровка, Character Library, AI Avatar Studio, Voice Studio, генерация коротких сцен, очередь рендеринга и сборка длинного фильма.
+## Ссылки
 
-## GitHub Pages
-
-Для frontend выберите **Settings → Pages → Deploy from a branch → main → /(root)**.
-
-После публикации: https://lina1209.github.io/pwa-studio-creative-ai/
-
-> Текущая версия — frontend и начальный backend-каркас. Frontend-запросы к AI endpoints реализованы, но живые ответы ещё не проверены: сервер не развёрнут и ключи не настроены. Миникиностудия уже имеет отдельный экран и сохраняет черновики проектов в localStorage текущего браузера. Это пока не облачное хранилище: черновики не синхронизируются между устройствами. Для настоящего AI-ответа нужен настроенный сервер и действующий ключ выбранного провайдера. Генерация видеосцен, аватаров, клонирование голоса и финальный рендеринг ещё не подключены; для них потребуются совместимые сервисы/API и отдельные настройки.
+- Frontend: https://lina1209.github.io/pwa-studio-creative-ai/
+- Repository: https://github.com/Lina1209/pwa-studio-creative-ai
