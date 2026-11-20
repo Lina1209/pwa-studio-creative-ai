@@ -624,6 +624,19 @@
         $("#movieFeedback").textContent="Изменение основных сведений фильма. Сценарий и этапы останутся отдельными материалами.";
         $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
       });
+      const rename=makeAction("✎ Переименовать","secondary-button",()=>{
+        const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
+        const entered=window.prompt("Введите новое название фильма:",original.name||"");
+        if(entered===null)return;
+        const nextName=entered.trim();
+        if(!nextName){window.alert("Название фильма не может быть пустым.");return;}
+        if(nextName===(original.name||""))return;
+        addMovieVersion(original);
+        original.name=nextName; original.updatedAt=new Date().toISOString();
+        if(!movieWrite(latest))return;
+        renderMovieProjects();
+        $("#movieFeedback").textContent="✓ Название фильма изменено на «"+nextName+"». Сценарий, этапы и их прогресс сохранены без изменений.";
+      });
       const copy=makeAction("⧉ Создать копию","secondary-button",()=>{
         const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
         const clone={...movieSnapshot(original),id:movieId(),name:(original.name||"Фильм")+" — копия",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),versions:[]};
@@ -654,7 +667,7 @@
         const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key));
         openMovieStage(project.id,next<0?0:next);
       });
-      actions.append(edit,editDetails,copy,version,remove,stageButton); panel.append(idea,progress,date,actions);
+      actions.append(edit,editDetails,rename,copy,version,remove,stageButton); panel.append(idea,progress,date,actions);
       toggle.addEventListener("click",()=>{
         const opening=panel.hidden; panel.hidden=!opening; toggle.setAttribute("aria-expanded",String(opening)); chevron.textContent=opening?"⌃":"⌄";
         if(opening){activeMovieId=project.id;updateMovieStageCards();$$(".movie-project-card").forEach(item=>item.classList.remove("is-active"));card.classList.add("is-active");}
