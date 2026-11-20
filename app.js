@@ -66,9 +66,9 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadAccountRole === "function") loadAccountRole(); }, 0);
+      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); }, 0);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); }, 0); });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -329,6 +329,96 @@
     {key:"voices",title:"Голоса и озвучка",fields:[["voices","Голоса и звук","Назначьте голос каждому персонажу, укажите язык, манеру речи, реплики, музыку и звуковые эффекты."]]},
     {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
   ];
+  // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
+  const movieCloudState = { syncing: false, loadingUser: null, timer: null };
+  const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+  const movieToCloudRow = project => {
+    if (!isUuid(project.id)) project.id = movieId();
+    const snapshot = { ...project, cloudSchemaVersion: 1 };
+    return {
+      id: project.id,
+      owner_id: authSession.user.id,
+      title: project.name || "Без названия",
+      description: project.idea || "",
+      project_type: "movie",
+      status: (project.completedSteps || []).length === 4 ? "ready" : "draft",
+      settings: snapshot,
+      created_at: project.createdAt || new Date().toISOString(),
+      updated_at: project.updatedAt || new Date().toISOString()
+    };
+  };
+  const movieFromCloudRow = row => {
+    const saved = row.settings && typeof row.settings === "object" ? row.settings : {};
+    return {
+      ...saved,
+      id: row.id,
+      name: row.title || saved.name || "Без названия",
+      idea: row.description ?? saved.idea ?? "",
+      createdAt: saved.createdAt || row.created_at,
+      updatedAt: row.updated_at || saved.updatedAt || row.created_at,
+      completedSteps: Array.isArray(saved.completedSteps) ? saved.completedSteps : [],
+      versions: Array.isArray(saved.versions) ? saved.versions : []
+    };
+  };
+  const scheduleMovieCloudSync = () => {
+    if (!authSession?.user || !supabaseClient) return;
+    clearTimeout(movieCloudState.timer);
+    movieCloudState.timer = setTimeout(async () => {
+      if (movieCloudState.syncing || !authSession?.user) return;
+      movieCloudState.syncing = true;
+      try {
+        const rows = movieRead().map(movieToCloudRow);
+        if (rows.length) {
+          const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
+          if (error) throw error;
+        }
+        const feedback = $("#movieFeedback");
+        if (feedback) feedback.textContent = "✓ Изменения сохранены в облаке Supabase.";
+      } catch (error) {
+        console.error("Movie cloud sync failed:", error);
+        const feedback = $("#movieFeedback");
+        if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+      } finally {
+        movieCloudState.syncing = false;
+      }
+    }, 350);
+  };
+  const loadMovieProjectsFromCloud = async () => {
+    const userId = authSession?.user?.id;
+    if (!userId || !supabaseClient || movieCloudState.loadingUser === userId) return;
+    movieCloudState.loadingUser = userId;
+    try {
+      const { data, error } = await supabaseClient
+        .from("projects")
+        .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
+        .eq("project_type", "movie")
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      if (authSession?.user?.id !== userId) return;
+      const local = movieRead();
+      const merged = new Map(local.map(project => [project.id, project]));
+      (data || []).forEach(row => {
+        const cloudProject = movieFromCloudRow(row);
+        const localProject = merged.get(cloudProject.id);
+        if (!localProject || new Date(cloudProject.updatedAt || 0) >= new Date(localProject.updatedAt || 0)) {
+          merged.set(cloudProject.id, cloudProject);
+        }
+      });
+      const projects = [...merged.values()].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      if (movieWrite(projects)) {
+        renderMovieProjects();
+        scheduleMovieCloudSync();
+        const feedback = $("#movieFeedback");
+        if (feedback) feedback.textContent = "✓ Фильмы загружены из облака. Изменения синхронизируются автоматически.";
+      }
+    } catch (error) {
+      console.error("Movie cloud load failed:", error);
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+    } finally {
+      if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
+    }
+  };
   const movieRead = () => {
     try {
       const value = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
@@ -336,8 +426,11 @@
     } catch { return []; }
   };
   const movieWrite = projects => {
-    try { localStorage.setItem(movieStorageKey(), JSON.stringify(projects)); return true; }
-    catch (error) {
+    try {
+      localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+      scheduleMovieCloudSync();
+      return true;
+    } catch (error) {
       console.error("Movie project storage failed:", error);
       const feedback = $("#movieFeedback");
       if (feedback) feedback.textContent = "Не удалось сохранить изменения в памяти браузера. Проверьте свободное место и настройки приватности.";
