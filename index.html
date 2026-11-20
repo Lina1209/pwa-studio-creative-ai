@@ -87,6 +87,8 @@
           <form class="panel movie-form" id="movieForm">
             <div class="movie-form-grid">
               <div class="movie-field movie-field-wide"><label for="movieName">Название фильма</label><input id="movieName" maxlength="90" placeholder="Например: Тайна старого маяка" required></div>
+              <div class="movie-field"><label for="movieSeriesNumber">Номер серии (если это продолжение)</label><input id="movieSeriesNumber" type="number" min="1" max="999" step="1" inputmode="numeric" placeholder="Например: 2"></div>
+              <div class="movie-field"><label for="movieVersionLabel">Название версии (необязательно)</label><input id="movieVersionLabel" maxlength="60" placeholder="Например: Альтернативный сценарий"></div>
               <div class="movie-field movie-field-wide"><label for="movieIdea">О чём ваша история?</label><textarea id="movieIdea" rows="4" placeholder="Опишите идею, героев, место действия и настроение фильма..."></textarea></div>
               <div class="movie-field"><label for="movieGenre">Жанр</label><select id="movieGenre"><option>Приключения</option><option>Фэнтези</option><option>Фантастика</option><option>Драма</option><option>Комедия</option><option>Детектив</option><option>Мультфильм</option><option>Документальный</option><option>Обучающий фильм</option><option>Музыкальный клип</option></select></div>
               <div class="movie-field"><label for="movieDuration">Продолжительность</label><select id="movieDuration"><option value="1">До 1 минуты</option><option value="3">Около 3 минут</option><option value="5" selected>Около 5 минут</option><option value="10">Около 10 минут</option><option value="15">Около 15 минут</option><option value="30">30 минут и более</option></select></div>
@@ -270,6 +272,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./supabase-config.js"></script>
-  <script src="./app.js?v=20261121-7" defer></script>
+  <script src="./app.js?v=20261121-8" defer></script>
 </body>
 </html>
