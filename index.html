@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0a16">
+  <meta name="description" content="PWA Studio — творческая AI-видеостудия: от идеи и промта до готового видео.">
+  <title>PWA Studio — Creative AI</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#home" aria-label="PWA Studio — главная">
+        <span class="brand-mark">✦</span><span><b>PWA</b> STUDIO<small>CREATIVE AI</small></span>
+      </a>
+      <div class="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+      <nav class="main-nav" aria-label="Основная навигация">
+        <button class="nav-item active" data-view="home"><span>⌂</span> Главная</button>
+        <button class="nav-item" data-view="create"><span>✧</span> Создать видео</button>
+        <button class="nav-item" data-view="editor"><span>▤</span> Видеоредактор</button>
+        <button class="nav-item" data-view="prompts"><span>⌘</span> Prompt Studio <i>NEW</i></button>
+        <button class="nav-item" data-view="library"><span>▧</span> Медиатека</button>
+      </nav>
+      <div class="workspace-label tools-label">ТВОРЧЕСКИЕ ИНСТРУМЕНТЫ</div>
+      <nav class="main-nav">
+        <button class="nav-item" data-view="voice"><span>♫</span> Голос и музыка</button>
+        <button class="nav-item" data-view="scenes"><span>▦</span> Сценарий и сцены</button>
+        <button class="nav-item" data-view="assistant"><span>✦</span> AI Companion</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="status-card"><span class="status-dot"></span><div><b>Творческая мастерская</b><small>Локальный интерфейс готов</small></div></div>
+        <button class="nav-item" data-view="settings"><span>⚙</span> Настройки</button>
+        <div class="profile"><div class="avatar">L</div><div><b>Lina1209</b><small>Creator workspace</small></div><span class="profile-more">···</span></div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Открыть меню">☰</button>
+        <div class="breadcrumbs"><span>Creative workspace</span><b>/</b><strong id="crumbCurrent">Главная</strong></div>
+        <div class="top-actions"><span class="backend-pill"><i></i> Интерфейс активен</span><button class="icon-button" id="themeToggle" title="Сменить тему">☼</button><button class="top-avatar">L</button></div>
+      </header>
+
+      <section class="view active" id="view-home">
+        <div class="welcome-row"><div><div class="eyebrow"><span class="sparkle">✦</span> ВАША ТВОРЧЕСКАЯ ВСЕЛЕННАЯ</div><h1>Идеи становятся <span class="gradient-text">видео.</span></h1><p class="lead">Придумывайте, создавайте и воплощайте. Все инструменты для вашей истории — в одной студии.</p></div><div class="date-chip">✧ <span>Ваше пространство идей</span></div></div>
+        <div class="hero-card">
+          <div class="hero-copy"><div class="hero-tag">✦ AI VIDEO CREATION</div><h2>Какую историю<br>создадим сегодня?</h2><p>Опишите задумку своими словами. Помощник поможет превратить её в сценарий, промт и готовый план видео.</p>
+            <form id="quickCreate" class="idea-form"><input id="quickTopic" placeholder="Например: путешествие по фантастическому Марсу..." aria-label="Идея видео"><button type="submit">Начать создание <span>→</span></button></form>
+            <div class="hero-foot"><span>✧ Не нужно знать специальные термины</span><span>⌁ От идеи к результату</span></div>
+          </div>
+          <div class="hero-art" aria-hidden="true"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="art-core"><span>✦</span></div><div class="art-chip chip-top">AI <b>CREATIVE</b></div><div class="art-chip chip-bottom">IDEA <b>→</b> VIDEO</div><div class="art-stars">✧　·　✦<br>　·　✧　·</div></div>
+        </div>
+        <div class="section-heading"><div><div class="eyebrow">БЫСТРЫЙ СТАРТ</div><h2>Выберите способ создания</h2></div><span class="muted">Начните с того, что уже есть</span></div>
+        <div class="quick-grid">
+          <button class="quick-card" data-go="create"><span class="quick-icon purple">✧</span><b>Из идеи</b><small>Опишите тему — соберём основу ролика</small><span class="card-arrow">↗</span></button>
+          <button class="quick-card" data-go="scenes"><span class="quick-icon blue">▤</span><b>Из сценария</b><small>Превратите готовый текст в сцены</small><span class="card-arrow">↗</span></button>
+          <button class="quick-card" data-go="library"><span class="quick-icon pink">▧</span><b>Из материалов</b><small>Используйте свои фото, видео и звук</small><span class="card-arrow">↗</span></button>
+          <button class="quick-card" data-go="prompts"><span class="quick-icon gold">⌘</span><b>Создать промт</b><small>Сформулируйте запрос вместе с AI</small><span class="card-arrow">↗</span></button>
+        </div>
+        <div class="section-heading lower-heading"><div><div class="eyebrow">ВАШ ИНТЕЛЛЕКТУАЛЬНЫЙ НАПАРНИК</div><h2>Studio AI Companion</h2></div></div>
+        <div class="companion-card"><div class="companion-orb">✦</div><div class="companion-copy"><b>Идея есть, а с чего начать?</b><p>Обсудите задумку, создайте выразительный промт или попросите помочь со сценарием.</p></div><button class="secondary-button" data-go="assistant">Открыть помощника <span>→</span></button></div>
+        <p class="prototype-note">Предварительная версия интерфейса · Подключение AI и видеосервера будет добавлено следующим этапом.</p>
+      </section>
+
+      <section class="view" id="view-create">
+        <div class="page-heading"><div class="eyebrow">VIDEO WORKFLOW</div><h1>Создать <span class="gradient-text">видео</span></h1><p>Настройте будущий ролик. Сейчас мы подготовим рабочую форму и структуру процесса.</p></div>
+        <div class="panel form-panel"><label for="topic">Тема или идея видео</label><textarea id="topic" rows="4" placeholder="Расскажите, о чём должно быть видео, какое настроение и впечатление оно должно передавать..."></textarea><div class="form-row"><div><label for="ratio">Формат кадра</label><select id="ratio"><option value="9:16">Вертикальный · 9:16</option><option value="16:9">Широкий · 16:9</option><option value="1:1">Квадрат · 1:1</option></select></div><div><label for="lang">Язык</label><select id="lang"><option value="ru">Русский</option><option value="en">English</option><option value="zh">中文</option></select></div><div><label for="style">Стиль видео</label><select id="style"><option>Кинематографичный</option><option>Документальный</option><option>Обучающий</option><option>Рекламный</option><option>Атмосферный</option></select></div></div><button class="primary-button" id="prepareIdea">✦ Подготовить идею</button><p class="helper-text" id="createFeedback">Генерация сценария и рендеринг подключаются на следующем этапе.</p></div>
+      </section>
+
+      <section class="view" id="view-prompts">
+        <div class="page-heading"><div class="eyebrow">PROMPT ENGINEERING</div><h1>Prompt <span class="gradient-text">Studio</span></h1><p>Превращайте простые описания в точные и выразительные запросы для ИИ.</p></div>
+        <div class="prompt-layout"><div class="panel"><label for="promptIdea">Опишите, что хотите получить</label><textarea id="promptIdea" rows="7" placeholder="Например: кинематографичный кадр старинного города после дождя, тёплый свет окон, камера медленно движется вперёд..."></textarea><div class="form-row"><div><label for="promptType">Для чего промт?</label><select id="promptType"><option>Генерация видео</option><option>Генерация изображения</option><option>Музыка и звук</option><option>Сценарий</option></select></div><div><label for="promptLanguage">Язык результата</label><select id="promptLanguage"><option>English</option><option>Русский</option></select></div></div><button class="primary-button" id="buildPrompt">✦ Сформировать промт</button><p class="helper-text" id="promptFeedback">Пока доступна демонстрационная сборка шаблона. Подключение языковой модели будет добавлено через защищённый API.</p></div><div class="panel prompt-result"><div class="result-head"><b>Ваш промт</b><span class="draft-badge">DRAFT</span></div><div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button></div></div>
+      </section>
+
+      <section class="view" id="view-assistant">
+        <div class="page-heading"><div class="eyebrow">YOUR CREATIVE PARTNER</div><h1>Studio AI <span class="gradient-text">Companion</span></h1><p>Помощник по идеям, сценариям, промтам и инструментам студии.</p></div>
+        <div class="assistant-panel panel"><div class="assistant-welcome"><div class="companion-orb large">✦</div><h2>Привет! Давайте создадим что-нибудь особенное.</h2><p>Я помогу сформулировать идею, продумать сцены и подготовить промт. Подключение живого ИИ-диалога появится после настройки backend.</p></div><div class="suggestion-row"><button data-assist="Помоги придумать идею для короткого видео">Придумать идею</button><button data-assist="Помоги написать промт для видео">Создать промт</button><button data-assist="Помоги разбить сюжет на сцены">Разбить на сцены</button></div><form id="assistantForm" class="chat-form"><input id="assistantInput" placeholder="Расскажите, что хотите создать..." aria-label="Сообщение помощнику"><button aria-label="Отправить">↑</button></form><div class="helper-text">Демонстрационный интерфейс. Ответы ИИ станут доступны после подключения API-провайдера.</div></div>
+      </section>
+
+      <section class="view" id="view-editor"><div class="page-heading"><div class="eyebrow">EDITING ROOM</div><h1>Видеоредактор</h1><p>Рабочее пространство для монтажа, таймлайна и предпросмотра.</p></div><div class="empty-workspace panel"><div class="empty-icon">▤</div><h2>Монтажная скоро откроется</h2><p>Здесь появятся предпросмотр, дорожки видео и аудио, сцены, переходы и субтитры.</p><button class="secondary-button" data-go="create">Подготовить новый проект →</button></div></section>
+      <section class="view" id="view-library"><div class="page-heading"><div class="eyebrow">YOUR ASSETS</div><h1>Медиатека</h1><p>Единое пространство для изображений, видео, аудио и готовых проектов.</p></div><div class="empty-workspace panel"><div class="empty-icon">▧</div><h2>Ваша медиатека</h2><p>Загрузка файлов и управление материалами будут подключены вместе с системой хранения.</p></div></section>
+      <section class="view" id="view-voice"><div class="page-heading"><div class="eyebrow">AUDIO LAB</div><h1>Голос и музыка</h1><p>Озвучивание, голоса, музыкальные дорожки и звуковой дизайн.</p></div><div class="empty-workspace panel"><div class="empty-icon">♫</div><h2>Звуковая мастерская</h2><p>Здесь будут настройки TTS, выбор голосов, предпрослушивание и микширование аудио.</p></div></section>
+      <section class="view" id="view-scenes"><div class="page-heading"><div class="eyebrow">STORYBOARD</div><h1>Сценарий и сцены</h1><p>Собирайте историю по кадрам и управляйте визуальным повествованием.</p></div><div class="empty-workspace panel"><div class="empty-icon">▦</div><h2>Ваша раскадровка</h2><p>Редактор сцен, визуальные подсказки и управление последовательностью появятся здесь.</p></div></section>
+      <section class="view" id="view-settings"><div class="page-heading"><div class="eyebrow">PREFERENCES</div><h1>Настройки</h1><p>Персонализация студии и подключение сервисов.</p></div><div class="panel settings-list"><div><b>Внешний вид</b><span>Тёмная тема включена по умолчанию</span></div><div><b>AI-провайдеры</b><span>Подключение через защищённый сервер — будет добавлено</span></div><div><b>Backend API</b><span>Не настроен</span></div><div><b>Хранение проектов</b><span>Локальная и серверная медиатека — в планах</span></div></div></section>
+
+      <footer class="footer"><span>✦ PWA STUDIO · CREATIVE AI</span><span>Made for curious minds <b>♥</b></span></footer>
+    </main>
+  </div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
