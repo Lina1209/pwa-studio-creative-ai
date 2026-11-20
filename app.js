@@ -449,7 +449,7 @@
       });
       const copy=makeAction("⧉ Создать копию","secondary-button",()=>{
         const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
-        const clone={...movieSnapshot(original),id:movieId(),name:(original.name||"Фильм")+" — копия",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),completedSteps:[],workflowStep:0,story:"",storyboard:"",characters:"",voices:"",edit:"",versions:[]};
+        const clone={...movieSnapshot(original),id:movieId(),name:(original.name||"Фильм")+" — копия",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),versions:[]};
         latest.unshift(clone); if(movieWrite(latest)){activeMovieId=clone.id;renderMovieProjects();$("#movieFeedback").textContent="Копия создана. Оригинальный фильм не изменён.";}
       });
       const version=makeAction("↶ История версий ("+(project.versions||[]).length+")","secondary-button",()=>{
@@ -464,7 +464,7 @@
         if(movieWrite(latest)){renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
       });
       const remove=makeAction("🗑 Удалить","danger-button",()=>{
-        if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"»? Это действие нельзя отменить, если нет сохранённой версии."))return;
+        if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
         const latest=movieRead().filter(item=>item.id!==project.id);
         if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent="Проект удалён.";}
       });
