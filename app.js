@@ -47,6 +47,38 @@
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => refreshAuthUI(session));
   }
+  // Password visibility controls for both sign-in and registration forms.
+  const passwordStyle = document.createElement("style");
+  passwordStyle.textContent = `
+    .password-field-wrap{position:relative;display:block;width:100%}
+    .password-field-wrap input{width:100%;padding-right:48px}
+    .password-visibility-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:inherit;opacity:.8;padding:8px;cursor:pointer;font-size:18px;line-height:1}
+    .password-visibility-toggle:focus-visible{outline:2px solid #b9a0ff;border-radius:8px}
+  `;
+  document.head.appendChild(passwordStyle);
+  ["#loginPassword", "#signupPassword"].forEach(selector => {
+    const input = $(selector);
+    if (!input) return;
+    const wrapper = document.createElement("span");
+    wrapper.className = "password-field-wrap";
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "password-visibility-toggle";
+    toggle.textContent = "👁";
+    toggle.setAttribute("aria-label", "Показать пароль");
+    toggle.setAttribute("aria-pressed", "false");
+    toggle.addEventListener("click", () => {
+      const visible = input.type === "password";
+      input.type = visible ? "text" : "password";
+      toggle.textContent = visible ? "🙈" : "👁";
+      toggle.setAttribute("aria-label", visible ? "Скрыть пароль" : "Показать пароль");
+      toggle.setAttribute("aria-pressed", String(visible));
+    });
+    wrapper.appendChild(toggle);
+  });
+
   $("#showLogin").addEventListener("click", () => setAuthMode("login"));
   $("#showSignup").addEventListener("click", () => setAuthMode("signup"));
   $("#showReset").addEventListener("click", () => setAuthMode("reset"));
