@@ -502,6 +502,16 @@
     const done=Array.isArray(project.completedSteps)?project.completedSteps:[];
     return done.length+" из 4 этапов завершено";
   };
+  // Keep collection cards focused on the synopsis, not stage-specific production notes.
+  const isMovieProductionNotes = value => /(?:Музыка и звуковое оформление|План монтажа|Монтаж\\s*\\n|Визуальный стиль\\s*\\n|Титры\\s*\\n|\\bFull HD\\b|\\b24 кадра\\/с\\b)/i.test(String(value || ""));
+  const movieCardDescription = project => {
+    const current = String(project.idea || "").trim();
+    if (current && !isMovieProductionNotes(current)) return current;
+    const previous = (Array.isArray(project.versions) ? project.versions : [])
+      .map(version => version && version.data ? String(version.data.idea || "").trim() : "")
+      .find(value => value && !isMovieProductionNotes(value));
+    return previous || "Краткое описание истории пока не добавлено. Сценарий и материалы этапов сохранены отдельно.";
+  };
   const updateMovieStageCards = () => {
     const project=movieRead().find(item=>item.id===activeMovieId);
     $$(".movie-tool-card[data-movie-tool]").forEach((button,index)=>{
@@ -621,7 +631,7 @@
       const details=document.createElement("small"); details.textContent=(project.genre||"Жанр не указан")+" · "+(project.duration||5)+" мин · "+(project.frame||"16:9");
       heading.append(title,details); const chevron=document.createElement("span"); chevron.className="movie-project-chevron"; chevron.textContent="⌄"; toggle.append(number,heading,chevron);
       const panel=document.createElement("div"); panel.className="movie-project-details"; panel.hidden=true;
-      const idea=document.createElement("p"); idea.textContent=project.idea||"Описание пока не добавлено.";
+      const idea=document.createElement("p"); idea.textContent=movieCardDescription(project);
       const progress=document.createElement("small"); progress.className="movie-project-progress"; progress.textContent=movieProgress(project);
       const date=document.createElement("span"); date.className="movie-project-date"; date.textContent="Изменён: "+movieDate(project.updatedAt||project.createdAt);
       const actions=document.createElement("div"); actions.className="movie-project-actions";
