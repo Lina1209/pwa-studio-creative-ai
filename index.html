@@ -22,6 +22,7 @@
       <nav class="main-nav" aria-label="Основная навигация">
         <button class="nav-item active" data-view="home"><span>⌂</span> Главная</button>
         <button class="nav-item" data-view="create"><span>✧</span> Создать видео</button>
+        <button class="nav-item movie-nav" data-view="movie"><span>🎬</span> Миникиностудия <i>STUDIO</i></button>
         <button class="nav-item" data-view="editor"><span>▤</span> Видеоредактор</button>
         <button class="nav-item" data-view="prompts"><span>⌘</span> Prompt Studio <i>NEW</i></button>
         <button class="nav-item" data-view="library"><span>▧</span> Медиатека</button>
@@ -58,6 +59,7 @@
         <div class="section-heading"><div><div class="eyebrow">БЫСТРЫЙ СТАРТ</div><h2>Выберите способ создания</h2></div><span class="muted">Начните с того, что уже есть</span></div>
         <div class="quick-grid">
           <button class="quick-card" data-go="create"><span class="quick-icon purple">✧</span><b>Из идеи</b><small>Опишите тему — соберём основу ролика</small><span class="card-arrow">↗</span></button>
+          <button class="quick-card movie-quick" data-go="movie"><span class="quick-icon gold">🎬</span><b>Миникиностудия</b><small>Создавайте фильмы из связанных сцен и историй</small><span class="card-arrow">↗</span></button>
           <button class="quick-card" data-go="scenes"><span class="quick-icon blue">▤</span><b>Из сценария</b><small>Превратите готовый текст в сцены</small><span class="card-arrow">↗</span></button>
           <button class="quick-card" data-go="library"><span class="quick-icon pink">▧</span><b>Из материалов</b><small>Используйте свои фото, видео и звук</small><span class="card-arrow">↗</span></button>
           <button class="quick-card" data-go="prompts"><span class="quick-icon gold">⌘</span><b>Создать промт</b><small>Сформулируйте запрос вместе с AI</small><span class="card-arrow">↗</span></button>
@@ -65,6 +67,42 @@
         <div class="section-heading lower-heading"><div><div class="eyebrow">ВАШ ИНТЕЛЛЕКТУАЛЬНЫЙ НАПАРНИК</div><h2>Studio AI Companion</h2></div></div>
         <div class="companion-card"><div class="companion-orb">✦</div><div class="companion-copy"><b>Идея есть, а с чего начать?</b><p>Обсудите задумку, создайте выразительный промт или попросите помочь со сценарием.</p></div><button class="secondary-button" data-go="assistant">Открыть помощника <span>→</span></button></div>
         <p class="prototype-note">Предварительная версия интерфейса · Подключение AI и видеосервера будет добавлено следующим этапом.</p>
+      </section>
+
+
+      <section class="view movie-view" id="view-movie">
+        <div class="movie-hero">
+          <div class="movie-hero-copy">
+            <div class="eyebrow">PWA STUDIO PRESENTS · FILMMAKING SPACE</div>
+            <div class="movie-title-row"><span class="movie-clapper">🎬</span><div><h1>Миникино<span class="gradient-text">студия</span></h1><p>Ваша территория историй, персонажей и собственного кино.</p></div></div>
+            <div class="movie-hero-actions"><button class="primary-button" id="movieStart">＋ Новый фильм</button><span>От короткой истории до большого авторского проекта</span></div>
+          </div>
+          <div class="movie-reel" aria-hidden="true"><div class="reel-screen"><span>✦</span><small>YOUR STORY<br>YOUR FILM</small></div><i></i><i></i><i></i></div>
+        </div>
+        <div class="movie-workbench">
+          <div class="movie-section-head"><div><div class="eyebrow">FILM WORKSPACE</div><h2>Создать новый фильм</h2><p>Задайте основу — дальше будем развивать её по сценам.</p></div><span class="movie-step">01 / PROJECT</span></div>
+          <form class="panel movie-form" id="movieForm">
+            <div class="movie-form-grid">
+              <div class="movie-field movie-field-wide"><label for="movieName">Название фильма</label><input id="movieName" maxlength="90" placeholder="Например: Тайна старого маяка" required></div>
+              <div class="movie-field movie-field-wide"><label for="movieIdea">О чём ваша история?</label><textarea id="movieIdea" rows="4" placeholder="Опишите идею, героев, место действия и настроение фильма..."></textarea></div>
+              <div class="movie-field"><label for="movieGenre">Жанр</label><select id="movieGenre"><option>Приключения</option><option>Фэнтези</option><option>Фантастика</option><option>Драма</option><option>Комедия</option><option>Детектив</option><option>Мультфильм</option><option>Документальный</option><option>Обучающий фильм</option><option>Музыкальный клип</option></select></div>
+              <div class="movie-field"><label for="movieDuration">Продолжительность</label><select id="movieDuration"><option value="1">До 1 минуты</option><option value="3">Около 3 минут</option><option value="5" selected>Около 5 минут</option><option value="10">Около 10 минут</option><option value="15">Около 15 минут</option><option value="30">30 минут и более</option></select></div>
+              <div class="movie-field"><label for="movieFrame">Формат кадра</label><select id="movieFrame"><option value="16:9">Кино · 16:9</option><option value="9:16">Вертикальный · 9:16</option><option value="1:1">Квадрат · 1:1</option></select></div>
+            </div>
+            <div class="movie-form-footer"><p class="helper-text" id="movieFeedback">Проект сохранится в этом браузере. Генерация сцен и рендеринг подключаются отдельно.</p><button class="primary-button" type="submit">Создать проект фильма <span>→</span></button></div>
+          </form>
+        </div>
+        <div class="movie-tools-grid">
+          <button class="movie-tool-card" data-movie-tool="story"><span>✎</span><b>Сценарий и раскадровка</b><small>История, диалоги, план сцен и кадров</small><em>Открыть раздел ↗</em></button>
+          <button class="movie-tool-card" data-movie-tool="characters"><span>♙</span><b>Персонажи и аватары</b><small>Создавайте героев и сохраняйте их образы</small><em>Открыть раздел ↗</em></button>
+          <button class="movie-tool-card" data-movie-tool="voice"><span>♫</span><b>Голоса и озвучка</b><small>Реплики, языки, музыка и звуковой мир</small><em>Открыть раздел ↗</em></button>
+          <button class="movie-tool-card" data-movie-tool="edit"><span>▤</span><b>Монтаж и экспорт</b><small>Соберите сцены в цельный фильм</small><em>Открыть раздел ↗</em></button>
+        </div>
+        <div class="movie-projects">
+          <div class="movie-section-head"><div><div class="eyebrow">YOUR FILM COLLECTION</div><h2>Мои фильмы</h2><p>Сохранённые проекты будут доступны для продолжения.</p></div><span class="movie-count" id="movieCount">0 проектов</span></div>
+          <div class="movie-project-list" id="movieProjectList"><div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div></div>
+        </div>
+        <div class="movie-note">Важно: длительный фильм будет собираться из отдельных сцен. Это позволит сохранять последовательность сюжета и внешний вид персонажей, а также обходить ограничения длительности отдельных генераторов.</div>
       </section>
 
       <section class="view" id="view-create">
