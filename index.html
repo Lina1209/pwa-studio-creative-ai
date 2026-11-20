@@ -180,7 +180,7 @@
         <div class="page-heading"><div class="eyebrow">YOUR PRIVATE WORKSPACE</div><h1>Личный <span class="gradient-text">кабинет</span></h1><p>Ваш аккаунт, проекты и личные материалы. Каждый автор видит только своё пространство.</p></div>
         <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
         <div class="account-grid"><article class="account-tile"><span>🎬</span><b>Мои фильмы</b><p>Проекты, сценарии и версии фильмов.</p><button data-go="movie">Открыть Миникиностудию →</button></article><article class="account-tile"><span>♙</span><b>Мои персонажи</b><p>Личная библиотека цифровых героев и их образов.</p><button data-go="library">Открыть медиатеку →</button></article><article class="account-tile"><span>♫</span><b>Мои голоса и материалы</b><p>Аудио, изображения и файлы проектов.</p><button data-go="voice">Открыть раздел →</button></article></div>
-        <div class="account-notice" id="accountStorageNotice">Сейчас черновики фильмов сохраняются только в этом браузере. Облачная синхронизация и файловое хранилище ещё подключаются.</div>
+        <div class="account-notice" id="accountStorageNotice">Фильмы авторизованных пользователей синхронизируются с Supabase. Гостевые черновики хранятся только в этом браузере. Файловое хранилище подключается отдельно.</div>
         <div class="account-admin panel" id="adminPanel" hidden><div class="eyebrow">OWNER WORKSPACE</div><h2>Панель владельца</h2><p>Административные инструменты будут доступны только владельцу после серверной проверки роли. Просмотр личных проектов пользователей не является открытым по умолчанию.</p><span class="account-role">Доступ владельца подтверждён сервером</span></div>
       </section>
 
@@ -204,7 +204,7 @@
             <div class="backend-actions"><button class="secondary-button" id="saveBackend" type="button">Сохранить адрес</button><button class="primary-button" id="testBackend" type="button">Проверить соединение</button></div>
             <p class="helper-text" id="backendStatus" aria-live="polite">Backend пока не подключён. Укажите HTTPS-адрес развёрнутого API.</p>
           </div>
-          <div><b>Хранение проектов</b><span>Черновики Миникиностудии пока сохраняются локально в браузере.</span></div>
+          <div><b>Хранение проектов</b><span>Фильмы авторизованных пользователей синхронизируются с Supabase; гостевые черновики сохраняются локально в браузере.</span></div>
         </div>
       </section>
 
