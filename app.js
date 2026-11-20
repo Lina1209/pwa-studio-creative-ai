@@ -395,6 +395,8 @@
     const close=document.createElement("button"); close.type="button"; close.className="secondary-button"; close.textContent="← К проекту"; close.addEventListener("click",()=>{panel.hidden=true;});
     const save=document.createElement("button"); save.type="button"; save.className="primary-button"; save.textContent=stageIndex===3?"Сохранить этап":"Сохранить и открыть следующий этап →";
     save.addEventListener("click",()=>{
+      const emptyField=stage.fields.find(([key])=>!inputs[key].value.trim());
+      if(emptyField){$("#movieFeedback").textContent="Заполните поле «"+emptyField[1]+"», прежде чем завершить этап.";inputs[emptyField[0]].focus();return;}
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
       const current=latest[index]; addMovieVersion(current);
       stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
