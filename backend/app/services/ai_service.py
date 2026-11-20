@@ -29,13 +29,17 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> str:
             f"AI provider '{settings.ai_provider}' is selected, but its API key is not configured."
         )
 
-    response = completion(
-        model=model,
-        messages=messages,
-        api_key=api_key,
-        timeout=90,
-        max_retries=1,
-    )
+    completion_options = {
+        "model": model,
+        "messages": messages,
+        "api_key": api_key,
+        "timeout": 90,
+        "max_retries": 1,
+    }
+    if settings.ai_provider.lower() == "ollama":
+        completion_options["api_base"] = settings.ollama_api_base.rstrip("/")
+
+    response = completion(**completion_options)
     content = response.choices[0].message.content
     if not isinstance(content, str) or not content.strip():
         raise RuntimeError("The AI provider returned an empty response.")
