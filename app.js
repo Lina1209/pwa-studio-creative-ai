@@ -1,6 +1,17 @@
 (() => {
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const API_URL_KEY = "pwa-studio-api-url";
+  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "").trim().replace(/\/+$/, "");
+  const apiRequest = async (path, options = {}) => {
+    const base = getApiBase();
+    if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
+    const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
+    return data;
+  };
   const labels = {home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",settings:"Настройки"};
 
   function navigate(view) {
@@ -47,19 +58,29 @@
       : "Сначала напишите тему или идею будущего видео.";
   });
 
-  $("#buildPrompt").addEventListener("click", () => {
+  $("#buildPrompt").addEventListener("click", async () => {
     const idea = $("#promptIdea").value.trim();
     if (!idea) {
       $("#promptFeedback").textContent = "Добавьте описание вашей задумки, чтобы сформировать промт.";
       return;
     }
-    const type = $("#promptType").value;
-    const lang = $("#promptLanguage").value;
-    const prompt = lang === "English"
-      ? "Create a " + type.toLowerCase() + " based on this concept: " + idea + "\n\nVisual direction: cinematic composition, intentional lighting, rich but balanced colors, clear subject, refined details. Keep the result coherent and visually engaging.\n\nAvoid: distorted anatomy, unreadable text, visual artifacts, random objects, inconsistent scene details."
-      : "Создай: " + type.toLowerCase() + " на основе этой идеи: " + idea + "\n\nВизуальное направление: продуманная композиция, выразительное освещение, гармоничная цветовая палитра, чёткий главный объект и внимание к деталям. Сохраняй целостность и выразительность результата.\n\nИсключить: искажения, нечитаемый текст, визуальные артефакты, случайные объекты и несогласованность деталей.";
-    $("#promptOutput").textContent = prompt;
-    $("#promptFeedback").textContent = "Подготовлен демонстрационный промт-шаблон. AI-улучшение и адаптация под конкретные модели появятся после подключения backend.";
+    const button = $("#buildPrompt");
+    button.disabled = true;
+    button.textContent = "✦ AI готовит промт…";
+    $("#promptFeedback").textContent = "Отправляем запрос на backend. Ключ AI-провайдера остаётся на сервере.";
+    try {
+      const result = await apiRequest("/api/prompts", {
+        method: "POST",
+        body: JSON.stringify({ idea, purpose: $("#promptType").value, language: $("#promptLanguage").value, style: "Cinematic, coherent, detailed" })
+      });
+      $("#promptOutput").textContent = result.prompt;
+      $("#promptFeedback").textContent = "Готово: ответ получен от " + result.provider + " · " + result.model + ".";
+    } catch (error) {
+      $("#promptFeedback").textContent = error.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = "✦ Сформировать промт";
+    }
   });
 
   $("#copyPrompt").addEventListener("click", async () => {
@@ -77,16 +98,32 @@
     $("#assistantInput").value = btn.dataset.assist;
     $("#assistantInput").focus();
   }));
-  $("#assistantForm").addEventListener("submit", event => {
+  $("#assistantForm").addEventListener("submit", async event => {
     event.preventDefault();
-    const value = $("#assistantInput").value.trim();
+    const input = $("#assistantInput");
+    const value = input.value.trim();
     if (!value) return;
-    $("#assistantInput").value = "";
-    $("#assistantInput").placeholder = "Сообщение подготовлено. Для живого ответа подключим AI API.";
-    const notice = document.createElement("div");
-    notice.className = "helper-text";
-    notice.textContent = "Ваш запрос: " + value + " — интерфейс готов, отправка в ИИ будет активирована после настройки backend.";
-    $(".assistant-panel").insertBefore(notice, $(".assistant-panel").lastElementChild);
+    const button = $("#assistantForm button");
+    button.disabled = true;
+    input.disabled = true;
+    const addMessage = (kind, content) => {
+      const bubble = document.createElement("div");
+      bubble.className = "helper-text assistant-message " + kind;
+      bubble.textContent = content;
+      $(".assistant-panel").insertBefore(bubble, $("#assistantForm"));
+    };
+    addMessage("user-message", "Вы: " + value);
+    input.value = "";
+    try {
+      const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
+      addMessage("ai-message", "Studio AI: " + result.reply);
+    } catch (error) {
+      addMessage("error-message", "Не удалось получить ответ: " + error.message);
+    } finally {
+      button.disabled = false;
+      input.disabled = false;
+      input.focus();
+    }
   });
 
 
@@ -156,6 +193,31 @@
     navigate(destinations[button.dataset.movieTool] || "movie");
   }));
   renderMovieProjects();
+
+  // Store only the backend URL in this browser; provider secrets stay server-side.
+  const apiUrlInput = $("#backendUrl");
+  const apiStatus = $("#backendStatus");
+  if (apiUrlInput) apiUrlInput.value = getApiBase();
+  const checkBackend = async () => {
+    apiStatus.textContent = "Проверяем соединение…";
+    try {
+      const data = await apiRequest("/api/health");
+      apiStatus.textContent = "API доступен · " + data.service + " · " + data.ai_provider + " · ключ настроен: " + (data.ai_configured ? "да" : "нет") + ".";
+    } catch (error) {
+      apiStatus.textContent = error.message;
+    }
+  };
+  $("#saveBackend").addEventListener("click", () => {
+    const value = apiUrlInput.value.trim().replace(/\/+$/, "");
+    if (value && !/^https:\/\//i.test(value) && !/^http:\/\/localhost(?::\d+)?$/i.test(value) && !/^http:\/\/127\.0\.0\.1(?::\d+)?$/i.test(value)) {
+      apiStatus.textContent = "Укажите полный адрес API с https:// (для локальной разработки допустим localhost).";
+      return;
+    }
+    localStorage.setItem(API_URL_KEY, value);
+    apiStatus.textContent = value ? "Адрес сохранён. Проверяем соединение…" : "Адрес API очищен.";
+    if (value) checkBackend();
+  });
+  $("#testBackend").addEventListener("click", checkBackend);
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     window.addEventListener("load", () => {
