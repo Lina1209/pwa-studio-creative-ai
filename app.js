@@ -94,8 +94,8 @@
     .movie-project-details{padding:0 20px 20px 70px}
     .movie-project-details[hidden]{display:none}
     .movie-project-details p{white-space:pre-wrap;line-height:1.65;margin:0 0 12px;color:var(--text)}
-    .movie-project-actions{margin-top:14px}
-    .movie-project-actions button{min-height:40px}
+    .movie-project-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+    .movie-project-actions button{min-height:40px;flex:0 1 auto}
     @media(max-width:520px){.movie-project-toggle{padding:15px 13px;gap:10px}.movie-project-details{padding:0 13px 16px 59px}.movie-project-heading b{font-size:14px}}
   `;
   document.head.appendChild(movieListStyle);
@@ -624,7 +624,7 @@
         $("#movieFeedback").textContent="Изменение основных сведений фильма. Сценарий и этапы останутся отдельными материалами.";
         $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
       });
-      const rename=makeAction("✎ Переименовать","secondary-button",()=>{
+      const rename=makeAction("✎ Переименовать фильм","secondary-button",()=>{
         const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
         const entered=window.prompt("Введите новое название фильма:",original.name||"");
         if(entered===null)return;
@@ -667,7 +667,7 @@
         const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key));
         openMovieStage(project.id,next<0?0:next);
       });
-      actions.append(edit,editDetails,rename,copy,version,remove,stageButton); panel.append(idea,progress,date,actions);
+      actions.append(rename,edit,editDetails,copy,version,remove,stageButton); panel.append(idea,progress,date,actions);
       toggle.addEventListener("click",()=>{
         const opening=panel.hidden; panel.hidden=!opening; toggle.setAttribute("aria-expanded",String(opening)); chevron.textContent=opening?"⌃":"⌄";
         if(opening){activeMovieId=project.id;updateMovieStageCards();$$(".movie-project-card").forEach(item=>item.classList.remove("is-active"));card.classList.add("is-active");}
