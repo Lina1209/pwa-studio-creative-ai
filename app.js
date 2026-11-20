@@ -482,7 +482,7 @@
   };
   $("#movieStart").addEventListener("click",()=>{
     editingMovieId=null; $("#movieForm").reset();
-    const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
+    const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
     $("#movieFeedback").textContent="Задайте основу нового фильма. Уже существующие проекты останутся без изменений.";
     $("#movieName").focus(); $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
   });
@@ -503,10 +503,10 @@
       projects.unshift(savedProject);
     }
     if(!movieWrite(projects))return;
-    activeMovieId=savedProject.id; editingMovieId=null;
+    activeMovieId=savedProject.id; editingMovieId=savedProject.id;
     const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
     renderMovieProjects();
-    $("#movieFeedback").textContent=existingIndex>=0?"✓ Изменения сохранены в проекте «"+name+"».":"✓ Фильм «"+name+"» создан. Теперь доступен этап 1 — сценарий и раскадровка.";
+    $("#movieFeedback").textContent=existingIndex>=0?"✓ Изменения сохранены в проекте «"+name+"».":"✓ Фильм «"+name+"» создан. Форма теперь редактирует этот проект; для нового фильма нажмите «Новый фильм». Этап 1 — сценарий и раскадровка — уже доступен.";
     const workflow=$("#movieWorkflowPanel"); if(workflow)workflow.hidden=true;
   });
   $$(".movie-tool-card[data-movie-tool]").forEach((button,index)=>button.addEventListener("click",()=>{
