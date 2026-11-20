@@ -45,7 +45,7 @@
       <header class="topbar">
         <button class="mobile-menu" id="mobileMenu" aria-label="Открыть меню">☰</button>
         <div class="breadcrumbs"><span>Creative workspace</span><b>/</b><strong id="crumbCurrent">Главная</strong></div>
-        <div class="top-actions"><span class="backend-pill"><i></i> Интерфейс активен</span><button class="icon-button" id="themeToggle" title="Сменить тему">☼</button><button class="top-avatar">L</button></div>
+        <div class="top-actions"><span class="backend-pill"><i></i> Интерфейс активен</span><button class="auth-top-button" id="openLogin" type="button">Войти</button><button class="auth-top-button auth-top-primary" id="openSignup" type="button">Регистрация</button><button class="icon-button" id="themeToggle" title="Сменить тему">☼</button><button class="top-avatar">L</button></div>
       </header>
 
       <section class="view active" id="view-home">
@@ -169,7 +169,7 @@
 
   <div id="authGate" class="auth-gate" hidden>
     <div class="auth-card">
-      <div class="auth-brand">✦ PWA STUDIO <small>CREATIVE AI</small></div>
+      <button class="auth-close" id="closeAuth" type="button" aria-label="Закрыть окно">×</button><div class="auth-brand">✦ PWA STUDIO <small>CREATIVE AI</small></div>
       <h1 id="authTitle">Добро пожаловать!</h1>
       <p id="authDescription">Войдите или создайте аккаунт, чтобы открыть своё творческое пространство.</p>
       <div class="auth-tabs">
@@ -197,7 +197,7 @@
     </div>
   </div>
   <style>
-    .auth-gate{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:rgba(8,7,18,.88);backdrop-filter:blur(16px);overflow:auto}
+    .auth-gate{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:rgba(8,7,18,.78);backdrop-filter:blur(12px);overflow:auto}.auth-close{float:right;font-size:28px;line-height:1;color:#cfc5e8;padding:0 4px}.auth-top-button{padding:8px 12px;border:1px solid rgba(180,155,230,.35);border-radius:10px;color:var(--text);font-size:12px;font-weight:700;white-space:nowrap}.auth-top-primary{background:#7652c8;color:white;border-color:#7652c8}.auth-top-button[hidden]{display:none}
     .auth-gate[hidden]{display:none}.auth-card{width:min(100%,440px);padding:30px;border:1px solid rgba(170,140,255,.25);border-radius:24px;background:#171426;color:#f7f4ff;box-shadow:0 24px 90px #0008}
     .auth-brand{font-weight:800;letter-spacing:2px;color:#c5a7ff}.auth-brand small{display:block;font-size:10px;letter-spacing:4px;margin:4px 0 24px}
     .auth-card h1{font-size:28px;margin:0 0 8px}.auth-card>p{color:#b9b2ca;line-height:1.5}.auth-tabs{display:flex;gap:8px;margin:22px 0}
@@ -206,7 +206,7 @@
     .auth-form input{width:100%;padding:13px;border-radius:11px;border:1px solid #48405c;background:#100e1b;color:white;outline:none}
     .auth-form .primary-button{width:100%;justify-content:center;margin-top:12px}.auth-link{color:#c7a9ff;padding:10px;font-size:13px}
     .auth-feedback{min-height:24px;margin:12px 0 0!important;font-size:13px}.profile{cursor:default}
-    @media(max-width:480px){.auth-card{padding:23px 19px}.auth-card h1{font-size:24px}}
+    @media(max-width:480px){.auth-card{padding:23px 19px}.auth-card h1{font-size:24px}.backend-pill{display:none}.auth-top-button{padding:7px 8px;font-size:11px}}
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
