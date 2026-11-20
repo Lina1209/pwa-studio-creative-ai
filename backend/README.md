@@ -45,7 +45,7 @@ Open `http://127.0.0.1:8000/docs` for interactive API documentation.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Configure `AI_PROVIDER`, `AI_MODEL`, and the matching provider key. Supported provider values in this initial adapter: `openai`, `deepseek`, `anthropic` and `ollama`. For Ollama, set `OLLAMA_API_BASE` to an address reachable from the backend host (the default is `http://localhost:11434`). A local Ollama instance on your phone or computer is not automatically reachable from a cloud host.
+The starter configuration uses **DeepSeek Flash** (`AI_PROVIDER=deepseek`, `AI_MODEL=deepseek-flash`) as a cost-conscious default for chat, prompt writing and screenplay assistance. Create an API key in the DeepSeek platform and store it as `DEEPSEEK_API_KEY` in your local `.env` or hosting secrets. You can switch to another supported provider by changing `AI_PROVIDER`, `AI_MODEL` and its matching secret. Supported provider values in this initial adapter: `openai`, `deepseek`, `anthropic` and `ollama`. For Ollama, set `OLLAMA_API_BASE` to an address reachable from the backend host (the default is `http://localhost:11434`). A local Ollama instance on your phone or computer is not automatically reachable from a cloud host.
 
 For production, set `CORS_ORIGINS` to the exact frontend origin(s), use HTTPS, configure secrets in the hosting provider's environment settings, and add authentication/rate limiting before opening the API to public use. Do not expose provider keys in frontend code or health responses.
 
