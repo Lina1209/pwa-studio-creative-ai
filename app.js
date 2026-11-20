@@ -565,6 +565,27 @@
     });
     actions.append(draft,close,save); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
+  const openMovieOverview = projectId => {
+    const project=movieRead().find(item=>item.id===projectId); const panel=ensureMovieWorkflowPanel();
+    if(!project||!panel)return;
+    activeMovieId=projectId; updateMovieStageCards(); panel.replaceChildren();
+    const head=document.createElement("div"); head.className="movie-workflow-head";
+    const title=document.createElement("h2"); title.textContent="✓ Все этапы завершены";
+    const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+project.name+" · 4 из 4 этапов сохранено. Выберите этап, чтобы просмотреть или отредактировать материалы.";
+    head.append(title,subtitle);
+    const list=document.createElement("div"); list.className="movie-stage-fields";
+    movieStages.forEach((stage,index)=>{
+      const row=document.createElement("div"); row.className="movie-stage-field";
+      const label=document.createElement("span"); label.textContent=(index+1)+". "+stage.title+" · "+((project.completedSteps||[]).includes(stage.key)?"Сохранён":"Черновик");
+      const button=document.createElement("button"); button.type="button"; button.className="secondary-button"; button.textContent="Открыть этап";
+      button.addEventListener("click",()=>openMovieStage(projectId,index));
+      row.append(label,button); list.append(row);
+    });
+    const note=document.createElement("p"); note.className="movie-stage-note"; note.textContent="Генерация видео и реальный экспорт пока не подключены.";
+    const back=document.createElement("button"); back.type="button"; back.className="secondary-button"; back.textContent="← К списку фильмов"; back.addEventListener("click",()=>{panel.hidden=true;});
+    panel.append(head,list,note,back); panel.hidden=false; panel.removeAttribute("data-active-stage");
+    requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
+  };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
     const projects=movieRead(); const count=$("#movieCount");
@@ -620,8 +641,12 @@
         if(isUuid(project.id) && !deletedIds.includes(project.id)) writeMovieTombstones([...deletedIds,project.id]);
         if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён. Удаление отправлено в облако.":"Проект удалён с этого устройства.";}
       });
-      const stageButton=makeAction("Продолжить работу · "+movieProgress(project),"primary-button",()=>{
-        activeMovieId=project.id; const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key)); openMovieStage(project.id,next<0?3:next);
+      const allStagesDone=movieStages.every(stage=>(project.completedSteps||[]).includes(stage.key));
+      const stageButton=makeAction((allStagesDone?"Открыть готовый проект":"Продолжить работу")+" · "+movieProgress(project), "primary-button",()=>{
+        activeMovieId=project.id;
+        if(allStagesDone){openMovieOverview(project.id);return;}
+        const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key));
+        openMovieStage(project.id,next<0?0:next);
       });
       actions.append(edit,copy,version,remove,stageButton); panel.append(idea,progress,date,actions);
       toggle.addEventListener("click",()=>{
