@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-  const labels = {home:"Главная",create:"Создать видео",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",settings:"Настройки"};
+  const labels = {home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
@@ -88,6 +88,74 @@
     notice.textContent = "Ваш запрос: " + value + " — интерфейс готов, отправка в ИИ будет активирована после настройки backend.";
     $(".assistant-panel").insertBefore(notice, $(".assistant-panel").lastElementChild);
   });
+
+
+  // Mini Movie Studio: project drafts are stored locally until cloud storage is connected.
+  const movieStorageKey = "pwa-studio-movie-projects";
+  const readMovieProjects = () => {
+    try { return JSON.parse(localStorage.getItem(movieStorageKey) || "[]"); }
+    catch { return []; }
+  };
+  const renderMovieProjects = () => {
+    const list = $("#movieProjectList");
+    if (!list) return;
+    const projects = readMovieProjects();
+    $("#movieCount").textContent = projects.length + (projects.length === 1 ? " проект" : projects.length > 1 && projects.length < 5 ? " проекта" : " проектов");
+    if (!projects.length) {
+      list.innerHTML = '<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
+      return;
+    }
+    list.innerHTML = projects.map(project => {
+      const card = document.createElement("article");
+      card.className = "movie-project-card";
+      const title = document.createElement("b");
+      title.textContent = project.name;
+      const details = document.createElement("small");
+      details.textContent = project.genre + " · " + project.duration + " мин · " + project.frame;
+      const idea = document.createElement("p");
+      idea.textContent = project.idea || "Описание пока не добавлено.";
+      const date = document.createElement("span");
+      date.textContent = "Черновик · " + new Date(project.createdAt).toLocaleDateString("ru-RU");
+      card.append(title, details, idea, date);
+      return card.outerHTML;
+    }).join("");
+  };
+  $("#movieStart").addEventListener("click", () => {
+    $("#movieName").focus();
+    $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
+  });
+  $("#movieForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const name = $("#movieName").value.trim();
+    if (!name) {
+      $("#movieFeedback").textContent = "Укажите название будущего фильма.";
+      return;
+    }
+    const projects = readMovieProjects();
+    projects.unshift({
+      id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+      name,
+      idea: $("#movieIdea").value.trim(),
+      genre: $("#movieGenre").value,
+      duration: Number($("#movieDuration").value),
+      frame: $("#movieFrame").value,
+      createdAt: new Date().toISOString()
+    });
+    try {
+      localStorage.setItem(movieStorageKey, JSON.stringify(projects));
+      renderMovieProjects();
+      $("#movieFeedback").textContent = "Черновик фильма сохранён. Следующий этап — сценарий, персонажи и план сцен.";
+      $("#movieForm").reset();
+      $("#movieDuration").value = "5";
+    } catch {
+      $("#movieFeedback").textContent = "Не удалось сохранить проект в памяти браузера. Проверьте свободное место и настройки приватности.";
+    }
+  });
+  $("[data-movie-tool]").forEach(button => button.addEventListener("click", () => {
+    const destinations = {story:"scenes",characters:"library",voice:"voice",edit:"editor"};
+    navigate(destinations[button.dataset.movieTool] || "movie");
+  }));
+  renderMovieProjects();
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     window.addEventListener("load", () => {
