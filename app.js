@@ -531,14 +531,22 @@
     });
     const actions=document.createElement("div"); actions.className="movie-stage-actions";
     const draft=document.createElement("button"); draft.type="button"; draft.className="secondary-button"; draft.textContent="Сохранить черновик";
+    const draftStatus=document.createElement("p"); draftStatus.className="movie-stage-feedback"; draftStatus.setAttribute("role","status"); draftStatus.setAttribute("aria-live","polite"); draftStatus.style.cssText="display:block;flex-basis:100%;margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,.12);font-size:14px;";
     draft.addEventListener("click",()=>{
-      const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
-      const current=latest[index]; addMovieVersion(current);
-      stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
-      current.updatedAt=new Date().toISOString();
-      if(!movieWrite(latest))return;
-      renderMovieProjects();
-      $("#movieFeedback").textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап пока не отмечен завершённым.";
+      draft.disabled=true; draftStatus.textContent="Сохраняю черновик…";
+      try{
+        const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId);
+        if(index<0){draftStatus.textContent="Не удалось найти этот фильм. Вернитесь к проекту и откройте этап снова.";return;}
+        const current=latest[index]; addMovieVersion(current);
+        stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+        current.updatedAt=new Date().toISOString();
+        if(!movieWrite(latest)){draftStatus.textContent="Сохранение не удалось. Проверьте сообщение вверху страницы.";return;}
+        draftStatus.textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап не отмечен завершённым.";
+        const feedback=$("#movieFeedback"); if(feedback)feedback.textContent=draftStatus.textContent;
+        renderMovieProjects();
+      }catch(error){
+        draftStatus.textContent="Ошибка сохранения: "+(error&&error.message?error.message:"неизвестная ошибка");
+      }finally{draft.disabled=false;}
     });
     const close=document.createElement("button"); close.type="button"; close.className="secondary-button"; close.textContent="← К проекту"; close.addEventListener("click",()=>{panel.hidden=true;});
     const save=document.createElement("button"); save.type="button"; save.className="primary-button"; save.textContent=stageIndex===3?"Завершить этап":"Сохранить и открыть следующий этап →";
@@ -563,7 +571,7 @@
         complete.append(h,p,back); panel.append(complete);
       }
     });
-    actions.append(draft,close,save); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
+    actions.append(draft,close,save,draftStatus); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
   const openMovieOverview = projectId => {
     const project=movieRead().find(item=>item.id===projectId); const panel=ensureMovieWorkflowPanel();
