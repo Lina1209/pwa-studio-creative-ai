@@ -34,6 +34,7 @@
       const label = user.user_metadata?.display_name || user.email || "Creator";
       const profile = $(".profile");
       if (profile) { $("b", profile).textContent = label; $("small", profile).textContent = "Аккаунт активен"; }
+      const logout = $("#profileLogout"); if (logout) logout.hidden = false;
       const avatar = $(".profile .avatar");
       if (avatar) avatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
       const accountName = $("#accountName"); if (accountName) accountName.textContent = label;
@@ -44,6 +45,10 @@
       const topAvatar = $(".top-avatar");
       if (topAvatar) topAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
     } else {
+      const profile = $(".profile");
+      if (profile) { $("b", profile).textContent = "Гость"; $("small", profile).textContent = "Гостевой режим"; }
+      const sideAvatar = $(".profile .avatar"); if (sideAvatar) sideAvatar.textContent = "✦";
+      const logout = $("#profileLogout"); if (logout) logout.hidden = true;
       const accountName = $("#accountName"); if (accountName) accountName.textContent = "Гостевой просмотр";
       const accountEmail = $("#accountEmail"); if (accountEmail) accountEmail.textContent = "Войдите или зарегистрируйтесь, чтобы открыть личное пространство.";
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = "✦";
@@ -142,7 +147,7 @@
     finally { button.disabled = false; }
   });
   const authLogoutButton = document.createElement("button");
-  authLogoutButton.type = "button"; authLogoutButton.className = "auth-link"; authLogoutButton.textContent = "Выйти из аккаунта";
+  authLogoutButton.type = "button"; authLogoutButton.id = "profileLogout"; authLogoutButton.className = "auth-link"; authLogoutButton.textContent = "Выйти из аккаунта"; authLogoutButton.hidden = true;
   authLogoutButton.addEventListener("click", async () => {
     if (!supabaseClient) return;
     const {error} = await supabaseClient.auth.signOut();
