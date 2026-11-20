@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
+from app.services.content_safety import check_content
 
 settings = get_settings()
 
@@ -59,10 +60,11 @@ def admin_me(user: StudioUser = Depends(require_admin)):
 
 
 @app.post(f"{settings.api_prefix}/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest):
+def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
+    check_content(payload.message)
     system = payload.system_prompt or (
         "You are Studio AI Companion, a helpful creative assistant inside PWA Studio. "
-        "Help users develop video ideas, scripts, scenes and prompts. Be clear and practical."
+        "Help users develop video ideas, scripts, scenes and prompts. Be clear and practical. Follow platform safety rules: do not assist sexual exploitation of minors, non-consensual intimate imagery, real-world violence, self-harm instructions, weapons construction, fraud, doxxing, harassment or malware. Respect consent for real people’s likenesses and voices."
     )
     try:
         reply = ask_ai(settings, [
@@ -77,7 +79,8 @@ def chat(payload: ChatRequest):
 
 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
-def create_prompt(payload: PromptRequest):
+def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
+    check_content(payload.idea)
     system = (
         "You are an expert prompt engineer for creative AI tools. "
         "Turn the user's idea into one detailed, coherent, production-ready prompt. "
