@@ -99,6 +99,23 @@
     @media(max-width:520px){.movie-project-toggle{padding:15px 13px;gap:10px}.movie-project-details{padding:0 13px 16px 59px}.movie-project-heading b{font-size:14px}}
   `;
   document.head.appendChild(movieListStyle);
+const movieHistoryStyle = document.createElement("style");
+  movieHistoryStyle.textContent = `
+    .movie-history-overlay{position:fixed;inset:0;z-index:9998;background:rgba(8,7,18,.82);backdrop-filter:blur(8px);display:grid;place-items:center;padding:16px;overflow:auto}
+    .movie-history-dialog{width:min(100%,900px);max-height:90vh;overflow:auto;padding:22px;border:1px solid rgba(170,140,255,.28);border-radius:20px;background:var(--panel,#171426);color:var(--text,#f7f4ff);box-shadow:0 24px 90px #0009}
+    .movie-history-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.movie-history-heading h2{margin:0;font-size:22px}
+    .movie-history-intro{color:var(--muted);line-height:1.5}.movie-history-layout{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:16px}
+    .movie-history-list{display:grid;align-content:start;gap:7px;max-height:62vh;overflow:auto}
+    .movie-history-item{padding:11px;text-align:left;border:1px solid rgba(170,140,255,.2);border-radius:10px;background:transparent;color:inherit;cursor:pointer}
+    .movie-history-item[aria-pressed=true]{border-color:#a98aff;background:rgba(157,121,235,.16)}
+    .movie-history-preview{min-width:0;max-height:62vh;overflow:auto;padding:14px;border:1px solid rgba(170,140,255,.18);border-radius:12px}
+    .movie-history-meta,.movie-history-facts{color:var(--muted);font-size:12px}.movie-history-preview h3{margin:8px 0}
+    .movie-history-section{margin:16px 0}.movie-history-section b{display:block;color:#c8aaff;margin-bottom:5px}
+    .movie-history-section p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;margin:0}
+    .movie-history-restore{margin-top:12px;width:100%;justify-content:center}
+    @media(max-width:640px){.movie-history-dialog{padding:16px}.movie-history-layout{grid-template-columns:1fr}.movie-history-list{grid-template-columns:repeat(2,minmax(0,1fr));max-height:180px}.movie-history-item{font-size:12px;padding:9px}.movie-history-preview{max-height:none}}
+  `;
+  document.head.appendChild(movieHistoryStyle);
   ["#loginPassword", "#signupPassword"].forEach(selector => {
     const input = $(selector);
     if (!input) return;
@@ -667,15 +684,69 @@
         latest.unshift(clone); if(movieWrite(latest)){activeMovieId=clone.id;renderMovieProjects();$("#movieFeedback").textContent="Копия создана. Оригинальный фильм не изменён.";}
       });
       const version=makeAction("↶ История версий ("+(project.versions||[]).length+")","secondary-button",()=>{
-        const latest=movieRead(); const current=latest.find(item=>item.id===project.id); if(!current)return;
+        const current=movieRead().find(item=>item.id===project.id); if(!current)return;
         const versions=Array.isArray(current.versions)?current.versions:[];
         if(!versions.length){$("#movieFeedback").textContent="Пока нет сохранённых версий. Они создаются автоматически перед изменениями.";return;}
-        const choice=window.prompt("Введите номер версии для восстановления:\n"+versions.map((v,i)=>(i+1)+". "+movieDate(v.savedAt)).join("\n"));
-        if(choice===null)return; const n=Number(choice);
-        if(!Number.isInteger(n)||n<1||n>versions.length){$("#movieFeedback").textContent="Номер версии указан неверно.";return;}
-        const restored=versions[n-1].data; addMovieVersion(current); const keepVersions=current.versions;
-        latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
-        if(movieWrite(latest)){renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
+        let selectedIndex=0;
+        const overlay=document.createElement("div");
+        overlay.className="movie-history-overlay";
+        overlay.setAttribute("role","dialog");
+        overlay.setAttribute("aria-modal","true");
+        overlay.setAttribute("aria-labelledby","movieHistoryTitle");
+        const dialog=document.createElement("div"); dialog.className="movie-history-dialog";
+        const heading=document.createElement("div"); heading.className="movie-history-heading";
+        const title=document.createElement("h2"); title.id="movieHistoryTitle"; title.textContent="История версий";
+        const close=makeAction("×","secondary-button",()=>overlay.remove()); close.setAttribute("aria-label","Закрыть историю");
+        heading.append(title,close);
+        const intro=document.createElement("p"); intro.className="movie-history-intro"; intro.textContent="Сначала выберите версию и просмотрите её содержимое. Текущий фильм не изменится, пока вы отдельно не подтвердите восстановление.";
+        const layout=document.createElement("div"); layout.className="movie-history-layout";
+        const list=document.createElement("div"); list.className="movie-history-list";
+        const preview=document.createElement("div"); preview.className="movie-history-preview";
+        const renderPreview=()=>{
+          const entry=versions[selectedIndex]||{}; const data=entry.data||{};
+          preview.replaceChildren();
+          const meta=document.createElement("div"); meta.className="movie-history-meta";
+          meta.textContent="Версия "+(selectedIndex+1)+" из "+versions.length+" · "+movieDate(entry.savedAt);
+          const name=document.createElement("h3"); name.textContent=data.name||current.name||"Без названия";
+          const facts=document.createElement("p"); facts.className="movie-history-facts";
+          facts.textContent=[data.genre||"Жанр не указан",data.duration||"Длительность не указана",data.frame||"Формат не указан",(data.completedSteps||[]).length+" из 4 этапов"].join(" · ");
+          preview.append(meta,name,facts);
+          const addSection=(label,value)=>{
+            const section=document.createElement("section"); section.className="movie-history-section";
+            const h=document.createElement("b"); h.textContent=label;
+            const body=document.createElement("p"); body.textContent=String(value||"").trim()||"В этой версии поле пустое.";
+            section.append(h,body); preview.append(section);
+          };
+          addSection("Сценарий",data.story||data.idea);
+          addSection("Раскадровка",data.storyboard);
+          addSection("Персонажи",data.characters);
+          addSection("Голоса и звук",data.voices);
+          addSection("План монтажа",data.edit);
+          const restore=makeAction("Восстановить эту версию","primary-button",()=>{
+            if(!window.confirm("Восстановить версию от "+movieDate(entry.savedAt)+"? Текущая версия будет сохранена в истории перед заменой."))return;
+            const latest=movieRead(); const live=latest.find(item=>item.id===project.id); if(!live)return;
+            const restored=versions[selectedIndex].data;
+            addMovieVersion(live); const keepVersions=live.versions;
+            latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
+            if(movieWrite(latest)){overlay.remove();renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
+          });
+          restore.classList.add("movie-history-restore"); preview.append(restore);
+        };
+        versions.forEach((entry,index)=>{
+          const button=document.createElement("button"); button.type="button"; button.className="movie-history-item";
+          button.textContent=(index+1)+". "+movieDate(entry.savedAt);
+          button.setAttribute("aria-pressed",String(index===selectedIndex));
+          button.addEventListener("click",()=>{
+            selectedIndex=index;
+            [...list.children].forEach((item,i)=>item.setAttribute("aria-pressed",String(i===index)));
+            renderPreview();
+          });
+          list.append(button);
+        });
+        layout.append(list,preview); dialog.append(heading,intro,layout); overlay.append(dialog);
+        overlay.addEventListener("click",event=>{if(event.target===overlay)overlay.remove();});
+        document.addEventListener("keydown",function closeOnEscape(event){if(event.key==="Escape"&&overlay.isConnected){overlay.remove();document.removeEventListener("keydown",closeOnEscape);}});
+        document.body.append(overlay); renderPreview();
       });
       const remove=makeAction("🗑 Удалить","danger-button",()=>{
         if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
