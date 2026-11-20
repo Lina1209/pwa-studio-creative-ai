@@ -368,7 +368,10 @@
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
-        const rows = movieRead().map(movieToCloudRow);
+        const localProjects = movieRead();
+        const rows = localProjects.map(movieToCloudRow);
+        // Persist any UUID normalization before sending rows to Supabase.
+        localStorage.setItem(movieStorageKey(), JSON.stringify(localProjects));
         if (rows.length) {
           const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
           if (error) throw error;
