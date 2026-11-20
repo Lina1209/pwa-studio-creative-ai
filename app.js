@@ -53,7 +53,7 @@
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => refreshAuthUI(session));
+    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(loadAccountRole, 0); });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -145,6 +145,15 @@
 
 
   const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "https://pwa-studio-creative-ai.onrender.com").trim().replace(/\/+$/, "");
+  const loadAccountRole = async () => {
+    const panel = $("#adminPanel");
+    if (!authSession?.user || !panel) { if (panel) panel.hidden = true; return; }
+    try {
+      const data = await apiRequest("/api/auth/me");
+      $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
+      panel.hidden = data.role !== "admin";
+    } catch { panel.hidden = true; }
+  };
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
     if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
@@ -155,6 +164,7 @@
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
     return data;
   };
+  if (authSession?.user) setTimeout(loadAccountRole, 0);
   const labels = {account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
