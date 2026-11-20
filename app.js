@@ -66,6 +66,7 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
+      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadAccountRole === "function") loadAccountRole(); }, 0);
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); }, 0); });
   }
