@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     ollama_api_base: str = "http://localhost:11434"
 
+    # Supabase Auth verifies user sessions. Never put the service-role key in the frontend.
+    supabase_url: str | None = None
+    owner_email: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
