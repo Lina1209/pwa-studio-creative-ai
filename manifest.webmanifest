@@ -2,7 +2,7 @@
   "id": "./",
   "name": "PWA Studio — Creative AI",
   "short_name": "PWA Studio",
-  "description": "Творческая AI-видеостудия: от идеи и промта до готового видео.",
+  "description": "Творческая AI-студия для разработки идей, сценариев и кинопроектов.",
   "lang": "ru",
   "start_url": "./",
   "scope": "./",
