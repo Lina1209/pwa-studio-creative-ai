@@ -330,7 +330,7 @@
     {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
   ];
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
-  const movieCloudState = { syncing: false, loadingUser: null, timer: null };
+  const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
   const movieToCloudRow = project => {
     if (!isUuid(project.id)) project.id = movieId();
@@ -364,7 +364,8 @@
     if (!authSession?.user || !supabaseClient) return;
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
-      if (movieCloudState.syncing || !authSession?.user) return;
+      if (!authSession?.user) return;
+      if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
         const rows = movieRead().map(movieToCloudRow);
@@ -380,6 +381,10 @@
         if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
       } finally {
         movieCloudState.syncing = false;
+        if (movieCloudState.pending) {
+          movieCloudState.pending = false;
+          scheduleMovieCloudSync();
+        }
       }
     }, 350);
   };
