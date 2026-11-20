@@ -41,6 +41,8 @@
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
       const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Пользователь";
       $("#accountLogin").hidden = true; $("#accountLogout").hidden = false;
+      const topAvatar = $(".top-avatar");
+      if (topAvatar) topAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
     } else {
       const accountName = $("#accountName"); if (accountName) accountName.textContent = "Гостевой просмотр";
       const accountEmail = $("#accountEmail"); if (accountEmail) accountEmail.textContent = "Войдите или зарегистрируйтесь, чтобы открыть личное пространство.";
@@ -49,7 +51,7 @@
       $("#accountLogin").hidden = false; $("#accountLogout").hidden = true;
       const panel = $("#adminPanel"); if (panel) panel.hidden = true;
       const topAvatar = $(".top-avatar");
-      if (topAvatar) topAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
+      if (topAvatar) topAvatar.textContent = "L";
     }
   };
   if (!supabaseClient) {
