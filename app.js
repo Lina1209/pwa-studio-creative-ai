@@ -78,6 +78,24 @@
     .password-visibility-toggle:focus-visible{outline:2px solid #b9a0ff;border-radius:8px}
   `;
   document.head.appendChild(passwordStyle);
+  const movieListStyle = document.createElement("style");
+  movieListStyle.textContent = `
+    .movie-project-accordion{padding:0!important;overflow:hidden}
+    .movie-project-toggle{display:flex;align-items:center;gap:14px;width:100%;padding:18px 20px;text-align:left;color:inherit;background:transparent;border:0;cursor:pointer}
+    .movie-project-toggle:hover{background:rgba(160,130,230,.07)}
+    .movie-project-number{display:grid;place-items:center;flex:0 0 36px;height:36px;border-radius:11px;background:rgba(157,121,235,.15);color:#c8aaff;font-weight:800;font-size:12px}
+    .movie-project-heading{display:grid;gap:5px;min-width:0;flex:1}
+    .movie-project-heading b{font-size:15px;overflow-wrap:anywhere}
+    .movie-project-heading small,.movie-project-date{color:var(--muted);font-size:12px}
+    .movie-project-chevron{font-size:22px;color:#c8aaff;transition:transform .2s}
+    .movie-project-details{padding:0 20px 20px 70px}
+    .movie-project-details[hidden]{display:none}
+    .movie-project-details p{white-space:pre-wrap;line-height:1.65;margin:0 0 12px;color:var(--text)}
+    .movie-project-actions{margin-top:14px}
+    .movie-project-actions button{min-height:40px}
+    @media(max-width:520px){.movie-project-toggle{padding:15px 13px;gap:10px}.movie-project-details{padding:0 13px 16px 59px}.movie-project-heading b{font-size:14px}}
+  `;
+  document.head.appendChild(movieListStyle);
   ["#loginPassword", "#signupPassword"].forEach(selector => {
     const input = $(selector);
     if (!input) return;
