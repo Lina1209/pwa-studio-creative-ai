@@ -41,6 +41,13 @@
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
       const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Пользователь";
       $("#accountLogin").hidden = true; $("#accountLogout").hidden = false;
+    } else {
+      const accountName = $("#accountName"); if (accountName) accountName.textContent = "Гостевой просмотр";
+      const accountEmail = $("#accountEmail"); if (accountEmail) accountEmail.textContent = "Войдите или зарегистрируйтесь, чтобы открыть личное пространство.";
+      const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = "✦";
+      const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Гость";
+      $("#accountLogin").hidden = false; $("#accountLogout").hidden = true;
+      const panel = $("#adminPanel"); if (panel) panel.hidden = true;
       const topAvatar = $(".top-avatar");
       if (topAvatar) topAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
     }
@@ -287,9 +294,9 @@
 
 
   // Mini Movie Studio: project drafts are stored locally until cloud storage is connected.
-  const movieStorageKey = "pwa-studio-movie-projects";
+  const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
   const readMovieProjects = () => {
-    try { return JSON.parse(localStorage.getItem(movieStorageKey) || "[]"); }
+    try { return JSON.parse(localStorage.getItem(movieStorageKey()) || "[]"); }
     catch { return []; }
   };
   const renderMovieProjects = () => {
@@ -339,7 +346,7 @@
       createdAt: new Date().toISOString()
     });
     try {
-      localStorage.setItem(movieStorageKey, JSON.stringify(projects));
+      localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
       renderMovieProjects();
       $("#movieFeedback").textContent = "Черновик фильма сохранён. Следующий этап — сценарий, персонажи и план сцен.";
       $("#movieForm").reset();
