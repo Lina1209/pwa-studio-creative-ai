@@ -32,6 +32,7 @@
         <button class="nav-item" data-view="voice"><span>♫</span> Голос и музыка</button>
         <button class="nav-item" data-view="scenes"><span>▦</span> Сценарий и сцены</button>
         <button class="nav-item" data-view="assistant"><span>✦</span> AI Companion</button>
+        <button class="nav-item" data-view="guide"><span>📖</span> Путеводитель</button>
       </nav>
       <div class="sidebar-bottom">
         <div class="status-card"><span class="status-dot"></span><div><b>Творческая мастерская</b><small>Локальный интерфейс готов</small></div></div>
@@ -124,7 +125,30 @@
       <section class="view" id="view-library"><div class="page-heading"><div class="eyebrow">YOUR ASSETS</div><h1>Медиатека</h1><p>Единое пространство для изображений, видео, аудио и готовых проектов.</p></div><div class="empty-workspace panel"><div class="empty-icon">▧</div><h2>Ваша медиатека</h2><p>Загрузка файлов и управление материалами будут подключены вместе с системой хранения.</p></div></section>
       <section class="view" id="view-voice"><div class="page-heading"><div class="eyebrow">AUDIO LAB</div><h1>Голос и музыка</h1><p>Озвучивание, голоса, музыкальные дорожки и звуковой дизайн.</p></div><div class="empty-workspace panel"><div class="empty-icon">♫</div><h2>Звуковая мастерская</h2><p>Здесь будут настройки TTS, выбор голосов, предпрослушивание и микширование аудио.</p></div></section>
       <section class="view" id="view-scenes"><div class="page-heading"><div class="eyebrow">STORYBOARD</div><h1>Сценарий и сцены</h1><p>Собирайте историю по кадрам и управляйте визуальным повествованием.</p></div><div class="empty-workspace panel"><div class="empty-icon">▦</div><h2>Ваша раскадровка</h2><p>Редактор сцен, визуальные подсказки и управление последовательностью появятся здесь.</p></div></section>
-      <section class="view" id="view-settings">
+
+      <section class="view" id="view-guide">
+        <div class="page-heading"><div class="eyebrow">WELCOME TO YOUR CREATIVE WORLD</div><h1>Путеводитель по <span class="gradient-text">студии</span></h1><p>Небольшая экскурсия, которая поможет освоиться и быстро перейти от идеи к творчеству. Никаких специальных знаний не требуется.</p></div>
+        <div class="guide-welcome panel"><div class="guide-welcome-art">✦<span>✧</span><i>✦</i></div><div><div class="eyebrow">НАЧНИТЕ ЗДЕСЬ</div><h2>Здесь можно творить свободно</h2><p>Опишите задумку обычными словами. Выберите инструмент, а студия поможет сделать следующий шаг. Не обязательно знать профессиональные термины — начните с того, что вам интересно.</p><button class="primary-button" data-go="create">Попробовать создать видео →</button></div></div>
+        <div class="section-heading"><div><div class="eyebrow">ВАША ТВОРЧЕСКАЯ КАРТА</div><h2>Что можно создать</h2></div></div>
+        <div class="guide-grid">
+          <article class="guide-card"><div class="guide-art guide-art-image">🌌<small>IMAGE WORLDS</small></div><div><h3>Изображения и идеи</h3><p>Придумывайте образы, фантастические миры, портреты и иллюстрации. Начните с описания того, что хотите увидеть.</p><button data-go="prompts">Подготовить промт →</button></div></article>
+          <article class="guide-card"><div class="guide-art guide-art-film">🎬<small>YOUR OWN FILM</small></div><div><h3>Видео и мини-фильмы</h3><p>Развивайте сюжет, делите его на сцены и собирайте собственную историю — от короткого ролика до большого замысла.</p><button data-go="movie">Открыть Миникиностудию →</button></div></article>
+          <article class="guide-card"><div class="guide-art guide-art-character">🧚<small>CREATE A HERO</small></div><div><h3>Персонажи</h3><p>Продумывайте героев, их внешность, характер и роль в вашей истории. Сохраняйте идеи для будущих проектов.</p><button data-go="library">Перейти в Медиатеку →</button></div></article>
+          <article class="guide-card"><div class="guide-art guide-art-sound">🎙️<small>VOICE & MUSIC</small></div><div><h3>Голос и музыка</h3><p>Планируйте озвучку, реплики персонажей, музыкальное настроение и звуковое сопровождение.</p><button data-go="voice">Открыть раздел →</button></div></article>
+        </div>
+        <div class="section-heading"><div><div class="eyebrow">КАК ПОЛЬЗОВАТЬСЯ</div><h2>Знакомство с инструментами</h2></div></div>
+        <div class="guide-steps">
+          <div><b>01 · Создать видео</b><p>Напишите тему и настроение ролика. Это отправная точка для будущего сценария.</p><button data-go="create">Перейти к созданию →</button></div>
+          <div><b>02 · Миникиностудия</b><p>Задайте название, жанр и длительность фильма. Затем можно развивать историю по сценам.</p><button data-go="movie">Открыть студию →</button></div>
+          <div><b>03 · Prompt Studio</b><p>Превратите простую мысль в подробное описание для генератора. Можно выбрать тип и язык промта.</p><button data-go="prompts">Создать промт →</button></div>
+          <div><b>04 · Сценарий и сцены</b><p>Разделяйте историю на эпизоды, продумывайте последовательность и диалоги.</p><button data-go="scenes">Открыть сценарий →</button></div>
+          <div><b>05 · Медиатека</b><p>Пространство для ваших материалов и будущих результатов проектов.</p><button data-go="library">Открыть медиатеку →</button></div>
+          <div><b>06 · AI Companion</b><p>Обсудите идею с помощником, попросите подсказку или помощь с формулировкой.</p><button data-go="assistant">Познакомиться с помощником →</button></div>
+        </div>
+        <div class="guide-tip panel"><span>💡</span><div><b>Маленький совет</b><p>Не знаете, с чего начать? Напишите одну простую фразу о своей задумке. Например: «Хочу короткую сказочную историю о девочке, которая нашла волшебный сад». Этого достаточно для первого шага.</p></div></div>
+        <p class="prototype-note">Путеводитель будет пополняться по мере подключения новых возможностей. Некоторые инструменты пока находятся в разработке.</p>
+      </section>
+\n      <section class="view" id="view-settings">
         <div class="page-heading"><div class="eyebrow">PREFERENCES & CONNECTIONS</div><h1>Настройки</h1><p>Подключите сервер студии. Секретные ключи AI-провайдера вводятся только в окружении backend, не здесь.</p></div>
         <div class="panel settings-list">
           <div><b>Внешний вид</b><span>Тёмная и светлая темы сохраняются в этом браузере.</span></div>
