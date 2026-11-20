@@ -1,4 +1,4 @@
-const CACHE_NAME = "pwa-studio-shell-v10";
+const CACHE_NAME = "pwa-studio-shell-v11";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -35,17 +35,23 @@ self.addEventListener("fetch", event => {
 
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
-  if (request.mode === "navigate") {
+  const isShellAsset = request.mode === "navigate" ||
+    /\\/(?:index\\.html|app\\.js|styles\\.css|supabase-config\\.js)$/.test(url.pathname);
+
+  if (isShellAsset) {
     event.respondWith(
       fetch(request)
         .then(response => {
-          if (response && response.ok) {
+          if (response && response.ok && response.type === "basic") {
             const copy = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put("./index.html", copy));
+            caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
           }
           return response;
         })
-        .catch(async () => (await caches.match("./index.html")) || Response.error())
+        .catch(async () => {
+          const cached = await caches.match(request);
+          return cached || (request.mode === "navigate" ? (await caches.match("./index.html")) : null) || Response.error();
+        })
     );
     return;
   }
@@ -53,7 +59,6 @@ self.addEventListener("fetch", event => {
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;
-
       return fetch(request).then(response => {
         if (response && response.ok && response.type === "basic") {
           const copy = response.clone();
