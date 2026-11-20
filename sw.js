@@ -1,9 +1,10 @@
-const CACHE_NAME = "pwa-studio-shell-v4";
+const CACHE_NAME = "pwa-studio-shell-v5";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./supabase-config.js",
   "./manifest.webmanifest",
   "./assets/icon.svg"
 ];
