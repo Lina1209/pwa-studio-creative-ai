@@ -13,7 +13,8 @@
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
-  const setAuthMode = mode => {\n    authGate.hidden = false;
+  const setAuthMode = mode => {
+    authGate.hidden = false;
     $("#loginForm").hidden = mode !== "login";
     $("#signupForm").hidden = mode !== "signup";
     $("#resetForm").hidden = mode !== "reset";
@@ -26,7 +27,9 @@
   const refreshAuthUI = session => {
     authSession = session;
     const user = session && session.user;
-    authGate.hidden = true;\n    $("#openLogin").hidden = !!user;\n    $("#openSignup").hidden = !!user;
+    authGate.hidden = true;
+    $("#openLogin").hidden = !!user;
+    $("#openSignup").hidden = !!user;
     if (user) {
       const label = user.user_metadata?.display_name || user.email || "Creator";
       const profile = $(".profile");
@@ -79,7 +82,11 @@
     wrapper.appendChild(toggle);
   });
 
-  $("#openLogin").addEventListener("click", () => setAuthMode("login"));\n  $("#openSignup").addEventListener("click", () => setAuthMode("signup"));\n  $("#closeAuth").addEventListener("click", () => { authGate.hidden = true; });\n  authGate.addEventListener("click", event => { if (event.target === authGate) authGate.hidden = true; });\n  $("#showLogin").addEventListener("click", () => setAuthMode("login"));
+  $("#openLogin").addEventListener("click", () => setAuthMode("login"));
+  $("#openSignup").addEventListener("click", () => setAuthMode("signup"));
+  $("#closeAuth").addEventListener("click", () => { authGate.hidden = true; });
+  authGate.addEventListener("click", event => { if (event.target === authGate) authGate.hidden = true; });
+  $("#showLogin").addEventListener("click", () => setAuthMode("login"));
   $("#showSignup").addEventListener("click", () => setAuthMode("signup"));
   $("#showReset").addEventListener("click", () => setAuthMode("reset"));
   $("#backToLogin").addEventListener("click", () => setAuthMode("login"));
@@ -143,7 +150,7 @@
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
     return data;
   };
-  const labels = {home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",settings:"Настройки"};
+  const labels = {home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
