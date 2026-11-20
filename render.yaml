@@ -24,3 +24,7 @@ services:
         sync: false
       - key: OLLAMA_API_BASE
         value: http://localhost:11434
+      - key: SUPABASE_URL
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
