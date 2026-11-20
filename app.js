@@ -331,6 +331,15 @@
   ];
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
   const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
+  const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
+  const readMovieTombstones = () => {
+    try { const value = JSON.parse(localStorage.getItem(movieDeletedKey()) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
+    catch { return []; }
+  };
+  const writeMovieTombstones = ids => {
+    try { localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
+    catch (error) { console.error("Movie deletion queue failed:", error); return false; }
+  };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
   const movieToCloudRow = project => {
     if (!isUuid(project.id)) project.id = movieId();
@@ -368,7 +377,14 @@
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
-        const localProjects = movieRead();
+        const deletedIds = readMovieTombstones();
+        if (deletedIds.length) {
+          const { error: deleteError } = await supabaseClient.from("projects").delete()
+            .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
+          if (deleteError) throw deleteError;
+          writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
+        }
+        const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
         const rows = localProjects.map(movieToCloudRow);
         // Persist any UUID normalization before sending rows to Supabase.
         localStorage.setItem(movieStorageKey(), JSON.stringify(localProjects));
@@ -377,7 +393,9 @@
           if (error) throw error;
         }
         const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "✓ Изменения сохранены в облаке Supabase.";
+        if (feedback) feedback.textContent = deletedIds.length
+          ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
+          : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
         const feedback = $("#movieFeedback");
@@ -403,9 +421,17 @@
         .order("updated_at", { ascending: false });
       if (error) throw error;
       if (authSession?.user?.id !== userId) return;
-      const local = movieRead();
+      const deletedIds = readMovieTombstones();
+      if (deletedIds.length) {
+        const { error: deleteError } = await supabaseClient.from("projects").delete()
+          .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
+        if (deleteError) throw deleteError;
+        writeMovieTombstones([]);
+      }
+      const deletedSet = new Set(deletedIds);
+      const local = movieRead().filter(project => !deletedSet.has(project.id));
       const merged = new Map(local.map(project => [project.id, project]));
-      (data || []).forEach(row => {
+      (data || []).filter(row => !deletedSet.has(row.id)).forEach(row => {
         const cloudProject = movieFromCloudRow(row);
         const localProject = merged.get(cloudProject.id);
         if (!localProject || new Date(cloudProject.updatedAt || 0) >= new Date(localProject.updatedAt || 0)) {
@@ -517,7 +543,7 @@
         complete.append(h,p,back); panel.append(complete);
       }
     });
-    actions.append(close,save); panel.append(head,form,actions); panel.hidden=false; panel.scrollIntoView({behavior:"smooth",block:"start"});
+    actions.append(close,save); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
@@ -570,7 +596,9 @@
       const remove=makeAction("🗑 Удалить","danger-button",()=>{
         if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
         const latest=movieRead().filter(item=>item.id!==project.id);
-        if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent="Проект удалён.";}
+        const deletedIds=readMovieTombstones();
+        if(isUuid(project.id) && !deletedIds.includes(project.id)) writeMovieTombstones([...deletedIds,project.id]);
+        if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён. Удаление отправлено в облако.":"Проект удалён с этого устройства.";}
       });
       const stageButton=makeAction("Продолжить работу · "+movieProgress(project),"primary-button",()=>{
         activeMovieId=project.id; const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key)); openMovieStage(project.id,next<0?3:next);
