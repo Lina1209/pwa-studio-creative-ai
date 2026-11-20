@@ -366,6 +366,8 @@
       id: row.id,
       name: row.title || saved.name || "Без названия",
       idea: row.description ?? saved.idea ?? "",
+      // Legacy films stored the full screenplay in `idea`; restore it into the Story stage.
+      story: saved.story || saved.idea || row.description || "",
       createdAt: saved.createdAt || row.created_at,
       updatedAt: row.updated_at || saved.updatedAt || row.created_at,
       completedSteps: Array.isArray(saved.completedSteps) ? saved.completedSteps : [],
@@ -459,7 +461,12 @@
   const movieRead = () => {
     try {
       const value = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
-      return Array.isArray(value) ? value.filter(item => item && typeof item === "object" && item.id) : [];
+      return Array.isArray(value) ? value.filter(item => item && typeof item === "object" && item.id).map(item => ({
+        ...item,
+        // Keep older projects editable: their screenplay may exist only in the original idea field.
+        story: item.story || item.idea || "",
+        completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
+      })) : [];
     } catch { return []; }
   };
   const movieWrite = projects => {
@@ -523,8 +530,18 @@
       textarea.value=project[key]||(key==="story"?project.idea||"":""); inputs[key]=textarea; wrap.append(label,textarea); form.append(wrap);
     });
     const actions=document.createElement("div"); actions.className="movie-stage-actions";
+    const draft=document.createElement("button"); draft.type="button"; draft.className="secondary-button"; draft.textContent="Сохранить черновик";
+    draft.addEventListener("click",()=>{
+      const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
+      const current=latest[index]; addMovieVersion(current);
+      stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+      current.updatedAt=new Date().toISOString();
+      if(!movieWrite(latest))return;
+      renderMovieProjects();
+      $("#movieFeedback").textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап пока не отмечен завершённым.";
+    });
     const close=document.createElement("button"); close.type="button"; close.className="secondary-button"; close.textContent="← К проекту"; close.addEventListener("click",()=>{panel.hidden=true;});
-    const save=document.createElement("button"); save.type="button"; save.className="primary-button"; save.textContent=stageIndex===3?"Сохранить этап":"Сохранить и открыть следующий этап →";
+    const save=document.createElement("button"); save.type="button"; save.className="primary-button"; save.textContent=stageIndex===3?"Завершить этап":"Сохранить и открыть следующий этап →";
     save.addEventListener("click",()=>{
       const emptyField=stage.fields.find(([key])=>!inputs[key].value.trim());
       if(emptyField){$("#movieFeedback").textContent="Заполните поле «"+emptyField[1]+"», прежде чем завершить этап.";inputs[emptyField[0]].focus();return;}
@@ -546,7 +563,7 @@
         complete.append(h,p,back); panel.append(complete);
       }
     });
-    actions.append(close,save); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
+    actions.append(draft,close,save); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
