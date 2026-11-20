@@ -1,7 +1,6 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,8 +13,8 @@ class Settings(BaseSettings):
         "https://lina1209.github.io"
     )
 
-    ai_provider: str = "openai"
-    ai_model: str = "gpt-4o-mini"
+    ai_provider: str = "deepseek"
+    ai_model: str = "deepseek-flash"
     openai_api_key: str | None = None
     deepseek_api_key: str | None = None
     anthropic_api_key: str | None = None
