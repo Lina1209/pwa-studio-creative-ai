@@ -355,9 +355,10 @@
     try {
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
       renderMovieProjects();
-      $("#movieFeedback").textContent = "Черновик фильма сохранён. Следующий этап — сценарий, персонажи и план сцен.";
-      $("#movieForm").reset();
-      $("#movieDuration").value = "5";
+      $("#movieFeedback").textContent = "✓ Проект «" + name + "» успешно создан и сохранён в этом браузере. Все заполненные поля оставлены на месте — вы можете продолжить работу или перейти к списку фильмов.";
+      $("#movieFeedback").setAttribute("role", "status");
+      // Keep the form values so the creator can review or continue editing them.
+      // Do not reset the form or change the page scroll position after saving.
     } catch {
       $("#movieFeedback").textContent = "Не удалось сохранить проект в памяти браузера. Проверьте свободное место и настройки приватности.";
     }
