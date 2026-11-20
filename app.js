@@ -483,7 +483,7 @@ const movieHistoryStyle = document.createElement("style");
         // Keep older projects editable: their screenplay may exist only in the original idea field.
         story: item.story || item.idea || "",
         completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
-      })) : [];
+      })).sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0)) : [];
     } catch { return []; }
   };
   const movieWrite = projects => {
@@ -519,6 +519,10 @@ const movieHistoryStyle = document.createElement("style");
     const done=Array.isArray(project.completedSteps)?project.completedSteps:[];
     return done.length+" из 4 этапов завершено";
   };
+  const movieEditionLabel = project => [
+    project.seriesNumber ? "Серия "+project.seriesNumber : "",
+    project.versionLabel ? "Версия: "+project.versionLabel : ""
+  ].filter(Boolean).join(" · ");
   // Keep collection cards focused on the synopsis, not stage-specific production notes.
   const isMovieProductionNotes = value => /(?:Музыка и звуковое оформление|План монтажа|Монтаж\s*\n|Визуальный стиль\s*\n|Титры\s*\n|Full HD|24 кадра)/i.test(String(value || ""));
   const movieCardDescription = project => {
@@ -547,7 +551,8 @@ const movieHistoryStyle = document.createElement("style");
     const stage=movieStages[stageIndex]; panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent="Этап "+(stageIndex+1)+" из 4 · "+stage.title;
-    const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+project.name+" · "+(done.includes(stage.key)?"Этап сохранён — его можно редактировать.":"Заполните материалы и сохраните, чтобы открыть следующий этап.");
+    const edition=movieEditionLabel(project);
+    const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+project.name+(edition?" · "+edition:"")+" · "+(done.includes(stage.key)?"Этап сохранён — его можно редактировать.":"Заполните материалы и сохраните, чтобы открыть следующий этап.");
     head.append(title,subtitle);
     const form=document.createElement("div"); form.className="movie-stage-fields"; const inputs={};
     stage.fields.forEach(([key,labelText,placeholder])=>{
@@ -614,7 +619,8 @@ const movieHistoryStyle = document.createElement("style");
     const allDone=movieStages.every(stage=>done.includes(stage.key));
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent=allDone?"✓ Все этапы завершены":"Рабочие этапы фильма";
-    const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+project.name+" · "+movieProgress(project)+". Выберите доступный этап для просмотра или редактирования.";
+    const edition=movieEditionLabel(project);
+    const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+project.name+(edition?" · "+edition:"")+" · "+movieProgress(project)+". Выберите доступный этап для просмотра или редактирования.";
     head.append(title,subtitle);
     const list=document.createElement("div"); list.className="movie-stage-fields";
     movieStages.forEach((stage,index)=>{
@@ -646,7 +652,7 @@ const movieHistoryStyle = document.createElement("style");
       const number=document.createElement("span"); number.className="movie-project-number"; number.textContent=String(index+1).padStart(2,"0");
       const heading=document.createElement("span"); heading.className="movie-project-heading";
       const title=document.createElement("b"); title.textContent=project.name||"Без названия";
-      const details=document.createElement("small"); details.textContent=(project.genre||"Жанр не указан")+" · "+(project.duration||5)+" мин · "+(project.frame||"16:9");
+      const details=document.createElement("small"); details.textContent=[movieEditionLabel(project),project.genre||"Жанр не указан",(project.duration||5)+" мин",project.frame||"16:9"].filter(Boolean).join(" · ");
       heading.append(title,details); const chevron=document.createElement("span"); chevron.className="movie-project-chevron"; chevron.textContent="⌄"; toggle.append(number,heading,chevron);
       const panel=document.createElement("div"); panel.className="movie-project-details"; panel.hidden=true;
       const idea=document.createElement("p"); idea.textContent=movieCardDescription(project);
@@ -660,6 +666,7 @@ const movieHistoryStyle = document.createElement("style");
       const editDetails=makeAction("Изменить сведения","secondary-button",()=>{
         activeMovieId=project.id; editingMovieId=project.id;
         $("#movieName").value=project.name||""; $("#movieIdea").value=project.idea||""; $("#movieGenre").value=project.genre||"Приключения";
+        $("#movieSeriesNumber").value=project.seriesNumber||""; $("#movieVersionLabel").value=project.versionLabel||"";
         $("#movieDuration").value=String(project.duration||5); $("#movieFrame").value=project.frame||"16:9";
         const submit=$('#movieForm button[type="submit"]'); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
         $("#movieFeedback").textContent="Изменение основных сведений фильма. Сценарий и этапы останутся отдельными материалами.";
@@ -786,11 +793,11 @@ const movieHistoryStyle = document.createElement("style");
     if(existingIndex>=0){
       savedProject=projects[existingIndex]; addMovieVersion(savedProject);
       const ideaChanged=(savedProject.idea||"")!==$("#movieIdea").value.trim();
-      Object.assign(savedProject,{name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,updatedAt:now});
+      Object.assign(savedProject,{name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,seriesNumber:$("#movieSeriesNumber").value?Number($("#movieSeriesNumber").value):null,versionLabel:$("#movieVersionLabel").value.trim(),duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,updatedAt:now});
       if(ideaChanged){savedProject.completedSteps=[];savedProject.workflowStep=0;}
       projects[existingIndex]=savedProject;
     }else{
-      savedProject={id:movieId(),name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,createdAt:now,updatedAt:now,workflowStep:0,completedSteps:[],story:"",storyboard:"",characters:"",voices:"",edit:"",versions:[]};
+      savedProject={id:movieId(),name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,seriesNumber:$("#movieSeriesNumber").value?Number($("#movieSeriesNumber").value):null,versionLabel:$("#movieVersionLabel").value.trim(),duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,createdAt:now,updatedAt:now,workflowStep:0,completedSteps:[],story:"",storyboard:"",characters:"",voices:"",edit:"",versions:[]};
       projects.unshift(savedProject);
     }
     if(!movieWrite(projects))return;
