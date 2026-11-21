@@ -26,6 +26,10 @@ create index if not exists assistant_messages_conversation_created_idx
 alter table public.assistant_conversations enable row level security;
 alter table public.assistant_messages enable row level security;
 
+-- Explicit table privileges; RLS remains the row-level security boundary.
+grant select, insert, update, delete on public.assistant_conversations to authenticated;
+grant select, insert, update, delete on public.assistant_messages to authenticated;
+
 drop policy if exists "Users manage own assistant conversations" on public.assistant_conversations;
 create policy "Users manage own assistant conversations" on public.assistant_conversations
   for all to authenticated
