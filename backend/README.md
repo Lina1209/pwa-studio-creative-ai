@@ -45,3 +45,16 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ## AI configuration
 
 Set `AI_PROVIDER`, `AI_MODEL` and the matching provider secret in the host's environment settings. Supported initial providers: `openai`, `deepseek`, `anthropic` and `ollama`. Never expose provider keys in frontend code or health responses.
+
+## AI usage metering (no credit deductions)
+
+Successful `/api/chat` and `/api/prompts` calls now attempt to record token usage and provider-reported cost in the private `public.ai_usage` table. Prompt and response text are never stored. Cost remains NULL when LiteLLM/provider metadata does not supply a reliable value; no price is guessed. Telemetry is best-effort and does not block an AI response.
+
+Before enabling this in production:
+
+1. Review and manually apply `supabase/migrations/0003_ai_usage_metering.sql` in the intended Supabase project.
+2. In Render, set `SUPABASE_SERVICE_ROLE_KEY` as a secret environment variable alongside `SUPABASE_URL`. Use the server-side service-role key from Supabase; never place it in frontend files, GitHub, or a client request.
+3. After deployment, check `GET /api/health`. The boolean `usage_telemetry_configured` should be `true`; it does not expose credentials or prove a database write has succeeded.
+4. Make one authenticated chat or prompt request, then inspect the new row in Supabase Table Editor. Verify user, endpoint, model, token counts and cost fields.
+
+This phase only measures usage. It does not create wallets, deduct credits, charge users, or change plans. Rows are accessible only to the server-side service role because RLS is enabled and no client policies are granted.
