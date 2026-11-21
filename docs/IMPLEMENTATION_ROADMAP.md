@@ -13,34 +13,28 @@ This document is the working source of truth for the next implementation stages.
 - AI Companion chat endpoint responds successfully.
 - AI usage telemetry writes to `public.ai_usage`; a real row was verified on 2026-11-21 (provider `deepseek`, model `deepseek-flash`, token counts and cost recorded).
 - The live database required an explicit `GRANT INSERT ON TABLE public.ai_usage TO service_role`; the privilege check returned true.
-- Mini Movie Studio drafts and version history currently live in browser localStorage, scoped by signed-in user on that device. They are not cloud-synced.
+- AI Companion history is connected to Supabase; a new conversation and both messages were visible after a browser refresh on 2026-11-21. Per-account isolation is enforced by RLS; a two-account isolation test remains outstanding.
+- Mini Movie Studio has a local-first cloud sync implementation in `app.js`: it merges local drafts with rows in `public.projects`, uploads updates with owner-scoped queries, and queues deletions. This implementation depends on migration `0005_cloud_projects_and_storage.sql`, which has been committed but is not yet confirmed applied to live Supabase. Cross-device persistence is therefore not yet verified.
 - Audio Studio has a navigable UI and local microphone/file preview only. It does not yet upload media or call speech/music generation services.
 
 ## Workstreams and acceptance criteria
 
 ### 1. AI Companion persistent history
-**Current state:** migration `0004_assistant_chat_history.sql` exists in the repository. Live application and UI integration are not yet verified.
+**Current state:** migration `0004_assistant_chat_history.sql` was applied to live Supabase. Frontend saves and reloads conversation titles and user/assistant messages. A test conversation survived a browser refresh on 2026-11-21.
 
-Tasks:
-1. Check whether migration 0004 has been applied to the connected Supabase project; do not blindly rerun historical migrations.
-2. Verify table columns, indexes, RLS policies, and ownership constraints.
-3. Implement backend endpoints for listing, creating, renaming, and deleting a user's conversations and reading/saving messages.
-4. Integrate the frontend with those endpoints; preserve existing conversations and support starting a new conversation without deleting old ones.
-5. Test two accounts to prove one user cannot read or modify another user's history.
-
-Done when: history survives refresh/logout/login and is isolated per account; existing AI replies continue to work.
+Remaining verification: test logout/login and confirm that a second account cannot read or modify the first account's conversations. Existing AI replies continue to work.
 
 ### 2. Cloud project and media persistence
-**Current state:** local drafts only; README accurately notes that cloud CRUD and media upload are not implemented.
+**Current state:** the Mini Movie Studio has local-first sync code in `app.js` targeting `public.projects`; migration `0005_cloud_projects_and_storage.sql` now defines that table, owner-only RLS, and a private `studio-media` Storage bucket with a 100 MiB per-file limit and user-folder policies. The migration is committed to GitHub but still needs to be applied and verified in live Supabase. No media upload UI exists yet.
 
-Tasks:
-1. Inspect existing project/version schema and Storage policies before changing them.
-2. Define owner-scoped project and version APIs.
-3. Add authenticated create/read/update/delete operations with server-side owner checks.
-4. Add private Storage upload/download with size, MIME, and path validation.
-5. Add migration and frontend sync with conflict handling; preserve local drafts during rollout.
+Next tasks:
+1. Apply migration 0005 in the connected Supabase SQL Editor and verify the table, policies, and private bucket.
+2. Test creating, editing, renaming, copying, and deleting a movie project; confirm it appears in Supabase and survives sign-in on another device.
+3. Test conflict behavior and deletion synchronization without losing local drafts.
+4. Add a media library upload/list/delete UI using the private bucket; validate file size and MIME type in the client and enforce Storage limits/RLS server-side.
+5. Add media metadata records and signed URL previews; never make user media public by default.
 
-Done when: a project created on one device appears on another after sign-in, and users cannot access another user's projects or files.
+Done when: cloud projects survive across devices, owner isolation is verified with two accounts, and private media can be uploaded and retrieved only by its owner.
 
 ### 3. Audio Studio
 **Current state:** six-section UI; local microphone recording and audio-file preview only. No server upload or model calls.
