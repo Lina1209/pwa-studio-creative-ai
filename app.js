@@ -373,6 +373,9 @@ const movieHistoryStyle = document.createElement("style");
         });
         row.append(open, rename); assistantHistoryList.appendChild(row);
       });
+      if (!activeAssistantConversationId && data?.length) {
+        await loadAssistantMessages(data[0].id);
+      }
       setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
     } catch (error) {
       setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
