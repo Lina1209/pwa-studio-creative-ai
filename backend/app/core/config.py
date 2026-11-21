@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     # Supabase Auth verifies user sessions. Never put the service-role key in the frontend.
     supabase_url: str | None = None
+    # Server-only key; never expose to frontend or API responses.
+    supabase_service_role_key: str | None = None
     owner_email: str | None = None
 
     model_config = SettingsConfigDict(
