@@ -127,7 +127,65 @@
 
       <section class="view" id="view-editor"><div class="page-heading"><div class="eyebrow">EDITING ROOM</div><h1>Видеоредактор</h1><p>Рабочее пространство для монтажа, таймлайна и предпросмотра.</p></div><div class="empty-workspace panel"><div class="empty-icon">▤</div><h2>Монтажная скоро откроется</h2><p>Здесь появятся предпросмотр, дорожки видео и аудио, сцены, переходы и субтитры.</p><button class="secondary-button" data-go="create">Подготовить новый проект →</button></div></section>
       <section class="view" id="view-library"><div class="page-heading"><div class="eyebrow">YOUR ASSETS</div><h1>Медиатека</h1><p>Единое пространство для изображений, видео, аудио и готовых проектов.</p></div><div class="empty-workspace panel"><div class="empty-icon">▧</div><h2>Ваша медиатека</h2><p>Загрузка файлов и управление материалами будут подключены вместе с системой хранения.</p></div></section>
-      <section class="view" id="view-voice"><div class="page-heading"><div class="eyebrow">AUDIO LAB</div><h1>Голос и музыка</h1><p>Озвучивание, голоса, музыкальные дорожки и звуковой дизайн.</p></div><div class="empty-workspace panel"><div class="empty-icon">♫</div><h2>Звуковая мастерская</h2><p>Здесь будут настройки TTS, выбор голосов, предпрослушивание и микширование аудио.</p></div></section>
+      <section class="view audio-lab-view" id="view-voice">
+  <div class="audio-lab-heading">
+    <div class="page-heading"><div class="eyebrow">AUDIO LAB · SOUND WORKSPACE</div><h1>Голос и <span class="gradient-text">музыка</span></h1><p>Создавайте озвучку, работайте с собственным голосом и собирайте звуковую атмосферу фильма.</p></div>
+    <div class="audio-lab-status"><span class="audio-status-dot"></span><span>Интерфейс мастерской готов</span><small>Генерация аудио подключается отдельно</small></div>
+  </div>
+  <div class="audio-lab-hero panel">
+    <div class="audio-lab-hero-copy"><div class="audio-lab-kicker">YOUR SOUND · YOUR STORY</div><h2>Пусть у вашей истории<br><span class="gradient-text">появится собственный голос.</span></h2><p>Выберите голос персонажа, запишите свой или подготовьте музыку и звуковые эффекты для каждой сцены.</p><button class="audio-lab-hero-button" type="button" data-audio-tab-go="my-voice">🎙 Создать мой голос <span>→</span></button></div>
+    <div class="audio-lab-hero-art" aria-hidden="true"><div class="audio-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span>♫</span></div>
+  </div>
+  <div class="audio-lab-stats">
+    <div class="audio-stat-card"><span>🎙</span><div><b>Голоса</b><small>Каталог и собственные профили</small></div><em>01</em></div>
+    <div class="audio-stat-card"><span>🗣</span><div><b>Озвучка</b><small>Реплики и речь персонажей</small></div><em>02</em></div>
+    <div class="audio-stat-card"><span>🎼</span><div><b>Музыка</b><small>Настроение и музыкальные темы</small></div><em>03</em></div>
+    <div class="audio-stat-card"><span>🔊</span><div><b>Звуки</b><small>Эффекты и атмосфера</small></div><em>04</em></div>
+  </div>
+  <div class="audio-lab-workspace">
+    <div class="audio-lab-section-head"><div><div class="eyebrow">SOUND WORKBENCH</div><h2>Творческие инструменты</h2><p>Выберите направление работы со звуком.</p></div><span class="audio-lab-build-badge">6 разделов</span></div>
+    <div class="audio-lab-tabs" role="tablist" aria-label="Разделы звуковой мастерской">
+      <button class="audio-tab active" id="audio-tab-voices" type="button" role="tab" aria-selected="true" aria-controls="audio-panel-voices" data-audio-tab="voices"><span>🎙</span> Каталог голосов</button>
+      <button class="audio-tab" id="audio-tab-my-voice" type="button" role="tab" aria-selected="false" aria-controls="audio-panel-my-voice" data-audio-tab="my-voice"><span>♥</span> Мой голос</button>
+      <button class="audio-tab" id="audio-tab-speech" type="button" role="tab" aria-selected="false" aria-controls="audio-panel-speech" data-audio-tab="speech"><span>🗣</span> Озвучка текста</button>
+      <button class="audio-tab" id="audio-tab-music" type="button" role="tab" aria-selected="false" aria-controls="audio-panel-music" data-audio-tab="music"><span>♫</span> Музыка</button>
+      <button class="audio-tab" id="audio-tab-effects" type="button" role="tab" aria-selected="false" aria-controls="audio-panel-effects" data-audio-tab="effects"><span>✧</span> Звуковые эффекты</button>
+      <button class="audio-tab" id="audio-tab-mixer" type="button" role="tab" aria-selected="false" aria-controls="audio-panel-mixer" data-audio-tab="mixer"><span>🎚</span> Аудиомонтаж</button>
+    </div>
+    <div class="audio-panel active" id="audio-panel-voices" role="tabpanel" aria-labelledby="audio-tab-voices" data-audio-panel="voices">
+      <div class="audio-panel-intro"><div><div class="eyebrow">VOICE LIBRARY</div><h3>Каталог голосов</h3><p>Подберите звучание для рассказчика и каждого персонажа.</p></div><span class="audio-coming">Каталог готовится</span></div>
+      <div class="audio-filter-row"><label>Язык<select disabled><option>Все языки</option><option>Русский</option><option>English</option></select></label><label>Тип голоса<select disabled><option>Все голоса</option><option>Женский</option><option>Мужской</option></select></label><label>Настроение<select disabled><option>Любое настроение</option><option>Спокойный</option><option>Выразительный</option></select></label></div>
+      <div class="audio-empty-state"><span>♫</span><b>Здесь появятся голоса для ваших историй</b><p>Каталог, примеры звучания и выбор голоса станут доступны после подключения аудиопровайдера.</p></div>
+    </div>
+    <div class="audio-panel" id="audio-panel-my-voice" role="tabpanel" aria-labelledby="audio-tab-my-voice" data-audio-panel="my-voice" hidden>
+      <div class="audio-panel-intro"><div><div class="eyebrow">PERSONAL VOICE PROFILE</div><h3>Мой голос</h3><p>Подготовьте образец своего голоса для будущей персональной озвучки.</p></div><span class="audio-coming">Локальная запись</span></div>
+      <div class="my-voice-grid">
+        <div class="audio-card-inner"><div class="audio-card-icon">🎙</div><h4>Записать голос</h4><p>Запишите короткий образец в тихом помещении. Говорите естественно, не торопясь.</p><div class="audio-record-controls"><button class="audio-record-button" id="audioRecordStart" type="button">● Начать запись</button><button class="audio-stop-button" id="audioRecordStop" type="button" disabled>Остановить</button></div><p class="audio-live-status" id="audioRecordStatus" role="status" aria-live="polite">Запись начнётся только после вашего разрешения на доступ к микрофону.</p></div>
+        <div class="audio-card-inner"><div class="audio-card-icon">⇧</div><h4>Загрузить образец</h4><p>Можно выбрать аудиофайл с устройства. Он будет только предварительно прослушан в этом браузере.</p><label class="audio-upload-zone" for="audioVoiceFile"><span>＋</span><b>Выбрать аудиофайл</b><small>WAV, MP3, M4A, OGG и другие поддерживаемые форматы</small></label><input class="audio-file-input" id="audioVoiceFile" type="file" accept="audio/*"><p class="audio-live-status" id="audioFileStatus" role="status" aria-live="polite">Файл не выбран.</p></div>
+      </div>
+      <div class="audio-preview-card"><div><b>Предпрослушивание записи</b><small id="audioPreviewName">Пока нет аудиозаписи</small></div><audio id="audioVoicePreview" controls hidden></audio><button class="audio-clear-button" id="audioClearPreview" type="button" disabled>Очистить</button></div>
+      <div class="audio-privacy-note"><span>🔒</span><p><b>Ваша запись остаётся на этом устройстве.</b> Сейчас доступно только локальное прослушивание. Загрузка на сервер, создание голосовой модели и генерация речи ещё не подключены. Перед созданием модели потребуется отдельное подтверждение прав на использование голоса.</p></div>
+    </div>
+    <div class="audio-panel" id="audio-panel-speech" role="tabpanel" aria-labelledby="audio-tab-speech" data-audio-panel="speech" hidden>
+      <div class="audio-panel-intro"><div><div class="eyebrow">TEXT TO SPEECH</div><h3>Озвучка текста</h3><p>Подготовьте реплику и параметры будущей озвучки.</p></div><span class="audio-coming">Скоро</span></div>
+      <div class="audio-form-card"><label for="audioSpeechText">Текст для озвучивания</label><textarea id="audioSpeechText" rows="5" maxlength="5000" placeholder="Введите реплику персонажа или текст рассказчика..."></textarea><div class="audio-form-meta"><span id="audioSpeechCount">0 / 5000</span><span>Текст пока не отправляется на сервер</span></div><div class="audio-form-row"><label>Голос<select disabled><option>Сначала выберите голос</option></select></label><label>Язык<select><option>Русский</option><option>English</option><option>Другой</option></select></label><label>Подача<select><option>Естественная</option><option>Спокойная</option><option>Эмоциональная</option><option>Драматичная</option></select></label></div><button class="audio-disabled-action" type="button" disabled>✦ Создать озвучку · скоро</button><p class="audio-live-status">Для генерации потребуется подключить модель синтеза речи (TTS).</p></div>
+    </div>
+    <div class="audio-panel" id="audio-panel-music" role="tabpanel" aria-labelledby="audio-tab-music" data-audio-panel="music" hidden>
+      <div class="audio-panel-intro"><div><div class="eyebrow">AI MUSIC STUDIO</div><h3>Создание музыки</h3><p>Опишите музыкальное настроение сцены или всего фильма.</p></div><span class="audio-coming">Скоро</span></div>
+      <div class="audio-form-card"><label for="audioMusicPrompt">Как должна звучать ваша музыка?</label><textarea id="audioMusicPrompt" rows="4" placeholder="Например: загадочная кинематографичная тема, мягкое фортепиано, тёплые струнные, ощущение надежды и тайны..."></textarea><div class="audio-chip-group" aria-label="Настроение музыки"><button type="button" class="audio-chip">Загадочная</button><button type="button" class="audio-chip">Романтичная</button><button type="button" class="audio-chip">Приключенческая</button><button type="button" class="audio-chip">Тревожная</button><button type="button" class="audio-chip">Спокойная</button><button type="button" class="audio-chip">Вдохновляющая</button></div><div class="audio-form-row"><label>Длительность<select><option>30 секунд</option><option>1 минута</option><option>2 минуты</option><option>По длительности сцены</option></select></label><label>Звучание<select><option>Кинематографичное</option><option>Оркестровое</option><option>Электронное</option><option>Акустическое</option></select></label></div><button class="audio-disabled-action" type="button" disabled>♫ Создать музыку · скоро</button><p class="audio-live-status">Создание аудио станет доступно после подключения музыкальной модели.</p></div>
+    </div>
+    <div class="audio-panel" id="audio-panel-effects" role="tabpanel" aria-labelledby="audio-tab-effects" data-audio-panel="effects" hidden>
+      <div class="audio-panel-intro"><div><div class="eyebrow">SOUND EFFECTS</div><h3>Звуковые эффекты</h3><p>Добавьте детали, которые делают сцену живой и убедительной.</p></div><span class="audio-coming">Библиотека готовится</span></div>
+      <div class="audio-effects-grid"><div>🌊<b>Природа</b><small>Море, ветер, дождь, лес, птицы</small></div><div>🚪<b>Действия</b><small>Шаги, двери, предметы, транспорт</small></div><div>✨<b>Мистика и магия</b><small>Звоны, шёпот, сияние, порталы</small></div><div>🌆<b>Город и окружение</b><small>Улицы, толпа, машины, помещения</small></div><div>🌩<b>Погода и стихии</b><small>Гром, шторм, огонь, вода</small></div><div>🎬<b>Киноэффекты</b><small>Переходы, удары, акценты, атмосфера</small></div></div>
+      <p class="audio-live-status">Категории подготовлены. Прослушивание и добавление файлов будут доступны после подключения библиотеки эффектов.</p>
+    </div>
+    <div class="audio-panel" id="audio-panel-mixer" role="tabpanel" aria-labelledby="audio-tab-mixer" data-audio-panel="mixer" hidden>
+      <div class="audio-panel-intro"><div><div class="eyebrow">AUDIO MIXER</div><h3>Аудиомонтаж</h3><p>Соберите речь, музыку и эффекты в единую звуковую картину.</p></div><span class="audio-coming">Макет микшера</span></div>
+      <div class="audio-mixer-card"><div class="audio-mixer-head"><b>Дорожки проекта</b><small>Сначала выберите фильм в Миникиностудии</small></div><div class="audio-track"><span>🗣</span><div><b>Диалоги и озвучка</b><small>Реплики персонажей</small></div><em>Пока пусто</em></div><div class="audio-track"><span>♫</span><div><b>Музыка</b><small>Фоновая тема и музыкальные акценты</small></div><em>Пока пусто</em></div><div class="audio-track"><span>🔊</span><div><b>Звуковые эффекты</b><small>Атмосфера и действия</small></div><em>Пока пусто</em></div><div class="audio-timeline"><span>00:00</span><i></i><i></i><i></i><i></i><i></i><span>00:30</span></div><p class="audio-live-status">Это макет будущего микшера. Реальные дорожки, синхронизация и экспорт появятся после подключения аудиодвижка.</p></div>
+    </div>
+  </div>
+  <div class="audio-lab-footer-note"><span>✦</span><p><b>Звуковая мастерская развивается постепенно.</b> Сейчас можно изучить структуру и локально прослушать собственную запись. Генерация голосов, музыки, эффектов и сведение будут включаться по мере подключения проверенных сервисов.</p></div>
+</section>
       <section class="view" id="view-scenes"><div class="page-heading"><div class="eyebrow">STORYBOARD</div><h1>Сценарий и сцены</h1><p>Собирайте историю по кадрам и управляйте визуальным повествованием.</p></div><div class="empty-workspace panel"><div class="empty-icon">▦</div><h2>Ваша раскадровка</h2><p>Редактор сцен, визуальные подсказки и управление последовательностью появятся здесь.</p></div></section>
 
       <section class="view" id="view-guide">
@@ -273,5 +331,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./supabase-config.js"></script>
   <script src="./app.js?v=20261121-8" defer></script>
+  <script src="./audio-lab.js?v=20261121-1" defer></script>
 </body>
 </html>
