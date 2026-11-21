@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,13 +8,14 @@ from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
+from app.services.usage_service import record_ai_usage
 
 settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
     description="Private API for PWA Studio — Creative AI.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -46,6 +49,7 @@ def health():
         "ai_provider": provider,
         "ai_configured": ai_configured,
         "authentication_configured": bool(settings.supabase_url),
+        "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
     }
 
 
@@ -67,11 +71,13 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
         "Help users develop video ideas, scripts, scenes and prompts. Be clear and practical. Follow platform safety rules: do not assist sexual exploitation of minors, non-consensual intimate imagery, real-world violence, self-harm instructions, weapons construction, fraud, doxxing, harassment or malware. Respect consent for real people’s likenesses and voices."
     )
     try:
-        reply = ask_ai(settings, [
+        result = ask_ai(settings, [
             {"role": "system", "content": system},
             {"role": "user", "content": payload.message},
         ])
-        return ChatResponse(reply=reply, provider=settings.ai_provider, model=settings.ai_model)
+        record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="chat",
+                        provider=settings.ai_provider, result=result)
+        return ChatResponse(reply=result.text, provider=settings.ai_provider, model=result.actual_model)
     except AIConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -93,11 +99,13 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         f"User idea: {payload.idea}"
     )
     try:
-        prompt = ask_ai(settings, [
+        result = ask_ai(settings, [
             {"role": "system", "content": system},
             {"role": "user", "content": request},
         ])
-        return PromptResponse(prompt=prompt, provider=settings.ai_provider, model=settings.ai_model)
+        record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="prompts",
+                        provider=settings.ai_provider, result=result)
+        return PromptResponse(prompt=result.text, provider=settings.ai_provider, model=result.actual_model)
     except AIConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
