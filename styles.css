@@ -132,3 +132,23 @@ body.light .about-value{background:#fff;border-color:#e4deef}
 body.light .audio-lab-status,body.light .audio-stat-card,body.light .audio-tab,body.light .audio-panel,body.light .audio-card-inner,body.light .audio-preview-card,body.light .audio-form-card,body.light .audio-effects-grid>div,body.light .audio-mixer-card{background:#fff;color:#28223c;border-color:#e4deef}body.light .audio-lab-hero{background:linear-gradient(110deg,#e9e2ff,#eeedff)}body.light .audio-lab-hero p,body.light .audio-panel-intro p,body.light .audio-card-inner>p{color:#68617e}body.light .audio-filter-row select,body.light .audio-form-row select,body.light .audio-form-card textarea{background:#f7f5fc;color:#28223c}body.light .audio-chip{background:#f6f2ff;color:#62587d}
 @media(max-width:850px){.audio-lab-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.audio-lab-hero-art{right:0;opacity:.35}.audio-effects-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.audio-lab-heading{display:block}.audio-lab-status{display:inline-grid;margin:-7px 0 15px}.audio-lab-hero{padding:23px 18px;min-height:235px}.audio-lab-hero-art{right:-95px;opacity:.18}.audio-lab-hero h2{font-size:24px}.audio-lab-stats{gap:8px}.audio-stat-card{padding:10px;gap:8px}.audio-stat-card small{font-size:8px}.audio-lab-section-head{align-items:flex-start}.audio-panel{padding:15px}.audio-panel-intro{display:block}.audio-panel-intro .audio-coming{display:inline-block;margin-top:10px}.audio-filter-row,.audio-form-row,.my-voice-grid{grid-template-columns:1fr}.audio-effects-grid{grid-template-columns:1fr 1fr}.audio-preview-card{flex-wrap:wrap}.audio-preview-card audio{order:3;width:100%}.audio-mixer-head{display:grid}.audio-track{gap:8px}.audio-track em{font-size:8px}.audio-form-meta{display:grid}.audio-record-controls{flex-wrap:wrap}}
+
+
+/* Temporary guest workspace */
+.guest-space-view{padding-bottom:14px}.guest-space-nav{border:1px solid #a58aff35;background:#8e6ff214;color:#d8caff}
+.guest-space-hero{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px;margin-bottom:26px}
+.guest-space-badge{display:inline-block;padding:6px 10px;border:1px solid #a58aff45;border-radius:20px;color:#c7b3ff;font-size:9px;letter-spacing:1px;font-weight:800}
+.guest-space-hero h2{font:800 21px Manrope;margin:12px 0 7px}.guest-space-hero p{max-width:690px;color:var(--muted);font-size:11px;line-height:1.75;margin:0}
+.guest-space-actions{display:flex;flex-direction:column;gap:9px;min-width:190px}.guest-space-actions button{white-space:nowrap}
+.guest-expiry-notice{padding:13px 15px;margin:0 0 18px;border:1px solid #e5bb7050;border-radius:11px;background:#e5bb7014;color:#e8cb91;font-size:11px;line-height:1.6}
+.guest-projects-head{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:13px}.guest-projects-head h2{font:700 19px Manrope;margin:0}
+.guest-project-count{padding:6px 10px;border:1px solid var(--line);border-radius:20px;color:var(--muted);font-size:10px;white-space:nowrap}
+.guest-project-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.guest-project-card{min-width:0;padding:17px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#1b1930,#141323)}
+.guest-project-card-head{display:flex;align-items:center;gap:10px}.guest-project-card-head b{font:700 14px Manrope;overflow-wrap:anywhere}
+.guest-project-card>p{font-size:10px;line-height:1.6;color:var(--muted);margin:12px 0}
+.guest-project-expiry{padding:8px 10px;border-radius:9px;background:#e5bb7014;color:#e8c987;font-size:10px}
+.guest-project-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}.guest-project-actions button{flex:1;min-width:120px;min-height:40px}
+.guest-space-footnote{margin-top:18px;padding:13px 15px;border-left:2px solid #a88aff;background:#8e6ff214;color:var(--muted);font-size:10px;line-height:1.7}
+body.light .guest-project-card{background:#fff;border-color:#e4deef}
+@media(max-width:720px){.guest-space-hero{align-items:stretch;flex-direction:column;padding:19px}.guest-space-actions{min-width:0}.guest-space-actions button{width:100%}.guest-project-list{grid-template-columns:1fr}.guest-projects-head h2{font-size:17px}}
