@@ -48,4 +48,9 @@ def record_ai_usage(
             response.raise_for_status()
     except Exception as exc:
         # Do not log request/response bodies, user content, or secret values.
-        logger.warning("AI usage telemetry write failed (%s).", type(exc).__name__)
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        logger.warning(
+            "AI usage telemetry write failed: error_type=%s status_code=%s",
+            type(exc).__name__,
+            status_code,
+        )
