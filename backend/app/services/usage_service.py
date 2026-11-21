@@ -38,10 +38,13 @@ def record_ai_usage(
     url = f"{settings.supabase_url.rstrip('/')}/rest/v1/ai_usage"
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Prefer": "return=minimal",
     }
+    # New Supabase sb_secret_* keys are API keys, not JWTs. They must be
+    # sent only via apikey; legacy service_role keys are JWTs and use both.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         with httpx.Client(timeout=5.0) as client:
             response = client.post(url, json=payload, headers=headers)
