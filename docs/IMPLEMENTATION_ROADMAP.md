@@ -2,6 +2,8 @@
 
 Last reviewed: 2026-11-21
 
+For the complete product vision, platform rules, prohibited-content taxonomy, filters, bans, appeals, privacy/security requirements, rights/consent, testing strategy, and phased plan, see [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md).
+
 This document is the working source of truth for the next implementation stages. It distinguishes deployed/verified behavior from UI prototypes and planned work. A database migration in this repository is **not** considered applied to the live Supabase project until it has been run and verified there.
 
 ## Verified foundation
@@ -13,8 +15,8 @@ This document is the working source of truth for the next implementation stages.
 - AI Companion chat endpoint responds successfully.
 - AI usage telemetry writes to `public.ai_usage`; a real row was verified on 2026-11-21 (provider `deepseek`, model `deepseek-flash`, token counts and cost recorded).
 - The live database required an explicit `GRANT INSERT ON TABLE public.ai_usage TO service_role`; the privilege check returned true.
-- AI Companion history is connected to Supabase; a new conversation and both messages were visible after a browser refresh on 2026-11-21. Per-account isolation is enforced by RLS; a two-account isolation test remains outstanding.
-- Mini Movie Studio has a local-first cloud sync implementation in `app.js`: it merges local drafts with rows in `public.projects`, uploads updates with owner-scoped queries, and queues deletions. This implementation depends on migration `0005_cloud_projects_and_storage.sql`, which has been committed but is not yet confirmed applied to live Supabase. Cross-device persistence is therefore not yet verified.
+- AI Companion history is connected to Supabase; a new conversation and both messages were visible after a browser refresh on 2026-11-21. RLS owner policies are present; logout/login, account-switch behavior, and two-account isolation still require end-to-end verification.
+- Mini Movie Studio has a local-first cloud sync implementation in `app.js`. Migration `0005_cloud_projects_and_storage.sql` was applied to live Supabase; `public.projects` and the private `studio-media` bucket were verified. A test movie row was independently confirmed in Supabase and remained visible after browser refresh. Cross-device persistence, conflict behavior, and deletion synchronization still require verification.
 - Audio Studio has a navigable UI and local microphone/file preview only. It does not yet upload media or call speech/music generation services.
 
 ## Workstreams and acceptance criteria
@@ -25,14 +27,13 @@ This document is the working source of truth for the next implementation stages.
 Remaining verification: test logout/login and confirm that a second account cannot read or modify the first account's conversations. Existing AI replies continue to work.
 
 ### 2. Cloud project and media persistence
-**Current state:** the Mini Movie Studio has local-first sync code in `app.js` targeting `public.projects`; migration `0005_cloud_projects_and_storage.sql` now defines that table, owner-only RLS, and a private `studio-media` Storage bucket with a 100 MiB per-file limit and user-folder policies. The migration is committed to GitHub but still needs to be applied and verified in live Supabase. No media upload UI exists yet.
+**Current state:** local-first cloud sync code targets `public.projects`. Migration `0005_cloud_projects_and_storage.sql` has been applied and verified in live Supabase; the table, owner policies, private `studio-media` bucket, and a real test project row were checked. The project remained visible after browser refresh. Cross-device sync and deletion/conflict behavior are not yet verified. No media upload UI exists yet.
 
 Next tasks:
-1. Apply migration 0005 in the connected Supabase SQL Editor and verify the table, policies, and private bucket.
-2. Test creating, editing, renaming, copying, and deleting a movie project; confirm it appears in Supabase and survives sign-in on another device.
-3. Test conflict behavior and deletion synchronization without losing local drafts.
-4. Add a media library upload/list/delete UI using the private bucket; validate file size and MIME type in the client and enforce Storage limits/RLS server-side.
-5. Add media metadata records and signed URL previews; never make user media public by default.
+1. Test create, edit, rename, copy, and delete flows against Supabase; verify same-account cross-device persistence.
+2. Test conflict behavior and deletion synchronization without losing local drafts; review tombstone/restore behavior.
+3. Add a media library upload/list/delete UI using the private bucket; validate file size and MIME type in the client and enforce Storage limits/RLS server-side.
+4. Add media metadata records and signed URL previews; never make user media public by default.
 
 Done when: cloud projects survive across devices, owner isolation is verified with two accounts, and private media can be uploaded and retrieved only by its owner.
 
@@ -105,13 +106,15 @@ Done when: users can chat safely, moderation is enforced server-side, and admin 
 
 ## Recommended implementation order
 
-1. Verify and finish AI Companion history (smallest contained next step).
-2. Implement cloud project persistence and private media storage (shared foundation for audio, characters, and video).
-3. Build Character Library on that foundation.
-4. Build Audio Studio upload and provider/job framework.
-5. Build video provider/job pipeline and then timeline/export.
-6. Implement privacy-preserving visitor analytics and Live World.
-7. Implement community chat and moderation.
+1. Stabilize current foundation: account switching, AI context/isolation, admin authorization, Mini Movie Studio labels, version restore, cloud conflict/deletion behavior.
+2. Build private media upload and asset metadata on the already-applied Storage foundation.
+3. Verify schema/RLS and build Character Library.
+4. Implement platform rules, backend safety filters, moderation, reports, bans, appeals, and audit controls before opening community posting or unrestricted generation.
+5. Build Audio Studio upload and provider/job framework.
+6. Build image/video provider/job pipeline and then timeline/export.
+7. Implement privacy-preserving visitor analytics and Live World.
+8. Implement community chat after moderation controls are enforceable.
+9. Complete quotas, billing, rights/privacy review, and launch readiness.
 
 ## Release and safety rules
 
@@ -123,3 +126,8 @@ Done when: users can chat safely, moderation is enforced server-side, and admin 
 - Record AI/media usage and enforce quotas server-side before opening paid features.
 - Obtain explicit consent for voice cloning and use of real people's likenesses.
 - Clearly distinguish implemented, prototype, and planned features in the UI and documentation.
+
+
+## Platform rules and moderation
+
+The detailed policy and moderation plan is maintained in [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md), including policy taxonomy, layered filters, enforcement ladder, temporary/permanent bans, appeals, audit logging, and privacy requirements. These capabilities are planned and must be enforced server-side; frontend-only filters or hidden buttons do not count as security.
