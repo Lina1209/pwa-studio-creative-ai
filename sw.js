@@ -1,9 +1,10 @@
-const CACHE_NAME = "pwa-studio-shell-v12";
+const CACHE_NAME = "pwa-studio-shell-v13";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./audio-lab.js",
   "./supabase-config.js",
   "./manifest.webmanifest",
   "./assets/icon.svg"
@@ -36,7 +37,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   const isShellAsset = request.mode === "navigate" ||
-    ["/index.html", "/app.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
+    ["/index.html", "/app.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
 
   if (isShellAsset) {
     event.respondWith(
