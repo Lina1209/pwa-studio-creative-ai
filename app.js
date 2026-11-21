@@ -311,34 +311,112 @@ const movieHistoryStyle = document.createElement("style");
     $("#assistantInput").value = btn.dataset.assist;
     $("#assistantInput").focus();
   }));
+  // AI Companion cloud history. Supabase RLS restricts every row to its owner.
+  let activeAssistantConversationId = null;
+  let assistantHistoryBusy = false;
+  const assistantHistoryList = $("#assistantHistoryList");
+  const assistantMessages = $("#assistantMessages");
+  const assistantStatus = $("#assistantHistoryStatus");
+  const setAssistantStatus = message => { if (assistantStatus) assistantStatus.textContent = message || ""; };
+  const renderAssistantMessage = (role, content) => {
+    const bubble = document.createElement("div");
+    bubble.className = "helper-text assistant-message " + (role === "user" ? "user-message" : "ai-message");
+    bubble.textContent = (role === "user" ? "Вы: " : "Studio AI: ") + content;
+    assistantMessages.appendChild(bubble);
+  };
+  const clearAssistantMessages = () => { if (assistantMessages) assistantMessages.replaceChildren(); };
+  const loadAssistantMessages = async conversationId => {
+    if (!supabaseClient || !authSession?.user || !conversationId) return;
+    const { data, error } = await supabaseClient.from("assistant_messages")
+      .select("id,role,content,created_at").eq("conversation_id", conversationId)
+      .eq("user_id", authSession.user.id).order("created_at", { ascending: true });
+    if (error) throw error;
+    clearAssistantMessages();
+    (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
+    activeAssistantConversationId = conversationId;
+  };
+  const renderAssistantHistory = async () => {
+    if (!assistantHistoryList) return;
+    if (!authSession?.user || !supabaseClient) {
+      assistantHistoryList.replaceChildren();
+      setAssistantStatus("Войдите в аккаунт, чтобы сохранять историю диалогов.");
+      clearAssistantMessages(); activeAssistantConversationId = null; return;
+    }
+    if (assistantHistoryBusy) return;
+    assistantHistoryBusy = true; setAssistantStatus("Загружаем ваши диалоги…");
+    try {
+      const { data, error } = await supabaseClient.from("assistant_conversations")
+        .select("id,title,updated_at").eq("user_id", authSession.user.id)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      assistantHistoryList.replaceChildren();
+      (data || []).forEach(conversation => {
+        const row = document.createElement("div"); row.className = "assistant-history-row";
+        const open = document.createElement("button"); open.type = "button";
+        open.className = "assistant-history-open"; open.textContent = conversation.title || "Новый диалог";
+        open.title = open.textContent; open.setAttribute("aria-current", conversation.id === activeAssistantConversationId ? "true" : "false");
+        open.addEventListener("click", async () => {
+          try { await loadAssistantMessages(conversation.id); renderAssistantHistory(); setAssistantStatus(""); }
+          catch (error) { setAssistantStatus("Не удалось открыть диалог: " + error.message); }
+        });
+        const rename = document.createElement("button"); rename.type = "button";
+        rename.className = "assistant-history-rename"; rename.textContent = "✎";
+        rename.title = "Переименовать диалог"; rename.setAttribute("aria-label", "Переименовать диалог");
+        rename.addEventListener("click", async () => {
+          const title = prompt("Название диалога:", conversation.title || "Новый диалог");
+          if (title === null) return;
+          const cleanTitle = title.trim().slice(0, 100); if (!cleanTitle) return;
+          const { error: updateError } = await supabaseClient.from("assistant_conversations")
+            .update({ title: cleanTitle }).eq("id", conversation.id).eq("user_id", authSession.user.id);
+          if (updateError) setAssistantStatus("Не удалось переименовать: " + updateError.message);
+          else { setAssistantStatus("Название сохранено."); renderAssistantHistory(); }
+        });
+        row.append(open, rename); assistantHistoryList.appendChild(row);
+      });
+      setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
+    } catch (error) {
+      setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
+    } finally { assistantHistoryBusy = false; }
+  };
+  const startAssistantConversation = async () => {
+    if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
+    const { data, error } = await supabaseClient.from("assistant_conversations")
+      .insert({ user_id: authSession.user.id, title: "Новый диалог" }).select("id").single();
+    if (error) throw error;
+    activeAssistantConversationId = data.id; clearAssistantMessages();
+    await renderAssistantHistory();
+    setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
+  };
+  $("#assistantNewChat")?.addEventListener("click", async () => {
+    try { await startAssistantConversation(); $("#assistantInput").focus(); }
+    catch (error) { setAssistantStatus("Не удалось создать диалог: " + error.message); }
+  });
   $("#assistantForm").addEventListener("submit", async event => {
     event.preventDefault();
-    const input = $("#assistantInput");
-    const value = input.value.trim();
-    if (!value) return;
+    const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
-    const button = $("#assistantForm button");
-    button.disabled = true;
-    input.disabled = true;
-    const addMessage = (kind, content) => {
-      const bubble = document.createElement("div");
-      bubble.className = "helper-text assistant-message " + kind;
-      bubble.textContent = content;
-      $(".assistant-panel").insertBefore(bubble, $("#assistantForm"));
-    };
-    addMessage("user-message", "Вы: " + value);
-    input.value = "";
+    const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     try {
+      if (!activeAssistantConversationId) await startAssistantConversation();
+      const { error: userSaveError } = await supabaseClient.from("assistant_messages")
+        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "user", content: value });
+      if (userSaveError) throw userSaveError;
+      renderAssistantMessage("user", value);
+      const { data: titleRow } = await supabaseClient.from("assistant_conversations")
+        .select("title").eq("id", activeAssistantConversationId).single();
+      if (titleRow?.title === "Новый диалог") {
+        await supabaseClient.from("assistant_conversations")
+          .update({ title: value.slice(0, 72) }).eq("id", activeAssistantConversationId);
+      }
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
-      addMessage("ai-message", "Studio AI: " + result.reply);
-    } catch (error) {
-      addMessage("error-message", "Не удалось получить ответ: " + error.message);
-    } finally {
-      button.disabled = false;
-      input.disabled = false;
-      input.focus();
-    }
+      const { error: assistantSaveError } = await supabaseClient.from("assistant_messages")
+        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "assistant", content: result.reply });
+      if (assistantSaveError) throw assistantSaveError;
+      renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
+    } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
+    finally { button.disabled = false; input.disabled = false; input.focus(); }
   });
+  setTimeout(() => renderAssistantHistory(), 0);
 
 
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
