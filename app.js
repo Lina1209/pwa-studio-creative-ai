@@ -644,11 +644,17 @@ const movieHistoryStyle = document.createElement("style");
       if(hint)hint.textContent=!project?"Сначала создайте или выберите фильм":unlocked?((project.completedSteps||[]).includes(movieStages[index].key)?"Открыть и изменить этап ↗":"Начать этап ↗"):"🔒 Сначала завершите предыдущий этап";
     });
   };
+  const setMovieCreationFormVisible = visible => {
+    const form=$("#movieForm");
+    const heading=form?.closest(".movie-workbench")?.querySelector(".movie-section-head");
+    if(form)form.hidden=!visible;
+    if(heading)heading.hidden=!visible;
+  };
   const openMovieDetailsStage = projectId => {
     const project=movieRead().find(item=>item.id===projectId);
     const panel=ensureMovieWorkflowPanel();
     if(!project||!panel)return;
-    activeMovieId=projectId; editingMovieId=projectId; updateMovieStageCards(); panel.replaceChildren();
+    activeMovieId=projectId; editingMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards(); panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent="Этап 1 из 5 · Основные сведения о фильме";
     const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+(project.name||"Без названия")+" · Измените сведения и перейдите к сценарию. Уже сохранённые материалы останутся на месте.";
@@ -679,7 +685,7 @@ const movieHistoryStyle = document.createElement("style");
     const actions=document.createElement("div"); actions.className="movie-stage-actions";
     const status=document.createElement("p"); status.className="movie-stage-feedback"; status.setAttribute("role","status"); status.style.cssText="display:block;flex-basis:100%;margin:8px 0;";
     const saveDraft=document.createElement("button"); saveDraft.type="button"; saveDraft.className="secondary-button"; saveDraft.textContent="Сохранить сведения";
-    const back=document.createElement("button"); back.type="button"; back.className="secondary-button"; back.textContent="← К списку фильмов"; back.addEventListener("click",()=>{panel.hidden=true;});
+    const back=document.createElement("button"); back.type="button"; back.className="secondary-button"; back.textContent="← К списку фильмов"; back.addEventListener("click",()=>{panel.hidden=true;setMovieCreationFormVisible(true);});
     const next=document.createElement("button"); next.type="button"; next.className="primary-button"; next.textContent="Сохранить и перейти к сценарию →";
     const persist=()=>{
       const name=inputs.movieName.value.trim();
@@ -706,7 +712,7 @@ const movieHistoryStyle = document.createElement("style");
     if(!project||!panel||stageIndex<0||stageIndex>=movieStages.length)return;
     const done=Array.isArray(project.completedSteps)?project.completedSteps:[];
     if(stageIndex>0&&!done.includes(movieStages[stageIndex-1].key)){const feedback=$("#movieFeedback");if(feedback)feedback.textContent="Сначала завершите предыдущий этап.";return;}
-    activeMovieId=projectId; updateMovieStageCards();
+    activeMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards();
     const stage=movieStages[stageIndex]; panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent="Этап "+(stageIndex+1)+" из 4 · "+stage.title;
@@ -745,7 +751,7 @@ const movieHistoryStyle = document.createElement("style");
         draftStatus.textContent="Ошибка сохранения: "+(error&&error.message?error.message:"неизвестная ошибка");
       }finally{draft.disabled=false;}
     });
-    const close=document.createElement("button"); close.type="button"; close.className="secondary-button"; close.textContent="← К проекту"; close.addEventListener("click",()=>{panel.hidden=true;});
+    const close=document.createElement("button"); close.type="button"; close.className="secondary-button"; close.textContent="← К проекту"; close.addEventListener("click",()=>{panel.hidden=true;setMovieCreationFormVisible(true);});
     const save=document.createElement("button"); save.type="button"; save.className="primary-button"; save.textContent=stageIndex===3?"Завершить этап":"Сохранить и открыть следующий этап →";
     save.addEventListener("click",()=>{
       const emptyField=stage.fields.find(([key])=>!inputs[key].value.trim());
@@ -764,7 +770,7 @@ const movieHistoryStyle = document.createElement("style");
         const complete=document.createElement("div"); complete.className="movie-workflow-complete";
         const h=document.createElement("h2"); h.textContent="✓ Подготовительные этапы завершены";
         const p=document.createElement("p"); p.textContent="Все материалы фильма сохранены. Генерация видео и реальный экспорт пока не подключены.";
-        const back=document.createElement("button"); back.type="button"; back.className="secondary-button"; back.textContent="Вернуться к проекту"; back.addEventListener("click",()=>{panel.hidden=true;});
+        const back=document.createElement("button"); back.type="button"; back.className="secondary-button"; back.textContent="Вернуться к проекту"; back.addEventListener("click",()=>{panel.hidden=true;setMovieCreationFormVisible(true);});
         complete.append(h,p,back); panel.append(complete);
       }
     });
