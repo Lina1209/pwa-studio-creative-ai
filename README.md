@@ -7,7 +7,7 @@
 - **Frontend:** Vanilla JavaScript, HTML, CSS, Tailwind utilities; публикация через GitHub Pages.
 - **Backend:** Python 3.12, FastAPI, LiteLLM; отдельное развёртывание через Render.
 - **Authentication:** Supabase Auth; frontend использует только публичный publishable key.
-- **Database / Storage:** Supabase SQL foundation and private storage policies. Cloud project CRUD and media upload UI are not implemented yet.
+- **Database / Storage:** Supabase Postgres and private Storage. Mini Movie Studio cloud sync code targets `public.projects`; migration `0005_cloud_projects_and_storage.sql` defines its owner-scoped schema and a private media bucket (migration application and cross-device sync still require live verification). Media upload UI is not implemented yet.
 
 ## Что уже реализовано
 
@@ -16,7 +16,7 @@
 - Разделы студии: главная, создание видео, Миникиностудия, Prompt Studio, медиатека, голосовая мастерская, сценарий и сцены, AI Companion, личный кабинет, путеводитель и правила.
 - Supabase sign-in, sign-up and password reset request.
 - Mini Movie Studio: создание локальных черновиков, компактный список, редактирование параметров, копирование проекта, удаление с подтверждением, история версий и последовательные этапы сценария, персонажей, голосов и плана монтажа.
-- Черновики Миникиностудии хранятся в localStorage отдельно для каждого вошедшего пользователя на конкретном устройстве.
+- Черновики Миникиностудии сохраняются локально и автоматически синхронизируются с `public.projects` после применения миграции 0005; облачное сохранение и синхронизация между устройствами пока ожидают проверки в live Supabase.
 
 ### Backend
 - FastAPI health endpoint.
@@ -27,7 +27,7 @@
 
 ## Важные ограничения
 
-- Локальные проекты Миникиностудии пока не синхронизируются между устройствами и не являются облачными записями.
+- Синхронизация проектов зависит от применения `supabase/migrations/0005_cloud_projects_and_storage.sql`; до проверки миграции и теста на втором устройстве не считайте облачную синхронизацию подтверждённой.
 - AI-сценарист внутри этапов Миникиностудии, генерация изображений/видео, клонирование голоса, timeline editor and MP4 rendering are not connected yet. The stage editor currently saves and edits production notes/text locally.
 - История версий хранится вместе с локальным проектом в браузере; очистка данных браузера может удалить её.
 - AI endpoints require a deployed backend, valid Supabase URL, provider credentials and a signed-in session.
@@ -58,8 +58,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ## Следующие крупные этапы
 
-1. Облачный CRUD проектов и версий с проверкой владельца.
-2. Загрузка и безопасное хранение медиафайлов в private Supabase Storage.
+1. Применить и проверить миграцию облачных проектов и приватного Supabase Storage.
+2. Реализовать интерфейс загрузки, просмотра и удаления медиафайлов.
 3. AI-сценарист и раскадровка с сохранением результатов в проекте.
 4. Character Library, согласие на использование внешности и голоса, Voice Studio.
 5. Подключение видеогенераторов, очереди задач, scene-level regeneration и MP4 export.
