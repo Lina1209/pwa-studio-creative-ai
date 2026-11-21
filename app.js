@@ -644,6 +644,63 @@ const movieHistoryStyle = document.createElement("style");
       if(hint)hint.textContent=!project?"Сначала создайте или выберите фильм":unlocked?((project.completedSteps||[]).includes(movieStages[index].key)?"Открыть и изменить этап ↗":"Начать этап ↗"):"🔒 Сначала завершите предыдущий этап";
     });
   };
+  const openMovieDetailsStage = projectId => {
+    const project=movieRead().find(item=>item.id===projectId);
+    const panel=ensureMovieWorkflowPanel();
+    if(!project||!panel)return;
+    activeMovieId=projectId; editingMovieId=projectId; updateMovieStageCards(); panel.replaceChildren();
+    const head=document.createElement("div"); head.className="movie-workflow-head";
+    const title=document.createElement("h2"); title.textContent="Этап 1 из 5 · Основные сведения о фильме";
+    const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+(project.name||"Без названия")+" · Измените сведения и перейдите к сценарию. Уже сохранённые материалы останутся на месте.";
+    head.append(title,subtitle);
+    const form=document.createElement("div"); form.className="movie-stage-fields movie-details-fields";
+    const fields=[
+      ["movieName","Название фильма",project.name||"", "Например: Тайна старого маяка","text"],
+      ["movieSeriesNumber","Номер серии",project.seriesNumber||"", "Если это продолжение","number"],
+      ["movieVersionLabel","Название версии",project.versionLabel||"", "Необязательно","text"],
+      ["movieIdea","Идея и краткое описание",project.idea||"", "О чём ваша история?","textarea"],
+      ["movieGenre","Жанр",project.genre||"Приключения","","select"],
+      ["movieDuration","Продолжительность",String(project.duration||5),"","duration"],
+      ["movieFrame","Формат кадра",project.frame||"16:9","","frame"]
+    ];
+    const inputs={};
+    fields.forEach(([key,labelText,value,placeholder,type])=>{
+      const wrap=document.createElement("label"); wrap.className="movie-stage-field";
+      const label=document.createElement("span"); label.textContent=labelText;
+      let field;
+      if(type==="textarea"){field=document.createElement("textarea");field.rows=5;field.maxLength=12000;field.placeholder=placeholder;}
+      else if(type==="select"||type==="duration"||type==="frame"){
+        field=document.createElement("select");
+        const choices=type==="select"?["Приключения","Фэнтези","Фантастика","Драма","Комедия","Детектив","Мультфильм","Документальный","Обучающий фильм","Музыкальный клип"]:type==="duration"?[["1","До 1 минуты"],["3","Около 3 минут"],["5","Около 5 минут"],["10","Около 10 минут"],["15","Около 15 минут"],["30","30 минут и более"]]:[["16:9","Кино · 16:9"],["9:16","Вертикальный · 9:16"],["1:1","Квадрат · 1:1"]];
+        choices.forEach(choice=>{const option=document.createElement("option");option.value=Array.isArray(choice)?choice[0]:choice;option.textContent=Array.isArray(choice)?choice[1]:choice;field.append(option);});
+      }else{field=document.createElement("input");field.type=type;field.maxLength=key==="movieName"?90:60;if(type==="number"){field.min="1";field.max="999";field.step="1";}}
+      field.value=String(value); field.id="movieDetails_"+key; inputs[key]=field; wrap.append(label,field); form.append(wrap);
+    });
+    const actions=document.createElement("div"); actions.className="movie-stage-actions";
+    const status=document.createElement("p"); status.className="movie-stage-feedback"; status.setAttribute("role","status"); status.style.cssText="display:block;flex-basis:100%;margin:8px 0;";
+    const saveDraft=document.createElement("button"); saveDraft.type="button"; saveDraft.className="secondary-button"; saveDraft.textContent="Сохранить сведения";
+    const back=document.createElement("button"); back.type="button"; back.className="secondary-button"; back.textContent="← К списку фильмов"; back.addEventListener("click",()=>{panel.hidden=true;});
+    const next=document.createElement("button"); next.type="button"; next.className="primary-button"; next.textContent="Сохранить и перейти к сценарию →";
+    const persist=()=>{
+      const name=inputs.movieName.value.trim();
+      if(!name){status.textContent="Укажите название фильма.";inputs.movieName.focus();return false;}
+      const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0){status.textContent="Фильм не найден.";return false;}
+      const current=latest[index]; addMovieVersion(current);
+      Object.assign(current,{
+        name, seriesNumber:inputs.movieSeriesNumber.value?Number(inputs.movieSeriesNumber.value):null,
+        versionLabel:inputs.movieVersionLabel.value.trim(), idea:inputs.movieIdea.value.trim(),
+        genre:inputs.movieGenre.value, duration:Number(inputs.movieDuration.value), frame:inputs.movieFrame.value,
+        updatedAt:new Date().toISOString()
+      });
+      if(!movieWrite(latest)){status.textContent="Не удалось сохранить изменения.";return false;}
+      renderMovieProjects(); status.textContent="✓ Основные сведения сохранены.";
+      return true;
+    };
+    saveDraft.addEventListener("click",persist);
+    next.addEventListener("click",()=>{if(persist())openMovieStage(projectId,0);});
+    actions.append(back,saveDraft,next,status); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage","details");
+    requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
+  };
   const openMovieStage = (projectId,stageIndex) => {
     const projects=movieRead(); const project=projects.find(item=>item.id===projectId); const panel=ensureMovieWorkflowPanel();
     if(!project||!panel||stageIndex<0||stageIndex>=movieStages.length)return;
@@ -711,7 +768,9 @@ const movieHistoryStyle = document.createElement("style");
         complete.append(h,p,back); panel.append(complete);
       }
     });
-    actions.append(draft,close,save,draftStatus); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
+    const previous= document.createElement("button"); previous.type="button"; previous.className="secondary-button"; previous.textContent="← Предыдущий лист";
+    previous.addEventListener("click",()=>stageIndex===0?openMovieDetailsStage(projectId):openMovieStage(projectId,stageIndex-1));
+    actions.append(previous,draft,close,save,draftStatus); panel.append(head,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
   const openMovieOverview = projectId => {
     const project=movieRead().find(item=>item.id===projectId); const panel=ensureMovieWorkflowPanel();
@@ -765,30 +824,7 @@ const movieHistoryStyle = document.createElement("style");
       const edit=makeAction("✎ Этапы и материалы","secondary-button",()=>{
         activeMovieId=project.id; openMovieOverview(project.id);
       });
-      const editDetails=makeAction("Изменить сведения","secondary-button",()=>{
-        const current=movieRead().find(item=>item.id===project.id) || project;
-        activeMovieId=current.id; editingMovieId=current.id;
-        const fields = {
-          movieName: current.name || "",
-          movieIdea: current.idea || "",
-          movieGenre: current.genre || "Приключения",
-          movieSeriesNumber: current.seriesNumber || "",
-          movieVersionLabel: current.versionLabel || "",
-          movieDuration: String(current.duration || 5),
-          movieFrame: current.frame || "16:9"
-        };
-        Object.entries(fields).forEach(([id,value])=>{
-          const field=document.getElementById(id);
-          if(field){field.value=String(value);field.dispatchEvent(new Event("input",{bubbles:true}));field.dispatchEvent(new Event("change",{bubbles:true}));}
-        });
-        const form=$("#movieForm");
-        const heading=form?.closest(".movie-workbench")?.querySelector(".movie-section-head h2");
-        if(heading)heading.textContent="Изменить сведения фильма";
-        const submit=form?.querySelector('button[type="submit"]');
-        if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
-        $("#movieFeedback").textContent="Редактируется фильм «"+(current.name||"Без названия")+"». Проверьте заполненные поля и сохраните изменения. Сценарий и этапы останутся отдельными материалами.";
-        if(form){form.scrollIntoView({behavior:"smooth",block:"center"});setTimeout(()=>document.getElementById("movieName")?.focus({preventScroll:true}),350);}
-      });
+      const editDetails=makeAction("Изменить сведения","secondary-button",()=>openMovieDetailsStage(project.id));
       const rename=makeAction("✎ Переименовать фильм","secondary-button",()=>{
         const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
         const entered=window.prompt("Введите новое название фильма:",original.name||"");
