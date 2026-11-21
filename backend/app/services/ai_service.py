@@ -1,9 +1,13 @@
+import logging
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from litellm import completion
 
 from app.core.config import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class AIConfigurationError(RuntimeError):
@@ -70,7 +74,19 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
     if settings.ai_provider.lower() == "ollama":
         completion_options["api_base"] = settings.ollama_api_base.rstrip("/")
 
-    response = completion(**completion_options)
+    try:
+        response = completion(**completion_options)
+    except Exception as exc:
+        # Log diagnostic metadata only; never log prompts, credentials, or raw provider errors.
+        status_code = getattr(exc, "status_code", None)
+        logger.error(
+            "AI provider request failed: provider=%s model=%s error_type=%s status_code=%s",
+            settings.ai_provider,
+            model,
+            type(exc).__name__,
+            status_code if isinstance(status_code, (int, str)) else "unavailable",
+        )
+        raise
     content = response.choices[0].message.content
     if not isinstance(content, str) or not content.strip():
         raise RuntimeError("The AI provider returned an empty response.")
