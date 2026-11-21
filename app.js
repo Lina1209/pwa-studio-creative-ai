@@ -766,13 +766,28 @@ const movieHistoryStyle = document.createElement("style");
         activeMovieId=project.id; openMovieOverview(project.id);
       });
       const editDetails=makeAction("Изменить сведения","secondary-button",()=>{
-        activeMovieId=project.id; editingMovieId=project.id;
-        $("#movieName").value=project.name||""; $("#movieIdea").value=project.idea||""; $("#movieGenre").value=project.genre||"Приключения";
-        $("#movieSeriesNumber").value=project.seriesNumber||""; $("#movieVersionLabel").value=project.versionLabel||"";
-        $("#movieDuration").value=String(project.duration||5); $("#movieFrame").value=project.frame||"16:9";
-        const submit=$('#movieForm button[type="submit"]'); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
-        $("#movieFeedback").textContent="Изменение основных сведений фильма. Сценарий и этапы останутся отдельными материалами.";
-        $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
+        const current=movieRead().find(item=>item.id===project.id) || project;
+        activeMovieId=current.id; editingMovieId=current.id;
+        const fields = {
+          movieName: current.name || "",
+          movieIdea: current.idea || "",
+          movieGenre: current.genre || "Приключения",
+          movieSeriesNumber: current.seriesNumber || "",
+          movieVersionLabel: current.versionLabel || "",
+          movieDuration: String(current.duration || 5),
+          movieFrame: current.frame || "16:9"
+        };
+        Object.entries(fields).forEach(([id,value])=>{
+          const field=document.getElementById(id);
+          if(field){field.value=String(value);field.dispatchEvent(new Event("input",{bubbles:true}));field.dispatchEvent(new Event("change",{bubbles:true}));}
+        });
+        const form=$("#movieForm");
+        const heading=form?.closest(".movie-workbench")?.querySelector(".movie-section-head h2");
+        if(heading)heading.textContent="Изменить сведения фильма";
+        const submit=form?.querySelector('button[type="submit"]');
+        if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
+        $("#movieFeedback").textContent="Редактируется фильм «"+(current.name||"Без названия")+"». Проверьте заполненные поля и сохраните изменения. Сценарий и этапы останутся отдельными материалами.";
+        if(form){form.scrollIntoView({behavior:"smooth",block:"center"});setTimeout(()=>document.getElementById("movieName")?.focus({preventScroll:true}),350);}
       });
       const rename=makeAction("✎ Переименовать фильм","secondary-button",()=>{
         const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
