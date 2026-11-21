@@ -10,7 +10,21 @@
   <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
   <script src="https://cdn.tailwindcss.com"></script>
-</head>
+<style id="assistant-history-styles">
+.assistant-history-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.assistant-history-toolbar b{font-size:13px}.assistant-history-status{font-size:11px;color:var(--muted);margin-top:4px}
+.assistant-history-list{display:flex;gap:7px;overflow-x:auto;padding:10px 0;max-width:100%}
+.assistant-history-row{display:flex;align-items:center;gap:3px;flex:0 0 auto;max-width:220px;border:1px solid var(--line);border-radius:10px;padding:3px}
+.assistant-history-open,.assistant-history-rename{border:0;background:transparent;color:var(--text);cursor:pointer;padding:7px}
+.assistant-history-open{max-width:175px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.assistant-history-open[aria-current="true"]{color:#c4a7ff;background:rgba(157,121,235,.13);border-radius:7px}
+.assistant-history-rename{color:var(--muted)}
+.assistant-messages{display:flex;flex-direction:column;gap:8px;max-height:48vh;overflow-y:auto;padding:6px 0}
+.assistant-message{white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 12px;border-radius:12px;max-width:92%;font-size:12px;line-height:1.6}
+.assistant-message.user-message{align-self:flex-end;background:rgba(112,103,210,.18);color:var(--text)}
+.assistant-message.ai-message{align-self:flex-start;background:rgba(145,125,190,.12);color:var(--text)}
+body.light .assistant-history-open,body.light .assistant-history-rename{color:#373149}
+</style></head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
   <div class="app-shell">
@@ -123,7 +137,7 @@
 
       <section class="view" id="view-assistant">
         <div class="page-heading"><div class="eyebrow">YOUR CREATIVE PARTNER</div><h1>Studio AI <span class="gradient-text">Companion</span></h1><p>Помощник по идеям, сценариям, промтам и инструментам студии.</p></div>
-        <div class="assistant-panel panel"><div class="assistant-welcome"><div class="companion-orb large">✦</div><h2>Привет! Давайте создадим что-нибудь особенное.</h2><p>Я уже на связи! Помогу придумать идею, разработать сценарий, разбить его на сцены и подготовить промты для создания видео.</p></div><div class="suggestion-row"><button data-assist="Помоги придумать идею для короткого видео">Придумать идею</button><button data-assist="Помоги написать промт для видео">Создать промт</button><button data-assist="Помоги разбить сюжет на сцены">Разбить на сцены</button></div><form id="assistantForm" class="chat-form"><input id="assistantInput" placeholder="Расскажите, что хотите создать..." aria-label="Сообщение помощнику"><button aria-label="Отправить">↑</button></form><div class="helper-text">Сообщения отправляются на backend PWA Studio. Ответ зависит от доступности AI-провайдера.</div></div>
+        <div class="assistant-panel panel"><div class="assistant-history-toolbar"><div><b>История диалогов</b><div id="assistantHistoryStatus" class="assistant-history-status" aria-live="polite">Загрузка…</div></div><button type="button" id="assistantNewChat" class="secondary-button">＋ Новый диалог</button></div><div id="assistantHistoryList" class="assistant-history-list" aria-label="Сохранённые диалоги"></div><div id="assistantMessages" class="assistant-messages" aria-live="polite"></div><div class="assistant-welcome"><div class="companion-orb large">✦</div><h2>Привет! Давайте создадим что-нибудь особенное.</h2><p>Я уже на связи! Помогу придумать идею, разработать сценарий, разбить его на сцены и подготовить промты для создания видео.</p></div><div class="suggestion-row"><button data-assist="Помоги придумать идею для короткого видео">Придумать идею</button><button data-assist="Помоги написать промт для видео">Создать промт</button><button data-assist="Помоги разбить сюжет на сцены">Разбить на сцены</button></div><form id="assistantForm" class="chat-form"><input id="assistantInput" placeholder="Расскажите, что хотите создать..." aria-label="Сообщение помощнику"><button aria-label="Отправить">↑</button></form><div class="helper-text">Сообщения отправляются на backend PWA Studio. Ответ зависит от доступности AI-провайдера.</div></div>
       </section>
 
       <section class="view" id="view-editor"><div class="page-heading"><div class="eyebrow">EDITING ROOM</div><h1>Видеоредактор</h1><p>Рабочее пространство для монтажа, таймлайна и предпросмотра.</p></div><div class="empty-workspace panel"><div class="empty-icon">▤</div><h2>Монтажная скоро откроется</h2><p>Здесь появятся предпросмотр, дорожки видео и аудио, сцены, переходы и субтитры.</p><button class="secondary-button" data-go="create">Подготовить новый проект →</button></div></section>
