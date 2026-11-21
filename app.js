@@ -44,6 +44,7 @@
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
       const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Пользователь";
       $("#accountLogin").hidden = true; $("#accountLogout").hidden = false;
+      const guestNav = $("#guestSpaceNav"); if (guestNav) guestNav.hidden = true;
       const topAvatar = $(".top-avatar");
       if (topAvatar) topAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
     } else {
@@ -56,6 +57,7 @@
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = "✦";
       const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Гость";
       $("#accountLogin").hidden = false; $("#accountLogout").hidden = true;
+      const guestNav = $("#guestSpaceNav"); if (guestNav) guestNav.hidden = false;
       const panel = $("#adminPanel"); if (panel) panel.hidden = true;
       const topAvatar = $(".top-avatar");
       if (topAvatar) topAvatar.textContent = "L";
@@ -217,7 +219,7 @@ const movieHistoryStyle = document.createElement("style");
     return data;
   };
   if (authSession?.user) setTimeout(loadAccountRole, 0);
-  const labels = {account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
@@ -477,13 +479,32 @@ const movieHistoryStyle = document.createElement("style");
   };
   const movieRead = () => {
     try {
-      const value = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
-      return Array.isArray(value) ? value.filter(item => item && typeof item === "object" && item.id).map(item => ({
-        ...item,
-        // Keep older projects editable: their screenplay may exist only in the original idea field.
-        story: item.story || item.idea || "",
-        completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
-      })).sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0)) : [];
+      const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
+      if (!Array.isArray(raw)) return [];
+      const now = Date.now();
+      let changed = false;
+      const projects = raw.filter(item => item && typeof item === "object" && item.id).map(item => {
+        const project = {
+          ...item,
+          story: item.story || item.idea || "",
+          completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
+        };
+        if (!authSession?.user && !project.guestExpiresAt) {
+          project.guestExpiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+          changed = true;
+        }
+        return project;
+      });
+      const active = authSession?.user ? projects : projects.filter(project => {
+        const expired = Date.parse(project.guestExpiresAt) <= now;
+        if (expired) changed = true;
+        return !expired;
+      });
+      if (changed) {
+        if (!authSession?.user && active.length !== projects.length) sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
+        localStorage.setItem(movieStorageKey(), JSON.stringify(active));
+      }
+      return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
     } catch { return []; }
   };
   const movieWrite = projects => {
@@ -786,7 +807,6 @@ const movieHistoryStyle = document.createElement("style");
   });
   $("#movieForm").addEventListener("submit",event=>{
     event.preventDefault();
-    if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите или зарегистрируйтесь, чтобы сохранять собственные фильмы. Введённые поля останутся на месте.");return;}
     const name=$("#movieName").value.trim(); if(!name){$("#movieFeedback").textContent="Укажите название будущего фильма.";return;}
     const projects=movieRead(); const existingIndex=editingMovieId?projects.findIndex(item=>item.id===editingMovieId):-1; const now=new Date().toISOString();
     let savedProject;
@@ -797,14 +817,15 @@ const movieHistoryStyle = document.createElement("style");
       if(ideaChanged){savedProject.completedSteps=[];savedProject.workflowStep=0;}
       projects[existingIndex]=savedProject;
     }else{
-      savedProject={id:movieId(),name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,seriesNumber:$("#movieSeriesNumber").value?Number($("#movieSeriesNumber").value):null,versionLabel:$("#movieVersionLabel").value.trim(),duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,createdAt:now,updatedAt:now,workflowStep:0,completedSteps:[],story:"",storyboard:"",characters:"",voices:"",edit:"",versions:[]};
+      savedProject={id:movieId(),name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,seriesNumber:$("#movieSeriesNumber").value?Number($("#movieSeriesNumber").value):null,versionLabel:$("#movieVersionLabel").value.trim(),duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,createdAt:now,updatedAt:now,...(!authSession?.user?{guestExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString()}:{}),workflowStep:0,completedSteps:[],story:"",storyboard:"",characters:"",voices:"",edit:"",versions:[]};
       projects.unshift(savedProject);
     }
     if(!movieWrite(projects))return;
     activeMovieId=savedProject.id; editingMovieId=savedProject.id;
     const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
     renderMovieProjects();
-    $("#movieFeedback").textContent=existingIndex>=0?"✓ Изменения сохранены в проекте «"+name+"».":"✓ Фильм «"+name+"» создан. Форма теперь редактирует этот проект; для нового фильма нажмите «Новый фильм». Этап 1 — сценарий и раскадровка — уже доступен.";
+    $("#movieFeedback").textContent=existingIndex>=0?"✓ Изменения сохранены в проекте «"+name+"».":(!authSession?.user?"✓ Гостевой фильм создан. Он будет храниться в этом браузере 24 часа. Откройте «Гостевое пространство», чтобы скачать копию.":"✓ Фильм «"+name+"» создан. Форма теперь редактирует этот проект; для нового фильма нажмите «Новый фильм». Этап 1 — сценарий и раскадровка — уже доступен.");
+    if(!authSession?.user) renderGuestSpace();
     const workflow=$("#movieWorkflowPanel"); if(workflow)workflow.hidden=true;
   });
   $$(".movie-tool-card[data-movie-tool]").forEach((button,index)=>button.addEventListener("click",()=>{
@@ -815,6 +836,59 @@ const movieHistoryStyle = document.createElement("style");
   const workflowStyle=document.createElement("style");
   workflowStyle.textContent=".movie-project-accordion{padding:0!important;overflow:hidden}.movie-project-toggle{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;text-align:left;color:inherit;background:transparent;border:0;cursor:pointer}.movie-project-toggle:hover,.movie-project-card.is-active .movie-project-toggle{background:rgba(160,130,230,.08)}.movie-project-number{display:grid;place-items:center;flex:0 0 36px;height:36px;border-radius:11px;background:rgba(157,121,235,.15);color:#c8aaff;font-weight:800;font-size:12px}.movie-project-heading{display:grid;gap:5px;min-width:0;flex:1}.movie-project-heading b{font-size:15px;overflow-wrap:anywhere}.movie-project-heading small,.movie-project-date,.movie-project-progress{color:var(--muted);font-size:12px}.movie-project-chevron{font-size:22px;color:#c8aaff}.movie-project-details{padding:0 18px 18px 68px}.movie-project-details[hidden],.movie-workflow-panel[hidden]{display:none}.movie-project-details p{white-space:pre-wrap;line-height:1.65;margin:0 0 10px;color:var(--text)}.movie-project-progress{display:block;margin:8px 0}.movie-project-actions,.movie-stage-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.movie-project-actions button,.movie-stage-actions button{min-height:40px}.movie-tool-card:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.5)}.movie-tool-card.is-locked em{font-style:normal}.movie-workflow-panel{margin:24px 0;padding:22px}.movie-workflow-head h2{margin:0 0 8px}.movie-workflow-head p,.movie-workflow-complete p{color:var(--muted);line-height:1.6}.movie-stage-fields{display:grid;gap:16px;margin-top:18px}.movie-stage-field{display:grid;gap:8px;font-weight:600}.movie-stage-field textarea{width:100%;min-height:130px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font:inherit;resize:vertical}.movie-stage-actions{justify-content:space-between}.movie-workflow-complete h2{margin-top:0}.danger-button{border:1px solid rgba(255,90,90,.35);color:#ff9292;background:rgba(255,70,70,.08);border-radius:10px;padding:9px 12px}@media(max-width:520px){.movie-project-toggle{padding:14px 12px;gap:10px}.movie-project-details{padding:0 12px 14px 58px}.movie-project-heading b{font-size:14px}.movie-project-actions button{font-size:12px;padding:8px 10px}.movie-workflow-panel{padding:15px}}";
   document.head.appendChild(workflowStyle);
+  const formatGuestRemaining = expiresAt => {
+    const ms = Math.max(0, Date.parse(expiresAt) - Date.now());
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    return hours > 0 ? hours + " ч " + minutes + " мин" : minutes + " мин";
+  };
+  const downloadGuestProject = project => {
+    const payload = { format:"PWA Studio guest project", schemaVersion:1, exportedAt:new Date().toISOString(), project };
+    const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href=url; link.download=(String(project.name||"guest-project").replace(/[^a-zа-яё0-9_-]+/gi,"-").replace(/^-|-$/g,"")||"guest-project")+".pwa-project.json";
+    document.body.append(link); link.click(); link.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  const renderGuestSpace = () => {
+    const list=$("#guestProjectList"); if(!list)return;
+    const projects=authSession?.user?[]:movieRead();
+    const count=$("#guestProjectCount");
+    if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
+    const notice=$("#guestExpiryNotice");
+    if(notice){notice.hidden=sessionStorage.getItem("pwa-studio-guest-expired-notice")!=="1";if(!notice.hidden)sessionStorage.removeItem("pwa-studio-guest-expired-notice");}
+    list.replaceChildren();
+    if(!projects.length){
+      const empty=document.createElement("div");empty.className="movie-empty";
+      const icon=document.createElement("span");icon.textContent="✧";
+      const title=document.createElement("b");title.textContent="Пока здесь пусто";
+      const hint=document.createElement("small");hint.textContent="Создайте фильм в Миникиностудии — он появится в этом пространстве.";
+      empty.append(icon,title,hint);list.append(empty);return;
+    }
+    projects.forEach((project,index)=>{
+      const card=document.createElement("article");card.className="guest-project-card";
+      const head=document.createElement("div");head.className="guest-project-card-head";
+      const number=document.createElement("span");number.className="movie-project-number";number.textContent=String(index+1).padStart(2,"0");
+      const title=document.createElement("b");title.textContent=project.name||"Без названия";
+      head.append(number,title);
+      const meta=document.createElement("p");meta.textContent=[project.genre||"Жанр не указан",(project.duration||5)+" мин",project.frame||"16:9",movieProgress(project)].join(" · ");
+      const expiry=document.createElement("div");expiry.className="guest-project-expiry";expiry.textContent="Осталось: "+formatGuestRemaining(project.guestExpiresAt);
+      const actions=document.createElement("div");actions.className="guest-project-actions";
+      const open=document.createElement("button");open.type="button";open.className="primary-button";open.textContent="Продолжить фильм";open.addEventListener("click",()=>{activeMovieId=project.id;editingMovieId=project.id;navigate("movie");const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key));if((project.completedSteps||[]).length===4)openMovieOverview(project.id);else openMovieStage(project.id,next<0?0:next);});
+      const download=document.createElement("button");download.type="button";download.className="secondary-button";download.textContent="⇩ Скачать проект";download.addEventListener("click",()=>downloadGuestProject(project));
+      actions.append(open,download);card.append(head,meta,expiry,actions);list.append(card);
+    });
+  };
+  $("#guestCreateMovie")?.addEventListener("click",()=>navigate("movie"));
+  $("#guestExportAll")?.addEventListener("click",()=>{
+    const projects=movieRead();
+    if(!projects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
+    const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:1,exportedAt:new Date().toISOString(),projects},null,2)],{type:"application/json;charset=utf-8"});
+    const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+  renderGuestSpace();
+  setInterval(()=>{if(!authSession?.user && !$("#view-guestspace")?.hidden)renderGuestSpace();},60000);
+
   renderMovieProjects();
 
   // Store only the backend URL in this browser; provider secrets stay server-side.
