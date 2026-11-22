@@ -1,6 +1,6 @@
 import hashlib
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 import json
 from uuid import UUID, uuid4
@@ -469,6 +469,8 @@ def admin_ai_usage_report(
         if isinstance(row, dict) and isinstance(row.get("provider"), str)
     }
     budget_status = []
+    today_utc = datetime.now(timezone.utc).date()
+    today_in_report = date_from <= today_utc <= date_to
     for provider, configured_budget in budgets.items():
         row = daily_rows.get(provider, {})
         try:
@@ -484,7 +486,9 @@ def admin_ai_usage_report(
             "utilization_percent": None,
             "status": "unconfigured",
         }
-        if configured_budget is not None:
+        if configured_budget is not None and not today_in_report:
+            item["status"] = "outside_report_period"
+        elif configured_budget is not None:
             item["utilization_percent"] = round(float(spend / configured_budget * 100), 2)
             if unknown_events:
                 item["status"] = "unknown_costs"
