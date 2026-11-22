@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from app.services.generation_result_storage import GenerationResultStorageError
+from app.services.generation_result_storage import (
+    GenerationResultStorageError,
+    GenerationStorageAdapterError,
+)
 from app.services.supabase_generation_worker_repository import (
     GenerationJobInventoryRow,
     SupabaseGenerationJobRepository,
@@ -214,7 +217,7 @@ async def verify_owner_succeeded_results(
                 owner_id=owner_id, job_id=job.job_id, object_path=path
             )
             verified.append(path)
-        except (GenerationResultStorageError, SupabaseStorageAdapterError) as exc:
+        except (GenerationResultStorageError, GenerationStorageAdapterError) as exc:
             code = exc.error_code
             if getattr(exc, "retryable", False):
                 deferred.append((str(job.job_id), code))
