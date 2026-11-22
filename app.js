@@ -368,6 +368,56 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#refreshAdminAiProviders")?.addEventListener("click", loadAdminAiProviders);
 
+  const setAdminAiUsageDefaultDates = () => {
+    const to = new Date(), from = new Date(to);
+    from.setDate(from.getDate() - 6);
+    const iso = value => value.toISOString().slice(0, 10);
+    if ($("#adminAiUsageDateFrom") && !$("#adminAiUsageDateFrom").value) $("#adminAiUsageDateFrom").value = iso(from);
+    if ($("#adminAiUsageDateTo") && !$("#adminAiUsageDateTo").value) $("#adminAiUsageDateTo").value = iso(to);
+  };
+  const loadAdminAiUsage = async () => {
+    const status = $("#adminAiUsageStatus"), rows = $("#adminAiUsageRows");
+    if (!status || !rows || !adminUiAuthorized) return;
+    const dateFrom = $("#adminAiUsageDateFrom")?.value;
+    const dateTo = $("#adminAiUsageDateTo")?.value;
+    if (!dateFrom || !dateTo || dateFrom > dateTo) {
+      status.textContent = "Укажите корректный период.";
+      return;
+    }
+    status.textContent = "Загружаем агрегированную статистику…";
+    rows.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/ai/usage?date_from=" + encodeURIComponent(dateFrom) + "&date_to=" + encodeURIComponent(dateTo));
+      if (!adminUiAuthorized) return;
+      const totals = data.totals || {};
+      const number = value => new Intl.NumberFormat("ru-RU").format(Number(value || 0));
+      $("#adminAiUsageRequests").textContent = number(totals.requests);
+      $("#adminAiUsageTokens").textContent = number((totals.input_tokens || 0) + (totals.output_tokens || 0));
+      $("#adminAiUsageCost").textContent = Number(totals.reported_estimated_cost_usd || 0).toFixed(6);
+      (data.by_provider_model || []).forEach(item => {
+        const tr = document.createElement("tr");
+        [
+          item.provider, item.model, number(item.requests),
+          number(item.input_tokens), number(item.output_tokens),
+          Number(item.reported_estimated_cost_usd || 0).toFixed(6)
+        ].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      const disclaimer = $("#adminAiUsageDisclaimer");
+      if (disclaimer) disclaimer.textContent = data.cost_disclaimer || "Оценка стоимости не является фактическим списанием.";
+      status.textContent = "Период UTC: " + data.period.from + " — " + data.period.to
+        + ". Неизвестных записей по стоимости: " + number(totals.cost_unknown_events)
+        + ". Фактические списания не сверены.";
+    } catch (error) {
+      status.textContent = "Не удалось загрузить статистику: " + error.message;
+    }
+  };
+  setAdminAiUsageDefaultDates();
+  $("#loadAdminAiUsage")?.addEventListener("click", loadAdminAiUsage);
+
+
   const loadAdminAnalytics = async () => {
     const status = $("#adminAnalyticsStatus");
     const requestedUserId = authSession?.user?.id;
