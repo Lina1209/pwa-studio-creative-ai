@@ -77,10 +77,19 @@ def test_admin_audit_journal_rejects_page_limit_over_200(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_admin_audit_journal_rejects_incomplete_cursor():
+    client = _client_for(StudioUser(user_id="22222222-2222-4222-8222-222222222222", email=None, role="admin"))
+    try:
+        response = client.get("/api/admin/audit-events?before_id=33333333-3333-4333-8333-333333333333")
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_admin_audit_journal_rejects_timezone_free_cursor():
     client = _client_for(StudioUser(user_id="22222222-2222-4222-8222-222222222222", email=None, role="admin"))
     try:
-        response = client.get("/api/admin/audit-events?before=2026-11-22T10:00:00")
+        response = client.get("/api/admin/audit-events?before=2026-11-22T10:00:00&before_id=33333333-3333-4333-8333-333333333333")
         assert response.status_code == 422
     finally:
         app.dependency_overrides.clear()
