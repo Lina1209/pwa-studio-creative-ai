@@ -6,6 +6,7 @@ repository/provider/storage adapters. The feature flag remains off until those
 adapters and deployment controls exist.
 """
 import asyncio
+import hashlib
 import logging
 from dataclasses import dataclass, replace
 from typing import Protocol
@@ -271,7 +272,10 @@ class GenerationWorker:
                 # we never fabricate zero-cost usage.
                 if result.usage is not None:
                     usage = result.usage
-                    usage_key_suffix = usage.provider_usage_id or "result"
+                    usage_key_suffix = (
+                        hashlib.sha256(usage.provider_usage_id.encode("utf-8")).hexdigest()
+                        if usage.provider_usage_id else "result"
+                    )
                     await self.repository.record_provider_cost(
                         job_id=job.job_id,
                         user_id=job.user_id,
