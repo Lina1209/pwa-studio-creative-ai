@@ -218,3 +218,107 @@ def create_scene_generation_job(
         raise GenerationJobsServiceError(
             "The scene job creation service returned an incomplete response."
         ) from exc
+
+
+@dataclass(frozen=True)
+class CreditedGenerationJobCreateResult:
+    job_id: UUID
+    event_id: UUID
+    hold_id: UUID
+    available_credits: int
+    reserved_credits: int
+    created: bool
+    replayed: bool
+
+
+def create_credited_generation_job(
+    settings: Settings,
+    *,
+    user_id: UUID,
+    project_id: UUID | None,
+    studio_scene_id: UUID | None,
+    job_type: str,
+    provider: str,
+    model: str,
+    idempotency_key: str,
+    request_hash: str,
+    request_snapshot: dict[str, Any],
+    quote_snapshot: dict[str, Any],
+    credit_amount: int,
+) -> CreditedGenerationJobCreateResult:
+    """Atomically admit a credited job; quote creation remains server-owned.
+
+    This adapter deliberately does not calculate prices or accept browser
+    credentials. Callers must derive user_id from verified auth and supply an
+    immutable quote produced by a future trusted pricing service.
+    """
+    if not settings.generation_jobs_enabled:
+        raise GenerationJobsNotConfiguredError(
+            "Generation jobs are not enabled on this server."
+        )
+    if isinstance(credit_amount, bool) or not isinstance(credit_amount, int) or not 1 <= credit_amount <= 1_000_000_000_000:
+        raise GenerationJobsServiceError("The server-generated credit quote is invalid.")
+    if not isinstance(request_snapshot, dict) or not isinstance(quote_snapshot, dict):
+        raise GenerationJobsServiceError("Generation request and quote snapshots must be objects.")
+    if len(idempotency_key) < 8 or len(idempotency_key) > 200:
+        raise GenerationJobsServiceError("The generation idempotency key is invalid.")
+    if len(request_hash) < 32 or len(request_hash) > 128 or any(c not in "0123456789abcdef" for c in request_hash):
+        raise GenerationJobsServiceError("The canonical generation request hash is invalid.")
+
+    headers = _headers(settings)
+    payload = {
+        "p_user_id": str(user_id),
+        "p_project_id": str(project_id) if project_id else None,
+        "p_studio_scene_id": str(studio_scene_id) if studio_scene_id else None,
+        "p_job_type": job_type,
+        "p_provider": provider,
+        "p_model": model,
+        "p_idempotency_key": idempotency_key,
+        "p_request_hash": request_hash,
+        "p_request_snapshot": request_snapshot,
+        "p_quote_snapshot": quote_snapshot,
+        "p_credit_amount": credit_amount,
+    }
+    url = (
+        f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/"
+        "create_credited_generation_job_with_outbox"
+    )
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        raise GenerationJobsServiceError(
+            f"Could not admit credited generation job (HTTP {status_code})."
+        ) from exc
+
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise GenerationJobsServiceError("The credited job service returned an invalid response.")
+    row = data[0]
+    try:
+        available = row["available_credits"]
+        reserved = row["reserved_credits"]
+        created = row["created"]
+        replayed = row["replayed"]
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
+               for value in (available, reserved)):
+            raise ValueError("wallet balances")
+        if not isinstance(created, bool) or not isinstance(replayed, bool):
+            raise ValueError("operation flags")
+        if created == replayed:
+            raise ValueError("operation flags are inconsistent")
+        return CreditedGenerationJobCreateResult(
+            job_id=UUID(str(row["job_id"])),
+            event_id=UUID(str(row["event_id"])),
+            hold_id=UUID(str(row["hold_id"])),
+            available_credits=available,
+            reserved_credits=reserved,
+            created=created,
+            replayed=replayed,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GenerationJobsServiceError(
+            "The credited job service returned incomplete or invalid metadata."
+        ) from exc
