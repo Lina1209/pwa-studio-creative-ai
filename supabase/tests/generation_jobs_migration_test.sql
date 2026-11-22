@@ -1458,6 +1458,72 @@ begin
 
   v_rejected := false;
   begin
+    perform public.store_generation_pricing_quote(
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      '22222222-2222-4222-8222-222222222222',
+      'pricing-foreign-project-001',
+      repeat('d', 64),
+      'image_generation',
+      'pricing-test-provider',
+      'pricing-test-model',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      null,
+      jsonb_build_object(
+        'quote_id', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        'user_id', '22222222-2222-4222-8222-222222222222',
+        'idempotency_key', 'pricing-foreign-project-001',
+        'request_hash', repeat('d', 64),
+        'job_type', 'image_generation',
+        'provider', 'pricing-test-provider',
+        'model', 'pricing-test-model',
+        'quantity', 1,
+        'project_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'studio_scene_id', null,
+        'expires_at', v_expiry
+      ),
+      v_expiry
+    );
+  exception when sqlstate '42501' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Pricing quote accepted another user cloud project';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.store_generation_pricing_quote(
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      '22222222-2222-4222-8222-222222222222',
+      'pricing-foreign-scene-001',
+      repeat('e', 64),
+      'image_generation',
+      'pricing-test-provider',
+      'pricing-test-model',
+      null,
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      jsonb_build_object(
+        'quote_id', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        'user_id', '22222222-2222-4222-8222-222222222222',
+        'idempotency_key', 'pricing-foreign-scene-001',
+        'request_hash', repeat('e', 64),
+        'job_type', 'image_generation',
+        'provider', 'pricing-test-provider',
+        'model', 'pricing-test-model',
+        'quantity', 1,
+        'project_id', null,
+        'studio_scene_id', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        'expires_at', v_expiry
+      ),
+      v_expiry
+    );
+  exception when sqlstate '42501' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Pricing quote accepted another user studio scene';
+  end if;
+
+  v_rejected := false;
+  begin
     update public.generation_pricing_quotes
        set quote_snapshot = '{}'::jsonb
      where user_id = '11111111-1111-4111-8111-111111111111'
