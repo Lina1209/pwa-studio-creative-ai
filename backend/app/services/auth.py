@@ -97,3 +97,27 @@ def require_admin(user: StudioUser = Depends(get_current_user)) -> StudioUser:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Administrator access is required.")
     return user
+
+
+# Explicit owner capabilities are deliberately read-only. Ownership alone never
+# grants payment, refund, credit mutation, pricing, user-role, or policy writes.
+OWNER_READ_PERMISSIONS = frozenset({
+    "admin.analytics.read",
+    "admin.finance.costs.read",
+    "admin.finance.wallets.read",
+    "admin.security.audit.read",
+    "admin.platform.overview.read",
+})
+
+
+def require_permission(permission: str):
+    """Create a fail-closed dependency for one narrowly scoped capability."""
+    if permission not in OWNER_READ_PERMISSIONS:
+        raise ValueError("Unknown or non-owner-read permission.")
+
+    def permission_dependency(user: StudioUser = Depends(get_current_user)) -> StudioUser:
+        if user.role != "admin" or permission not in OWNER_READ_PERMISSIONS:
+            raise HTTPException(status_code=403, detail="This operation is not permitted.")
+        return user
+
+    return permission_dependency
