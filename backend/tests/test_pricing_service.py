@@ -88,6 +88,20 @@ def test_quote_tampering_is_detected_even_when_amount_and_limit_are_changed():
         verify(snapshot)
 
 
+def test_quote_rejects_boolean_maximum_authorized_charge():
+    snapshot = make_quote().snapshot()
+    snapshot["maximum_authorized_charge"] = True
+    with pytest.raises(PricingError, match="authorization limit"):
+        verify(snapshot)
+
+
+def test_quote_rejects_quantity_above_global_bound():
+    snapshot = make_quote().snapshot()
+    snapshot["quantity"] = 10001
+    with pytest.raises(PricingError, match="quantity"):
+        verify(snapshot)
+
+
 def test_quote_expiry_is_enforced():
     snapshot = make_quote(ttl_seconds=60).snapshot()
     with pytest.raises(PricingError, match="expired"):
