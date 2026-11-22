@@ -2657,4 +2657,235 @@ begin
 end;
 $credit_wallet_snapshot_test$;
 
+-- Source-aware grants, earliest-expiry-first reservations, capture, release and expiry.
+do $credit_lot_lifecycle_test$
+declare
+  v_user uuid := '44444444-4444-4444-8444-444444444444';
+  v_other uuid := '55555555-5555-4555-8555-555555555555';
+  v_grant record;
+  v_replay record;
+  v_job uuid;
+  v_other_job uuid;
+  v_hold uuid;
+  v_second_job uuid;
+  v_second_hold uuid;
+  v_expiring_job uuid;
+  v_expiring_hold uuid;
+  v_completed record;
+  v_release record;
+  v_available bigint;
+  v_reserved bigint;
+  v_expired bigint;
+  v_rejected boolean;
+  v_lot_id uuid;
+begin
+  insert into auth.users(id) values (v_user), (v_other)
+  on conflict (id) do nothing;
+
+  select * into v_grant from public.grant_user_credit_lot(
+    v_user, 10, 'free', 'monthly-free-cycle', 'grant-free-lot-001',
+    now() + interval '2 days', '{"campaign":"free-cycle-test"}'::jsonb
+  );
+  if v_grant.available_credits <> 10 or v_grant.reserved_credits <> 0
+     or v_grant.replayed then
+    raise exception 'Free lot grant returned unexpected wallet state';
+  end if;
+
+  select * into v_grant from public.grant_user_credit_lot(
+    v_user, 20, 'purchased', 'payment-reference-001', 'grant-purchased-001',
+    null, '{"payment_state":"test-only"}'::jsonb
+  );
+  if v_grant.available_credits <> 30 or v_grant.replayed then
+    raise exception 'Purchased lot grant returned unexpected wallet state';
+  end if;
+
+  select * into v_replay from public.grant_user_credit_lot(
+    v_user, 10, 'free', 'monthly-free-cycle', 'grant-free-lot-001',
+    (select expires_at from public.credit_lots
+      where user_id = v_user and idempotency_key = 'grant-free-lot-001'),
+    '{"campaign":"free-cycle-test"}'::jsonb
+  );
+  if not v_replay.replayed or v_replay.available_credits <> 30 then
+    raise exception 'Repeated lot grant created credits more than once';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.grant_user_credit_lot(
+      v_user, 11, 'free', 'monthly-free-cycle', 'grant-free-lot-001',
+      now() + interval '2 days', '{"campaign":"free-cycle-test"}'::jsonb
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Lot grant idempotency key accepted a changed amount';
+  end if;
+
+  select job_id into v_job from public.create_generation_job_with_outbox(
+    v_user, null, 'image_generation', 'lot-test-provider', 'lot-test-model',
+    'credit-lot-fifo-job-001', repeat('a', 64),
+    '{"prompt":"lot FIFO test"}'::jsonb, '{}'::jsonb
+  );
+  select hold_id into v_hold from public.reserve_job_credits(
+    v_user, v_job, 15, 'credit-lot-fifo-hold-001',
+    '{"price_version":"lot-test-v1","approved_maximum":15}'::jsonb
+  );
+  select * into v_replay from public.reserve_job_credits(
+    v_user, v_job, 15, 'credit-lot-fifo-hold-001',
+    '{"price_version":"lot-test-v1","approved_maximum":15}'::jsonb
+  );
+  if v_replay.hold_id <> v_hold or not v_replay.replayed
+     or v_replay.available_credits <> 15 or v_replay.reserved_credits <> 15 then
+    raise exception 'Lot reservation replay changed the reservation or wallet';
+  end if;
+
+  if (select sum(a.amount) from public.credit_hold_allocations a
+       join public.credit_lots l on l.id = a.lot_id
+      where a.hold_id = v_hold and a.status = 'held' and l.lot_type = 'free') <> 10
+     or (select sum(a.amount) from public.credit_hold_allocations a
+          join public.credit_lots l on l.id = a.lot_id
+         where a.hold_id = v_hold and a.status = 'held' and l.lot_type = 'purchased') <> 5 then
+    raise exception 'Reservation did not consume earliest-expiring free credits before purchased credits';
+  end if;
+
+  select job_id into v_second_job
+    from public.create_credited_generation_job_with_outbox(
+      v_user, null, null, 'image_generation', 'lot-test-provider', 'lot-test-model',
+      'credit-lot-capture-job-001', repeat('b', 64),
+      '{"prompt":"lot capture test"}'::jsonb,
+      '{"price_version":"lot-test-v1","approved_maximum":5}'::jsonb,
+      5
+    );
+  update public.generation_jobs
+     set status = 'running', lease_owner = 'lot-capture-worker',
+         lease_expires_at = now() + interval '120 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id = v_second_job;
+  select * into v_completed from public.complete_credited_generation_job(
+    v_second_job, 'lot-capture-worker',
+    v_user::text || '/generated/lot-capture.png', repeat('c', 64)
+  );
+  if not v_completed.completed or v_completed.replayed
+     or v_completed.available_credits <> 10 or v_completed.reserved_credits <> 15 then
+    raise exception 'Successful generation did not capture exactly its allocated lot credits';
+  end if;
+  if not exists (
+    select 1 from public.credit_hold_allocations
+     where hold_id = (select id from public.credit_holds where job_id = v_second_job)
+       and status = 'captured'
+  ) then
+    raise exception 'Captured generation did not terminalize its lot allocations';
+  end if;
+
+  update public.generation_jobs
+     set status = 'failed', last_error_code = 'lot_release_test',
+         completed_at = now(), updated_at = now()
+   where id = v_job;
+  select * into v_release from public.release_job_credit_hold(
+    v_user, v_hold, 'lot_release_test'
+  );
+  if v_release.available_credits <> 25 or v_release.reserved_credits <> 0
+     or v_release.replayed then
+    raise exception 'Release did not restore unexpired allocated lot balances';
+  end if;
+  if exists (
+    select 1 from public.credit_hold_allocations
+     where hold_id = v_hold and status <> 'released'
+  ) then
+    raise exception 'Released hold retained an active lot allocation';
+  end if;
+
+  select * into v_grant from public.grant_user_credit_lot(
+    v_user, 5, 'bonus', 'short-lived-bonus', 'grant-expiring-reserved-001',
+    now() + interval '1 second', '{"test_case":"expiry-while-held"}'::jsonb
+  );
+  select job_id into v_expiring_job from public.create_generation_job_with_outbox(
+    v_user, null, 'image_generation', 'lot-test-provider', 'lot-test-model',
+    'credit-lot-expiring-job-001', repeat('d', 64),
+    '{"prompt":"expiry while held"}'::jsonb, '{}'::jsonb
+  );
+  select hold_id into v_expiring_hold from public.reserve_job_credits(
+    v_user, v_expiring_job, 5, 'credit-lot-expiring-hold-001',
+    '{"price_version":"lot-test-v1","approved_maximum":5}'::jsonb
+  );
+  select id into v_lot_id from public.credit_lots
+   where user_id = v_user and idempotency_key = 'grant-expiring-reserved-001';
+  if not exists (
+    select 1 from public.credit_hold_allocations
+     where hold_id = v_expiring_hold and lot_id = v_lot_id and amount = 5
+  ) then
+    raise exception 'The soonest-expiring bonus lot was not selected first';
+  end if;
+
+  perform pg_sleep(1.2);
+  update public.generation_jobs
+     set status = 'failed', last_error_code = 'expired_lot_release_test',
+         completed_at = now(), updated_at = now()
+   where id = v_expiring_job;
+  select * into v_release from public.release_job_credit_hold(
+    v_user, v_expiring_hold, 'expired_lot_release_test'
+  );
+  if v_release.available_credits <> 25 or v_release.reserved_credits <> 0 then
+    raise exception 'Expired reserved credits were incorrectly restored on release';
+  end if;
+  if not exists (
+    select 1 from public.credit_ledger
+     where hold_id = v_expiring_hold and operation_type = 'release'
+       and (metadata->>'expired_credits_forfeited')::bigint = 5
+  ) then
+    raise exception 'Expired reserved credits were not recorded as forfeited';
+  end if;
+
+  select * into v_grant from public.grant_user_credit_lot(
+    v_user, 7, 'free', 'expired-free-cycle', 'grant-expired-free-001',
+    now() + interval '1 second', '{"test_case":"available-expiry"}'::jsonb
+  );
+  perform pg_sleep(1.2);
+  v_expired := public.expire_credit_lots_for_user(v_user);
+  if v_expired <> 7 then
+    raise exception 'Expiry sweep did not expire the exact available lot amount';
+  end if;
+
+  select available_credits, reserved_credits into v_available, v_reserved
+    from public.credit_wallets where user_id = v_user;
+  if v_available <> 25 or v_reserved <> 0 then
+    raise exception 'Expiry sweep did not reconcile wallet and lot balances';
+  end if;
+  if not exists (
+    select 1 from public.credit_ledger
+     where user_id = v_user and operation_key like 'expire:%'
+       and operation_type = 'adjustment' and delta_available = -7
+  ) then
+    raise exception 'Expired available credits are missing their compensating ledger entry';
+  end if;
+
+  select job_id into v_other_job from public.create_generation_job_with_outbox(
+    v_other, null, 'image_generation', 'lot-test-provider', 'lot-test-model',
+    'credit-lot-other-user-job', repeat('e', 64),
+    '{"prompt":"owner isolation"}'::jsonb, '{}'::jsonb
+  );
+  v_rejected := false;
+  begin
+    perform public.reserve_job_credits(
+      v_user, v_other_job, 1, 'credit-lot-cross-user-001',
+      '{"price_version":"lot-test-v1","approved_maximum":1}'::jsonb
+    );
+  exception when sqlstate 'P0002' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'A user was able to reserve credits against another owner''s job';
+  end if;
+
+  select coalesce(sum(available_credits), 0),
+         coalesce(sum(reserved_credits), 0)
+    into v_expired, v_reserved
+    from public.credit_lots where user_id = v_user;
+  if v_expired <> v_available or v_reserved <> 0 then
+    raise exception 'Final lot totals do not reconcile with the wallet';
+  end if;
+end;
+$credit_lot_lifecycle_test$;
+
+select 'source-separated credit lot lifecycle checks passed' as result;
+
 select 'credit wallet snapshot checks passed' as result;
