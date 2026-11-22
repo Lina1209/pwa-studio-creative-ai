@@ -59,6 +59,8 @@ The backend now assigns the owner administrator role only when the verified Supa
 
 Therefore, do not expose a compensation RPC to `authenticated`, `anon`, or the browser. Do not treat a caller-supplied `actor_user_id` as proof of authorization. Any future compensation endpoint must use the trusted backend identity returned by `require_admin`, persist that verified actor in an immutable audit event, and add a dedicated financial permission/approval policy before enabling execution. The broad Supabase service-role credential must remain server-side. The owner UUID must be explicitly verified in Supabase Authentication → Users and configured in the backend host; no email-based fallback is allowed.
 
+For the broader role, permission, approval, and dual-control proposal, see [Financial authorization design](./FINANCIAL_AUTHORIZATION_DESIGN.md). That document is also design-only and grants no permissions.
+
 ## 6. Cash-refund workflow — separate future project
 
 A cash refund requires a provider-specific payment record and a verified payment/refund lifecycle. At minimum:
