@@ -15,7 +15,7 @@ def test_admin_ai_usage_report_is_admin_only_and_private(monkeypatch):
     import app.main as main_module
 
     expected = {
-        "period": {"from": "2026-11-23", "to": "2026-11-23", "timezone": "UTC"},
+        "period": {"from": date.today().isoformat(), "to": date.today().isoformat(), "timezone": "UTC"},
         "totals": {"requests": 1, "input_tokens": 10, "output_tokens": 5,
                    "total_tokens": 15, "reported_estimated_cost_usd": "0.0001",
                    "cost_unknown_events": 0},
@@ -34,7 +34,7 @@ def test_admin_ai_usage_report_is_admin_only_and_private(monkeypatch):
     try:
         response = client.get(
             "/api/admin/ai/usage",
-            params={"date_from": "2026-11-23", "date_to": "2026-11-23"},
+            params={"date_from": date.today().isoformat(), "date_to": date.today().isoformat()},
         )
         assert response.status_code == 200
         payload = response.json()
