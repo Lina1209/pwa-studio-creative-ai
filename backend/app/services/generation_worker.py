@@ -140,10 +140,16 @@ class GenerationWorker:
             provider: ImageGenerationProvider = self.providers.get(job.provider)
             if provider.name.strip().lower() != job.provider.strip().lower():
                 raise ImageGenerationError("provider_identity_mismatch", retryable=False)
+            if getattr(provider, "supports_idempotency", False) is not True:
+                raise ImageGenerationError("provider_idempotency_not_supported", retryable=False)
+            # Stable across every worker retry/reclaim for this durable job.
+            provider_idempotency_key = str(job.job_id)
             lost = asyncio.Event()
             heartbeat = asyncio.create_task(self._maintain_lease(job.job_id, lost))
             try:
-                result = await self._run_while_leased(provider.generate(request), lost)
+                result = await self._run_while_leased(
+                    provider.generate(request, idempotency_key=provider_idempotency_key), lost
+                )
                 if result.provider.strip().lower() != job.provider.strip().lower():
                     raise ImageGenerationError("provider_result_mismatch", retryable=False)
                 if result.model != job.model:
