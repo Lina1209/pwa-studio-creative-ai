@@ -65,7 +65,7 @@ def health():
     }
 
 
-@app.get(f"{settings.api_prefix}/jobs/{job_id}")
+@app.get(f"{settings.api_prefix}/jobs/{{job_id}}")
 def generation_job_status(
     job_id: UUID,
     user: StudioUser = Depends(get_current_user),
@@ -89,7 +89,7 @@ def generation_job_status(
     return job
 
 
-@app.post(f"{settings.api_prefix}/scenes/{scene_id}/image-jobs", status_code=202)
+@app.post(f"{settings.api_prefix}/scenes/{{scene_id}}/image-jobs", status_code=202)
 def create_scene_image_job(
     scene_id: UUID,
     payload: SceneImageJobRequest,
