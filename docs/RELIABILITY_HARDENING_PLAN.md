@@ -170,3 +170,17 @@ Migration `0014_outbox_delivery_lifecycle.sql` adds bounded delivery attempts, w
 - `retry_outbox_event`: releases the active lease and schedules a bounded retry, or sets `failed_at` after the configured attempt limit.
 
 The PostgreSQL integration suite verifies event ownership, competing workers, acknowledgement, retry, and dead-letter behavior. These are database primitives, not a running dispatcher: no broker delivery, polling process, monitoring, or production migration is enabled. A future dispatcher must publish idempotently and tolerate the unavoidable crash window between broker acceptance and recording `published_at`; consumers should deduplicate by the stable `event_id`.
+
+
+## 10. Explicit terminal failure for generation workers (schema/RPC only)
+
+Migration `0015_generation_job_terminal_failure.sql` adds `fail_generation_job(job_id, worker_id, error_code)`. It is intentionally distinct from `retry_generation_job`: permanent provider/configuration/validation failures can move directly to `failed` instead of being retried until the attempt budget is exhausted.
+
+The function:
+- accepts only a bounded, normalized error code (never raw provider text);
+- requires the caller to own the active, unexpired worker lease;
+- clears lease and heartbeat fields and sets the terminal timestamp;
+- refuses subsequent heartbeat, retry, or completion transitions;
+- is executable only by `service_role`.
+
+The PostgreSQL integration suite verifies the active-owner requirement, terminal metadata, and rejection of later transitions. This is still a database primitive: no worker runtime, provider adapter, storage uploader, or production migration is deployed. The generation submission feature flag remains disabled.
