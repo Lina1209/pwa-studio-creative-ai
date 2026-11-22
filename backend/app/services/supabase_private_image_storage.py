@@ -381,9 +381,14 @@ class SupabasePrivateImageStorage:
                 expected_object_path=object_path,
                 expected_sha256_hex=digest,
             )
-        except Exception:
-            # Never delete an object that existed before this attempt. It may
-            # be the only durable copy of a result from an earlier worker.
-            if not already_exists:
+        except Exception as exc:
+            # Preserve pre-existing objects and newly uploaded objects when
+            # verification failed only because Storage was temporarily
+            # unavailable. A retry can receive 409 and verify the same bytes.
+            # Delete only a newly-created object after a definitive failure.
+            retryable_storage_error = (
+                isinstance(exc, SupabaseStorageAdapterError) and exc.retryable
+            )
+            if not already_exists and not retryable_storage_error:
                 await self._delete_own_object(object_path)
             raise
