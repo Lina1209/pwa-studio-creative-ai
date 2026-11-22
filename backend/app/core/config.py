@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,10 @@ class Settings(BaseSettings):
 
     ai_provider: str = "deepseek"
     ai_model: str = "deepseek-flash"
+    ai_max_concurrent_requests: int = Field(default=4, ge=1, le=32)
+    ai_queue_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
+    ai_request_timeout_seconds: int = Field(default=90, ge=5, le=300)
+    ai_max_retries: int = Field(default=1, ge=0, le=3)
     openai_api_key: str | None = None
     deepseek_api_key: str | None = None
     anthropic_api_key: str | None = None
