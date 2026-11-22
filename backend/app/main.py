@@ -1,10 +1,12 @@
 from uuid import UUID, uuid4
+import hashlib
+import json
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
@@ -13,6 +15,7 @@ from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
     get_generation_job,
+    create_scene_generation_job,
 )
 
 settings = get_settings()
@@ -57,6 +60,8 @@ def health():
         "authentication_configured": bool(settings.supabase_url),
         "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
         "generation_jobs_enabled": bool(settings.generation_jobs_enabled and settings.supabase_url and settings.supabase_service_role_key),
+        "generation_worker_ready": bool(settings.generation_job_worker_ready),
+        "image_generation_configured": bool(settings.image_generation_provider and settings.image_generation_model),
     }
 
 
@@ -83,6 +88,59 @@ def generation_job_status(
         raise HTTPException(status_code=404, detail="Generation job was not found.")
     return job
 
+
+@app.post(f"{settings.api_prefix}/scenes/{scene_id}/image-jobs", status_code=202)
+def create_scene_image_job(
+    scene_id: UUID,
+    payload: SceneImageJobRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
+    user: StudioUser = Depends(get_current_user),
+):
+    # Fail closed: never enqueue work without a durable dispatcher/worker.
+    if not settings.generation_jobs_enabled:
+        raise HTTPException(status_code=503, detail="Image generation jobs are not enabled yet.")
+    if not settings.generation_job_worker_ready:
+        raise HTTPException(status_code=503, detail="Image generation is not available yet: the background processing worker is not ready.")
+    provider = (settings.image_generation_provider or "").strip()
+    model = (settings.image_generation_model or "").strip()
+    if not provider or not model:
+        raise HTTPException(status_code=503, detail="Image generation is not configured yet. No image provider has been selected.")
+    check_content(payload.prompt)
+    if payload.negative_prompt:
+        check_content(payload.negative_prompt)
+    request_snapshot = {
+        "prompt": payload.prompt,
+        "negative_prompt": payload.negative_prompt,
+        "width": payload.width,
+        "height": payload.height,
+        "seed": payload.seed,
+    }
+    canonical_request = json.dumps(
+        {"scene_id": str(scene_id), "job_type": "image_generation", "provider": provider, "model": model, "request": request_snapshot},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    request_hash = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    try:
+        owner_id = UUID(user.user_id)
+        result = create_scene_generation_job(
+            settings, user_id=owner_id, studio_scene_id=scene_id,
+            job_type="image_generation", provider=provider, model=model,
+            idempotency_key=idempotency_key, request_hash=request_hash,
+            request_snapshot=request_snapshot,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="The sign-in identity is invalid.") from exc
+    except GenerationJobsNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail="Image generation jobs are not configured.") from exc
+    except GenerationJobsServiceError as exc:
+        raise HTTPException(status_code=502, detail="Could not create the image generation job.") from exc
+    return {
+        "job_id": str(result.job_id),
+        "event_id": str(result.event_id) if result.event_id else None,
+        "scene_id": str(scene_id),
+        "status": "queued",
+        "created": result.created,
+    }
 
 @app.get(f"{settings.api_prefix}/auth/me")
 def auth_me(user: StudioUser = Depends(get_current_user)):
