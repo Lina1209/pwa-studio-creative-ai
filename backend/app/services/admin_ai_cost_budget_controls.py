@@ -30,7 +30,9 @@ def _rpc(settings: Settings, name: str, payload: dict[str, Any]) -> Any:
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise AIBudgetControlNotConfigured("AI budget controls are not configured.")
     key = settings.supabase_service_role_key
-    headers = {"apikey": key, "Content-Type": "application/json", "Accept": "application/json"}\n    if key.startswith("eyJ"):\n        headers["Authorization"] = f"Bearer {key}"
+    headers = {"apikey": key, "Content-Type": "application/json", "Accept": "application/json"}
+    if key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {key}"
     try:
         with httpx.Client(timeout=10.0) as client:
             response = client.post(
@@ -80,7 +82,12 @@ def resolve_unknown_reservation(settings: Settings, *, request_id: UUID, resolut
         raise ValueError("resolution_note_required")
     amount = None
     if resolution == "record_estimated_cost":
-        try:\n            amount = Decimal(str(actual_estimated_cost_usd))\n        except (InvalidOperation, ValueError, TypeError) as exc:\n            raise ValueError("invalid_resolution_amount") from exc\n        if not amount.is_finite() or amount < 0 or amount > Decimal("1000000000"):\n            raise ValueError("invalid_resolution_amount")
+        try:
+            amount = Decimal(str(actual_estimated_cost_usd))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValueError("invalid_resolution_amount") from exc
+        if not amount.is_finite() or amount < 0 or amount > Decimal("1000000000"):
+            raise ValueError("invalid_resolution_amount")
     elif actual_estimated_cost_usd is not None:
         raise ValueError("unexpected_resolution_amount")
     result = _rpc(settings, "resolve_ai_provider_cost_reservation", {
