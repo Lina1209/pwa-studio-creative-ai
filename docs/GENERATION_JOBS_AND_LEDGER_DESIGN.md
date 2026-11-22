@@ -323,3 +323,29 @@ The backend Supabase worker repository now has a typed `record_provider_cost` ad
 The disposable PostgreSQL suite covers owner binding, provider/model binding, exact idempotent replay, changed-evidence rejection, reported plus estimated cumulative cost, budget overrun detection, unknown-cost handling, append-only enforcement and least-privilege grants.
 
 **Important boundary:** this journal is not yet wired to a concrete image/video/audio provider because no real generation provider is registered and the provider result contract does not yet expose verified billing usage. Do not manufacture provider prices or treat estimates as invoices. The existing `ai_usage` table remains best-effort AI chat/prompt telemetry; this new journal covers durable generation jobs only. No production USD budget, credit conversion, billing, customer debit or provider runtime is enabled. A provider adapter must supply authoritative usage/cost evidence (or explicitly mark it estimated/unknown) before this journal can be populated in production.
+
+
+## 33. Provider usage evidence is now carried through the worker
+
+The provider-neutral image result contract now has optional `ProviderUsage` evidence:
+- `cost_usd` is a finite, nonnegative `Decimal`, never a floating-point amount;
+- `cost_source` must be `reported`, `estimated` or `unknown`; unknown requires NULL cost, while reported/estimated require an amount;
+- provider usage ID is bounded and stable across lookup/recovery;
+- input/output/total unit counts are optional nonnegative integers (booleans are rejected);
+- unit kind is an explicit allowlist; metadata must be an object.
+
+A missing `usage` object means the adapter supplied no usage contract and the worker does not invent an event or infer zero cost. An explicit `ProviderUsage(cost_source="unknown")` is different: it records that the adapter checked but could not determine cost.
+
+When a result includes usage, the worker writes the evidence through the service-role repository RPC after the durable `result_received` journal checkpoint and before storage upload/job completion. The idempotency key is derived from the durable job UUID and a SHA-256 digest of the provider usage ID (or a stable `result` suffix when no ID exists), keeping it within the database's 200-character bound and avoiding disclosure of raw provider IDs in the operation key.
+
+This order gives safe recovery semantics:
+1. provider result is durably journaled;
+2. usage event is appended idempotently;
+3. private asset is uploaded and verified;
+4. job completion proceeds.
+
+If usage persistence fails transiently, the job retries while retaining its provider result checkpoint. On recovery, the provider lookup must return the same result and stable usage identity; the cost RPC exact-replay path prevents double counting. A provider adapter that returns different usage identities or changing cost evidence for the same completed operation must be treated as an adapter integrity defect and reconciled explicitly with a separate compensating/audit event, never by editing prior records.
+
+Worker and contract tests now cover reported Decimal usage, explicit unknown usage, missing usage, malformed cost/units, persistence ordering and retry after a temporary database failure.
+
+**Scope remains limited:** no concrete provider currently supplies this contract, and no provider price schedule or real invoice has been configured. The journal therefore remains an integration point, not proof of actual spend. USD provider costs remain separate from customer credit holds and balances; no automatic overrun shutdown, credit conversion, payment or user debit has been enabled.
