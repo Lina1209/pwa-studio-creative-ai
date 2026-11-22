@@ -424,3 +424,78 @@ def test_create_credited_generation_job_remains_disabled_by_default(monkeypatch)
             request_snapshot={},
             quote_snapshot={},
         )
+
+
+def test_store_pricing_quote_persists_owner_key_and_returns_original_snapshot(monkeypatch):
+    calls = []
+    quote = issue_pricing_quote(
+        secret="test-signing-secret-with-at-least-32-bytes",
+        catalog=PricingCatalog("catalog-v1", (
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image"),
+        )),
+        user_id=USER_ID,
+        job_type="image_generation",
+        provider="provider-test",
+        model="model-test",
+        request_hash=canonical_request_hash({"prompt": "persist me"}),
+        idempotency_key="persisted-quote-key-001",
+        studio_scene_id=UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+    ).snapshot()
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(
+            FakeResponse([{
+                "quote_snapshot": quote,
+                "created": True,
+                "expired": False,
+            }]),
+            calls,
+        ),
+    )
+    result = generation_jobs.store_pricing_quote(
+        configured_settings(),
+        user_id=USER_ID,
+        idempotency_key="persisted-quote-key-001",
+        request_hash=quote["request_hash"],
+        job_type="image_generation",
+        provider="provider-test",
+        model="model-test",
+        project_id=None,
+        studio_scene_id=UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+        quote_snapshot=quote,
+    )
+    assert result.snapshot == quote
+    assert result.created is True
+    assert result.expired is False
+    method, url, payload, headers = calls[0]
+    assert method == "POST"
+    assert url.endswith("/rpc/store_generation_pricing_quote")
+    assert payload["p_user_id"] == str(USER_ID)
+    assert payload["p_idempotency_key"] == "persisted-quote-key-001"
+    assert payload["p_quote_id"] == quote["quote_id"]
+    assert headers["apikey"] == "sb_secret_test_key"
+
+
+def test_store_pricing_quote_rejects_invalid_rpc_shape(monkeypatch):
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(
+            FakeResponse([{"quote_snapshot": [], "created": "yes", "expired": False}]),
+            [],
+        ),
+    )
+    with pytest.raises(generation_jobs.GenerationJobsServiceError, match="incomplete metadata"):
+        generation_jobs.store_pricing_quote(
+            configured_settings(),
+            user_id=USER_ID,
+            idempotency_key="persisted-quote-key-002",
+            request_hash="a" * 64,
+            job_type="image_generation",
+            provider="provider-test",
+            model="model-test",
+            project_id=None,
+            studio_scene_id=None,
+            quote_snapshot={"quote_id": str(JOB_ID), "expires_at": "2026-11-22T00:00:00+00:00"},
+        )
