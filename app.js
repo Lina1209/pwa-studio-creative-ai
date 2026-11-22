@@ -504,21 +504,21 @@ const movieHistoryStyle = document.createElement("style");
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
   const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
-  const readMovieTombstones = () => {
-    try { const value = JSON.parse(localStorage.getItem(movieDeletedKey()) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
+  const readMovieTombstones = (key = movieDeletedKey()) => {
+    try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
     catch { return []; }
   };
-  const writeMovieTombstones = ids => {
-    try { localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
+  const writeMovieTombstones = (ids, key = movieDeletedKey()) => {
+    try { localStorage.setItem(key, JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
     catch (error) { console.error("Movie deletion queue failed:", error); return false; }
   };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
-  const movieToCloudRow = project => {
+  const movieToCloudRow = (project, ownerId) => {
     if (!isUuid(project.id)) project.id = movieId();
     const snapshot = { ...project, cloudSchemaVersion: 1 };
     return {
       id: project.id,
-      owner_id: authSession.user.id,
+      owner_id: ownerId,
       title: project.name || "Без названия",
       description: project.idea || "",
       project_type: "movie",
@@ -547,38 +547,51 @@ const movieHistoryStyle = document.createElement("style");
     if (!authSession?.user || !supabaseClient) return;
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
-      if (!authSession?.user) return;
+      const userId = authSession?.user?.id;
+      if (!userId || !supabaseClient) return;
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
+      const projectKey = "pwa-studio-movie-projects:" + userId;
+      const deletedKey = "pwa-studio-movie-deleted:" + userId;
       movieCloudState.syncing = true;
       try {
-        const deletedIds = readMovieTombstones();
+        const deletedIds = readMovieTombstones(deletedKey);
         if (deletedIds.length) {
           const { error: deleteError } = await supabaseClient.from("projects").delete()
-            .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
+            .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
           if (deleteError) throw deleteError;
-          writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
+          if (authSession?.user?.id !== userId) return;
+          writeMovieTombstones(readMovieTombstones(deletedKey).filter(id => !deletedIds.includes(id)), deletedKey);
         }
-        const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
-        const rows = localProjects.map(movieToCloudRow);
-        // Persist any UUID normalization before sending rows to Supabase.
-        localStorage.setItem(movieStorageKey(), JSON.stringify(localProjects));
+        if (authSession?.user?.id !== userId) return;
+        let localProjects;
+        try {
+          const stored = JSON.parse(localStorage.getItem(projectKey) || "[]");
+          localProjects = Array.isArray(stored) ? stored.filter(project => project && typeof project === "object" && project.id) : [];
+        } catch { localProjects = []; }
+        const rows = localProjects.map(project => movieToCloudRow(project, userId));
+        // Persist UUID normalization only to the account-specific local key captured above.
+        localStorage.setItem(projectKey, JSON.stringify(localProjects));
         if (rows.length) {
+          if (authSession?.user?.id !== userId) return;
           const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
           if (error) throw error;
         }
+        if (authSession?.user?.id !== userId) return;
         const feedback = $("#movieFeedback");
         if (feedback) feedback.textContent = deletedIds.length
           ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
           : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        if (authSession?.user?.id === userId) {
+          const feedback = $("#movieFeedback");
+          if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        }
       } finally {
         movieCloudState.syncing = false;
         if (movieCloudState.pending) {
           movieCloudState.pending = false;
-          scheduleMovieCloudSync();
+          if (authSession?.user?.id) scheduleMovieCloudSync();
         }
       }
     }, 350);
@@ -587,6 +600,7 @@ const movieHistoryStyle = document.createElement("style");
     const userId = authSession?.user?.id;
     if (!userId || !supabaseClient || movieCloudState.loadingUser === userId) return;
     movieCloudState.loadingUser = userId;
+    const deletedKey = "pwa-studio-movie-deleted:" + userId;
     try {
       const { data, error } = await supabaseClient
         .from("projects")
@@ -595,13 +609,15 @@ const movieHistoryStyle = document.createElement("style");
         .order("updated_at", { ascending: false });
       if (error) throw error;
       if (authSession?.user?.id !== userId) return;
-      const deletedIds = readMovieTombstones();
+      const deletedIds = readMovieTombstones(deletedKey);
       if (deletedIds.length) {
         const { error: deleteError } = await supabaseClient.from("projects").delete()
           .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
-        writeMovieTombstones([]);
+        if (authSession?.user?.id !== userId) return;
+        writeMovieTombstones([], deletedKey);
       }
+      if (authSession?.user?.id !== userId) return;
       const deletedSet = new Set(deletedIds);
       const local = movieRead().filter(project => !deletedSet.has(project.id));
       const merged = new Map(local.map(project => [project.id, project]));
