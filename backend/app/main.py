@@ -27,6 +27,11 @@ from app.services.admin_audit_service import (
     get_admin_audit_events,
     record_admin_audit_event,
 )
+from app.services.admin_ai_cost_budget_reporting import (
+    AICostBudgetReportError,
+    AICostBudgetReportNotConfiguredError,
+    get_admin_ai_cost_budget_report,
+)
 from app.services.admin_ai_usage_reporting import (
     AIUsageReportError,
     AIUsageReportNotConfiguredError,
@@ -443,6 +448,23 @@ def admin_ai_provider_status(
             "controlled backend configuration update and redeployment."
         ),
     }
+
+
+@app.get(f"{settings.api_prefix}/admin/ai/budget")
+def admin_ai_cost_budget_status(
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
+):
+    """Owner-only view of atomic synchronous AI spend reservations and remaining USD budgets."""
+    try:
+        report = get_admin_ai_cost_budget_report(settings)
+    except AICostBudgetReportNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail="AI cost budget reporting is not configured.") from exc
+    except AICostBudgetReportError as exc:
+        raise HTTPException(status_code=502, detail="AI cost budget status is temporarily unavailable.") from exc
+    _audit_admin_read(user, resource_type="platform", reason="Viewed synchronous AI cost budget status")
+    response.headers["Cache-Control"] = "private, no-store"
+    return report
 
 
 @app.get(f"{settings.api_prefix}/admin/ai/usage")
