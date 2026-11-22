@@ -150,3 +150,10 @@ For a journal already in `result_received`:
 
 The current worker contract expects lookup success to return the complete `ImageGenerationResult` including image bytes. No real provider adapter has been registered or tested, so this recovery guarantee remains conditional on the chosen provider's documented lookup consistency, result availability and retention behavior. The worker runtime remains disabled by default.
 
+
+
+## 19. Stale-worker guard around journal RPCs
+
+The worker heartbeat can detect lease loss while a short database journal RPC is still in flight. Database RPCs independently validate the active lease, but the worker must also check its local lease-loss signal after the RPC returns: a successful journal-begin response that arrives late must never authorize a provider submission from a stale worker. The same rule applies after provider-acceptance and result-received journal transitions, and immediately before job completion.
+
+The worker now exits with a lease-lost outcome at these boundaries. A replacement worker owns recovery through the durable journal and stable provider idempotency key. Tests cover lease loss while journal creation is delayed and while provider acceptance is delayed; both assert that no later provider/result/storage/completion work is started. These are deterministic fake-adapter tests; they do not replace integration testing against a live provider or Supabase deployment.
