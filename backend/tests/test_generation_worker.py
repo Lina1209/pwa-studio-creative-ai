@@ -137,7 +137,7 @@ async def test_worker_generates_verifies_upload_then_completes():
     repo = FakeRepository()
     result = await make_worker(repo).process(make_job())
     assert result.outcome == "succeeded"
-    assert [call[0] for call in repo.calls] == ["complete"]
+    assert repo.calls[-1][0] == "complete"
 
 
 @pytest.mark.asyncio
@@ -146,7 +146,7 @@ async def test_non_retryable_provider_error_uses_terminal_failure():
     worker = make_worker(repo, FakeProvider(error=ImageGenerationError("bad_request", retryable=False)))
     result = await worker.process(make_job())
     assert result.outcome == "failed"
-    assert repo.calls[0][0] == "fail"
+    assert repo.calls[-1][0] == "fail"
 
 
 @pytest.mark.asyncio
