@@ -39,7 +39,37 @@ begin
      or ((p_before is null) <> (p_before_id is null))
      or exists (
        select 1 from unnest(coalesce(p_credit_scope_keys, array[]::text[]) || coalesce(p_billing_scope_keys, array[]::text[])) s
-        where s !~ '^user:[0-9a-fA-F-]{36}$'
+        where s !~ '^user:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}
+     ) then
+    raise exception 'invalid finance request queue query' using errcode = '22023';
+  end if;
+
+  return query
+  select r.id, r.requester_id, r.request_type, r.target_user_id,
+         r.amount, r.currency_code, r.scope_key, r.reason, r.status,
+         r.requested_at, r.decided_by, r.decided_at, r.decision_reason,
+         r.cancelled_at
+    from public.finance_operation_requests r
+   where (
+      (r.request_type = 'credit_compensation' and r.scope_key = any(p_credit_scope_keys))
+      or
+      (r.request_type = 'billing_refund' and r.scope_key = any(p_billing_scope_keys))
+   )
+     and (p_status is null or r.status = p_status)
+     and (
+       p_before is null
+       or (r.requested_at, r.id) < (p_before, p_before_id)
+     )
+   order by r.requested_at desc, r.id desc
+   limit p_limit;
+end;
+$$;
+
+revoke all on function public.list_finance_operation_requests(text[],text[],text,timestamptz,uuid,integer)
+  from public, anon, authenticated;
+grant execute on function public.list_finance_operation_requests(text[],text[],text,timestamptz,uuid,integer)
+  to service_role;
+
      ) then
     raise exception 'invalid finance request queue query' using errcode = '22023';
   end if;
