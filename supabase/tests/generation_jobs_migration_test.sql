@@ -3067,10 +3067,7 @@ begin
     v_user, 7, 'free', 'expired-free-cycle', 'grant-expired-free-001',
     v_expiry, '{"test_case":"available-expiry"}'::jsonb
   );
-  update public.credit_lots
-     set created_at = now() - interval '10 seconds',
-         expires_at = now() - interval '1 second'
-   where user_id = v_user and idempotency_key = 'grant-expired-free-001';
+  perform pg_sleep(greatest(0, extract(epoch from (v_expiry - now()))) + 0.05);
   v_expired := public.expire_credit_lots_for_user(v_user);
   if v_expired <> 7 then
     raise exception 'Expiry sweep did not expire the exact available lot amount';
