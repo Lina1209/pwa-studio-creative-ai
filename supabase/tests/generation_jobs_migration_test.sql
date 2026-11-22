@@ -3653,6 +3653,38 @@ begin
     raise exception 'Server-only finance request lookup returned incorrect data';
   end if;
 
+  v_queue_request := public.create_finance_operation_request(
+    '11111111-1111-4111-8111-111111111111',
+    'credit_compensation',
+    '22222222-2222-4222-8222-222222222222',
+    5, 'CRD', 'user:22222222-2222-4222-8222-222222222222',
+    'Queue scope fixture',
+    '99999999-9999-4999-8999-999999999999'
+  );
+  select count(*) into v_queue_count
+    from public.list_finance_operation_requests(
+      array['user:22222222-2222-4222-8222-222222222222']::text[],
+      array[]::text[], 'pending', null, null, 10
+    )
+   where request_id = v_queue_request;
+  if v_queue_count <> 1 then
+    raise exception 'Finance queue did not return the explicitly allowed scope';
+  end if;
+  select count(*) into v_queue_count
+    from public.list_finance_operation_requests(
+      array['user:33333333-3333-4333-8333-333333333333']::text[],
+      array[]::text[], null, null, null, 10
+    );
+  if v_queue_count <> 0 then
+    raise exception 'Finance queue leaked a request outside the requested scope';
+  end if;
+  if has_function_privilege('authenticated',
+       'public.list_finance_operation_requests(text[],text[],text,timestamptz,uuid,integer)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.list_finance_operation_requests(text[],text[],text,timestamptz,uuid,integer)', 'EXECUTE') then
+    raise exception 'Finance queue RPC has excessive privileges';
+  end if;
+
   v_rejected := false;
   begin
     perform public.create_finance_operation_request(
