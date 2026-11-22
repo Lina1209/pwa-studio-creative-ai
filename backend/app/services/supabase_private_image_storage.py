@@ -189,10 +189,16 @@ class SupabasePrivateImageStorage:
                 raise SupabaseStorageAdapterError("storage_object_metadata_invalid")
 
             stored_size = metadata.get("size")
-            try:
+            if isinstance(stored_size, bool):
+                raise SupabaseStorageAdapterError("storage_object_size_invalid")
+            if isinstance(stored_size, int):
+                size_bytes = stored_size
+            elif isinstance(stored_size, str) and stored_size.isdecimal():
                 size_bytes = int(stored_size)
-            except (TypeError, ValueError) as exc:
-                raise SupabaseStorageAdapterError("storage_object_size_invalid") from exc
+            else:
+                raise SupabaseStorageAdapterError("storage_object_size_invalid")
+            if not 0 < size_bytes <= MAX_IMAGE_BYTES:
+                raise GenerationResultStorageError("object_size_out_of_range")
             stored_mime = metadata.get("mimetype") or metadata.get("contentType")
             if stored_mime != mime_type or size_bytes != len(image_bytes):
                 raise GenerationResultStorageError("uploaded_object_content_mismatch")
