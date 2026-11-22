@@ -15,12 +15,12 @@ FastAPI backend for PWA Studio — Creative AI.
 
 Supabase Auth handles sign-up, sign-in, email verification and password recovery. The API validates Supabase JWTs against the project's JWKS endpoint. The owner role is assigned server-side only when the verified account email exactly matches `OWNER_EMAIL`; other signed-in accounts receive the creator role. The browser cannot request an admin role.
 
-Guests can browse public studio pages. Creating/saving projects and using AI endpoints requires a signed-in account. Local film drafts are separated by Supabase user ID, but are still browser-local until the cloud project API is implemented.
+Guests can browse public studio pages and create temporary local drafts. Signed-in users have local-first Mini Movie Studio drafts synchronized directly with Supabase `public.projects` under owner-scoped RLS; this is not a FastAPI project CRUD API. Cross-device, conflict, and deletion behavior still require end-to-end verification.
 
 ## Supabase database and storage
 
 - `supabase/migrations/0001_initial_schema.sql` is the original schema draft.
-- `supabase/migrations/0002_storage_and_moderation.sql` adds private Storage buckets, per-user object-path policies, user-submitted moderation reports, and an admin audit log.
+- `supabase/migrations/0002_storage_and_moderation.sql` creates private Storage buckets and per-user object-path policies only. It does **not** create moderation reports, bans, appeals, or an admin audit log.
 
 The second migration expects the existing `public.is_admin()` helper used by the current Supabase project. Review the migration against the live schema before running it. Storage object paths must begin with the authenticated user's UUID, for example `<user-uuid>/projects/<project-id>/...`.
 
