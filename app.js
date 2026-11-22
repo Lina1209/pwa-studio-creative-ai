@@ -2,6 +2,8 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const API_URL_KEY = "pwa-studio-api-url";
+  const API_TRUST_KEY = "pwa-studio-trusted-api-origin";
+  const DEFAULT_API_BASE = "https://pwa-studio-creative-ai.onrender.com";
   // Supabase Auth: only the public publishable key is used in the browser.
   const authGate = $("#authGate");
   const authFeedback = $("#authFeedback");
@@ -240,7 +242,7 @@ const movieHistoryStyle = document.createElement("style");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
 
 
-  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "https://pwa-studio-creative-ai.onrender.com").trim().replace(/\/+$/, "");
+  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || DEFAULT_API_BASE).trim().replace(/\/+$/, "");
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
     if (!authSession?.user || !panel) { if (panel) panel.hidden = true; return; }
@@ -253,6 +255,17 @@ const movieHistoryStyle = document.createElement("style");
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
     if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
+    let apiUrl;
+    try { apiUrl = new URL(base); } catch { throw new Error("Адрес backend API имеет неверный формат."); }
+    const isLocalApi = apiUrl.protocol === "http:" && ["localhost", "127.0.0.1"].includes(apiUrl.hostname);
+    if ((apiUrl.protocol !== "https:" && !isLocalApi) || apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash) {
+      throw new Error("Для backend API нужен HTTPS-адрес без логина, пароля, query-параметров и hash. HTTP разрешён только для localhost.");
+    }
+    const defaultOrigin = new URL(DEFAULT_API_BASE).origin;
+    const trustedOrigin = localStorage.getItem(API_TRUST_KEY);
+    if (apiUrl.origin !== defaultOrigin && !isLocalApi && trustedOrigin !== apiUrl.origin) {
+      throw new Error("Этот адрес API ещё не подтверждён. Откройте «Настройки» и сохраните его, подтвердив доверие к серверу.");
+    }
     const token = authSession?.access_token;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 100000);
@@ -1124,13 +1137,35 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#saveBackend").addEventListener("click", () => {
     const value = apiUrlInput.value.trim().replace(/\/+$/, "");
-    if (value && !/^https:\/\//i.test(value) && !/^http:\/\/localhost(?::\d+)?$/i.test(value) && !/^http:\/\/127\.0\.0\.1(?::\d+)?$/i.test(value)) {
-      apiStatus.textContent = "Укажите полный адрес API с https:// (для локальной разработки допустим localhost).";
-      return;
+    if (value) {
+      let parsed;
+      try { parsed = new URL(value); } catch {
+        apiStatus.textContent = "Укажите корректный полный адрес backend API.";
+        return;
+      }
+      const isLocalApi = parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname);
+      if ((parsed.protocol !== "https:" && !isLocalApi) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+        apiStatus.textContent = "Нужен HTTPS-адрес без логина, пароля, query и hash. HTTP разрешён только для localhost.";
+        return;
+      }
+      const defaultOrigin = new URL(DEFAULT_API_BASE).origin;
+      if (parsed.origin !== defaultOrigin && !isLocalApi) {
+        const trusted = window.confirm("PWA Studio будет отправлять этому backend-серверу токен вашей сессии Supabase. Продолжайте только если вы владеете этим сервером или полностью ему доверяете. Разрешить этот адрес?");
+        if (!trusted) {
+          apiStatus.textContent = "Адрес не сохранён: сервер не подтверждён.";
+          return;
+        }
+        localStorage.setItem(API_TRUST_KEY, parsed.origin);
+      } else {
+        localStorage.removeItem(API_TRUST_KEY);
+      }
+    } else {
+      localStorage.removeItem(API_TRUST_KEY);
     }
     localStorage.setItem(API_URL_KEY, value);
-    apiStatus.textContent = value ? "Адрес сохранён. Проверяем соединение…" : "Адрес API очищен.";
+    apiStatus.textContent = value ? "Адрес сохранён. Проверяем соединение…" : "Используется адрес API по умолчанию.";
     if (value) checkBackend();
+    else checkBackend();
   });
   $("#testBackend").addEventListener("click", checkBackend);
 
