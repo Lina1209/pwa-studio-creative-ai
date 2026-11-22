@@ -63,3 +63,41 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/generation_jobs_migration_test.sql
+      - name: Verify concurrent workers cannot claim the same job
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          JOB_ID="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '11111111-1111-4111-8111-111111111111', null,
+            'image_generation', 'test-provider', 'test-model',
+            'concurrent-claim-test-1', repeat('9', 64),
+            '{\"prompt\":\"concurrency test\"}'::jsonb, '{}'::jsonb
+          );")"
+          test -n "$JOB_ID"
+
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select job_id from public.claim_next_generation_job('worker-concurrent-a', 120);
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+
+          # Give worker A time to claim and hold the row lock inside its transaction.
+          sleep 1
+          SECOND_OUTPUT="$("${DB[@]}" -c "select job_id from public.claim_next_generation_job('worker-concurrent-b', 120);")"
+          wait "$FIRST_PID"
+          grep -q "$JOB_ID" "$FIRST_OUTPUT"
+          if [ -n "$SECOND_OUTPUT" ]; then
+            echo "A concurrent worker unexpectedly claimed a second job: $SECOND_OUTPUT"
+            exit 1
+          fi
+
+          ATTEMPT_COUNT="$("${DB[@]}" -c "select attempt_count from public.generation_jobs where id = '$JOB_ID';")"
+          LEASE_OWNER="$("${DB[@]}" -c "select lease_owner from public.generation_jobs where id = '$JOB_ID';")"
+          test "$ATTEMPT_COUNT" = "1"
+          test "$LEASE_OWNER" = "worker-concurrent-a"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
