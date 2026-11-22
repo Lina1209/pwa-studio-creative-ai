@@ -664,8 +664,10 @@ const movieHistoryStyle = document.createElement("style");
       }
     } catch (error) {
       console.error("Movie cloud load failed:", error);
-      const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+      if (authSession?.user?.id === userId) {
+        const feedback = $("#movieFeedback");
+        if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+      }
     } finally {
       if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
     }
