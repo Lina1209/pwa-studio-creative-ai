@@ -1368,6 +1368,7 @@ begin
     'job_type', 'image_generation',
     'provider', 'pricing-test-provider',
     'model', 'pricing-test-model',
+    'quantity', 1,
     'project_id', null,
     'studio_scene_id', null,
     'expires_at', v_expiry
@@ -1430,6 +1431,29 @@ begin
   end;
   if not v_rejected then
     raise exception 'Pricing quote idempotency key accepted a changed request hash';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.store_generation_pricing_quote(
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      '11111111-1111-4111-8111-111111111111',
+      'pricing-db-idempotency-001',
+      repeat('a', 64),
+      'image_generation',
+      'pricing-test-provider',
+      'pricing-test-model',
+      null, null,
+      jsonb_set(
+        jsonb_set(v_candidate, '{quote_id}', to_jsonb('dddddddd-dddd-4ddd-8ddd-dddddddddddd'::text)),
+        '{quantity}', to_jsonb(2)
+      ),
+      v_expiry
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Pricing quote idempotency key accepted a changed quantity';
   end if;
 
   v_rejected := false;
