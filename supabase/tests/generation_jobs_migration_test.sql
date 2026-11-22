@@ -1005,12 +1005,13 @@ begin
   exception when sqlstate '55000' then null;
   end;
 
-  select job_id into v_cross_owner_job_id
-    from public.create_generation_job_with_outbox(
-      '11111111-1111-4111-8111-111111111111', null,
-      'image_generation', 'cross-owner-test-provider', 'cross-owner-test-model',
-      'cross-owner-hold-job-001', repeat('7', 64), '{}'::jsonb, '{}'::jsonb
-    );
+  select id into v_cross_owner_job_id
+    from public.generation_jobs
+   where user_id = '11111111-1111-4111-8111-111111111111'
+     and idempotency_key = 'generic-idempotency-001';
+  if v_cross_owner_job_id is null then
+    raise exception 'Cross-owner test fixture job was not found';
+  end if;
 
   begin
     insert into public.credit_holds(
