@@ -25,6 +25,7 @@
 - LiteLLM adapter supports DeepSeek (default) and Google Gemini as an explicitly selected alternative. No automatic provider fallback is performed.
 - AI admission is fail-closed and enforced in PostgreSQL across backend replicas: default ceilings are 10 requests/minute and 100 requests/rolling 24 hours per user, 2,000 requests/rolling 24 hours globally, plus per-user/global concurrency caps. Values are server-configurable through `AI_MAX_REQUESTS_PER_DAY_PER_USER` and `AI_MAX_REQUESTS_PER_DAY_GLOBAL`.
 - These request ceilings reduce runaway usage but are not a hard USD spending cap. Actual provider billing must still be monitored in DeepSeek/Google consoles; no automatic paid-provider fallback is enabled.
+- The admin AI usage report can show optional per-provider daily USD warning thresholds (`AI_DAILY_BUDGET_USD_DEEPSEEK`, `AI_DAILY_BUDGET_USD_GEMINI`) at 80% and 100% of recorded estimates. These are monitoring alerts only, not an atomic hard billing stop; configure actual limits in provider consoles and reconcile invoices.
 - Initial text safety checks. This is not full multimodal moderation.
 
 ## Важные ограничения
