@@ -35,3 +35,21 @@ def test_stats_validate_nonnegative_integer_counts(monkeypatch):
     monkeypatch.setattr(site_analytics, "_rpc", lambda *args: {**valid, "total_page_views": True})
     with pytest.raises(SiteAnalyticsUnavailable):
         get_visit_stats(object())
+
+
+def test_admin_stats_validate_daily_series_and_routes(monkeypatch):
+    from app.services import site_analytics
+    base = {"total_page_views": 120, "today_page_views": 4, "today_unique_visitors": 3,
+            "last_7_days_page_views": 20, "last_30_days_page_views": 80}
+    daily = [{"date": f"2026-11-{day:02d}", "page_views": day, "unique_visitors": 1}
+             for day in range(1, 31)]
+    payload = {**base, "daily_series": daily,
+               "top_routes": [{"route_group": "home", "page_views": 50}]}
+    monkeypatch.setattr(site_analytics, "_rpc", lambda *args: payload)
+    assert site_analytics.get_admin_visit_stats(object())["top_routes"][0]["route_group"] == "home"
+    monkeypatch.setattr(site_analytics, "_rpc", lambda *args: {**payload, "daily_series": []})
+    with pytest.raises(SiteAnalyticsUnavailable):
+        site_analytics.get_admin_visit_stats(object())
+    monkeypatch.setattr(site_analytics, "_rpc", lambda *args: {**payload, "top_routes": [{"route_group": "../../", "page_views": 1}]})
+    with pytest.raises(SiteAnalyticsUnavailable):
+        site_analytics.get_admin_visit_stats(object())
