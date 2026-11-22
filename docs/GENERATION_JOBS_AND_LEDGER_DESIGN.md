@@ -177,3 +177,43 @@ If a provider accepted a generation request but the worker lost the response, th
 ## 22. Database connectivity loss and worker transition policy
 
 The Supabase worker repository adapter classifies timeouts and connection failures as retryable, HTTP 408/425/429 and 5xx responses as transient, and rejected credentials or other ordinary 4xx responses as permanent configuration/request failures. Error messages exposed to worker logic contain only normalized error codes; upstream response bodies, host details and credentials are not copied into them. The worker schedules bounded retries for transient repository failures and stops generation on permanent credential rejection. If a heartbeat cannot confirm lease ownership, the worker cancels in-flight provider/storage work and lets the database lease lifecycle recover the job; it must not continue external work on an unconfirmed lease.
+
+
+## 26. Financial ledger implementation gate and acceptance criteria
+
+The ledger remains a design only. Do not add a mutable client balance or connect payment collection until the following invariants are implemented and proven in the disposable PostgreSQL integration suite.
+
+### Authoritative operation boundary
+
+- A single server-side RPC must create the generation job, its outbox event, the wallet reservation, the hold, and the corresponding ledger entry in one database transaction. The existing job-creation RPCs do not yet reserve credits; do not call them a paid submission path.
+- The backend derives the authenticated owner from the verified session. The client may provide an idempotency key, but never a user ID, wallet ID, amount, price, provider cost, or final charge.
+- The server calculates a versioned quote from a server-owned pricing catalog and stores an immutable quote snapshot on the job/hold. The quote includes the maximum authorized charge, credit unit, price version, operation type, and relevant quantity/duration parameters.
+- A replay with the same owner and idempotency key plus the same canonical request and quote returns the original job and hold. Any changed request or pricing identity is rejected without changing balances.
+
+### Ledger and wallet invariants
+
+- Ledger entries are append-only. A correction is a new compensating entry; historical entries are never edited or deleted.
+- Wallet available/reserved totals are changed only inside trusted SQL RPC transactions while the wallet row is locked. Enforce non-negative balances with database constraints as well as guarded arithmetic.
+- Every financial operation has a stable, unique operation key scoped to its operation type and hold. A repeated reserve, capture, release, refund, or adjustment must return the original outcome and must not apply the balance delta twice.
+- A hold can transition only once from held to captured or released. Capture and release race tests must prove that only one terminal transition wins.
+- Capture is permitted only after the job's verified asset is durably recorded and the job is eligible for success. Job completion, hold capture, wallet movement, and ledger append must commit atomically.
+- Release is permitted only after a terminal failure/cancellation/expiry policy is satisfied. A retryable job must retain its hold; it must not release and reserve again on every worker retry.
+- If actual provider cost exceeds the user-approved maximum, do not silently debit more credits. Apply an explicit, pre-approved policy and record provider cost separately from the user charge.
+- Expiry and refunds require explicit policy and audited server-side operations. Never expire credits or refund based only on a browser event.
+
+### Required adversarial integration tests before enabling billing
+
+1. Two concurrent reservations against one wallet cannot overspend it.
+2. Concurrent duplicate submissions with the same idempotency key create one job, one outbox event, one hold, and one reserve ledger entry.
+3. Reusing the key with a different request or price snapshot is rejected without a financial mutation.
+4. Repeated capture/release calls do not change balances or append duplicate operation entries.
+5. Capture racing release has exactly one winner and leaves wallet/hold/ledger mutually consistent.
+6. A worker crash before result verification cannot capture credits; retry retains the original hold.
+7. A verified successful result and capture either both commit or both roll back.
+8. A terminal failure releases the hold once; a later duplicate webhook or worker retry cannot release it again.
+9. RLS prevents one user from reading another user's wallet, holds, or ledger; authenticated clients cannot mutate any of them or execute financial RPCs.
+10. Ledger totals reconcile to wallet balances after grants, reserves, captures, releases, refunds, and adjustments.
+
+### Activation gate
+
+Keep billing, payment collection, credit deductions, and any public paid-generation endpoint disabled until pricing/unit economics, refund/cancellation rules, provider billing behavior, and legal terms are approved; all adversarial SQL tests pass; and a two-account end-to-end test has evidence. This document and the existing job/provider migrations do not implement a wallet or ledger and must not be presented as active billing.
