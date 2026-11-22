@@ -3011,6 +3011,20 @@ begin
      or v_release.replayed then
     raise exception 'Release did not restore unexpired allocated lot balances';
   end if;
+
+  -- Replaying the original reservation after the job became terminal is a
+  -- read-only idempotent response, never a second hold or balance mutation.
+  select * into v_replay from public.reserve_job_credits(
+    v_user, v_job, 15, 'credit-lot-fifo-hold-001',
+    '{"price_version":"lot-test-v1","approved_maximum":15}'::jsonb
+  );
+  if v_replay.hold_id <> v_hold or not v_replay.replayed
+     or v_replay.available_credits <> 25 or v_replay.reserved_credits <> 0
+     or (select count(*) from public.credit_holds
+          where user_id = v_user and operation_key = 'credit-lot-fifo-hold-001') <> 1 then
+    raise exception 'Terminal reservation replay changed the original hold or wallet';
+  end if;
+
   if exists (
     select 1 from public.credit_hold_allocations
      where hold_id = v_hold and status <> 'released'
