@@ -31,6 +31,8 @@
   };
   const refreshAuthUI = session => {
     authSession = session;
+    const adminPanel = $("#adminPanel");
+    if (adminPanel) adminPanel.hidden = true;
     const user = session && session.user;
     authGate.hidden = true;
     $("#openLogin").hidden = !!user;
@@ -283,11 +285,12 @@ const movieHistoryStyle = document.createElement("style");
   const formatMetric = value => new Intl.NumberFormat("ru-RU").format(value);
   const loadAdminAnalytics = async () => {
     const status = $("#adminAnalyticsStatus");
-    if (!authSession?.user || !$("#adminPanel") || $("#adminPanel").hidden) return;
+    const requestedUserId = authSession?.user?.id;
+    if (!requestedUserId || !$("#adminPanel") || $("#adminPanel").hidden) return;
     if (status) status.textContent = "Обновляем агрегированную статистику…";
     try {
       const data = await apiRequest("/api/admin/analytics/site-visits");
-      if (!authSession?.user) return;
+      if (authSession?.user?.id !== requestedUserId || $("#adminPanel").hidden) return;
       $("#adminTotalVisits").textContent = formatMetric(data.total_page_views);
       $("#adminTodayVisits").textContent = formatMetric(data.today_page_views);
       $("#adminUniqueToday").textContent = formatMetric(data.today_unique_visitors);
