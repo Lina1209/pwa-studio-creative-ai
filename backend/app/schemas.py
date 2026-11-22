@@ -56,7 +56,7 @@ class PricingQuoteRequest(BaseModel):
     project_id: UUID | None = None
     studio_scene_id: UUID | None = None
     request_snapshot: dict = Field()
-    quantity: int = Field(default=1, ge=1, le=10000)
+    quantity: int = Field(default=1, strict=True, ge=1, le=10000)
 
     @model_validator(mode="after")
     def allow_only_one_generation_target(self):
