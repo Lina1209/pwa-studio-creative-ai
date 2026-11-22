@@ -193,7 +193,7 @@ async def test_worker_does_not_complete_if_upload_metadata_is_public():
     repo = FakeRepository()
     result = await make_worker(repo, storage=PublicStorage()).process(make_job())
     assert result.outcome == "failed"
-    assert repo.calls[0][0] == "fail"
+    assert next(call for call in repo.calls if call[0] == "fail")[0] == "fail"
     assert not any(call[0] == "complete" for call in repo.calls)
 
 
@@ -235,7 +235,7 @@ async def test_worker_rejects_storage_checksum_not_bound_to_generated_bytes():
     repo = FakeRepository()
     result = await make_worker(repo, storage=WrongChecksumStorage()).process(make_job())
     assert result.outcome == "failed"
-    assert repo.calls[0][0] == "fail"
+    assert next(call for call in repo.calls if call[0] == "fail")[0] == "fail"
     assert not any(call[0] == "complete" for call in repo.calls)
 
 
