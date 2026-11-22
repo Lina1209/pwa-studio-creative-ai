@@ -18,14 +18,14 @@ def test_ai_usage_aggregate_separates_provider_estimates_from_real_billing():
             "endpoint": "movie_script", "input_tokens": 120,
             "output_tokens": 80, "total_tokens": 200,
             "cost_usd": "0.00012", "cost_source": "litellm_response_cost",
-            "created_at": "2026-11-23T10:00:00Z",
+            "created_at": date.today().isoformat() + "T10:00:00Z",
         }),
         _row({
             "provider": "gemini", "model": "gemini/gemini-3.1-flash-lite",
             "endpoint": "chat", "input_tokens": 50,
             "output_tokens": 20, "total_tokens": 70,
             "cost_usd": None, "cost_source": None,
-            "created_at": "2026-11-23T11:00:00Z",
+            "created_at": date.today().isoformat() + "T11:00:00Z",
         }),
     ]
     report = _aggregate(rows, date(2026, 11, 23), date(2026, 11, 23))
