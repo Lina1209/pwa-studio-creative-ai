@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     # Keep job endpoints disabled until migrations 0009/0010 and the worker path are reviewed.
     generation_jobs_enabled: bool = False
+    # HMAC secret for short-lived, owner-bound server pricing quotes (>=32 bytes).
+    pricing_quote_signing_secret: str | None = None
     # Keep submission disabled until a durable dispatcher and worker are deployed.
     generation_job_worker_ready: bool = False
     # Runtime remains off until real provider and private storage adapters are deployed.
