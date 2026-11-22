@@ -13,6 +13,7 @@ from uuid import UUID
 
 from app.services.generation_result_storage import (
     GenerationResultStorageError,
+    GenerationStorageAdapterError,
     StoredObjectMetadata,
     calculate_sha256,
     validate_generation_result_object,
@@ -270,6 +271,10 @@ class GenerationWorker:
             finally:
                 heartbeat.cancel()
                 await asyncio.gather(heartbeat, return_exceptions=True)
+        except GenerationStorageAdapterError as exc:
+            if exc.retryable:
+                return await self._schedule_retry(job, exc.error_code)
+            return await self._terminal_failure(job, exc.error_code)
         except GenerationResultStorageError as exc:
             return await self._terminal_failure(job, exc.error_code)
         except ImageGenerationError as exc:
