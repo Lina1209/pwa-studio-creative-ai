@@ -213,9 +213,15 @@ async def verify_owner_succeeded_results(
             failures.append((str(job.job_id), "succeeded_job_missing_result_path"))
             continue
         try:
-            await storage.verify_existing_image(
+            if not job.result_sha256:
+                failures.append((str(job.job_id), "succeeded_job_missing_result_sha256"))
+                continue
+            stored = await storage.verify_existing_image(
                 owner_id=owner_id, job_id=job.job_id, object_path=path
             )
+            if stored.sha256_hex != job.result_sha256:
+                failures.append((str(job.job_id), "stored_result_sha256_mismatch"))
+                continue
             verified.append(path)
         except (GenerationResultStorageError, GenerationStorageAdapterError) as exc:
             code = exc.error_code
