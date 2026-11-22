@@ -2130,6 +2130,11 @@ begin
          lease_expires_at = now() + interval '120 seconds',
          heartbeat_at = now(), updated_at = now()
    where id = v_unknown_job_id;
+  select public.authorize_generation_provider_operation(v_unknown_job_id, 'budget-test-worker')
+    into v_allowed;
+  if v_allowed is distinct from true then
+    raise exception 'Unknown-cost fixture could not create its provider reservation';
+  end if;
   perform public.record_generation_provider_cost(
     v_unknown_job_id, '11111111-1111-4111-8111-111111111111',
     'budget-test-operation-unknown', 'budget-test-provider', 'budget-test-model',
