@@ -301,6 +301,8 @@ def get_my_credit_wallet(
         "total_credits": snapshot.available_credits + snapshot.reserved_credits,
         "holds": snapshot.holds,
         "ledger": snapshot.ledger,
+        "lots": snapshot.lots,
+        "allocations": snapshot.allocations,
     }
 
 
