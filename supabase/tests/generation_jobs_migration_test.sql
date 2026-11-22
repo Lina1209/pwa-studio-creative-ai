@@ -2305,10 +2305,17 @@ begin
      set created_at = now() - interval '1 day'
    where job_id in (v_job_b, v_job_unknown);
 
+  if not public.configure_provider_budget_policy(0.19, 0.30) then
+    raise exception 'Could not configure the daily-limit rejection assertion';
+  end if;
+  select public.authorize_generation_provider_operation(v_job_next_day, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from false then
+    raise exception 'Admission exceeded the configured daily budget by one cent';
+
   if not public.configure_provider_budget_policy(0.20, 0.30) then
     raise exception 'Could not adjust test policy for UTC rollover assertion';
   end if;
-
   select public.authorize_generation_provider_operation(v_job_next_day, 'global-budget-worker')
     into v_allowed;
   if v_allowed is distinct from true then
