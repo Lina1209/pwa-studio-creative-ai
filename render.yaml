@@ -16,6 +16,14 @@ services:
         value: deepseek
       - key: AI_MODEL
         value: deepseek-flash
+      - key: AI_MAX_CONCURRENT_REQUESTS
+        value: "4"
+      - key: AI_QUEUE_WAIT_SECONDS
+        value: "10"
+      - key: AI_REQUEST_TIMEOUT_SECONDS
+        value: "90"
+      - key: AI_MAX_RETRIES
+        value: "1"
       - key: OPENAI_API_KEY
         sync: false
       - key: DEEPSEEK_API_KEY
