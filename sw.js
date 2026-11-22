@@ -1,4 +1,4 @@
-const CACHE_NAME = "pwa-studio-shell-v14";
+const CACHE_NAME = "pwa-studio-shell-v15";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -50,7 +50,7 @@ self.addEventListener("fetch", event => {
           return response;
         })
         .catch(async () => {
-          const cached = await caches.match(request);
+          const cached = await caches.match(request, { ignoreSearch: true });
           return cached || (request.mode === "navigate" ? (await caches.match("./index.html")) : null) || Response.error();
         })
     );
