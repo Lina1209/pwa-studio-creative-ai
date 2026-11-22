@@ -365,3 +365,21 @@ does not change wallets, holds, jobs, prices, or provider events. The endpoint
 must remain unavailable to non-admin users; database credentials are never sent
 to the browser. This is operational cost observability, not invoicing or proof
 that a provider's reported usage is accurate.
+
+## 35. Least-privilege credit accounting and strict quote field types
+
+A follow-up privilege review found that the initial credit-ledger schema granted
+the service role broad table privileges. Row triggers prevent UPDATE/DELETE but
+do not fire for TRUNCATE, and direct INSERT could bypass the audited lifecycle
+RPCs. Migration 0018 now grants service-role SELECT only on wallets, holds and
+the ledger, and revokes INSERT/UPDATE/DELETE/TRUNCATE. The SECURITY DEFINER
+grant, reserve, release, atomic admission and capture functions remain the
+intended mutation boundary. The disposable PostgreSQL suite asserts these
+least-privilege grants and verifies authenticated users cannot execute the
+credit mutation RPCs.
+
+The signed quote verifier also now rejects a boolean
+`maximum_authorized_charge` even when its Python value compares equal to the
+integer amount (for example, `True == 1`), and independently enforces the
+global quantity ceiling. This is strict input validation; it does not activate
+pricing or credit charging.
