@@ -86,8 +86,8 @@ begin
         using errcode = '22023';
     end if;
 
-    select * into v_hold from public.credit_holds
-     where user_id = p_user_id and job_id = v_existing.id
+    select hold.* into v_hold from public.credit_holds as hold
+     where hold.user_id = p_user_id and hold.job_id = v_existing.id
      for update;
     if not found or v_hold.amount <> p_credit_amount
        or v_hold.operation_key <> p_idempotency_key
