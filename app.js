@@ -409,7 +409,8 @@ const movieHistoryStyle = document.createElement("style");
       const disclaimer = $("#adminAiUsageDisclaimer");
       if (disclaimer) disclaimer.textContent = data.cost_disclaimer || "Оценка стоимости не является фактическим списанием.";
       status.textContent = "Период UTC: " + data.period.from + " — " + data.period.to
-        + ". Неизвестных записей по стоимости: " + number(totals.cost_unknown_events)
+        + ". Запросов без оценки стоимости: " + number(totals.cost_unknown_events)
+        + ". Запросов с неполными данными токенов: " + number(totals.token_count_unknown_events)
         + ". Фактические списания не сверены.";
     } catch (error) {
       status.textContent = "Не удалось загрузить статистику: " + error.message;
