@@ -24,10 +24,15 @@ DIGEST = calculate_sha256(IMAGE)
 
 
 class FakeRepository:
-    def __init__(self, *, heartbeat=True, complete=True, journal_created=True):
+    def __init__(
+        self, *, heartbeat=True, complete=True, journal_created=True,
+        journal_unknown=True, journal_failed=True,
+    ):
         self.heartbeat_result = heartbeat
         self.complete_result = complete
         self.journal_created = journal_created
+        self.journal_unknown_result = journal_unknown
+        self.journal_failed_result = journal_failed
         self.calls = []
 
     async def heartbeat(self, *args):
@@ -44,11 +49,11 @@ class FakeRepository:
 
     async def mark_provider_operation_unknown(self, *args):
         self.calls.append(("journal_unknown", args))
-        return True
+        return self.journal_unknown_result
 
     async def mark_provider_operation_failed(self, *args):
         self.calls.append(("journal_failed", args))
-        return True
+        return self.journal_failed_result
 
     async def mark_provider_operation_result_received(self, *args):
         self.calls.append(("journal_result", args))
@@ -329,6 +334,53 @@ async def test_reclaimed_unknown_operation_without_lookup_is_quarantined():
     assert result.error_code == "provider_operation_quarantined"
     assert repo.calls[-1][0] == "retry"
 
+
+
+@pytest.mark.asyncio
+async def test_worker_stops_if_unknown_journal_transition_is_rejected():
+    class LookupUnsupportedProvider(FakeProvider):
+        async def generate(self, request, *, idempotency_key):
+            raise AssertionError("Existing operation must not be resubmitted")
+
+    repo = FakeRepository(journal_created=False, journal_unknown=False)
+    result = await make_worker(repo, LookupUnsupportedProvider()).process(make_job())
+
+    assert result.outcome == "lease_lost"
+    assert result.error_code == "provider_journal_transition_rejected"
+    assert any(call[0] == "journal_unknown" for call in repo.calls)
+    assert not any(call[0] == "retry" for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_stops_if_failed_journal_transition_is_rejected():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class FailedProvider(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            return ImageGenerationLookup("failed", error_code="provider_rejected")
+
+    repo = FakeRepository(journal_created=False, journal_failed=False)
+    result = await make_worker(repo, FailedProvider()).process(make_job())
+
+    assert result.outcome == "lease_lost"
+    assert result.error_code == "provider_journal_transition_rejected"
+    assert any(call[0] == "journal_failed" for call in repo.calls)
+    assert not any(call[0] == "fail" for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_stops_if_ambiguous_unknown_transition_is_rejected():
+    repo = FakeRepository(journal_unknown=False)
+    provider = FakeProvider(error=ImageGenerationError(
+        "provider_response_lost", retryable=True, ambiguous=True
+    ))
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "lease_lost"
+    assert result.error_code == "provider_journal_transition_rejected"
+    assert not any(call[0] == "retry" for call in repo.calls)
 
 
 @pytest.mark.asyncio
