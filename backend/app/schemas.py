@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ChatRequest(BaseModel):
@@ -26,10 +26,6 @@ class PromptResponse(BaseModel):
     prompt: str
     provider: str
     model: str
-
-
-from uuid import UUID
-from pydantic import field_validator
 
 
 class SceneImageJobRequest(BaseModel):
