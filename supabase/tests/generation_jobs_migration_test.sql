@@ -2523,6 +2523,7 @@ select 'distributed AI admission checks passed' as result;
 
 
 \ir ../migrations/0031_credit_lots_and_allocations.sql
+\ir ../migrations/0032_lot_aware_credit_lifecycle.sql
 
 do $credit_wallet_snapshot_test$
 declare
@@ -2617,17 +2618,25 @@ begin
     raise exception 'Credit lot integrity constraints are missing';
   end if;
 
-  if has_function_privilege('service_role',
+  if not has_function_privilege('service_role',
+       'public.grant_user_credit_lot(uuid,bigint,text,text,text,timestamp with time zone,jsonb)', 'EXECUTE')
+     or not has_function_privilege('service_role',
        'public.grant_user_credits(uuid,bigint,text,jsonb)', 'EXECUTE')
-     or has_function_privilege('service_role',
+     or not has_function_privilege('service_role',
        'public.reserve_job_credits(uuid,uuid,bigint,text,jsonb)', 'EXECUTE')
-     or has_function_privilege('service_role',
+     or not has_function_privilege('service_role',
        'public.release_job_credit_hold(uuid,uuid,text)', 'EXECUTE')
-     or has_function_privilege('service_role',
+     or not has_function_privilege('service_role',
        'public.create_credited_generation_job_with_outbox(uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint)', 'EXECUTE')
-     or has_function_privilege('service_role',
+     or not has_function_privilege('service_role',
        'public.complete_credited_generation_job(uuid,text,text,text)', 'EXECUTE') then
-    raise exception 'Legacy aggregate-only credit mutation RPCs must remain paused';
+    raise exception 'Lot-aware financial mutation RPCs are not enabled for the trusted service role';
+  end if;
+  if has_function_privilege('authenticated',
+       'public.grant_user_credit_lot(uuid,bigint,text,text,text,timestamp with time zone,jsonb)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.grant_user_credit_lot(uuid,bigint,text,text,text,timestamp with time zone,jsonb)', 'EXECUTE') then
+    raise exception 'Untrusted roles must not invoke credit lot grants';
   end if;
 
   if has_function_privilege('anon',
