@@ -64,7 +64,9 @@ def test_admin_budget_report_separates_spend_reservations_and_unknown(monkeypatc
     assert by_provider["deepseek"]["outstanding_reserved_usd"] == "0.1000000000"
     assert by_provider["gemini"]["unknown_reservations"] == 1
     assert by_provider["gemini"]["status"] == "unknown_costs"
-    assert result["unknown_reservations"][0]["request_id"] == "22222222-2222-4222-8222-222222222222"\n    assert result["unknown_reservations"][0]["provider"] == "gemini"\n    assert result["actual_billed_cost_usd"] is None
+    assert result["unknown_reservations"][0]["request_id"] == "22222222-2222-4222-8222-222222222222"
+    assert result["unknown_reservations"][0]["provider"] == "gemini"
+    assert result["actual_billed_cost_usd"] is None
 
 
 def test_admin_budget_report_fails_closed_without_service_credentials():
