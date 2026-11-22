@@ -303,3 +303,23 @@ The quote table is owner-readable under RLS but has no client mutation grants. A
 The disposable PostgreSQL integration suite now applies migration 0021 and tests first insert, replay returning the original quote, changed-request/quantity rejection, foreign project/scene rejection, immutability and client execute denial. CI also runs two concurrent database sessions against one owner/idempotency key and verifies that exactly one quote is created and both callers receive the same original snapshot. Python tests cover the service adapter, endpoint replay and expired-key behavior.
 
 This is still quote persistence only: it does not charge credits, submit provider work, or activate paid generation. The production catalog remains empty by default; all generation, worker and billing flags remain disabled.
+
+
+## 32. Provider cost evidence and per-job budget reconciliation (migration 0022)
+
+Migration `0022_generation_provider_cost_events.sql` introduces `generation_provider_cost_events`, a separate append-only operational cost journal for durable generation jobs. It is deliberately separate from `credit_ledger`: provider USD costs are not customer credits, and recording provider spend never changes a wallet or charges a user.
+
+The service-role-only `record_generation_provider_cost` RPC:
+- requires an existing job and verifies the supplied owner against the job's immutable owner;
+- requires provider/model to match the job's stored provider/model;
+- records one immutable event per `(job_id, operation_key)`, with optional provider usage ID, cost source, USD amount, usage-unit counts/type and bounded non-sensitive metadata;
+- treats `reported`, `estimated` and `unknown` distinctly. Unknown cost must be NULL; reported/estimated cost must be a bounded nonnegative amount;
+- serializes updates per job by locking the job row, returns the original event on an exact replay, and rejects reuse of an operation key with changed evidence;
+- calculates cumulative known USD cost and, only when the job's server-authored `pricing_snapshot.maximum_provider_cost_usd` exists, compares it with that ceiling. An unknown cost makes the budget state indeterminate unless already-known costs have exceeded the ceiling. An overrun is recorded as evidence; it is never hidden or converted into an extra customer debit;
+- rejects client table access and direct service-role INSERT/UPDATE/DELETE/TRUNCATE. New events can be appended only through the validated SECURITY DEFINER RPC. Existing events cannot be changed or deleted.
+
+The backend Supabase worker repository now has a typed `record_provider_cost` adapter. It validates Decimal amounts and usage counters before making the RPC call and strictly parses the returned event ID, cumulative amount, budget and overrun flag. Unit tests cover the request contract, invalid inputs and malformed RPC responses.
+
+The disposable PostgreSQL suite covers owner binding, provider/model binding, exact idempotent replay, changed-evidence rejection, reported plus estimated cumulative cost, budget overrun detection, unknown-cost handling, append-only enforcement and least-privilege grants.
+
+**Important boundary:** this journal is not yet wired to a concrete image/video/audio provider because no real generation provider is registered and the provider result contract does not yet expose verified billing usage. Do not manufacture provider prices or treat estimates as invoices. The existing `ai_usage` table remains best-effort AI chat/prompt telemetry; this new journal covers durable generation jobs only. No production USD budget, credit conversion, billing, customer debit or provider runtime is enabled. A provider adapter must supply authoritative usage/cost evidence (or explicitly mark it estimated/unknown) before this journal can be populated in production.
