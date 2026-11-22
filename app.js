@@ -436,6 +436,7 @@ const movieHistoryStyle = document.createElement("style");
       });
       if (!activeAssistantConversationId && data?.length) {
         await loadAssistantMessages(data[0].id);
+        if (authSession?.user?.id !== userId) return;
       }
       setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
     } catch (error) {
@@ -446,13 +447,17 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   const startAssistantConversation = async () => {
-    if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
+    const userId = authSession?.user?.id;
+    if (!userId || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
     const { data, error } = await supabaseClient.from("assistant_conversations")
-      .insert({ user_id: authSession.user.id, title: "Новый диалог" }).select("id").single();
+      .insert({ user_id: userId, title: "Новый диалог" }).select("id").single();
     if (error) throw error;
+    if (authSession?.user?.id !== userId) return null;
     activeAssistantConversationId = data.id; clearAssistantMessages();
     await renderAssistantHistory();
+    if (authSession?.user?.id !== userId) return null;
     setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
+    return data.id;
   };
   $("#assistantNewChat")?.addEventListener("click", async () => {
     try { await startAssistantConversation(); $("#assistantInput").focus(); }
@@ -466,27 +471,41 @@ const movieHistoryStyle = document.createElement("style");
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     try {
       if (!activeAssistantConversationId) await startAssistantConversation();
-      const { error: userSaveError } = await supabaseClient.from("assistant_messages")
-        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "user", content: value });
-      if (userSaveError) throw userSaveError;
-      renderAssistantMessage("user", value);
-      const { data: titleRow } = await supabaseClient.from("assistant_conversations")
-        .select("title").eq("id", activeAssistantConversationId).single();
-      if (titleRow?.title === "Новый диалог") {
-        await supabaseClient.from("assistant_conversations")
-          .update({ title: value.slice(0, 72) }).eq("id", activeAssistantConversationId);
+      if (authSession?.user?.id !== requestUserId) {
+        setAssistantStatus("Сеанс аккаунта изменился. Сообщение не было сохранено.");
+        return;
       }
+      const conversationId = activeAssistantConversationId;
+      if (!conversationId) throw new Error("Не удалось открыть диалог. Начните новый разговор.");
+      const { error: userSaveError } = await supabaseClient.from("assistant_messages")
+        .insert({ conversation_id: conversationId, user_id: requestUserId, role: "user", content: value });
+      if (userSaveError) throw userSaveError;
+      if (authSession?.user?.id !== requestUserId) return;
+      renderAssistantMessage("user", value);
+      const { data: titleRow, error: titleReadError } = await supabaseClient.from("assistant_conversations")
+        .select("title").eq("id", conversationId).eq("user_id", requestUserId).single();
+      if (titleReadError) throw titleReadError;
+      if (authSession?.user?.id !== requestUserId) return;
+      if (titleRow?.title === "Новый диалог") {
+        const { error: titleUpdateError } = await supabaseClient.from("assistant_conversations")
+          .update({ title: value.slice(0, 72) }).eq("id", conversationId).eq("user_id", requestUserId);
+        if (titleUpdateError) throw titleUpdateError;
+      }
+      if (authSession?.user?.id !== requestUserId) return;
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
       if (authSession?.user?.id !== requestUserId) {
         setAssistantStatus("Сеанс аккаунта изменился. Ответ не был сохранён в другом аккаунте.");
         return;
       }
       const { error: assistantSaveError } = await supabaseClient.from("assistant_messages")
-        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "assistant", content: result.reply });
+        .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
-      renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
-    } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
-    finally { button.disabled = false; input.disabled = false; input.focus(); }
+      if (authSession?.user?.id !== requestUserId) return;
+      renderAssistantMessage("assistant", result.reply);
+      await renderAssistantHistory();
+    } catch (error) {
+      if (authSession?.user?.id === requestUserId) setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message);
+    } finally { button.disabled = false; input.disabled = false; input.focus(); }
   });
   setTimeout(() => renderAssistantHistory(), 0);
 
