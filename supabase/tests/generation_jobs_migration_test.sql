@@ -2595,6 +2595,12 @@ declare
   v_ledger_only_user uuid := gen_random_uuid();
   v_snapshot jsonb;
   v_audit record;
+  v_job_one uuid;
+  v_job_two uuid;
+  v_hold_one uuid;
+  v_hold_two uuid;
+  v_allocation_one uuid;
+  v_allocation_two uuid;
 begin
   insert into auth.users(id) values
     (v_user), (v_empty_user), (v_zero_wallet_user), (v_ledger_only_user);
@@ -2631,6 +2637,40 @@ begin
     raise exception 'Reconciliation did not detect lot/wallet drift';
   end if;
   update public.credit_lots set available_credits = 125 where user_id = v_user;
+
+  -- Aggregate totals alone can conceal swapped/misassigned hold allocations.
+  -- Keep user, wallet, lot and ledger totals constant while breaking each hold's
+  -- own allocation amount; the detailed reconciliation must still detect drift.
+  select job_id into v_job_one from public.create_generation_job_with_outbox(
+    v_user, null, 'image_generation', 'audit-provider', 'audit-model',
+    'audit-hold-job-one', repeat('a', 64), '{}'::jsonb, '{}'::jsonb
+  );
+  select hold_id into v_hold_one from public.reserve_job_credits(
+    v_user, v_job_one, 5, 'audit-hold-key-001', '{}'::jsonb
+  );
+  select job_id into v_job_two from public.create_generation_job_with_outbox(
+    v_user, null, 'image_generation', 'audit-provider', 'audit-model',
+    'audit-hold-job-two', repeat('b', 64), '{}'::jsonb, '{}'::jsonb
+  );
+  select hold_id into v_hold_two from public.reserve_job_credits(
+    v_user, v_job_two, 10, 'audit-hold-key-002', '{}'::jsonb
+  );
+  select id into v_allocation_one from public.credit_hold_allocations
+   where hold_id = v_hold_one and status = 'held';
+  select id into v_allocation_two from public.credit_hold_allocations
+   where hold_id = v_hold_two and status = 'held';
+  update public.credit_hold_allocations set amount = 10 where id = v_allocation_one;
+  update public.credit_hold_allocations set amount = 5 where id = v_allocation_two;
+  select * into v_audit from public.audit_credit_wallet_reconciliation(v_user, 10);
+  if not found or v_audit.healthy or v_audit.allocations_match then
+    raise exception 'Reconciliation missed per-hold allocation drift with matching aggregate totals';
+  end if;
+  update public.credit_hold_allocations set amount = 5 where id = v_allocation_one;
+  update public.credit_hold_allocations set amount = 10 where id = v_allocation_two;
+  select * into v_audit from public.audit_credit_wallet_reconciliation(v_user, 10);
+  if not found or not v_audit.healthy or not v_audit.allocations_match then
+    raise exception 'Reconciliation did not recover after per-hold allocations were restored';
+  end if;
 
   -- A persisted zero-balance wallet without any journal entry is an anomaly,
   -- not an unrecorded "healthy" account. A user with only ledger rows must
