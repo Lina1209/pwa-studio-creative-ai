@@ -60,6 +60,7 @@ def health():
         "authentication_configured": bool(settings.supabase_url),
         "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
         "generation_jobs_enabled": bool(settings.generation_jobs_enabled and settings.supabase_url and settings.supabase_service_role_key),
+        "pricing_quotes_configured": bool(settings.pricing_quote_signing_secret and len(settings.pricing_quote_signing_secret.encode("utf-8")) >= 32),
         "generation_worker_ready": bool(settings.generation_job_worker_ready),
         "image_generation_configured": bool(settings.image_generation_provider and settings.image_generation_model),
     }
