@@ -56,6 +56,7 @@ class GenerationJobRepository(Protocol):
     async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool: ...
     async def fail(self, job_id: UUID, worker_id: str, error_code: str) -> bool: ...
     async def complete_credited(self, job_id: UUID, worker_id: str, result_path: str, result_sha256: str): ...
+    async def authorize_provider_operation(self, job_id: UUID, worker_id: str) -> bool: ...
     async def record_provider_cost(
         self, *, job_id: UUID, user_id: UUID, operation_key: str,
         provider: str, model: str, provider_usage_id: str | None,
@@ -173,6 +174,17 @@ class GenerationWorker:
                         job, "provider_operation_failed"
                     )
                 if journal.created:
+                    # Budget admission is database-authoritative and happens
+                    # before any billable provider request. Missing/uncertain
+                    # budget state fails closed.
+                    budget_allowed = await self._run_while_leased(
+                        self.repository.authorize_provider_operation(job.job_id, self.worker_id), lost
+                    )
+                    if not budget_allowed:
+                        await self.repository.mark_provider_operation_failed(
+                            job.job_id, self.worker_id, "provider_budget_blocked"
+                        )
+                        return await self._terminal_failure(job, "provider_budget_blocked")
                     try:
                         result = await self._run_while_leased(
                             provider.generate(request, idempotency_key=provider_idempotency_key), lost
@@ -225,6 +237,14 @@ class GenerationWorker:
                         if result.provider_request_id is None and lookup.provider_request_id:
                             result = replace(result, provider_request_id=lookup.provider_request_id)
                     elif decision.action == "resubmit_same_key":
+                        budget_allowed = await self._run_while_leased(
+                            self.repository.authorize_provider_operation(job.job_id, self.worker_id), lost
+                        )
+                        if not budget_allowed:
+                            await self.repository.mark_provider_operation_failed(
+                                job.job_id, self.worker_id, "provider_budget_blocked"
+                            )
+                            return await self._terminal_failure(job, "provider_budget_blocked")
                         result = await self._run_while_leased(
                             provider.generate(request, idempotency_key=provider_idempotency_key), lost
                         )
