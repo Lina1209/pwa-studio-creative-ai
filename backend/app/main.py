@@ -1,6 +1,7 @@
 import hashlib
 import logging
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 import json
 from uuid import UUID, uuid4
 
@@ -459,6 +460,46 @@ def admin_ai_usage_report(
         raise HTTPException(status_code=503, detail="AI usage reporting is not configured.") from exc
     except AIUsageReportError as exc:
         raise HTTPException(status_code=502, detail="AI usage report is temporarily unavailable.") from exc
+    budgets = {
+        "deepseek": settings.ai_daily_budget_usd_deepseek,
+        "gemini": settings.ai_daily_budget_usd_gemini,
+    }
+    daily_rows = {
+        row["provider"]: row for row in report.get("today_by_provider", [])
+        if isinstance(row, dict) and isinstance(row.get("provider"), str)
+    }
+    budget_status = []
+    for provider, configured_budget in budgets.items():
+        row = daily_rows.get(provider, {})
+        try:
+            spend = Decimal(str(row.get("reported_estimated_cost_usd", "0")))
+        except (InvalidOperation, ValueError):
+            spend = Decimal("0")
+        unknown_events = int(row.get("cost_unknown_events", 0) or 0)
+        item = {
+            "provider": provider,
+            "daily_budget_usd": format(configured_budget, "f") if configured_budget is not None else None,
+            "estimated_spend_usd": format(spend, "f"),
+            "unknown_cost_events": unknown_events,
+            "utilization_percent": None,
+            "status": "unconfigured",
+        }
+        if configured_budget is not None:
+            item["utilization_percent"] = round(float(spend / configured_budget * 100), 2)
+            if unknown_events:
+                item["status"] = "unknown_costs"
+            elif spend >= configured_budget:
+                item["status"] = "threshold_reached"
+            elif spend >= configured_budget * Decimal("0.8"):
+                item["status"] = "warning"
+            else:
+                item["status"] = "within_limit"
+        budget_status.append(item)
+    report["daily_budget_status"] = budget_status
+    report["budget_status_note"] = (
+        "These are warning thresholds based on recorded LiteLLM estimates, not a hard billing cap. "
+        "Unknown-cost events make utilization incomplete. Actual charges must be reconciled with provider invoices."
+    )
     _audit_admin_read(user, resource_type="platform", reason="Viewed aggregate AI usage report")
     response.headers["Cache-Control"] = "private, no-store"
     return report
