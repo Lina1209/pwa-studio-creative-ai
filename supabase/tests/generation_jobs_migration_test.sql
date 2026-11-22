@@ -2312,6 +2312,7 @@ begin
     into v_allowed;
   if v_allowed is distinct from false then
     raise exception 'Admission exceeded the configured daily budget by one cent';
+  end if;
 
   if not public.configure_provider_budget_policy(0.20, 0.30) then
     raise exception 'Could not adjust test policy for UTC rollover assertion';
