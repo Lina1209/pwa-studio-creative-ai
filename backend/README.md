@@ -13,7 +13,7 @@ FastAPI backend for PWA Studio — Creative AI.
 
 ## Accounts and roles
 
-Supabase Auth handles sign-up, sign-in, email verification and password recovery. The API validates Supabase JWTs against the project's JWKS endpoint. The owner role is assigned server-side only when the verified account email exactly matches `OWNER_EMAIL`; other signed-in accounts receive the creator role. The browser cannot request an admin role.
+Supabase Auth handles sign-up, sign-in, email verification and password recovery. The API validates Supabase JWTs against the project's JWKS endpoint and requires `role=authenticated` plus a UUID `sub`. Administrator access is granted only when that verified immutable Supabase Auth user UUID is present in the server-only comma-separated `OWNER_USER_IDS` environment variable. Email is display/contact data only and never grants administrator access. A missing or malformed allowlist grants no admin access. Do not put this setting in frontend code. Obtain the owner UUID from Supabase Authentication → Users and verify the account before adding it to the backend host's secret environment settings. Other signed-in users receive the creator role; the browser cannot request an admin role.
 
 Guests can browse public studio pages and create temporary local drafts. Signed-in users have local-first Mini Movie Studio drafts synchronized directly with Supabase `public.projects` under owner-scoped RLS; this is not a FastAPI project CRUD API. Cross-device, conflict, and deletion behavior still require end-to-end verification.
 
@@ -58,3 +58,8 @@ Before enabling this in production:
 4. Make one authenticated chat or prompt request, then inspect the new row in Supabase Table Editor. Verify user, endpoint, model, token counts and cost fields.
 
 This phase only measures usage. It does not create wallets, deduct credits, charge users, or change plans. Rows are accessible only to the server-side service role because RLS is enabled and no client policies are granted.
+
+
+### Administrator authorization boundary
+
+The current administrator model is a server-side owner UUID allowlist, not a general role-management system. It supports one or more explicitly configured owner UUIDs, but does not yet provide delegated finance operators, permission scopes, two-person approval, or an administrator audit trail for financial adjustments. Service-role database RPCs remain server-only. Do not build a customer-facing credit-compensation or cash-refund action on top of `require_admin` until scoped financial permissions, immutable operator audit records, approval rules, and the selected credit-lot restoration/expiry policy are implemented and tested.
