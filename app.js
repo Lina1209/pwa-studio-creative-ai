@@ -527,7 +527,7 @@ const movieHistoryStyle = document.createElement("style");
     {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
   ];
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
-  const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
+  const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null, syncRetryCount: 0, syncRetryUser: null, loadRetryCount: 0, loadRetryUser: null, loadRetryTimer: null };
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
   const readMovieTombstones = (key = movieDeletedKey()) => {
     try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
@@ -568,12 +568,13 @@ const movieHistoryStyle = document.createElement("style");
       versions: Array.isArray(saved.versions) ? saved.versions : []
     };
   };
-  const scheduleMovieCloudSync = () => {
-    if (!authSession?.user || !supabaseClient) return;
+  const scheduleMovieCloudSync = (delayMs = 350, expectedUserId = null) => {
+    const scheduledUserId = authSession?.user?.id;
+    if (!scheduledUserId || !supabaseClient || (expectedUserId && expectedUserId !== scheduledUserId)) return;
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
-      const userId = authSession?.user?.id;
-      if (!userId || !supabaseClient) return;
+      const userId = scheduledUserId;
+      if (!userId || !supabaseClient || authSession?.user?.id !== userId) return;
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       const projectKey = "pwa-studio-movie-projects:" + userId;
       const deletedKey = "pwa-studio-movie-deleted:" + userId;
@@ -604,12 +605,18 @@ const movieHistoryStyle = document.createElement("style");
           if (error) throw error;
         }
         if (authSession?.user?.id !== userId) return;
+        movieCloudState.syncRetryCount = 0;
+        movieCloudState.syncRetryUser = userId;
         const feedback = $("#movieFeedback");
         if (feedback) feedback.textContent = deletedIds.length
           ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
           : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
+        if (authSession?.user?.id === userId) {
+          if (movieCloudState.syncRetryUser !== userId) { movieCloudState.syncRetryUser = userId; movieCloudState.syncRetryCount = 0; }
+          movieCloudState.syncRetryCount = Math.min(movieCloudState.syncRetryCount + 1, 9);
+        }
         if (authSession?.user?.id === userId) {
           const feedback = $("#movieFeedback");
           if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
@@ -618,10 +625,13 @@ const movieHistoryStyle = document.createElement("style");
         movieCloudState.syncing = false;
         if (movieCloudState.pending) {
           movieCloudState.pending = false;
-          if (authSession?.user?.id) scheduleMovieCloudSync();
+          if (authSession?.user?.id === userId) scheduleMovieCloudSync(350, userId);
+        } else if (movieCloudState.syncRetryUser === userId && movieCloudState.syncRetryCount > 0 && authSession?.user?.id === userId) {
+          const retryDelay = Math.min(1000 * (2 ** (movieCloudState.syncRetryCount - 1)), 300000);
+          scheduleMovieCloudSync(retryDelay, userId);
         }
       }
-    }, 350);
+    }, Math.max(0, delayMs));
   };
   const loadMovieProjectsFromCloud = async () => {
     const userId = authSession?.user?.id;
@@ -645,6 +655,10 @@ const movieHistoryStyle = document.createElement("style");
         writeMovieTombstones([], deletedKey);
       }
       if (authSession?.user?.id !== userId) return;
+      movieCloudState.loadRetryCount = 0;
+      movieCloudState.loadRetryUser = userId;
+      clearTimeout(movieCloudState.loadRetryTimer);
+      movieCloudState.loadRetryTimer = null;
       const deletedSet = new Set(deletedIds);
       const local = movieRead().filter(project => !deletedSet.has(project.id));
       const merged = new Map(local.map(project => [project.id, project]));
@@ -665,13 +679,31 @@ const movieHistoryStyle = document.createElement("style");
     } catch (error) {
       console.error("Movie cloud load failed:", error);
       if (authSession?.user?.id === userId) {
+        if (movieCloudState.loadRetryUser !== userId) { movieCloudState.loadRetryUser = userId; movieCloudState.loadRetryCount = 0; }
+        movieCloudState.loadRetryCount = Math.min(movieCloudState.loadRetryCount + 1, 9);
+        const retryDelay = Math.min(2000 * (2 ** (movieCloudState.loadRetryCount - 1)), 300000);
+        clearTimeout(movieCloudState.loadRetryTimer);
+        movieCloudState.loadRetryTimer = setTimeout(() => {
+          if (authSession?.user?.id === userId) loadMovieProjectsFromCloud();
+        }, retryDelay);
         const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+        if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены; повторная попытка запланирована.";
       }
     } finally {
       if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
     }
   };
+  window.addEventListener("online", () => {
+    const userId = authSession?.user?.id;
+    if (!userId || !supabaseClient) return;
+    loadMovieProjectsFromCloud();
+    scheduleMovieCloudSync(0, userId);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && authSession?.user?.id) {
+      scheduleMovieCloudSync(0, authSession.user.id);
+    }
+  });
   const movieRead = () => {
     try {
       const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
