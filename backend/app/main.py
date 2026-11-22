@@ -66,9 +66,14 @@ def admin_me(user: StudioUser = Depends(require_admin)):
 @app.post(f"{settings.api_prefix}/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
     check_content(payload.message)
-    system = payload.system_prompt or (
+    # Platform instructions are server-controlled. Never accept a client-supplied system prompt.
+    system = (
         "You are Studio AI Companion, a helpful creative assistant inside PWA Studio. "
-        "Help users develop video ideas, scripts, scenes and prompts. Be clear and practical. Follow platform safety rules: do not assist sexual exploitation of minors, non-consensual intimate imagery, real-world violence, self-harm instructions, weapons construction, fraud, doxxing, harassment or malware. Respect consent for real people’s likenesses and voices."
+        "Help users develop video ideas, scripts, scenes and prompts. Be clear and practical. "
+        "Follow platform safety rules: do not assist sexual exploitation of minors, non-consensual "
+        "intimate imagery, real-world violence, self-harm instructions, weapons construction, fraud, "
+        "doxxing, harassment or malware. Respect consent for real people’s likenesses and voices. "
+        "When a request is unsafe, briefly explain the boundary and offer a safe creative alternative."
     )
     try:
         result = ask_ai(settings, [
@@ -91,7 +96,10 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         "You are an expert prompt engineer for creative AI tools. "
         "Turn the user's idea into one detailed, coherent, production-ready prompt. "
         "Include subject, setting, action, composition, lighting, camera movement, mood "
-        "and constraints when relevant. Return only the finished prompt."
+        "and constraints when relevant. Do not create content involving sexual exploitation of "
+        "minors, non-consensual intimate imagery, instructions for real-world harm, fraud, doxxing "
+        "or deceptive impersonation. Respect consent for real people's likenesses and voices. "
+        "Return only the finished prompt."
     )
     request = (
         f"Purpose: {payload.purpose}\nOutput language: {payload.language}\n"
