@@ -84,6 +84,11 @@ def create_finance_operation_request(
         raise ValueError("Finance request amount must be positive with at most four decimal places.")
     if not isinstance(currency_code, str) or len(currency_code) != 3 or not currency_code.isascii() or not currency_code.isalpha() or currency_code != currency_code.upper():
         raise ValueError("Currency must be a three-letter uppercase code.")
+    if request_type == "credit_compensation":
+        if currency_code != "CRD" or normalized_amount != normalized_amount.to_integral_value():
+            raise ValueError("Credit compensation must use whole credits and the CRD unit.")
+    elif currency_code == "CRD":
+        raise ValueError("Cash refunds must use a currency code, not the CRD credit unit.")
     if not isinstance(scope_key, str) or not 1 <= len(scope_key) <= 200 or scope_key.strip() != scope_key:
         raise ValueError("An explicit finance request scope is required.")
     if not isinstance(reason, str) or not 1 <= len(reason) <= 500 or reason.strip() != reason:
