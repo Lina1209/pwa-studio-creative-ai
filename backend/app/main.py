@@ -645,6 +645,8 @@ def finance_request_decide(
         raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
     except FinanceRequestUnavailable as exc:
         raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    if item["requester_id"] == UUID(user.user_id):
+        raise HTTPException(status_code=403, detail="A requester cannot approve or reject their own finance request.")
     _require_finance_action(
         user, request_type=item["request_type"], action="approve",
         scope_key=item["scope_key"],
