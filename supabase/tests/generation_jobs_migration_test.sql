@@ -2074,6 +2074,7 @@ select 'terminal worker credit release checks passed' as result;
 do $provider_budget_admission_test$
 declare
   v_job_id uuid := '13131313-1313-4131-8131-131313131313';
+  v_unknown_job_id uuid := '14141414-1414-4141-8141-141414141414';
   v_allowed boolean;
 begin
   insert into public.generation_jobs(
@@ -2109,16 +2110,27 @@ begin
     raise exception 'Budget gate admitted a new call after reaching the USD ceiling';
   end if;
 
+  insert into public.generation_jobs(
+    id, user_id, job_type, provider, model, idempotency_key,
+    request_hash, pricing_snapshot
+  ) values (
+    v_unknown_job_id, '11111111-1111-4111-8111-111111111111',
+    'image_generation', 'budget-test-provider', 'budget-test-model',
+    'provider-budget-unknown-001', repeat('e', 64),
+    '{"maximum_provider_cost_usd":0.10,"pricing_version":"budget-test-v1"}'::jsonb
+  );
   update public.generation_jobs
-     set pricing_snapshot = '{"maximum_provider_cost_usd":0.10,"pricing_version":"budget-test-v1"}'::jsonb
-   where id = v_job_id;
+     set status = 'running', lease_owner = 'budget-test-worker',
+         lease_expires_at = now() + interval '120 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id = v_unknown_job_id;
   perform public.record_generation_provider_cost(
-    v_job_id, '11111111-1111-4111-8111-111111111111',
+    v_unknown_job_id, '11111111-1111-4111-8111-111111111111',
     'budget-test-operation-unknown', 'budget-test-provider', 'budget-test-model',
     null, null, 'unknown', null, null, null, 'unknown',
     '{"reason":"provider usage unavailable"}'::jsonb
   );
-  select public.authorize_generation_provider_operation(v_job_id, 'budget-test-worker')
+  select public.authorize_generation_provider_operation(v_unknown_job_id, 'budget-test-worker')
     into v_allowed;
   if v_allowed is distinct from false then
     raise exception 'Budget gate admitted a new call while prior provider cost was unknown';
