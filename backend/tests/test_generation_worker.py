@@ -4,7 +4,11 @@ from uuid import UUID
 import pytest
 from types import SimpleNamespace
 
-from app.services.generation_result_storage import StoredObjectMetadata, calculate_sha256
+from app.services.generation_result_storage import (
+    GenerationStorageAdapterError,
+    StoredObjectMetadata,
+    calculate_sha256,
+)
 from app.services.generation_worker import (
     ClaimedImageJob,
     GenerationWorker,
@@ -465,3 +469,35 @@ async def test_ambiguous_provider_submission_is_journaled_before_retry():
     assert result.outcome == "retry_scheduled"
     assert any(call[0] == "journal_unknown" for call in repo.calls)
     assert repo.calls[-1][0] == "retry"
+
+
+
+@pytest.mark.asyncio
+async def test_transient_storage_failure_schedules_retry_after_provider_result_is_journaled():
+    class TemporarilyUnavailableStorage:
+        async def upload_image(self, **kwargs):
+            raise GenerationStorageAdapterError("storage_request_timeout", retryable=True)
+
+    repo = FakeRepository()
+    result = await make_worker(repo, storage=TemporarilyUnavailableStorage()).process(make_job())
+
+    assert result.outcome == "retry_scheduled"
+    assert result.error_code == "storage_request_timeout"
+    names = [call[0] for call in repo.calls]
+    assert names.index("journal_result") < names.index("retry")
+    assert not any(name == "complete" for name in names)
+
+
+@pytest.mark.asyncio
+async def test_permanent_storage_failure_uses_terminal_failure():
+    class MisconfiguredStorage:
+        async def upload_image(self, **kwargs):
+            raise GenerationStorageAdapterError("storage_not_configured", retryable=False)
+
+    repo = FakeRepository()
+    result = await make_worker(repo, storage=MisconfiguredStorage()).process(make_job())
+
+    assert result.outcome == "failed"
+    assert result.error_code == "storage_not_configured"
+    assert repo.calls[-1][0] == "fail"
+    assert not any(call[0] == "complete" for call in repo.calls)
