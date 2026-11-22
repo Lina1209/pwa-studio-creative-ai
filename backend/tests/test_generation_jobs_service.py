@@ -4,6 +4,7 @@ import pytest
 
 from app.core.config import Settings
 from app.services import generation_jobs
+from app.services.pricing_service import PricingCatalog, PricingRule, issue_pricing_quote
 
 
 USER_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -51,6 +52,7 @@ def configured_settings(**overrides):
         "supabase_url": "https://example.supabase.co/",
         "supabase_service_role_key": "sb_secret_test_key",
         "generation_jobs_enabled": True,
+        "pricing_quote_signing_secret": "test-signing-secret-with-at-least-32-bytes",
     }
     values.update(overrides)
     return Settings(**values)
@@ -290,6 +292,18 @@ def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_resul
         ),
     )
 
+    quote = issue_pricing_quote(
+        secret="test-signing-secret-with-at-least-32-bytes",
+        catalog=PricingCatalog("test-v1", (
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image", 1, 3),
+        )),
+        user_id=USER_ID,
+        job_type="image_generation",
+        provider="provider-test",
+        model="model-test",
+        request_hash="a" * 64,
+        quantity=1,
+    )
     result = generation_jobs.create_credited_generation_job(
         configured_settings(),
         user_id=USER_ID,
@@ -301,8 +315,7 @@ def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_resul
         idempotency_key="credited-job-key-001",
         request_hash="a" * 64,
         request_snapshot={"prompt": "test"},
-        quote_snapshot={"price_version": "test-v1", "approved_maximum": 10},
-        credit_amount=10,
+        quote_snapshot=quote.snapshot(),
     )
 
     assert result.job_id == JOB_ID
@@ -323,12 +336,25 @@ def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_resul
     assert headers["apikey"] == "sb_secret_test_key"
 
 
-def test_create_credited_generation_job_rejects_bad_quote_and_hash_before_network(monkeypatch):
+def test_create_credited_generation_job_rejects_tampered_quote_before_network(monkeypatch):
     def unexpected_client(*args, **kwargs):
-        raise AssertionError("Invalid server quote must be rejected before network access")
+        raise AssertionError("Invalid signed quote must be rejected before network access")
 
     monkeypatch.setattr(generation_jobs.httpx, "Client", unexpected_client)
-    with pytest.raises(generation_jobs.GenerationJobsServiceError, match="credit quote"):
+    quote = issue_pricing_quote(
+        secret="test-signing-secret-with-at-least-32-bytes",
+        catalog=PricingCatalog("test-v1", (
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image"),
+        )),
+        user_id=USER_ID,
+        job_type="image_generation",
+        provider="provider-test",
+        model="model-test",
+        request_hash="b" * 64,
+    ).snapshot()
+    quote["amount"] = 1
+    quote["maximum_authorized_charge"] = 1
+    with pytest.raises(generation_jobs.GenerationJobsServiceError, match="quote is invalid"):
         generation_jobs.create_credited_generation_job(
             configured_settings(),
             user_id=USER_ID,
@@ -340,10 +366,27 @@ def test_create_credited_generation_job_rejects_bad_quote_and_hash_before_networ
             idempotency_key="credited-job-key-002",
             request_hash="b" * 64,
             request_snapshot={},
-            quote_snapshot={},
-            credit_amount=True,
+            quote_snapshot=quote,
         )
-    with pytest.raises(generation_jobs.GenerationJobsServiceError, match="request hash"):
+
+
+def test_create_credited_generation_job_rejects_quote_for_another_request(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("Mismatched quote must be rejected before network access")
+
+    monkeypatch.setattr(generation_jobs.httpx, "Client", unexpected_client)
+    quote = issue_pricing_quote(
+        secret="test-signing-secret-with-at-least-32-bytes",
+        catalog=PricingCatalog("test-v1", (
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image"),
+        )),
+        user_id=USER_ID,
+        job_type="image_generation",
+        provider="provider-test",
+        model="model-test",
+        request_hash="c" * 64,
+    ).snapshot()
+    with pytest.raises(generation_jobs.GenerationJobsServiceError, match="quote is invalid"):
         generation_jobs.create_credited_generation_job(
             configured_settings(),
             user_id=USER_ID,
@@ -353,12 +396,10 @@ def test_create_credited_generation_job_rejects_bad_quote_and_hash_before_networ
             provider="provider-test",
             model="model-test",
             idempotency_key="credited-job-key-003",
-            request_hash="NOT-HEX",
+            request_hash="d" * 64,
             request_snapshot={},
-            quote_snapshot={},
-            credit_amount=1,
+            quote_snapshot=quote,
         )
-
 
 def test_create_credited_generation_job_remains_disabled_by_default(monkeypatch):
     def unexpected_client(*args, **kwargs):
