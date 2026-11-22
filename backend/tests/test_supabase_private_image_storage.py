@@ -448,3 +448,70 @@ async def test_owner_inventory_fails_closed_when_page_limit_is_reached():
             await storage.list_owner_generated_objects(
                 owner_id=OWNER, page_size=1, max_pages=1
             )
+
+
+@pytest.mark.asyncio
+async def test_upload_paginates_owner_inventory_until_expected_object_is_found():
+    offsets = []
+
+    def handler(request):
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            return httpx.Response(200, json={"Key": "uploaded"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            offset = int(request.content and __import__("json").loads(request.content).get("offset", 0))
+            offsets.append(offset)
+            if offset == 0:
+                return httpx.Response(200, json=[
+                    {"name": f"older-{index}.png", "metadata": {"size": 1, "mimetype": "image/png"}}
+                    for index in range(100)
+                ])
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        uploaded = await storage.upload_image(
+            owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+        )
+
+    assert uploaded.metadata.sha256_hex == calculate_sha256(PNG)
+    assert offsets == [0, 100]
+
+
+@pytest.mark.asyncio
+async def test_upload_inventory_page_cap_is_retryable_and_preserves_object():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            return httpx.Response(200, json={"Key": "uploaded"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[
+                {"name": f"older-{index}.png", "metadata": {"size": 1, "mimetype": "image/png"}}
+                for index in range(100)
+            ])
+        if request.method == "DELETE":
+            raise AssertionError("Truncated inventory must not delete the uploaded object")
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(SupabaseStorageAdapterError) as exc_info:
+            await storage.upload_image(
+                owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+            )
+
+    assert exc_info.value.error_code == "storage_verification_listing_limit_reached"
+    assert exc_info.value.retryable is True
+    assert sum(1 for method, path in calls if method == "POST" and path.endswith("/object/list/studio-media")) == 10
+    assert not any(method == "DELETE" for method, _ in calls)
