@@ -379,6 +379,56 @@ def admin_me(user: StudioUser = Depends(require_admin)):
     return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
 
 
+@app.get(f"{settings.api_prefix}/admin/ai/providers")
+def admin_ai_provider_status(
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
+):
+    """Expose safe provider readiness metadata only; never expose keys or billing secrets."""
+    selected = settings.ai_provider
+    providers = [
+        {
+            "id": "deepseek",
+            "label": "DeepSeek",
+            "supported": True,
+            "selected": selected == "deepseek",
+            "model": settings.ai_model if selected == "deepseek" else "deepseek-flash",
+            "api_key_configured": bool(settings.deepseek_api_key),
+            "pricing_mode": "paid_api",
+            "free_tier_eligible": False,
+        },
+        {
+            "id": "gemini",
+            "label": "Google Gemini",
+            "supported": True,
+            "selected": selected == "gemini",
+            "model": settings.ai_model if selected == "gemini" else "gemini-2.5-flash-lite",
+            "api_key_configured": bool(settings.gemini_api_key),
+            "pricing_mode": "google_free_tier_eligible",
+            "free_tier_eligible": True,
+            "billing_tier_verifiable": False,
+        },
+    ]
+    _audit_admin_read(user, resource_type="platform", reason="Viewed AI provider readiness")
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "selected_provider": selected,
+        "selected_model": settings.ai_model,
+        "ai_ready": bool(
+            settings.deepseek_api_key if selected == "deepseek" else settings.gemini_api_key
+        ),
+        "automatic_fallback": False,
+        "runtime_provider_switching": False,
+        "providers": providers,
+        "safety_note": (
+            "Gemini 2.5 Flash-Lite is listed as Free Tier eligible by Google, but actual project "
+            "quota and billing tier cannot be verified by this backend. Google may change quotas. "
+            "Free-tier data may be used to improve Google products. Provider changes require a "
+            "controlled backend configuration update and redeployment."
+        ),
+    }
+
+
 @app.get(f"{settings.api_prefix}/admin/analytics/site-visits")
 def admin_site_visit_stats(
     response: Response,
