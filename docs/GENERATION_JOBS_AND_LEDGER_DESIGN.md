@@ -232,3 +232,22 @@ Migration `0018_credit_ledger_schema.sql` introduces only the database structure
 The migration deliberately does not create wallet mutation RPCs, grant/adjustment workflows, reserve/capture/release logic, payment integration, price catalog, or a paid submission endpoint. It does not initialize users with credits or alter any existing balance. Existing job creation remains separate and must not be treated as an atomic paid submission.
 
 The disposable PostgreSQL integration script now applies migration 0018 and checks wallet creation, owner-matched hold constraints, ledger append-only behavior, and the absence of client mutation privileges. The CI run must pass before this schema is considered validated. Next implementation step is a single transaction boundary for paid job creation + outbox + wallet hold + reserve ledger entry, followed by lease-safe atomic completion/capture and terminal release RPCs. Do not apply this migration to production or enable billing until those RPCs and concurrency tests are complete.
+
+
+## 28. Initial credit lifecycle RPCs (migration 0019; still not a paid flow)
+
+Migration `0019_credit_hold_lifecycle.sql` adds service-role-only, SECURITY DEFINER operations:
+
+- `grant_user_credits`: creates/locks the owner's wallet, applies a positive bounded grant, and records one append-only ledger entry. The same operation key and exact amount/metadata replay the original outcome; a mismatch is rejected.
+- `reserve_job_credits`: locks the owner-matched eligible generation job and wallet, verifies available funds, creates one quote-backed hold, moves available to reserved, and appends one reserve entry in the same transaction. Exact replay returns the original hold; changed job/amount/quote is rejected.
+- `release_job_credit_hold`: serializes through the wallet and hold rows, moves the held amount back to available once, marks the hold released, and appends one release entry. Duplicate release returns the original balance outcome.
+
+These RPCs are idempotent per operation key and use row locks to serialize concurrent operations against the same wallet. The integration script tests successful grant/reserve/release, exact replays, mismatched replays, insufficient funds, role grants, and protection against deleting an account in a way that would erase append-only ledger history.
+
+Important boundaries:
+- The existing generation-job creation RPC and `reserve_job_credits` are still separate transactions. Do not expose this as a paid-generation API: an atomic create-job + outbox + hold + reserve-ledger RPC is still required.
+- No capture RPC is introduced. Successful job completion and credit capture must be combined into one lease-checked database transaction after verified result storage; do not manually mark a hold captured.
+- Release must be invoked only by trusted backend policy after a terminal failure/cancellation/expiry is established. It is not a generic retry action.
+- The grant RPC is a privileged primitive, not a public promo/payment endpoint. It must only be called by audited server-side grant workflows.
+- The ledger owner foreign key uses RESTRICT so account deletion cannot cascade-delete financial history. Account deletion therefore needs a separately designed retention/anonymization policy.
+- No payment provider, pricing catalog, automatic credit grant, production migration, or billing switch is enabled.
