@@ -22,7 +22,7 @@ Guests can browse public studio pages and create temporary local drafts. Signed-
 - `supabase/migrations/0001_initial_schema.sql` is the original schema draft.
 - `supabase/migrations/0002_storage_and_moderation.sql` creates private Storage buckets and per-user object-path policies only. It does **not** create moderation reports, bans, appeals, or an admin audit log.
 
-The second migration expects the existing `public.is_admin()` helper used by the current Supabase project. Review the migration against the live schema before running it. Storage object paths must begin with the authenticated user's UUID, for example `<user-uuid>/projects/<project-id>/...`.
+Migration 0002 does not require an `is_admin()` helper: its Storage policies authorize access by checking that the first object-path segment equals `auth.uid()`. Review the migration against the live schema before running it. Storage object paths must begin with the authenticated user's UUID, for example `<user-uuid>/projects/<project-id>/...`.
 
 Never put a Supabase service-role key or AI provider key in browser code. Only the public publishable key belongs in `supabase-config.js`.
 
