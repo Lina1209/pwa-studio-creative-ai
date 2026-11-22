@@ -225,7 +225,7 @@ def test_server_catalog_loader_parses_rules_and_fails_closed_on_invalid_schema()
         }],
     }))
     assert catalog.version == "server-v1"
-    assert catalog.find("image_generation", "provider-a", "model-a").max_provider_cost_usd is None
+    assert catalog.find("image_generation", "provider-a", "model-a").max_provider_cost_usd_per_unit is None
     assert catalog.find("image_generation", "provider-a", "model-a").credits_per_unit == 9
     assert load_pricing_catalog('{"version":"unconfigured","rules":[]}').rules == ()
     with pytest.raises(PricingError, match="schema"):
