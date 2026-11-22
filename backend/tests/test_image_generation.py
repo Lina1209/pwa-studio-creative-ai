@@ -90,6 +90,8 @@ def test_provider_usage_accepts_reported_decimal_cost_and_units():
     {"cost_usd": Decimal("0.01"), "cost_source": "reported", "total_units": -1},
     {"cost_usd": Decimal("0.01"), "cost_source": "reported", "unit_kind": "bytes"},
     {"cost_usd": Decimal("0.01"), "cost_source": "reported", "metadata": []},
+    {"cost_usd": Decimal("0.01"), "cost_source": "reported", "metadata": {"value": float("nan")}},
+    {"cost_usd": Decimal("0.01"), "cost_source": "reported", "metadata": {"blob": "x" * 17000}},
 ])
 def test_provider_usage_rejects_invalid_cost_or_units(kwargs):
     with pytest.raises(ValueError):
