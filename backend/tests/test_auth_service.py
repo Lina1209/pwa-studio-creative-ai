@@ -16,7 +16,7 @@ TOKEN = "signed.jwt.token"
 def configure_verified_token(monkeypatch, claims):
     settings = Settings(
         supabase_url="https://project.example.supabase.co",
-        owner_email="owner@example.test",
+        owner_user_ids=USER_ID,
     )
     monkeypatch.setattr(auth, "get_settings", lambda: settings)
     monkeypatch.setattr(
@@ -37,7 +37,7 @@ def configure_verified_token(monkeypatch, claims):
     return credentials, captured
 
 
-def test_valid_supabase_user_token_is_accepted_and_owner_email_is_normalized(monkeypatch):
+def test_valid_supabase_user_token_is_admin_only_when_subject_uuid_is_allowlisted(monkeypatch):
     credentials, captured = configure_verified_token(monkeypatch, {
         "sub": USER_ID,
         "iss": "https://project.example.supabase.co/auth/v1",
