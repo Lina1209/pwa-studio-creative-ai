@@ -14,6 +14,10 @@ def _client_for(user):
 
 def test_admin_audit_journal_requires_admin(monkeypatch):
     import app.main as main_module
+    import app.services.auth as auth_module
+
+    denied_event = {}
+    monkeypatch.setattr(auth_module, "record_admin_audit_event", lambda *a, **k: denied_event.update(k) or "audit-id")
 
     def forbidden(*args, **kwargs):
         raise AssertionError("audit journal must not be read by a creator")
@@ -24,6 +28,9 @@ def test_admin_audit_journal_requires_admin(monkeypatch):
         response = client.get("/api/admin/audit-events")
         assert response.status_code == 403
         assert response.json()["detail"] == "This operation is not permitted."
+        assert denied_event["actor_user_id"] == UUID("11111111-1111-4111-8111-111111111111")
+        assert denied_event["action"] == "admin.permission.denied"
+        assert denied_event["outcome"] == "denied"
     finally:
         app.dependency_overrides.clear()
 
