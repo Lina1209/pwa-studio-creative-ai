@@ -53,6 +53,7 @@ def test_quote_endpoint_returns_signed_owner_and_scene_bound_preview(monkeypatch
             "unit_label": "image",
             "min_quantity": 1,
             "max_quantity": 2,
+            "max_provider_cost_usd_per_unit": "0.075",
         }],
     }
     monkeypatch.setattr(
@@ -140,6 +141,7 @@ def test_quote_endpoint_rejects_expired_persisted_idempotency_key(monkeypatch):
             "unit_label": "image",
             "min_quantity": 1,
             "max_quantity": 2,
+            "max_provider_cost_usd_per_unit": "0.075",
         }],
     }
     monkeypatch.setattr(
@@ -183,6 +185,7 @@ def test_quote_endpoint_rejects_quantity_conflicting_with_request_snapshot(monke
             "unit_label": "image",
             "min_quantity": 1,
             "max_quantity": 2,
+            "max_provider_cost_usd_per_unit": "0.075",
         }],
     }
     monkeypatch.setattr(
