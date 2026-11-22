@@ -37,6 +37,14 @@ class ProviderOperationJournal:
     created: bool
 
 
+@dataclass(frozen=True)
+class CreditedCompletion:
+    completed: bool
+    replayed: bool
+    available_credits: int | None
+    reserved_credits: int | None
+
+
 class WorkerRepositoryNotConfiguredError(RuntimeError):
     pass
 
@@ -321,6 +329,49 @@ class SupabaseGenerationJobRepository:
             "fail_generation_job",
             {"p_job_id": str(job_id), "p_worker_id": worker_id, "p_error_code": error_code},
         )
+
+
+
+    async def complete_credited(
+        self, job_id: UUID, worker_id: str, result_path: str
+    ) -> CreditedCompletion:
+        """Capture the job's credit hold in the same transaction as completion.
+
+        The worker must first verify the uploaded private object (bucket, owner
+        path, MIME, byte count, checksum and content) using the storage adapter.
+        """
+        data = await self._rpc(
+            "complete_credited_generation_job",
+            {
+                "p_job_id": str(job_id),
+                "p_worker_id": worker_id,
+                "p_result_storage_path": result_path,
+            },
+        )
+        if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+            raise WorkerRepositoryError("Credited completion returned an invalid response.")
+        row = data[0]
+        try:
+            completed = row["completed"]
+            replayed = row["replayed"]
+            available = row.get("available_credits")
+            reserved = row.get("reserved_credits")
+            if not isinstance(completed, bool) or not isinstance(replayed, bool):
+                raise ValueError("completion flags")
+            for value in (available, reserved):
+                if value is not None and (
+                    isinstance(value, bool) or not isinstance(value, int) or value < 0
+                ):
+                    raise ValueError("wallet balance")
+            if completed and (available is None or reserved is None):
+                raise ValueError("missing wallet balance")
+            if replayed and not completed:
+                raise ValueError("replay without completion")
+            return CreditedCompletion(completed, replayed, available, reserved)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkerRepositoryError(
+                "Credited completion returned incomplete or invalid metadata."
+            ) from exc
 
     async def complete(self, job_id: UUID, worker_id: str, result_path: str) -> bool:
         return await self._boolean_rpc(
