@@ -351,7 +351,7 @@ Unit tests cover these decision boundaries and invalid successful lookup payload
 
 ## 22. Provider journal wired into worker recovery (integration code, not live-validated)
 
-The worker now opens or retrieves the durable provider-operation journal under its active job lease before any external submission. A newly created journal entry permits the first provider call with the stable job UUID idempotency key. A reclaimed job with an existing journal entry must use the provider's read-only lookup contract before it can proceed:
+The worker now opens or retrieves the durable provider-operation journal under its active job lease before any external submission. A newly created journal entry permits the first provider call with the stable job UUID idempotency key. The SQL guard explicitly distinguishes this provider key from the client-facing job-creation idempotency key: the provider key must equal the immutable job UUID. A reclaimed job with an existing journal entry must use the provider's read-only lookup contract before it can proceed:
 
 - an existing successful provider result is reused and proceeds through the same private Storage verification path;
 - a pending, unknown, unavailable, or unsupported lookup is quarantined by scheduling a bounded retry; it never triggers a blind new submission;
