@@ -2721,6 +2721,18 @@ begin
     raise exception 'Lot grant idempotency key accepted a changed amount';
   end if;
 
+  v_rejected := false;
+  begin
+    perform public.grant_user_credit_lot(
+      v_user, 4, 'subscription', 'subscription-cycle', 'subscription-no-expiry',
+      null, '{}'::jsonb
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Free/subscription credits were accepted without an expiry date';
+  end if;
+
   select job_id into v_job from public.create_generation_job_with_outbox(
     v_user, null, 'image_generation', 'lot-test-provider', 'lot-test-model',
     'credit-lot-fifo-job-001', repeat('a', 64),
