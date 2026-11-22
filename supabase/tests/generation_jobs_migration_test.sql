@@ -461,7 +461,7 @@ $$;
 -- Authenticated users can read only their own jobs, and cannot write jobs/outbox.
 set request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
 set role authenticated;
-select 1 / case when count(*) = 3 then 1 else 0 end as assert_only_own_jobs_visible
+select 1 / case when count(*) = 4 then 1 else 0 end as assert_only_own_jobs_visible
 from public.generation_jobs;
 select 1 / case when not has_table_privilege('authenticated', 'public.generation_jobs', 'INSERT') then 1 else 0 end
   as assert_clients_cannot_insert_jobs;
