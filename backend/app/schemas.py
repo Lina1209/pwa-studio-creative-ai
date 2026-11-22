@@ -34,6 +34,31 @@ class PromptResponse(BaseModel):
     model: str
 
 
+class MovieScriptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=120)
+    idea: str = Field(min_length=1, max_length=8000)
+    genre: str = Field(default="Приключения", min_length=1, max_length=60)
+    duration_minutes: int = Field(default=5, strict=True, ge=1, le=30)
+    frame: Literal["16:9", "9:16", "1:1"] = "16:9"
+    language: Literal["Русский", "English", "Қазақша"] = "Русский"
+
+    @field_validator("title", "idea", "genre")
+    @classmethod
+    def require_trimmed_text(cls, value: str) -> str:
+        if value.strip() != value:
+            raise ValueError("Text fields must not contain surrounding whitespace.")
+        return value
+
+
+class MovieScriptResponse(BaseModel):
+    story: str = Field(min_length=1, max_length=30000)
+    storyboard: str = Field(min_length=1, max_length=30000)
+    provider: str
+    model: str
+
+
 class SceneImageJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
