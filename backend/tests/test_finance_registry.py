@@ -128,7 +128,7 @@ def test_permissions_keep_the_scope_of_the_role_that_granted_them(monkeypatch):
         )
 
 
-def test_unscoped_assignment_is_global_only_for_its_own_role_permissions(monkeypatch):
+def test_unscoped_or_nonexpiring_legacy_assignment_fails_closed(monkeypatch):
     now = datetime.now(timezone.utc).isoformat()
     monkeypatch.setattr(registry, "_rpc", lambda *a, **k: [{
         "assignment_id": str(ASSIGNMENT), "principal_id": str(TARGET),
@@ -136,14 +136,8 @@ def test_unscoped_assignment_is_global_only_for_its_own_role_permissions(monkeyp
         "valid_from": now, "valid_until": None, "granted_by": str(ACTOR),
         "created_at": now,
     }])
-    grant = registry.resolve_finance_grant(
-        Settings(supabase_url="https://example.test", supabase_service_role_key="x"),
-        principal_id=TARGET,
-    )
-    require_finance_permission(
-        grant, actor_id=TARGET, permission="credit.compensation.request", target_scope="any-tenant"
-    )
-    with pytest.raises(FinanceAuthorizationDenied):
-        require_finance_permission(
-            grant, actor_id=TARGET, permission="credit.compensation.approve", target_scope="any-tenant"
+    with pytest.raises(registry.FinanceRegistryUnavailable):
+        registry.resolve_finance_grant(
+            Settings(supabase_url="https://example.test", supabase_service_role_key="x"),
+            principal_id=TARGET,
         )
