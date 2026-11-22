@@ -196,3 +196,27 @@ async def test_storage_download_size_limit_is_enforced_before_buffer_growth():
             await storage.upload_image(
                 owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
             )
+
+
+@pytest.mark.asyncio
+async def test_boolean_size_metadata_is_rejected_as_invalid():
+    def handler(request):
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            return httpx.Response(200, json={"Key": "uploaded"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": True, "mimetype": "image/png"},
+            }])
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"message": "deleted"})
+        raise AssertionError("Unexpected request")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(SupabaseStorageAdapterError):
+            await storage.upload_image(
+                owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+            )
