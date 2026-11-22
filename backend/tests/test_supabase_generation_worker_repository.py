@@ -86,3 +86,54 @@ def test_repository_fails_closed_without_server_credentials():
             Settings(supabase_url="https://example.supabase.co"),
             httpx.AsyncClient(),
         )
+
+
+@pytest.mark.asyncio
+async def test_owner_job_inventory_is_filtered_and_parsed():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["headers"] = request.headers
+        return httpx.Response(200, json=[{
+            "id": "22222222-2222-4222-8222-222222222222",
+            "status": "succeeded",
+            "result_storage_path": "11111111-1111-4111-8111-111111111111/generated/22222222-2222-4222-8222-222222222222.png",
+            "updated_at": "2026-11-20T10:00:00+00:00",
+        }])
+
+    owner = UUID("11111111-1111-4111-8111-111111111111")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        rows = await repository.list_owner_job_inventory(owner)
+
+    assert len(rows) == 1
+    assert rows[0].job_id == UUID("22222222-2222-4222-8222-222222222222")
+    assert rows[0].status == "succeeded"
+    assert "user_id=eq." + str(owner) in seen["url"]
+    assert seen["headers"]["apikey"] == "sb_secret_test"
+
+
+@pytest.mark.asyncio
+async def test_owner_job_inventory_rejects_invalid_row_and_page_exhaustion():
+    owner = UUID("11111111-1111-4111-8111-111111111111")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[{"id": "bad"}]))
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError):
+            await repository.list_owner_job_inventory(owner)
+
+    def full_page(request):
+        return httpx.Response(200, json=[{
+            "id": "22222222-2222-4222-8222-222222222222",
+            "status": "failed",
+            "result_storage_path": None,
+            "updated_at": "2026-11-20T10:00:00+00:00",
+        }])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(full_page)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError):
+            await repository.list_owner_job_inventory(owner, page_size=1, max_pages=1)
