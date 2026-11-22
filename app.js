@@ -80,6 +80,7 @@
       refreshAuthUI(session);
       setTimeout(() => {
         if (typeof renderMovieProjects === "function") renderMovieProjects();
+        if (typeof restoreMovieStorageForCurrentUser === "function") restoreMovieStorageForCurrentUser();
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
@@ -518,6 +519,7 @@ const movieHistoryStyle = document.createElement("style");
 
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
+  const movieVaultKey = (kind, userId = authSession?.user?.id || "guest") => "movie:" + kind + ":" + userId;
   let activeMovieId = null;
   let editingMovieId = null;
   const movieStages = [
@@ -534,8 +536,12 @@ const movieHistoryStyle = document.createElement("style");
     catch { return []; }
   };
   const writeMovieTombstones = (ids, key = movieDeletedKey()) => {
-    try { localStorage.setItem(key, JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
+    const clean = [...new Set(ids.filter(isUuid))];
+    try { localStorage.setItem(key, JSON.stringify(clean)); }
     catch (error) { console.error("Movie deletion queue failed:", error); return false; }
+    const ownerId = authSession?.user?.id || "guest";
+    window.PWAMovieVault?.set(movieVaultKey("tombstones", ownerId), clean).catch(error => console.warn("IndexedDB tombstone mirror failed:", error));
+    return true;
   };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
   const movieToCloudRow = (project, ownerId) => {
@@ -735,8 +741,14 @@ const movieHistoryStyle = document.createElement("style");
     } catch { return []; }
   };
   const movieWrite = projects => {
+    const ownerId = authSession?.user?.id || "guest";
     try {
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+      window.PWAMovieVault?.set(movieVaultKey("projects", ownerId), projects).catch(error => {
+        console.warn("IndexedDB project mirror failed:", error);
+        const feedback = $("#movieFeedback");
+        if (feedback) feedback.textContent = "Проект сохранён в браузере, но резервная копия IndexedDB недоступна. Скачайте JSON-копию."; 
+      });
       scheduleMovieCloudSync();
       return true;
     } catch (error) {
@@ -746,6 +758,94 @@ const movieHistoryStyle = document.createElement("style");
       return false;
     }
   };
+
+  const restoreMovieStorageForCurrentUser = async () => {
+    const ownerId = authSession?.user?.id || "guest";
+    const localKey = "pwa-studio-movie-projects:" + ownerId;
+    try {
+      const record = await window.PWAMovieVault?.get(movieVaultKey("projects", ownerId));
+      if (authSession?.user?.id !== (ownerId === "guest" ? null : ownerId)) return;
+      const durableProjects = Array.isArray(record?.value) ? record.value : [];
+      let localProjects = [];
+      try { const parsed = JSON.parse(localStorage.getItem(localKey) || "[]"); if (Array.isArray(parsed)) localProjects = parsed; } catch {}
+      if (durableProjects.length) {
+        const merged = new Map(localProjects.filter(item => item && item.id).map(item => [item.id, item]));
+        durableProjects.filter(item => item && item.id).forEach(item => {
+          const current = merged.get(item.id);
+          if (!current || Date.parse(item.updatedAt || item.createdAt || 0) > Date.parse(current.updatedAt || current.createdAt || 0)) merged.set(item.id, item);
+        });
+        const recovered = [...merged.values()];
+        if (recovered.length > localProjects.length || recovered.some(item => !localProjects.some(local => local.id === item.id && Date.parse(local.updatedAt || local.createdAt || 0) >= Date.parse(item.updatedAt || item.createdAt || 0)))) {
+          localStorage.setItem(localKey, JSON.stringify(recovered));
+          renderMovieProjects();
+        }
+      } else if (localProjects.length) {
+        await window.PWAMovieVault?.set(movieVaultKey("projects", ownerId), localProjects);
+      }
+      const tombstoneRecord = await window.PWAMovieVault?.get(movieVaultKey("tombstones", ownerId));
+      const deletedKey = "pwa-studio-movie-deleted:" + ownerId;
+      if (Array.isArray(tombstoneRecord?.value) && !localStorage.getItem(deletedKey)) localStorage.setItem(deletedKey, JSON.stringify(tombstoneRecord.value.filter(isUuid)));
+      if (authSession?.user?.id !== (ownerId === "guest" ? null : ownerId)) return;
+      const feedback = $("#movieFeedback");
+      if (feedback && !feedback.textContent.includes("резервная копия")) feedback.textContent = "Локальная копия IndexedDB проверена. Облачная синхронизация работает отдельно.";
+    } catch (error) {
+      console.warn("IndexedDB recovery unavailable; localStorage remains active:", error);
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Работаем в резервном режиме браузера: IndexedDB недоступна. Скачивайте JSON-копии важных проектов.";
+    }
+  };
+  const downloadMovieBackup = () => {
+    const ownerId = authSession?.user?.id || null;
+    const projects = movieRead();
+    if (!projects.length) { window.alert("Пока нет проектов для резервного копирования."); return; }
+    const backup = { format: "PWA Studio movie workspace backup", schemaVersion: 1, exportedAt: new Date().toISOString(), scope: ownerId ? "account" : "guest", ownerId, projects };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = "pwa-studio-movie-backup-" + new Date().toISOString().slice(0,10) + ".json";
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const importMovieBackup = async file => {
+    if (!file || file.size > 10 * 1024 * 1024) throw new Error("Файл резервной копии пуст или превышает 10 МБ.");
+    const backup = JSON.parse(await file.text());
+    const ownerId = authSession?.user?.id || null;
+    if (!backup || backup.format !== "PWA Studio movie workspace backup" || backup.schemaVersion !== 1 || !Array.isArray(backup.projects) || backup.projects.length > 2000) throw new Error("Формат резервной копии не распознан или превышает допустимый объём.");
+    if (backup.scope !== (ownerId ? "account" : "guest") || (ownerId && backup.ownerId !== ownerId) || (!ownerId && backup.ownerId !== null)) throw new Error("Эта копия создана для другого аккаунта или другого режима. Переключитесь на исходный аккаунт.");
+    const valid = backup.projects.filter(project => project && typeof project === "object" && typeof project.id === "string" && project.id.length <= 128 && typeof project.name === "string" && project.name.length <= 300 && typeof (project.updatedAt || project.createdAt) === "string");
+    if (valid.length !== backup.projects.length) throw new Error("В копии есть проекты с некорректными идентификаторами или датами. Импорт отменён.");
+    const merged = new Map(movieRead().map(project => [project.id, project]));
+    valid.forEach(project => {
+      const current = merged.get(project.id);
+      if (!current || Date.parse(project.updatedAt || project.createdAt) > Date.parse(current.updatedAt || current.createdAt)) merged.set(project.id, project);
+    });
+    if (!movieWrite([...merged.values()])) throw new Error("Не удалось сохранить импортированные проекты. Проверьте свободное место.");
+    renderMovieProjects();
+    window.alert("Импорт завершён. Проекты объединены по ID; более новые локальные версии сохранены.");
+  };
+  const installMovieBackupControls = () => {
+    const list = $("#movieProjectList");
+    if (!list || $("#movieBackupToolbar")) return;
+    const toolbar = document.createElement("div");
+    toolbar.id = "movieBackupToolbar";
+    toolbar.className = "movie-backup-toolbar";
+    toolbar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px";
+    const exportButton = document.createElement("button");
+    exportButton.type = "button"; exportButton.className = "secondary-button"; exportButton.textContent = "⇩ Резервная копия";
+    exportButton.addEventListener("click", downloadMovieBackup);
+    const importButton = document.createElement("button");
+    importButton.type = "button"; importButton.className = "secondary-button"; importButton.textContent = "⇧ Восстановить из копии";
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = "application/json,.json"; input.hidden = true;
+    importButton.addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      try { await importMovieBackup(input.files?.[0]); }
+      catch (error) { window.alert("Не удалось восстановить копию: " + (error.message || "неизвестная ошибка")); }
+      finally { input.value = ""; }
+    });
+    toolbar.append(exportButton, importButton, input);
+    list.parentNode.insertBefore(toolbar, list);
+  };
+
   const movieId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "movie-" + Date.now() + "-" + Math.random().toString(36).slice(2,9);
   const movieSnapshot = project => { const copy={...project}; delete copy.versions; return copy; };
   const addMovieVersion = project => {
@@ -1180,6 +1280,8 @@ const movieHistoryStyle = document.createElement("style");
   setInterval(()=>{if(!authSession?.user && !$("#view-guestspace")?.hidden)renderGuestSpace();},60000);
 
   renderMovieProjects();
+  installMovieBackupControls();
+  restoreMovieStorageForCurrentUser();
 
   // Store only the backend URL in this browser; provider secrets stay server-side.
   const apiUrlInput = $("#backendUrl");
