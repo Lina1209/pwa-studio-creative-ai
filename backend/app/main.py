@@ -11,12 +11,13 @@ from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
-from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog
+from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
     get_generation_job,
     create_scene_generation_job,
+    store_pricing_quote,
 )
 
 settings = get_settings()
@@ -94,10 +95,11 @@ def create_pricing_quote(
         if not catalog.rules:
             raise PricingError("No approved production prices are configured.")
         request_hash = canonical_request_hash(payload.request_snapshot)
+        owner_id = UUID(user.user_id)
         quote = issue_pricing_quote(
             secret=settings.pricing_quote_signing_secret,
             catalog=catalog,
-            user_id=UUID(user.user_id),
+            user_id=owner_id,
             job_type=payload.job_type,
             provider=payload.provider,
             model=payload.model,
@@ -107,10 +109,45 @@ def create_pricing_quote(
             studio_scene_id=payload.studio_scene_id,
             quantity=payload.quantity,
         )
+        persisted = store_pricing_quote(
+            settings,
+            user_id=owner_id,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            job_type=payload.job_type,
+            provider=payload.provider,
+            model=payload.model,
+            project_id=payload.project_id,
+            studio_scene_id=payload.studio_scene_id,
+            quote_snapshot=quote.snapshot(),
+        )
+        if persisted.expired:
+            raise HTTPException(
+                status_code=409,
+                detail="This idempotency key is bound to an expired quote. Start a new generation request with a new key.",
+            )
+        # Re-verify the exact persisted snapshot: on replay the database returns
+        # the original quote, not the newly generated candidate.
+        stored_quote = verify_pricing_quote(
+            persisted.snapshot,
+            secret=settings.pricing_quote_signing_secret,
+            user_id=owner_id,
+            job_type=payload.job_type,
+            provider=payload.provider,
+            model=payload.model,
+            request_hash=request_hash,
+            idempotency_key=idempotency_key,
+            project_id=payload.project_id,
+            studio_scene_id=payload.studio_scene_id,
+        )
+    except HTTPException:
+        raise
     except PricingError as exc:
         raise HTTPException(status_code=503, detail="The requested generation price is not available.") from exc
+    except (GenerationJobsNotConfiguredError, GenerationJobsServiceError) as exc:
+        raise HTTPException(status_code=503, detail="Pricing quote storage is not available.") from exc
     response.headers["Cache-Control"] = "private, no-store"
-    return quote.snapshot()
+    return stored_quote.snapshot()
 
 @app.get(f"{settings.api_prefix}/jobs/{{job_id}}")
 def generation_job_status(
