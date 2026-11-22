@@ -26,6 +26,27 @@ grant select on public.credit_entitlement_policies to service_role;
 grant insert, update, delete on public.credit_entitlement_policies to service_role;
 grant usage, select on sequence public.credit_entitlement_policies_id_seq to service_role;
 
+create table if not exists public.credit_entitlement_events (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  policy_code text not null,
+  event_fingerprint text not null,
+  policy_version integer not null,
+  lot_type text not null check (lot_type in ('free', 'subscription', 'bonus')),
+  amount bigint not null check (amount > 0),
+  source_reference text not null,
+  expires_at timestamptz,
+  idempotency_key text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (user_id, policy_code, event_fingerprint),
+  unique (user_id, idempotency_key)
+);
+alter table public.credit_entitlement_events enable row level security;
+revoke all on public.credit_entitlement_events from public, anon, authenticated;
+grant select, insert, update on public.credit_entitlement_events to service_role;
+grant usage, select on sequence public.credit_entitlement_events_id_seq to service_role;
+
 create or replace function public.grant_user_credit_entitlement(
   p_user_id uuid,
   p_policy_code text,
@@ -40,8 +61,11 @@ set search_path = pg_catalog, public
 as $$
 declare
   v_policy public.credit_entitlement_policies%rowtype;
+  v_event public.credit_entitlement_events%rowtype;
   v_expires_at timestamptz;
   v_idempotency_key text;
+  v_fingerprint text;
+  v_metadata jsonb;
 begin
   if p_user_id is null
      or p_policy_code is null or p_policy_code !~ '^[a-z][a-z0-9_]{2,63}$'
@@ -52,29 +76,64 @@ begin
     raise exception 'Invalid credit entitlement event' using errcode = '22023';
   end if;
 
-  select * into v_policy
-    from public.credit_entitlement_policies
-   where policy_code = p_policy_code and enabled = true
-   order by policy_version desc limit 1;
-  if not found or v_policy.amount is null or v_policy.amount <= 0 then
-    raise exception 'Credit entitlement policy is not configured and enabled'
-      using errcode = '55000';
+  v_fingerprint := md5(p_event_key);
+  v_idempotency_key := 'entitlement:' || p_policy_code || ':' || v_fingerprint;
+  select * into v_event
+    from public.credit_entitlement_events
+   where user_id = p_user_id and policy_code = p_policy_code
+     and event_fingerprint = v_fingerprint
+   for update;
+
+  if not found then
+    select * into v_policy
+      from public.credit_entitlement_policies
+     where policy_code = p_policy_code and enabled = true
+     order by policy_version desc limit 1;
+    if not found or v_policy.amount is null or v_policy.amount <= 0 then
+      raise exception 'Credit entitlement policy is not configured and enabled'
+        using errcode = '55000';
+    end if;
+    if v_policy.expires_in_seconds is not null then
+      v_expires_at := now() + make_interval(secs => v_policy.expires_in_seconds::double precision);
+    end if;
+    v_metadata := p_metadata || jsonb_build_object(
+      'policy_code', v_policy.policy_code,
+      'policy_version', v_policy.policy_version,
+      'event_key_hash', v_fingerprint
+    );
+    insert into public.credit_entitlement_events(
+      user_id, policy_code, event_fingerprint, policy_version,
+      lot_type, amount, source_reference, expires_at,
+      idempotency_key, metadata
+    ) values (
+      p_user_id, v_policy.policy_code, v_fingerprint, v_policy.policy_version,
+      v_policy.lot_type, v_policy.amount, p_source_reference, v_expires_at,
+      v_idempotency_key, v_metadata
+    ) on conflict (user_id, policy_code, event_fingerprint) do nothing;
+
+    select * into v_event
+      from public.credit_entitlement_events
+     where user_id = p_user_id and policy_code = p_policy_code
+       and event_fingerprint = v_fingerprint
+     for update;
   end if;
-  if v_policy.expires_in_seconds is not null then
-    v_expires_at := now() + make_interval(secs => v_policy.expires_in_seconds::double precision);
+
+  if v_event.source_reference <> p_source_reference or v_event.metadata <>
+     (p_metadata || jsonb_build_object(
+       'policy_code', v_event.policy_code,
+       'policy_version', v_event.policy_version,
+       'event_key_hash', v_fingerprint
+     )) then
+    raise exception 'Credit entitlement event replay parameters do not match'
+      using errcode = '22023';
   end if;
-  v_idempotency_key := 'entitlement:' || v_policy.policy_code || ':' || md5(p_event_key);
 
   return query
     select g.available_credits, g.reserved_credits, g.replayed
       from public.grant_user_credit_lot(
-        p_user_id, v_policy.amount, v_policy.lot_type,
-        p_source_reference, v_idempotency_key, v_expires_at,
-        p_metadata || jsonb_build_object(
-          'policy_code', v_policy.policy_code,
-          'policy_version', v_policy.policy_version,
-          'event_key_hash', md5(p_event_key)
-        )
+        p_user_id, v_event.amount, v_event.lot_type,
+        v_event.source_reference, v_event.idempotency_key,
+        v_event.expires_at, v_event.metadata
       ) g;
 end;
 $$;
@@ -218,6 +277,8 @@ revoke all on function public.get_credit_wallet_snapshot(uuid, integer)
   from public, anon, authenticated;
 grant execute on function public.get_credit_wallet_snapshot(uuid, integer) to service_role;
 
+comment on table public.credit_entitlement_events is
+  'Immutable event-to-policy snapshot used to make entitlement expiry and idempotency stable across retries and policy revisions.';
 comment on table public.credit_entitlement_policies is
   'Versioned server-only grant policies. New rows are disabled and have no amount until explicitly configured.';
 comment on function public.grant_user_credit_entitlement(uuid,text,text,text,jsonb) is
