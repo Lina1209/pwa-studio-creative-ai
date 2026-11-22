@@ -309,7 +309,7 @@ returns table(
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $reconcile$
 #variable_conflict use_column
 begin
   if p_user_limit is null or p_user_limit not between 1 and 5000 then
@@ -397,7 +397,7 @@ begin
     from combined c
    order by c.user_id;
 end;
-$$;
+$reconcile$;
 
 revoke all on function public.audit_credit_wallet_reconciliation(uuid, integer)
   from public, anon, authenticated;
