@@ -97,6 +97,35 @@ create table public.studio_media (
 \ir ../migrations/0029_ai_request_admission.sql
 \ir ../migrations/0030_credit_wallet_snapshot.sql
 
+\ir ../migrations/0046_admin_credit_ledger_read.sql
+
+do $admin_credit_ledger_privileges_test$
+begin
+  if not has_function_privilege('service_role',
+       'public.list_admin_credit_ledger(uuid,timestamptz,bigint,integer)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.list_admin_credit_ledger(uuid,timestamptz,bigint,integer)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.list_admin_credit_ledger(uuid,timestamptz,bigint,integer)', 'EXECUTE') then
+    raise exception 'Admin credit ledger RPC privileges are not service-role-only';
+  end if;
+  if (select count(*) from public.list_admin_credit_ledger(
+        '11111111-1111-4111-8111-111111111111', null, null, 50
+      )) <> 0 then
+    raise exception 'Unexpected fixture rows in fresh admin credit ledger';
+  end if;
+  begin
+    perform * from public.list_admin_credit_ledger(
+      '11111111-1111-4111-8111-111111111111', null, 1, 50
+    );
+    raise exception 'Partial keyset cursor was unexpectedly accepted';
+  exception when invalid_parameter_value then
+    null;
+  end;
+end;
+$admin_credit_ledger_privileges_test$;
+
+
 -- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
 do $credit_ledger_privileges_test$
 begin
