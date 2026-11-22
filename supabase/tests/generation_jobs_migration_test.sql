@@ -1744,6 +1744,153 @@ $provider_cost_event_test$;
 
 select 'provider cost event audit checks passed' as result;
 
+-- A reclaimed lease fences every stale worker mutation while preserving one provider operation.
+do $stale_worker_fencing_test$
+declare
+  v_job_id uuid;
+  v_hold_id uuid;
+  v_claim_a record;
+  v_claim_b record;
+  v_journal_a record;
+  v_journal_b record;
+  v_stale_completed record;
+  v_completed record;
+  v_available bigint;
+  v_reserved bigint;
+  v_capture_count integer;
+begin
+  insert into auth.users(id)
+  values ('33333333-3333-4333-8333-333333333333')
+  on conflict (id) do nothing;
+  insert into public.credit_wallets(user_id, available_credits, reserved_credits)
+  values ('33333333-3333-4333-8333-333333333333', 100, 0)
+  on conflict (user_id) do update
+    set available_credits = 100, reserved_credits = 0;
+
+  select job_id into v_job_id from public.create_generation_job_with_outbox(
+    '33333333-3333-4333-8333-333333333333', null,
+    'image_generation', 'fencing-provider', 'fencing-model',
+    'stale-worker-fencing-001', repeat('f', 64),
+    '{"prompt":"stale worker fencing integration"}'::jsonb, '{}'::jsonb
+  );
+  select hold_id into v_hold_id from public.reserve_job_credits(
+    '33333333-3333-4333-8333-333333333333', v_job_id, 25,
+    'stale-worker-fencing-reservation',
+    '{"price_version":"test-v1","approved_maximum":25}'::jsonb
+  );
+
+  select * into v_claim_a
+    from public.claim_next_generation_job('fencing-worker-a', 60);
+  if v_claim_a.job_id is distinct from v_job_id then
+    raise exception 'First fencing worker did not claim the fixture';
+  end if;
+  select * into v_journal_a
+    from public.begin_generation_provider_operation(
+      v_job_id, 'fencing-worker-a', 'fencing-provider', v_job_id::text
+    );
+  if not v_journal_a.created then
+    raise exception 'First worker did not create the durable provider operation';
+  end if;
+
+  update public.generation_jobs
+     set lease_expires_at = now() - interval '1 second'
+   where id = v_job_id;
+
+  select * into v_claim_b
+    from public.claim_next_generation_job('fencing-worker-b', 60);
+  if v_claim_b.job_id is distinct from v_job_id then
+    raise exception 'Replacement worker did not reclaim the expired lease';
+  end if;
+
+  if public.heartbeat_generation_job(v_job_id, 'fencing-worker-a', 60)
+     or public.retry_generation_job(v_job_id, 'fencing-worker-a', 'stale_retry', 1)
+     or public.fail_generation_job(v_job_id, 'fencing-worker-a', 'stale_failure')
+     or public.complete_generation_job(
+       v_job_id, 'fencing-worker-a',
+       '33333333-3333-4333-8333-333333333333/results/stale.png'
+     ) then
+    raise exception 'A stale worker mutated the reclaimed job';
+  end if;
+
+  if public.mark_generation_provider_operation_accepted(
+       v_job_id, 'fencing-worker-a', 'stale-provider-request'
+     )
+     or public.mark_generation_provider_operation_unknown(
+       v_job_id, 'fencing-worker-a', 'stale_response_lost'
+     )
+     or public.mark_generation_provider_operation_result_received(
+       v_job_id, 'fencing-worker-a', 'stale-provider-request'
+     ) then
+    raise exception 'A stale worker mutated the provider operation journal';
+  end if;
+
+  select * into v_journal_b
+    from public.begin_generation_provider_operation(
+      v_job_id, 'fencing-worker-b', 'fencing-provider', v_job_id::text
+    );
+  if v_journal_b.created or v_journal_b.operation_id <> v_journal_a.operation_id
+     or v_journal_b.operation_state <> 'submitting' then
+    raise exception 'Reclaimed worker did not recover the original provider operation';
+  end if;
+
+  if not public.mark_generation_provider_operation_result_received(
+       v_job_id, 'fencing-worker-b', 'provider-result-after-reclaim'
+     ) then
+    raise exception 'Replacement worker could not record the recovered provider result';
+  end if;
+
+  select * into v_stale_completed
+    from public.complete_credited_generation_job(
+      v_job_id, 'fencing-worker-a',
+      '33333333-3333-4333-8333-333333333333/results/final.png'
+    );
+  if v_stale_completed.completed then
+    raise exception 'Stale worker completed a job after its lease was reclaimed';
+  end if;
+
+  select * into v_completed
+    from public.complete_credited_generation_job(
+      v_job_id, 'fencing-worker-b',
+      '33333333-3333-4333-8333-333333333333/results/final.png'
+    );
+  if not v_completed.completed or v_completed.replayed then
+    raise exception 'Replacement worker could not atomically complete the credited job';
+  end if;
+
+  select available_credits, reserved_credits into v_available, v_reserved
+    from public.credit_wallets
+   where user_id = '33333333-3333-4333-8333-333333333333';
+  if v_available <> 75 or v_reserved <> 0 then
+    raise exception 'Reclaimed job completion did not capture the reservation exactly once';
+  end if;
+
+  select count(*) into v_capture_count
+    from public.credit_ledger
+   where hold_id = v_hold_id and operation_type = 'capture';
+  if v_capture_count <> 1 then
+    raise exception 'Reclaimed job produced duplicate or missing credit capture';
+  end if;
+
+  select * into v_stale_completed
+    from public.complete_credited_generation_job(
+      v_job_id, 'fencing-worker-a',
+      '33333333-3333-4333-8333-333333333333/results/final.png'
+    );
+  if not v_stale_completed.completed or not v_stale_completed.replayed then
+    raise exception 'Exact completion replay was not recognized as a harmless idempotent replay';
+  end if;
+  select count(*) into v_capture_count
+    from public.credit_ledger
+   where hold_id = v_hold_id and operation_type = 'capture';
+  if v_capture_count <> 1 then
+    raise exception 'Exact stale completion replay captured credits twice';
+  end if;
+end;
+$stale_worker_fencing_test$;
+
+select 'stale worker fencing checks passed' as result;
+
+
 -- Every terminal worker path releases held credits exactly once.
 do $terminal_worker_credit_release_test$
 declare
