@@ -168,3 +168,65 @@ def test_supabase_http_error_is_sanitized(monkeypatch):
             settings, date_from=date(2026, 11, 22), date_to=date(2026, 11, 22)
         )
     assert "sensitive upstream body" not in str(exc.value)
+
+
+
+def test_supabase_report_returns_complete_empty_report_for_empty_response(monkeypatch):
+    import app.services.admin_financial_reporting as reporting
+
+    fake = FakeClient([[]])
+    monkeypatch.setattr(reporting.httpx, "Client", lambda **kwargs: fake)
+    settings = Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="service-role-secret",
+    )
+
+    report = get_provider_cost_report(
+        settings, date_from=date(2026, 11, 22), date_to=date(2026, 11, 22)
+    )
+
+    assert report["event_count"] == 0
+    assert report["known_provider_cost_usd"] == "0.0000000000"
+    assert report["by_provider_model"] == []
+    assert report["by_day"] == []
+    assert report["by_job"] == []
+    assert report["truncated"] is False
+    assert len(fake.calls) == 1
+
+
+def test_supabase_malformed_json_shape_fails_closed(monkeypatch):
+    import app.services.admin_financial_reporting as reporting
+
+    fake = FakeClient([{"unexpected": "object"}])
+    monkeypatch.setattr(reporting.httpx, "Client", lambda **kwargs: fake)
+    settings = Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="service-role-secret",
+    )
+
+    with pytest.raises(ProviderCostReportError, match="could not be loaded safely"):
+        get_provider_cost_report(
+            settings, date_from=date(2026, 11, 22), date_to=date(2026, 11, 22)
+        )
+
+
+def test_supabase_connection_error_is_sanitized(monkeypatch):
+    import app.services.admin_financial_reporting as reporting
+
+    class NetworkErrorClient(FakeClient):
+        def get(self, url, *, params, headers):
+            raise httpx.ConnectError("private host and connection details")
+
+    fake = NetworkErrorClient([])
+    monkeypatch.setattr(reporting.httpx, "Client", lambda **kwargs: fake)
+    settings = Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="service-role-secret",
+    )
+
+    with pytest.raises(ProviderCostReportError) as exc:
+        get_provider_cost_report(
+            settings, date_from=date(2026, 11, 22), date_to=date(2026, 11, 22)
+        )
+    assert "private host" not in str(exc.value)
+    assert "connection details" not in str(exc.value)
