@@ -43,6 +43,8 @@ def test_ai_provider_status_is_owner_only_and_secret_free(monkeypatch):
         assert data["ai_ready"] is True
         assert data["automatic_fallback"] is False
         assert data["runtime_provider_switching"] is False
+        assert data["admission_limits"]["requests_per_user_per_24h"] == 100
+        assert data["admission_limits"]["requests_global_per_24h"] == 2000
         assert all("secret" not in str(value).lower() for value in data.values())
         assert "deepseek-secret-value" not in response.text
         assert "gemini-secret-value" not in response.text
