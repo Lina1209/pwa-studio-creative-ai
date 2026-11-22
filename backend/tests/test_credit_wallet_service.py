@@ -178,3 +178,47 @@ def test_database_failure_is_sanitized(monkeypatch):
         wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
 
     assert "secret database response" not in str(error.value)
+
+
+def test_lot_totals_must_reconcile_with_wallet(monkeypatch):
+    client = FakeClient([{
+        "user_id": str(USER_ID),
+        "currency_unit": "credit",
+        "available_credits": 50,
+        "reserved_credits": 0,
+        "holds": [],
+        "ledger": [],
+        "lots": [{
+            "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "lot_type": "free", "granted_credits": 50,
+            "available_credits": 40, "reserved_credits": 0,
+            "expires_at": None, "created_at": "2026-11-22T00:00:00Z",
+        }],
+        "allocations": [],
+    }])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(wallet.CreditWalletUnavailable):
+        wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+
+def test_unknown_credit_lot_type_is_rejected(monkeypatch):
+    client = FakeClient([{
+        "user_id": str(USER_ID),
+        "currency_unit": "credit",
+        "available_credits": 0,
+        "reserved_credits": 0,
+        "holds": [],
+        "ledger": [],
+        "lots": [{
+            "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "lot_type": "untrusted_type", "granted_credits": 1,
+            "available_credits": 0, "reserved_credits": 0,
+            "expires_at": None, "created_at": "2026-11-22T00:00:00Z",
+        }],
+        "allocations": [],
+    }])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(wallet.CreditWalletUnavailable):
+        wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
