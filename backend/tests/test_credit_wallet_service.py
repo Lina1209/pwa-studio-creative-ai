@@ -1,0 +1,131 @@
+from uuid import UUID
+
+import pytest
+
+from app.core.config import Settings
+from app.services import credit_wallet_service as wallet
+
+
+USER_ID = UUID("11111111-1111-4111-8111-111111111111")
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.payload
+
+
+class FakeClient:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, params, headers):
+        self.calls.append((url, params, headers))
+        item = next(self.responses)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def settings():
+    return Settings(
+        supabase_url="https://project.example.supabase.co",
+        supabase_service_role_key="sb_secret_test_key",
+    )
+
+
+def test_wallet_reads_only_authenticated_owner_and_returns_ledger(monkeypatch):
+    client = FakeClient([
+        FakeResponse([{"available_credits": 120, "reserved_credits": 30, "currency_unit": "credit"}]),
+        FakeResponse([{
+            "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "job_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "amount": 30, "status": "held", "created_at": "2026-11-23T00:00:00Z",
+            "quote_snapshot": {"private": "must not be selected"},
+        }]),
+        FakeResponse([{
+            "id": 9, "operation_type": "reserve", "operation_key": "reserve:job-1234",
+            "delta_available": -30, "delta_reserved": 30,
+            "balance_available_after": 120, "balance_reserved_after": 30,
+            "created_at": "2026-11-23T00:00:00Z",
+        }]),
+    ])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    result = wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+    assert result.available_credits == 120
+    assert result.reserved_credits == 30
+    assert result.holds[0]["amount"] == 30
+    assert "quote_snapshot" not in result.holds[0]
+    assert result.ledger[0]["delta_available"] == -30
+    assert all(call[1]["user_id"] == f"eq.{USER_ID}" for call in client.calls)
+    assert "quote_snapshot" not in client.calls[1][1]["select"]
+    assert client.calls[0][2]["apikey"] == "sb_secret_test_key"
+
+
+def test_missing_wallet_is_zero_balance_not_an_implicit_grant(monkeypatch):
+    client = FakeClient([
+        FakeResponse([]),
+        FakeResponse([]),
+        FakeResponse([]),
+    ])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    result = wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+    assert result.available_credits == 0
+    assert result.reserved_credits == 0
+    assert result.holds == []
+    assert result.ledger == []
+
+
+def test_history_limit_is_bounded_before_database_access(monkeypatch):
+    monkeypatch.setattr(
+        wallet.httpx, "Client",
+        lambda timeout: pytest.fail("No database request expected"),
+    )
+    with pytest.raises(ValueError):
+        wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID, history_limit=101)
+
+
+def test_missing_database_configuration_fails_closed():
+    with pytest.raises(wallet.CreditWalletNotConfigured):
+        wallet.get_credit_wallet_snapshot(
+            Settings(supabase_url=None, supabase_service_role_key=None),
+            user_id=USER_ID,
+        )
+
+
+def test_invalid_wallet_balance_is_rejected(monkeypatch):
+    client = FakeClient([
+        FakeResponse([{"available_credits": -1, "reserved_credits": 0, "currency_unit": "credit"}]),
+        FakeResponse([]),
+        FakeResponse([]),
+    ])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(wallet.CreditWalletUnavailable):
+        wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+
+def test_database_failure_is_sanitized(monkeypatch):
+    client = FakeClient([RuntimeError("secret database response")])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(wallet.CreditWalletUnavailable) as error:
+        wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+    assert "secret database response" not in str(error.value)
