@@ -147,3 +147,67 @@ jobs:
           test "$OPERATION_COUNT" = "1"
           rm -f "$FIRST_OUTPUT"
           trap - EXIT
+
+      - name: Verify concurrent pricing quote creation is idempotent
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select quote_snapshot->>'quote_id' || ':' || created::text
+              from public.store_generation_pricing_quote(
+                '11111111-1111-4111-8111-111111111111',
+                '11111111-1111-4111-8111-111111111111',
+                'pricing-concurrent-key-001', repeat('c', 64),
+                'image_generation', 'pricing-race-provider', 'pricing-race-model',
+                null, null,
+                jsonb_build_object(
+                  'quote_id', 'aaaaaaaa-1111-4111-8111-111111111111',
+                  'user_id', '11111111-1111-4111-8111-111111111111',
+                  'idempotency_key', 'pricing-concurrent-key-001',
+                  'request_hash', repeat('c', 64),
+                  'job_type', 'image_generation',
+                  'provider', 'pricing-race-provider',
+                  'model', 'pricing-race-model',
+                  'quantity', 1,
+                  'project_id', null,
+                  'studio_scene_id', null,
+                  'expires_at', now() + interval '5 minutes'
+                ),
+                now() + interval '5 minutes'
+              );
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+          sleep 1
+          SECOND_OUTPUT="$("${DB[@]}" -c "select quote_snapshot->>'quote_id' || ':' || created::text
+            from public.store_generation_pricing_quote(
+              'bbbbbbbb-2222-4222-8222-222222222222',
+              '11111111-1111-4111-8111-111111111111',
+              'pricing-concurrent-key-001', repeat('c', 64),
+              'image_generation', 'pricing-race-provider', 'pricing-race-model',
+              null, null,
+              jsonb_build_object(
+                'quote_id', 'bbbbbbbb-2222-4222-8222-222222222222',
+                'user_id', '11111111-1111-4111-8111-111111111111',
+                'idempotency_key', 'pricing-concurrent-key-001',
+                'request_hash', repeat('c', 64),
+                'job_type', 'image_generation',
+                'provider', 'pricing-race-provider',
+                'model', 'pricing-race-model',
+                'quantity', 1,
+                'project_id', null,
+                'studio_scene_id', null,
+                'expires_at', now() + interval '5 minutes'
+              ),
+              now() + interval '5 minutes'
+            );")"
+          wait "$FIRST_PID"
+          FIRST_RESULT="$(grep -E '^[0-9a-f-]{36}:t$' "$FIRST_OUTPUT" | head -n 1)"
+          test "$FIRST_RESULT" = "aaaaaaaa-1111-4111-8111-111111111111:t"
+          test "$SECOND_OUTPUT" = "aaaaaaaa-1111-4111-8111-111111111111:f"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
