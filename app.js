@@ -475,9 +475,51 @@ const movieHistoryStyle = document.createElement("style");
       $("#adminWalletTotal").textContent = formatMetric(data.total_credits);
       $("#adminWalletDetails").textContent = "Активных резервов: " + formatMetric(data.active_holds_count) + " · партий: " + formatMetric(data.lot_count) + " · распределений: " + formatMetric(data.allocation_count) + ".";
       status.textContent = "Сводка загружена. Доступ к кошельку записан в административный аудит.";
+      loadAdminCreditLedger(true);
     } catch (error) { status.textContent = "Сводка недоступна: " + error.message; }
   };
   $("#loadAdminWallet")?.addEventListener("click", loadAdminWallet);
+
+  let adminCreditLedgerCursor = null, adminCreditLedgerLoading = false;
+  const loadAdminCreditLedger = async (reset = false) => {
+    const body = $("#adminCreditLedgerRows"), status = $("#adminCreditLedgerStatus");
+    const more = $("#loadMoreAdminCreditLedger"), id = $("#adminWalletUserId")?.value.trim();
+    if (!body || !status || adminCreditLedgerLoading || !adminUiAuthorized) return;
+    if (!id) { status.textContent = "Сначала укажите UUID пользователя в блоке кошелька."; return; }
+    adminCreditLedgerLoading = true;
+    if (reset) { body.replaceChildren(); adminCreditLedgerCursor = null; }
+    if (more) more.disabled = true;
+    status.textContent = "Загружаем журнал кредитных единиц…";
+    try {
+      const query = new URLSearchParams({limit:"50"});
+      if (adminCreditLedgerCursor) {
+        query.set("before_created_at", adminCreditLedgerCursor.before_created_at);
+        query.set("before_id", String(adminCreditLedgerCursor.before_id));
+      }
+      const data = await apiRequest("/api/admin/financial/ledger/" + encodeURIComponent(id) + "?" + query.toString());
+      if (!adminUiAuthorized || $("#adminWalletUserId")?.value.trim() !== id) return;
+      (data.entries || []).forEach(row => {
+        const tr = document.createElement("tr");
+        const operation = ({grant:"Начисление",reserve:"Резерв",capture:"Списание",release:"Возврат резерва",refund:"Возврат",adjustment:"Корректировка"})[row.operation_type] || row.operation_type;
+        const available = (row.delta_available > 0 ? "+" : "") + row.delta_available;
+        const reserved = (row.delta_reserved > 0 ? "+" : "") + row.delta_reserved;
+        const balance = row.balance_available_after + " / " + row.balance_reserved_after;
+        [new Date(row.created_at).toLocaleString("ru-RU",{timeZone:"UTC"}) + " UTC",operation,available,reserved,balance]
+          .forEach(value => { const td=document.createElement("td"); td.textContent=String(value); tr.appendChild(td); });
+        body.appendChild(tr);
+      });
+      adminCreditLedgerCursor = data.next_cursor || null;
+      if (!body.children.length) {
+        const tr=document.createElement("tr"),td=document.createElement("td");
+        td.colSpan=5; td.textContent="Записей в кредитном журнале пока нет."; tr.appendChild(td); body.appendChild(tr);
+      }
+      status.textContent = data.accounting_note || "Показан журнал кредитных единиц. Это не денежная отчётность.";
+      if (more) more.hidden = !adminCreditLedgerCursor;
+    } catch(error) { status.textContent = "Журнал недоступен: " + error.message; }
+    finally { adminCreditLedgerLoading=false; if(more) more.disabled=false; }
+  };
+  $("#loadMoreAdminCreditLedger")?.addEventListener("click", () => loadAdminCreditLedger(false));
+
 
 
   let financeQueueCursor = null;
