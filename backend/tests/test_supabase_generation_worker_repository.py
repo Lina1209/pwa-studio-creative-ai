@@ -256,7 +256,7 @@ async def test_complete_credited_parses_atomic_capture_result_and_uses_service_r
         repository = SupabaseGenerationJobRepository(settings(), client)
         result = await repository.complete_credited(
             job_id, "worker-a",
-            "11111111-1111-4111-8111-111111111111/generated/result.png", "a".repeat(64),
+            "11111111-1111-4111-8111-111111111111/generated/result.png", "a" * 64,
         )
 
     assert result.completed is True
