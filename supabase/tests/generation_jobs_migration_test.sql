@@ -1370,6 +1370,19 @@ begin
     raise exception 'Repeated successful completion charged credits more than once';
   end if;
 
+  -- A replay with a different result path must not rewrite the durable result.
+  v_rejected := false;
+  begin
+    perform public.complete_credited_generation_job(
+      v_job_id, 'different-worker',
+      '22222222-2222-4222-8222-222222222222/generated/other-result.png'
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Credited completion replay accepted a different result path';
+  end if;
+
   if not exists (select 1 from public.credit_holds
                  where id = v_hold_id and status = 'captured' and captured_at is not null) then
     raise exception 'Atomic completion did not capture the hold';
