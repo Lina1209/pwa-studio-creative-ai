@@ -25,6 +25,10 @@ class CreditWalletSnapshot:
     ledger: list[dict[str, Any]]
     lots: list[dict[str, Any]]
     allocations: list[dict[str, Any]]
+    lot_count: int
+    lots_truncated: bool
+    allocation_count: int
+    allocations_truncated: bool
 
 
 def _headers(settings: Settings) -> dict[str, str]:
@@ -76,14 +80,26 @@ def get_credit_wallet_snapshot(
     ledger = data.get("ledger")
     lots = data.get("lots")
     allocations = data.get("allocations")
+    lot_count = _integer(data.get("lot_count"), "lot count")
+    allocation_count = _integer(data.get("allocation_count"), "allocation count")
+    lots_truncated = data.get("lots_truncated")
+    allocations_truncated = data.get("allocations_truncated")
+    if not isinstance(lots_truncated, bool) or not isinstance(allocations_truncated, bool):
+        raise CreditWalletUnavailable("Credit wallet truncation metadata is invalid.")
+    lot_available_total = _integer(data.get("lot_available_total"), "lot available total")
+    lot_reserved_total = _integer(data.get("lot_reserved_total"), "lot reserved total")
     if not isinstance(holds, list) or len(holds) > 20:
         raise CreditWalletUnavailable("Credit hold history is invalid.")
     if not isinstance(ledger, list) or len(ledger) > history_limit:
         raise CreditWalletUnavailable("Credit ledger history is invalid.")
-    if not isinstance(lots, list) or len(lots) > 100:
+    if not isinstance(lots, list) or len(lots) > 100 or len(lots) > lot_count:
         raise CreditWalletUnavailable("Credit lot history is invalid.")
-    if not isinstance(allocations, list) or len(allocations) > 100:
+    if not isinstance(allocations, list) or len(allocations) > 100 or len(allocations) > allocation_count:
         raise CreditWalletUnavailable("Credit hold allocations are invalid.")
+    if lots_truncated != (lot_count > len(lots)):
+        raise CreditWalletUnavailable("Credit lot truncation metadata is inconsistent.")
+    if allocations_truncated != (allocation_count > len(allocations)):
+        raise CreditWalletUnavailable("Credit allocation truncation metadata is inconsistent.")
 
     safe_holds: list[dict[str, Any]] = []
     for hold in holds:
@@ -148,10 +164,13 @@ def get_credit_wallet_snapshot(
             "created_at": allocation.get("created_at"),
         })
 
-    if sum(item["available_credits"] for item in safe_lots) != available:
-        raise CreditWalletUnavailable("Credit lot available balances do not match wallet.")
-    if sum(item["reserved_credits"] for item in safe_lots) != reserved:
-        raise CreditWalletUnavailable("Credit lot reserved balances do not match wallet.")
+    if lot_available_total != available or lot_reserved_total != reserved:
+        raise CreditWalletUnavailable("Credit lot aggregate balances do not match wallet.")
+    if not lots_truncated and (
+        sum(item["available_credits"] for item in safe_lots) != available
+        or sum(item["reserved_credits"] for item in safe_lots) != reserved
+    ):
+        raise CreditWalletUnavailable("Complete credit lot sample does not match wallet.")
 
     return CreditWalletSnapshot(
         user_id=user_id,
@@ -161,6 +180,10 @@ def get_credit_wallet_snapshot(
         ledger=safe_ledger,
         lots=safe_lots,
         allocations=safe_allocations,
+        lot_count=lot_count,
+        lots_truncated=lots_truncated,
+        allocation_count=allocation_count,
+        allocations_truncated=allocations_truncated,
     )
 
 
