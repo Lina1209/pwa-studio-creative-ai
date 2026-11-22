@@ -73,24 +73,45 @@ create index if not exists generation_provider_cost_reservations_status_idx
 -- signed USD ceiling receive a reservation sized to that ceiling; any prior
 -- unknown usage keeps it in the unknown state. Orphan unknown evidence without
 -- a valid ceiling remains a global admission blocker until operator repair.
+with evidence as (
+  select
+    job.id as job_id,
+    job.user_id,
+    job.provider,
+    job.model,
+    event.cost_source,
+    event.created_at,
+    case
+      when (job.pricing_snapshot ->> 'maximum_provider_cost_usd')
+           ~ '^(0|[1-9][0-9]{0,9})([.][0-9]{1,10})?$'
+      then (job.pricing_snapshot ->> 'maximum_provider_cost_usd')::numeric(20,10)
+      else null
+    end as reserved_cost_usd
+  from public.generation_provider_cost_events event
+  join public.generation_jobs job on job.id = event.job_id
+)
 insert into public.generation_provider_cost_reservations(
   job_id, user_id, provider, model, operation_key, reserved_cost_usd,
   status, created_at, settled_at
 )
 select
-  job.id,
-  job.user_id,
-  job.provider,
-  job.model,
-  job.id::text,
-  (job.pricing_snapshot ->> 'maximum_provider_cost_usd')::numeric(20,10),
-  case when bool_or(event.cost_source = 'unknown') then 'unknown' else 'settled' end,
-  min(event.created_at),
-  case when bool_or(event.cost_source = 'unknown') then null else max(event.created_at) end
-from public.generation_provider_cost_events event
-join public.generation_jobs job on job.id = event.job_id
-where job.pricing_snapshot ->> 'maximum_provider_cost_usd'
-      ~ '^(0|[1-9][0-9]{0,9})([.][0-9]{1,10})?alter table public.generation_provider_cost_reservations enable row level security;
+  evidence.job_id,
+  evidence.user_id,
+  evidence.provider,
+  evidence.model,
+  evidence.job_id::text,
+  evidence.reserved_cost_usd,
+  case when bool_or(evidence.cost_source = 'unknown') then 'unknown' else 'settled' end,
+  min(evidence.created_at),
+  case when bool_or(evidence.cost_source = 'unknown') then null else max(evidence.created_at) end
+from evidence
+where evidence.reserved_cost_usd is not null
+  and evidence.reserved_cost_usd > 0
+group by evidence.job_id, evidence.user_id, evidence.provider, evidence.model,
+         evidence.reserved_cost_usd
+on conflict (job_id) do nothing;
+
+alter table public.generation_provider_cost_reservations enable row level security;
 revoke all on public.generation_provider_cost_reservations from public, anon, authenticated;
 revoke insert, update, delete, truncate on public.generation_provider_cost_reservations from service_role;
 grant select on public.generation_provider_cost_reservations to service_role;
