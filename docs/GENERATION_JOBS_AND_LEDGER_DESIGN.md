@@ -157,3 +157,10 @@ The current worker contract expects lookup success to return the complete `Image
 The worker heartbeat can detect lease loss while a short database journal RPC is still in flight. Database RPCs independently validate the active lease, but the worker must also check its local lease-loss signal after the RPC returns: a successful journal-begin response that arrives late must never authorize a provider submission from a stale worker. The same rule applies after provider-acceptance and result-received journal transitions, and immediately before job completion.
 
 The worker now exits with a lease-lost outcome at these boundaries. A replacement worker owns recovery through the durable journal and stable provider idempotency key. Tests cover lease loss while journal creation is delayed and while provider acceptance is delayed; both assert that no later provider/result/storage/completion work is started. These are deterministic fake-adapter tests; they do not replace integration testing against a live provider or Supabase deployment.
+
+
+## 20. Bounded pagination during Storage verification
+
+Generated-object verification must not assume the target file is among the first 100 objects in an owner's generated folder. Upload verification now scans bounded pages of 100 entries (up to 10 pages) for the deterministic owner/job filename. A truncated inventory produces a retryable adapter error rather than a false missing-object or integrity failure. A missing listing entry is also treated as retryable because Storage listing visibility may lag a successful create-only upload. The retry preserves the object; it does not overwrite or delete an object whose verification is incomplete.
+
+The page cap is intentional: worker memory and request volume remain bounded. If the owner's folder exceeds the scan window and the target is not found, the job retries rather than declaring success or deleting data. Tests cover a target on the second page and the bounded-inventory case.
