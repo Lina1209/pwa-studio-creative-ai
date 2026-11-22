@@ -216,3 +216,50 @@ grant execute on function public.mark_generation_provider_operation_failed(uuid,
 
 comment on table public.generation_provider_operations is
   'Durable journal for one external provider operation per generation job; unknown means never blindly resubmit without provider reconciliation.';
+
+
+-- Persist the fact that the provider returned a result before storage upload starts.
+-- This lets a reclaimed worker distinguish a completed external operation from
+-- a request that may still be running; it must still retrieve the result by key.
+create or replace function public.mark_generation_provider_operation_result_received(
+  p_job_id uuid,
+  p_worker_id text,
+  p_provider_request_id text default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare v_updated integer;
+begin
+  if p_job_id is null
+     or p_worker_id is null or length(btrim(p_worker_id)) not between 1 and 120
+     or (p_provider_request_id is not null
+         and length(p_provider_request_id) not between 1 and 500) then
+    raise exception 'Invalid provider result metadata' using errcode = '22023';
+  end if;
+
+  update public.generation_provider_operations as op
+     set state = 'result_received',
+         provider_request_id = coalesce(op.provider_request_id, p_provider_request_id),
+         result_received_at = coalesce(result_received_at, now()),
+         last_checked_at = now(),
+         updated_at = now()
+    from public.generation_jobs as job
+   where op.job_id = p_job_id
+     and job.id = op.job_id
+     and job.status = 'running'
+     and job.lease_owner = btrim(p_worker_id)
+     and job.lease_expires_at > now()
+     and op.state in ('submitting', 'accepted', 'unknown', 'result_received')
+     and (op.provider_request_id is null or p_provider_request_id is null
+          or op.provider_request_id = p_provider_request_id);
+
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+revoke all on function public.mark_generation_provider_operation_result_received(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.mark_generation_provider_operation_result_received(uuid, text, text) to service_role;
