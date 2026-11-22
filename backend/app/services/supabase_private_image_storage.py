@@ -234,6 +234,10 @@ class SupabasePrivateImageStorage:
         listing = listing_response.json()
         if not isinstance(listing, list):
             raise SupabaseStorageAdapterError("storage_metadata_invalid")
+        if len(listing) >= 1000:
+            # Do not report a false "missing object" when the requested file
+            # may be beyond the bounded first page of a large owner folder.
+            raise SupabaseStorageAdapterError("storage_verification_listing_limit_reached")
         matches = [
             row for row in listing
             if isinstance(row, dict) and row.get("name") == filename
