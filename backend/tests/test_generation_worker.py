@@ -73,6 +73,7 @@ class FakeProvider:
 
     def __init__(self, *, error=None):
         self.error = error
+        self.idempotency_keys = []
 
     async def generate(self, request, *, idempotency_key):
         self.idempotency_keys = getattr(self, "idempotency_keys", []) + [idempotency_key]
@@ -156,8 +157,8 @@ async def test_retryable_provider_error_uses_bounded_retry():
     worker = make_worker(repo, FakeProvider(error=ImageGenerationError("rate_limited", retryable=True)))
     result = await worker.process(make_job(attempt_count=2))
     assert result.outcome == "retry_scheduled"
-    assert repo.calls[0][0] == "retry"
-    assert repo.calls[0][1][-1] == 30
+    assert next(call for call in repo.calls if call[0] == "retry")[0] == "retry"
+    assert next(call for call in repo.calls if call[0] == "retry")[1][-1] == 30
 
 
 @pytest.mark.asyncio
@@ -170,7 +171,7 @@ async def test_worker_rejects_result_from_wrong_model():
     repo = FakeRepository()
     result = await make_worker(repo, WrongModel()).process(make_job())
     assert result.outcome == "failed"
-    assert repo.calls[0][0] == "fail"
+    assert next(call for call in repo.calls if call[0] == "fail")[0] == "fail"
 
 
 @pytest.mark.asyncio
