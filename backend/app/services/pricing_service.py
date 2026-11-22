@@ -229,7 +229,7 @@ def verify_pricing_quote(
         user_id, job_type, provider, model, request_hash
     ):
         raise PricingError("Pricing quote does not match this user or generation request.")
-    if quote_idempotency_key != idempotency_key or not 8 <= len(idempotency_key) <= 200:
+    if not isinstance(idempotency_key, str) or quote_idempotency_key != idempotency_key or not 8 <= len(idempotency_key) <= 200:
         raise PricingError("Pricing quote does not match this idempotency key.")
     if not all(isinstance(v, str) and v for v in (signature, unit_label, price_version)):
         raise PricingError("Pricing quote metadata is invalid.")
@@ -258,7 +258,7 @@ def verify_pricing_quote(
     return VerifiedPricingQuote(
         quote_id=quote_id, user_id=quoted_user, job_type=quote_job_type,
         provider=quote_provider, model=quote_model, request_hash=quote_hash,
-        quantity=quantity, unit_label=unit_label, amount=amount,
+        idempotency_key=quote_idempotency_key, quantity=quantity, unit_label=unit_label, amount=amount,
         price_version=price_version, issued_at=issued_at,
         expires_at=expires_at, signature=signature,
     )
