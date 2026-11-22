@@ -299,6 +299,7 @@ declare
 begin
   if p_job_id is null
      or p_resolution_key is null or length(p_resolution_key) not between 8 and 160
+     or p_resolution is null
      or p_resolution not in ('release_no_charge', 'settle_known_cost')
      or p_note is null or length(btrim(p_note)) not between 8 and 1000
      or (p_resolution = 'release_no_charge' and p_actual_cost_usd is not null)
