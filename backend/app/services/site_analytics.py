@@ -87,7 +87,8 @@ def get_admin_visit_stats(settings: Settings) -> dict:
     """Return owner-dashboard aggregates; never returns visitor-level data."""
     result = _rpc(settings, "get_site_visit_admin_stats", {})
     base_keys = ("total_page_views", "today_page_views", "today_unique_visitors",
-                 "last_7_days_page_views", "last_30_days_page_views")
+                 "last_7_days_page_views", "last_30_days_page_views",
+                 "rate_limited_requests_last_24h", "rate_limited_token_windows_last_24h")
     for key in base_keys:
         value = result.get(key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
