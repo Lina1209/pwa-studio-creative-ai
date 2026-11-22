@@ -89,6 +89,39 @@ create table public.studio_media (
 \ir ../migrations/0021_persist_pricing_quotes.sql
 \ir ../migrations/0022_generation_provider_cost_events.sql
 
+-- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
+do $credit_ledger_privileges_test$
+begin
+  if has_table_privilege('service_role', 'public.credit_wallets', 'INSERT')
+     or has_table_privilege('service_role', 'public.credit_wallets', 'UPDATE')
+     or has_table_privilege('service_role', 'public.credit_wallets', 'DELETE')
+     or has_table_privilege('service_role', 'public.credit_wallets', 'TRUNCATE')
+     or has_table_privilege('service_role', 'public.credit_holds', 'INSERT')
+     or has_table_privilege('service_role', 'public.credit_holds', 'UPDATE')
+     or has_table_privilege('service_role', 'public.credit_holds', 'DELETE')
+     or has_table_privilege('service_role', 'public.credit_holds', 'TRUNCATE')
+     or has_table_privilege('service_role', 'public.credit_ledger', 'INSERT')
+     or has_table_privilege('service_role', 'public.credit_ledger', 'UPDATE')
+     or has_table_privilege('service_role', 'public.credit_ledger', 'DELETE')
+     or has_table_privilege('service_role', 'public.credit_ledger', 'TRUNCATE')
+     or not has_table_privilege('service_role', 'public.credit_wallets', 'SELECT')
+     or not has_table_privilege('service_role', 'public.credit_holds', 'SELECT')
+     or not has_table_privilege('service_role', 'public.credit_ledger', 'SELECT') then
+    raise exception 'Service role can bypass credit lifecycle RPCs or cannot read accounting state';
+  end if;
+  if has_function_privilege('authenticated',
+       'public.grant_user_credits(uuid,bigint,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.reserve_job_credits(uuid,uuid,bigint,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.release_job_credit_hold(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'Authenticated role unexpectedly has credit mutation RPC privileges';
+  end if;
+end;
+$credit_ledger_privileges_test$;
+
+
+
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
   ('22222222-2222-4222-8222-222222222222');
