@@ -256,7 +256,7 @@ async def test_complete_credited_parses_atomic_capture_result_and_uses_service_r
         repository = SupabaseGenerationJobRepository(settings(), client)
         result = await repository.complete_credited(
             job_id, "worker-a",
-            "11111111-1111-4111-8111-111111111111/generated/result.png",
+            "11111111-1111-4111-8111-111111111111/generated/result.png", "a".repeat(64),
         )
 
     assert result.completed is True
@@ -266,6 +266,7 @@ async def test_complete_credited_parses_atomic_capture_result_and_uses_service_r
     assert seen["url"].endswith("/rpc/complete_credited_generation_job")
     assert seen["payload"]["p_job_id"] == str(job_id)
     assert seen["payload"]["p_worker_id"] == "worker-a"
+    assert seen["payload"]["p_result_sha256"] == "a" * 64
 
 
 @pytest.mark.asyncio
@@ -284,7 +285,7 @@ async def test_complete_credited_accepts_lease_lost_result_without_balance_mutat
         result = await repository.complete_credited(
             UUID("22222222-2222-4222-8222-222222222222"),
             "stale-worker",
-            "11111111-1111-4111-8111-111111111111/generated/result.png",
+            "11111111-1111-4111-8111-111111111111/generated/result.png", "a" * 64,
         )
 
     assert result.completed is False
@@ -309,7 +310,7 @@ async def test_complete_credited_rejects_malformed_rpc_result():
             await repository.complete_credited(
                 UUID("22222222-2222-4222-8222-222222222222"),
                 "worker-a",
-                "11111111-1111-4111-8111-111111111111/generated/result.png",
+                "11111111-1111-4111-8111-111111111111/generated/result.png", "a" * 64,
             )
 
 
