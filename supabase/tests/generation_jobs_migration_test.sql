@@ -3616,7 +3616,11 @@ begin
      or has_function_privilege('authenticated',
        'public.create_finance_operation_request(uuid,text,uuid,numeric,text,text,text,uuid)', 'EXECUTE')
      or has_function_privilege('anon',
-       'public.decide_finance_operation_request(uuid,uuid,text,text)', 'EXECUTE') then
+       'public.decide_finance_operation_request(uuid,uuid,text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.read_finance_operation_request(uuid)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.read_finance_operation_request(uuid)', 'EXECUTE') then
     raise exception 'Finance request storage or RPCs expose excessive privileges';
   end if;
 
@@ -3636,6 +3640,17 @@ begin
   );
   if v_request <> v_replay then
     raise exception 'Idempotent request replay returned a different request id';
+  end if;
+
+  select count(*) into v_event_count
+    from public.read_finance_operation_request(v_request)
+   where request_id = v_request
+     and requester_id = '11111111-1111-4111-8111-111111111111'
+     and target_user_id = '22222222-2222-4222-8222-222222222222'
+     and scope_key = 'test-scope'
+     and status = 'pending';
+  if v_event_count <> 1 then
+    raise exception 'Server-only finance request lookup returned incorrect data';
   end if;
 
   v_rejected := false;
