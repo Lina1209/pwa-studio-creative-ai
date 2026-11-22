@@ -575,6 +575,73 @@ const movieHistoryStyle = document.createElement("style");
     } finally { button.disabled = false; }
   });
 
+  const financeRoleStatus = $("#financeRoleAdminStatus");
+  const loadFinanceRoles = async (principalId) => {
+    if (!adminUiAuthorized || !principalId) return;
+    const rows = $("#financeRoleRows"); if (!rows) return;
+    rows.replaceChildren();
+    if (financeRoleStatus) financeRoleStatus.textContent = "Загружаем активные назначения…";
+    try {
+      const data = await apiRequest("/api/admin/finance/roles/" + encodeURIComponent(principalId));
+      (data.assignments || []).forEach(assignment => {
+        const tr = document.createElement("tr");
+        [assignment.role_code, assignment.scope_key, assignment.valid_until, assignment.granted_by].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value ?? "—"); tr.appendChild(td);
+        });
+        const actions = document.createElement("td");
+        const revoke = document.createElement("button"); revoke.type = "button"; revoke.className = "secondary-button"; revoke.textContent = "Отозвать";
+        revoke.addEventListener("click", async () => {
+          const reason = window.prompt("Причина отзыва роли (1–500 символов):");
+          if (!reason || !reason.trim()) return;
+          revoke.disabled = true;
+          try {
+            await apiRequest("/api/admin/finance/roles/" + encodeURIComponent(assignment.assignment_id) + "/revoke", {
+              method:"POST", body:JSON.stringify({reason:reason.trim()})
+            });
+            await loadFinanceRoles(principalId);
+          } catch (error) {
+            if (financeRoleStatus) financeRoleStatus.textContent = "Не удалось отозвать роль: " + error.message;
+            revoke.disabled = false;
+          }
+        });
+        actions.appendChild(revoke); tr.appendChild(actions); rows.appendChild(tr);
+      });
+      if (financeRoleStatus) financeRoleStatus.textContent = data.assignments?.length
+        ? "Показаны активные назначения. Истёкшие и отозванные назначения не выдаются как активные."
+        : "У аккаунта нет активных финансовых назначений.";
+    } catch (error) {
+      if (financeRoleStatus) financeRoleStatus.textContent = "Не удалось загрузить назначения: " + error.message;
+    }
+  };
+  $("#loadFinanceRoles")?.addEventListener("click", () => loadFinanceRoles($("#financeRoleLookupId").value.trim()));
+  $("#financeRoleGrantForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!adminUiAuthorized) return;
+    const button = $("#grantFinanceRoleButton"); button.disabled = true;
+    try {
+      const principalId = $("#financeRolePrincipalId").value.trim();
+      const scopeTargetId = $("#financeRoleScopeUserId").value.trim();
+      const validUntil = new Date($("#financeRoleValidUntil").value);
+      if (!Number.isFinite(validUntil.getTime()) || validUntil <= new Date()) {
+        throw new Error("Укажите будущую дату окончания полномочий.");
+      }
+      const payload = {
+        principal_id:principalId,
+        role_code:$("#financeRoleCode").value,
+        scope_key:"user:" + scopeTargetId,
+        valid_until:validUntil.toISOString(),
+        reason:$("#financeRoleReason").value.trim()
+      };
+      await apiRequest("/api/admin/finance/roles", {method:"POST",body:JSON.stringify(payload)});
+      $("#financeRoleLookupId").value = principalId;
+      $("#financeRoleReason").value = "";
+      if (financeRoleStatus) financeRoleStatus.textContent = "Роль назначена. Проверяем сохранённое назначение…";
+      await loadFinanceRoles(principalId);
+    } catch (error) {
+      if (financeRoleStatus) financeRoleStatus.textContent = "Назначение не сохранено: " + error.message;
+    } finally { button.disabled = false; }
+  });
+
   const labels = {"finance-operations":"Финансовые операции","admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
