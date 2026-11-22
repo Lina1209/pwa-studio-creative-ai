@@ -190,3 +190,46 @@ async def test_provider_journal_read_parses_existing_state_and_rejects_duplicate
     assert operation is not None
     assert operation.state == "unknown"
     assert operation.created is False
+
+
+@pytest.mark.asyncio
+async def test_repository_classifies_transient_http_failures_as_retryable():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(503, text="sensitive upstream detail"))
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError) as caught:
+            await repository.claim_next("worker-a")
+
+    assert caught.value.error_code == "database_temporarily_unavailable"
+    assert caught.value.retryable is True
+    assert "sensitive upstream detail" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_repository_classifies_rejected_credentials_as_permanent_and_sanitized():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(403, text="secret policy detail"))
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError) as caught:
+            await repository.claim_next("worker-a")
+
+    assert caught.value.error_code == "database_credentials_rejected"
+    assert caught.value.retryable is False
+    assert "secret policy detail" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_repository_classifies_connection_loss_as_retryable_without_leaking_exception():
+    def disconnect(request):
+        raise httpx.ConnectError("private host and credential context", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(disconnect)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError) as caught:
+            await repository.claim_next("worker-a")
+
+    assert caught.value.error_code == "database_connection_error"
+    assert caught.value.retryable is True
+    assert "private host" not in str(caught.value)
