@@ -1,3 +1,4 @@
+import json
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -57,6 +58,19 @@ class PricingQuoteRequest(BaseModel):
     studio_scene_id: UUID | None = None
     request_snapshot: dict = Field()
     quantity: int = Field(default=1, strict=True, ge=1, le=10000)
+
+    @field_validator("request_snapshot")
+    @classmethod
+    def bound_request_snapshot_size(cls, value: dict) -> dict:
+        try:
+            encoded = json.dumps(
+                value, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+            ).encode("utf-8")
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ValueError("Pricing request snapshot must be valid JSON.") from exc
+        if len(encoded) > 32 * 1024:
+            raise ValueError("Pricing request snapshot must not exceed 32 KiB.")
+        return value
 
     @model_validator(mode="after")
     def allow_only_one_generation_target(self):
