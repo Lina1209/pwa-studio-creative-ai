@@ -190,42 +190,6 @@ revoke all on function public.read_finance_operation_request(uuid)
   from public, anon, authenticated;
 grant execute on function public.read_finance_operation_request(uuid) to service_role;
 
-     or (p_request_type = 'credit_compensation' and (p_currency_code <> 'CRD' or p_amount <> trunc(p_amount)))
-     or (p_request_type = 'billing_refund' and p_currency_code = 'CRD')
-     or p_scope_key is null or length(p_scope_key) not between 1 and 200
-     or p_scope_key <> btrim(p_scope_key)
-     or p_reason is null or length(p_reason) not between 1 and 500
-     or p_reason <> btrim(p_reason)
-     or p_idempotency_key is null then
-    raise exception 'invalid finance operation request' using errcode = '22023';
-  end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_requester_id::text || ':' || p_idempotency_key::text, 0));
-  select * into v_existing from public.finance_operation_requests
-   where requester_id = p_requester_id and idempotency_key = p_idempotency_key;
-  if found then
-    if v_existing.request_type is distinct from p_request_type
-       or v_existing.target_user_id is distinct from p_target_user_id
-       or v_existing.amount is distinct from p_amount
-       or v_existing.currency_code is distinct from p_currency_code
-       or v_existing.scope_key is distinct from p_scope_key
-       or v_existing.reason is distinct from p_reason then
-      raise exception 'idempotency key reused with different request data' using errcode = '22023';
-    end if;
-    return v_existing.id;
-  end if;
-  insert into public.finance_operation_requests(
-    requester_id, request_type, target_user_id, amount, currency_code,
-    scope_key, reason, idempotency_key
-  ) values (
-    p_requester_id, p_request_type, p_target_user_id, p_amount, p_currency_code,
-    p_scope_key, p_reason, p_idempotency_key
-  ) returning id into v_id;
-  insert into public.finance_operation_request_events(
-    request_id, actor_id, event_type, previous_status, new_status, reason
-  ) values (v_id, p_requester_id, 'request.created', null, 'pending', p_reason);
-  return v_id;
-end;
-$$;
 
 create or replace function public.decide_finance_operation_request(
   p_request_id uuid,
