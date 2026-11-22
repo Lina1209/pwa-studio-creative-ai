@@ -19,7 +19,7 @@ def _client(user):
     return TestClient(app)
 
 
-def _grant(actor, permissions, scope="tenant-a"):
+def _grant(actor, permissions, scope):
     return SimpleNamespace(
         principal_id=actor, permissions=frozenset(permissions), active=True,
         scope_ids=frozenset({scope}),
@@ -33,14 +33,14 @@ def test_create_finance_request_uses_verified_actor_and_exact_permission_scope(m
 
     captured = {}
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
-        ACTOR, {"credit.compensation.request"}
+        ACTOR, {"credit.compensation.request"}, f"user:{OTHER}"
     ))
     monkeypatch.setattr(main_module, "create_finance_operation_request", lambda *a, **k: captured.update(k) or REQUEST)
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
     try:
         response = client.post("/api/finance/requests", json={
             "request_type": "credit_compensation", "target_user_id": str(OTHER),
-            "amount": "12.5000", "currency_code": "KZT", "scope_key": "tenant-a",
+            "amount": "12.5000", "currency_code": "KZT",
             "reason": "Support case", "idempotency_key": str(IDEMPOTENCY),
         })
         assert response.status_code == 201
@@ -57,13 +57,13 @@ def test_finance_request_rejects_missing_delegated_permission(monkeypatch):
     import app.main as main_module
 
     called = []
-    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(ACTOR, set()))
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(ACTOR, set(), f"user:{OTHER}"))
     monkeypatch.setattr(main_module, "create_finance_operation_request", lambda *a, **k: called.append(True))
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
     try:
         response = client.post("/api/finance/requests", json={
             "request_type": "credit_compensation", "target_user_id": str(OTHER),
-            "amount": "2", "currency_code": "KZT", "scope_key": "tenant-a",
+            "amount": "2", "currency_code": "KZT",
             "reason": "Support case", "idempotency_key": str(IDEMPOTENCY),
         })
         assert response.status_code == 403
@@ -80,10 +80,10 @@ def test_finance_decision_rejects_self_approval_before_rpc(monkeypatch):
         "request_id": REQUEST, "requester_id": ACTOR,
         "request_type": "credit_compensation", "target_user_id": OTHER,
         "amount": Decimal("1"), "currency_code": "KZT",
-        "scope_key": "tenant-a", "status": "pending",
+        "scope_key": f"user:{OTHER}", "status": "pending",
     })
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
-        ACTOR, {"credit.compensation.approve"}
+        ACTOR, {"credit.compensation.approve"}, f"user:{OTHER}"
     ))
     monkeypatch.setattr(main_module, "decide_finance_operation_request", lambda *a, **k: called.append(True))
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
@@ -105,10 +105,10 @@ def test_approval_checks_approver_role_and_server_actor(monkeypatch):
         "request_id": REQUEST, "requester_id": OTHER,
         "request_type": "credit_compensation", "target_user_id": ACTOR,
         "amount": Decimal("1"), "currency_code": "KZT",
-        "scope_key": "tenant-a", "status": "pending",
+        "scope_key": f"user:{ACTOR}", "status": "pending",
     })
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
-        ACTOR, {"credit.compensation.approve"}
+        ACTOR, {"credit.compensation.approve"}, f"user:{ACTOR}"
     ))
     monkeypatch.setattr(main_module, "decide_finance_operation_request", lambda *a, **k: captured.update(k) or REQUEST)
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
@@ -132,10 +132,10 @@ def test_cancel_is_limited_to_requester_and_its_scope(monkeypatch):
         "request_id": REQUEST, "requester_id": ACTOR,
         "request_type": "billing_refund", "target_user_id": OTHER,
         "amount": Decimal("1"), "currency_code": "USD",
-        "scope_key": "tenant-a", "status": "pending",
+        "scope_key": f"user:{OTHER}", "status": "pending",
     })
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
-        ACTOR, {"billing.refund.cancel"}
+        ACTOR, {"billing.refund.cancel"}, f"user:{OTHER}"
     ))
     monkeypatch.setattr(main_module, "cancel_finance_operation_request", lambda *a, **k: captured.update(k) or REQUEST)
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
@@ -155,7 +155,7 @@ def test_request_schema_rejects_client_actor_fields(monkeypatch):
 
     called = []
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
-        ACTOR, {"credit.compensation.request"}
+        ACTOR, {"credit.compensation.request"}, f"user:{OTHER}"
     ))
     monkeypatch.setattr(main_module, "create_finance_operation_request", lambda *a, **k: called.append(True))
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
@@ -163,7 +163,7 @@ def test_request_schema_rejects_client_actor_fields(monkeypatch):
         response = client.post("/api/finance/requests", json={
             "requester_id": str(OTHER), "request_type": "credit_compensation",
             "target_user_id": str(OTHER), "amount": "1", "currency_code": "KZT",
-            "scope_key": "tenant-a", "reason": "Forged actor",
+            "reason": "Forged actor",
             "idempotency_key": str(IDEMPOTENCY),
         })
         assert response.status_code == 422
