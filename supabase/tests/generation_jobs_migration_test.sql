@@ -1353,6 +1353,18 @@ begin
          heartbeat_at = now(), updated_at = now()
    where id = v_job_id;
 
+  v_rejected := false;
+  begin
+    perform public.complete_credited_generation_job(
+      v_job_id, 'atomic-test-worker',
+      '22222222-2222-4222-8222-222222222222/generated/atomic-result.png', repeat('g', 64)
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Credited completion accepted a malformed result SHA-256';
+  end if;
+
   select * into v_completed from public.complete_credited_generation_job(
     v_job_id, 'atomic-test-worker',
     '22222222-2222-4222-8222-222222222222/generated/atomic-result.png', repeat('a', 64)
