@@ -56,7 +56,7 @@ def test_create_request_rejects_untrusted_or_noncanonical_fields(monkeypatch):
         {"reason": " "},
     ]:
         kwargs = {
-            "request_type": "credit_compensation", "currency_code": "KZT",
+            "request_type": "credit_compensation", "currency_code": "CRD",
             "scope_key": "tenant-a", "reason": "Review request",
         }
         kwargs.update(values)
