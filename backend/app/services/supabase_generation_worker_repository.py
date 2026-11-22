@@ -19,6 +19,11 @@ class GenerationJobInventoryRow:
     status: str
     result_storage_path: str | None
     updated_at: str
+    lease_expires_at: str | None = None
+    attempt_count: int = 0
+    max_attempts: int = 3
+    available_at: str | None = None
+    last_error_code: str | None = None
 
 
 class WorkerRepositoryNotConfiguredError(RuntimeError):
@@ -72,7 +77,7 @@ class SupabaseGenerationJobRepository:
                 response = await self._client.get(
                     f"{self._base_url}/rest/v1/generation_jobs",
                     params={
-                        "select": "id,status,result_storage_path,updated_at",
+                        "select": "id,status,result_storage_path,updated_at,lease_expires_at,attempt_count,max_attempts,available_at,last_error_code",
                         "user_id": f"eq.{owner_id}",
                         "order": "updated_at.asc,id.asc",
                         "limit": str(page_size),
@@ -106,9 +111,26 @@ class SupabaseGenerationJobRepository:
                         raise ValueError("updated_at")
                     if result_path is not None and not isinstance(result_path, str):
                         raise ValueError("result_storage_path")
-                    rows_out.append(
-                        GenerationJobInventoryRow(job_id, status, result_path, updated_at)
-                    )
+                    lease_expires_at = row.get("lease_expires_at")
+                    available_at = row.get("available_at")
+                    last_error_code = row.get("last_error_code")
+                    attempt_count = row.get("attempt_count", 0)
+                    max_attempts = row.get("max_attempts", 3)
+                    if lease_expires_at is not None and not isinstance(lease_expires_at, str):
+                        raise ValueError("lease_expires_at")
+                    if available_at is not None and not isinstance(available_at, str):
+                        raise ValueError("available_at")
+                    if last_error_code is not None and not isinstance(last_error_code, str):
+                        raise ValueError("last_error_code")
+                    if (isinstance(attempt_count, bool) or not isinstance(attempt_count, int)
+                            or attempt_count < 0 or isinstance(max_attempts, bool)
+                            or not isinstance(max_attempts, int) or max_attempts < 1
+                            or attempt_count > max_attempts):
+                        raise ValueError("attempt_counters")
+                    rows_out.append(GenerationJobInventoryRow(
+                        job_id, status, result_path, updated_at, lease_expires_at,
+                        attempt_count, max_attempts, available_at, last_error_code
+                    ))
                 except (KeyError, TypeError, ValueError) as exc:
                     raise WorkerRepositoryError(
                         "Generation job inventory returned incomplete metadata."
