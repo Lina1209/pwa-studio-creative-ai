@@ -55,6 +55,13 @@ class GenerationJobRepository(Protocol):
     async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool: ...
     async def fail(self, job_id: UUID, worker_id: str, error_code: str) -> bool: ...
     async def complete(self, job_id: UUID, worker_id: str, result_path: str) -> bool: ...
+    async def record_provider_cost(
+        self, *, job_id: UUID, user_id: UUID, operation_key: str,
+        provider: str, model: str, provider_usage_id: str | None,
+        cost_usd, cost_source: str, input_units: int | None = None,
+        output_units: int | None = None, total_units: int | None = None,
+        unit_kind: str = "unknown", metadata: dict | None = None,
+    ): ...
 
 
 class PrivateImageStorage(Protocol):
@@ -257,6 +264,31 @@ class GenerationWorker:
                     raise ImageGenerationError("provider_result_mismatch", retryable=False)
                 if result.model != job.model:
                     raise ImageGenerationError("model_result_mismatch", retryable=False)
+
+                # Provider billing evidence is persisted before storage/completion.
+                # A retry replays the same immutable event and cannot double-count.
+                # Results without a usage contract remain explicitly unreported;
+                # we never fabricate zero-cost usage.
+                if result.usage is not None:
+                    usage = result.usage
+                    usage_key_suffix = usage.provider_usage_id or "result"
+                    await self.repository.record_provider_cost(
+                        job_id=job.job_id,
+                        user_id=job.user_id,
+                        operation_key=f"provider-usage:{job.job_id}:{usage_key_suffix}",
+                        provider=job.provider,
+                        model=job.model,
+                        provider_usage_id=usage.provider_usage_id,
+                        cost_usd=usage.cost_usd,
+                        cost_source=usage.cost_source,
+                        input_units=usage.input_units,
+                        output_units=usage.output_units,
+                        total_units=usage.total_units,
+                        unit_kind=usage.unit_kind,
+                        metadata=usage.metadata,
+                    )
+                    if lost.is_set():
+                        return WorkerResult("lease_lost", "lease_lost_after_cost_record")
 
                 uploaded = await self._run_while_leased(
                     self.storage.upload_image(
