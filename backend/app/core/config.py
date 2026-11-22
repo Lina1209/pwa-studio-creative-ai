@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +49,20 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @field_validator("generation_storage_bucket")
+    @classmethod
+    def validate_generation_storage_bucket(cls, value: str) -> str:
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 100
+            or "/" in value
+            or "\\\\" in value
+            or value.strip() != value
+        ):
+            raise ValueError("Generation storage bucket name is invalid.")
+        return value
 
     @property
     def allowed_origins(self) -> list[str]:
