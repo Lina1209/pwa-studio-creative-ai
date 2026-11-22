@@ -89,6 +89,7 @@ begin
      or p_quote_snapshot ->> 'model' <> p_model
      or coalesce(p_quote_snapshot ->> 'quantity', '') !~ '^[1-9][0-9]{0,4}$'
      or (p_quote_snapshot ->> 'quantity')::integer > 10000
+     or nullif(p_quote_snapshot ->> 'project_id', '') is distinct from p_project_id::text
      or nullif(p_quote_snapshot ->> 'studio_scene_id', '') is distinct from p_studio_scene_id::text
      or p_expires_at is null or p_expires_at <= now()
      or (p_quote_snapshot ->> 'expires_at')::timestamptz is distinct from p_expires_at then
