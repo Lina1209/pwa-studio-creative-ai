@@ -55,7 +55,7 @@ class GenerationJobRepository(Protocol):
     async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> bool: ...
     async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool: ...
     async def fail(self, job_id: UUID, worker_id: str, error_code: str) -> bool: ...
-    async def complete_credited(self, job_id: UUID, worker_id: str, result_path: str): ...
+    async def complete_credited(self, job_id: UUID, worker_id: str, result_path: str, result_sha256: str): ...
     async def record_provider_cost(
         self, *, job_id: UUID, user_id: UUID, operation_key: str,
         provider: str, model: str, provider_usage_id: str | None,
@@ -320,7 +320,7 @@ class GenerationWorker:
                 if lost.is_set():
                     return WorkerResult("lease_lost", "lease_lost_before_completion")
                 completion = await self._complete_credited_with_recovery(
-                    job.job_id, verified.object_path
+                    job.job_id, verified.object_path, verified.sha256_hex
                 )
                 if not completion.completed:
                     return WorkerResult("lease_lost", "completion_rejected")
@@ -353,7 +353,7 @@ class GenerationWorker:
             logger.exception("generation_worker_job_error job_id=%s", job.job_id)
             return await self._schedule_retry(job, "worker_internal_error")
 
-    async def _complete_credited_with_recovery(self, job_id: UUID, result_path: str):
+    async def _complete_credited_with_recovery(self, job_id: UUID, result_path: str, result_sha256: str):
         """Resolve an ambiguous completion response with an idempotent RPC replay.
 
         The first request may commit capture + success in Postgres while its HTTP
@@ -363,7 +363,7 @@ class GenerationWorker:
         for attempt in range(2):
             try:
                 return await self.repository.complete_credited(
-                    job_id, self.worker_id, result_path
+                    job_id, self.worker_id, result_path, result_sha256
                 )
             except WorkerRepositoryError as exc:
                 if not exc.retryable or attempt == 1:
