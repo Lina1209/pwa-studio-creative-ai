@@ -268,6 +268,12 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
         <div class="account-grid"><article class="account-tile"><span>🎬</span><b>Мои фильмы</b><p>Проекты, сценарии и версии фильмов.</p><button data-go="movie">Открыть Миникиностудию →</button></article><article class="account-tile"><span>♙</span><b>Мои персонажи</b><p>Личная библиотека цифровых героев и их образов.</p><button data-go="library">Открыть медиатеку →</button></article><article class="account-tile"><span>♫</span><b>Мои голоса и материалы</b><p>Аудио, изображения и файлы проектов.</p><button data-go="voice">Открыть раздел →</button></article></div>
         <div class="account-notice" id="accountStorageNotice">Фильмы авторизованных пользователей синхронизируются с Supabase. Гостевые черновики хранятся только в этом браузере. Файловое хранилище подключается отдельно.</div>
+        <div class="account-admin panel" id="financePanel" hidden>
+          <div class="eyebrow">DELEGATED FINANCE ACCESS</div>
+          <div class="owner-dashboard-heading"><div><h2>Финансовые операции</h2><p>Доступ определяется персональными серверными полномочиями и ограниченными областями ответственности.</p></div></div>
+          <p class="helper-text" id="financeAccessStatus" role="status">Проверяем назначенные финансовые полномочия…</p>
+          <button class="primary-button" type="button" data-go="finance-operations">Открыть очередь финансовых заявок →</button>
+        </div>
         <div class="account-admin panel" id="adminPanel" hidden>
           <div class="eyebrow">OWNER WORKSPACE · PRIVATE ANALYTICS</div>
           <div class="owner-dashboard-heading"><div><h2>Панель владельца</h2><p>Агрегированная статистика посещений. Личные данные посетителей не отображаются.</p></div><button class="secondary-button" id="refreshSiteAnalytics" type="button">↻ Обновить</button></div>
@@ -286,6 +292,29 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="owner-routes-panel"><b>Популярные разделы за 30 дней</b><div id="adminPopularRoutes" class="owner-popular-routes"><span class="helper-text">Пока нет данных.</span></div></div>
           <p class="owner-privacy-note">География посетителей намеренно не собирается: мы не храним IP-адреса и не пытаемся определять страны. Данные — агрегированные просмотры, а не точное число людей.</p>
         </div>
+      </section>
+
+      <section class="view" id="view-finance-operations">
+        <div class="page-heading"><div class="eyebrow">DELEGATED FINANCE WORKSPACE</div><h1>Очередь <span class="gradient-text">финансовых заявок</span></h1><p>Оператор подаёт заявку, независимый проверяющий принимает решение. Эта очередь не выполняет начисления и не отправляет платежи.</p></div>
+        <div class="admin-security-banner"><b>Разделение полномочий</b><span>Доступны только заявки в пределах назначенных областей. Подтверждение собственной заявки запрещено. Реальные денежные и кредитные операции выключены.</span></div>
+        <section class="panel finance-request-create" id="financeRequestCreatePanel" hidden>
+          <div class="panel-heading"><div><h2>Новая заявка</h2><p>Создаётся только запрос на рассмотрение — без движения средств.</p></div></div>
+          <form id="financeRequestCreateForm" class="finance-request-form">
+            <label>Тип заявки<select id="financeRequestType" required><option value="credit_compensation">Компенсация кредитов</option><option value="billing_refund">Денежный возврат</option></select></label>
+            <label>ID пользователя<input id="financeTargetUserId" type="text" inputmode="text" autocomplete="off" placeholder="UUID пользователя" minlength="36" maxlength="36" required></label>
+            <label>Сумма<input id="financeRequestAmount" type="number" min="1" step="1" required></label>
+            <label>Единица / валюта<select id="financeRequestCurrency" required><option value="CRD">CRD — кредиты</option><option value="KZT">KZT — тенге</option><option value="USD">USD — доллары</option><option value="EUR">EUR — евро</option><option value="RUB">RUB — рубли</option></select></label>
+            <label class="finance-request-reason">Причина<textarea id="financeRequestReason" minlength="1" maxlength="500" rows="3" required></textarea></label>
+            <button class="primary-button" id="submitFinanceRequest" type="submit">Отправить на независимое рассмотрение</button>
+          </form>
+        </section>
+        <section class="panel admin-audit-panel">
+          <div class="panel-heading"><div><h2>Журнал заявок</h2><p>Фильтр по состоянию и постраничная загрузка с серверным курсором.</p></div><div class="finance-queue-controls"><select id="financeQueueStatus" aria-label="Фильтр статуса"><option value="">Все статусы</option><option value="pending">Ожидает</option><option value="approved">Подтверждена</option><option value="rejected">Отклонена</option><option value="cancelled">Отменена</option></select><button class="secondary-button" id="refreshFinanceQueue" type="button">Обновить</button></div></div>
+          <p class="helper-text" id="financeQueueStatusText" role="status">Загрузка финансовых заявок…</p>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Создана</th><th>Заявитель</th><th>Пользователь</th><th>Операция</th><th>Сумма</th><th>Статус</th><th>Причина</th><th>Решение / действия</th></tr></thead><tbody id="financeQueueRows"></tbody></table></div>
+          <button class="secondary-button" id="loadMoreFinanceQueue" type="button" hidden>Загрузить более ранние заявки</button>
+        </section>
+        <button class="secondary-button" type="button" data-go="account">← Вернуться в кабинет</button>
       </section>
 
       <section class="view admin-view" id="view-admin-platform">
