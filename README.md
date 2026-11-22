@@ -52,7 +52,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 - Frontend: GitHub Pages, ветка `main`, каталог `/(root)`.
 - Backend: Render Blueprint из `render.yaml`.
-- Укажите `SUPABASE_URL`, `OWNER_EMAIL`, `AI_PROVIDER`, `AI_MODEL` и секрет выбранного AI-провайдера в настройках Render.
+- Укажите `SUPABASE_URL`, `OWNER_USER_IDS` (проверенный UUID владельца из Supabase Auth → Users), `AI_PROVIDER`, `AI_MODEL` и секрет выбранного AI-провайдера в настройках Render. Email не используется для выдачи прав администратора.
 - Для production CORS укажите точный frontend origin.
 - В frontend `supabase-config.js` допускается только публичный Supabase publishable/anon key.
 
