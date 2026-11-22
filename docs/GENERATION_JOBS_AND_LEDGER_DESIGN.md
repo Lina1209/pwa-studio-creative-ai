@@ -172,3 +172,8 @@ Completed-result integrity scans use the same bounded pagination policy as uploa
 ## 21. Worker restart after an ambiguous provider response
 
 If a provider accepted a generation request but the worker lost the response, the worker records the operation as unknown before scheduling retry. A restarted worker reclaims the same durable job, reads the existing provider-operation journal, and performs lookup with the stable job UUID idempotency key. If the provider reports success, the worker reuses that result and continues through result journaling, private Storage verification and job completion. It does not issue a second independent generation request. This behavior is covered by a two-worker-instance recovery test; the test uses fakes and does not establish any real provider's idempotency or lookup guarantees.
+
+
+## 22. Database connectivity loss and worker transition policy
+
+The Supabase worker repository adapter classifies timeouts and connection failures as retryable, HTTP 408/425/429 and 5xx responses as transient, and rejected credentials or other ordinary 4xx responses as permanent configuration/request failures. Error messages exposed to worker logic contain only normalized error codes; upstream response bodies, host details and credentials are not copied into them. The worker schedules bounded retries for transient repository failures and stops generation on permanent credential rejection. If a heartbeat cannot confirm lease ownership, the worker cancels in-flight provider/storage work and lets the database lease lifecycle recover the job; it must not continue external work on an unconfirmed lease.
