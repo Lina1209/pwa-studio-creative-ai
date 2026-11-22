@@ -208,6 +208,7 @@ def issue_pricing_quote(
     return VerifiedPricingQuote(
         quote_id=quote_id, user_id=user_id, job_type=job_type,
         provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
+        project_id=project_id, studio_scene_id=studio_scene_id,
         quantity=quantity, unit_label=rule.unit_label, amount=amount,
         price_version=catalog.version, issued_at=issued_at,
         expires_at=expires_at, signature=_sign(payload, secret),
