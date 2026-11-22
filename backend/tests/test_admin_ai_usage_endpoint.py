@@ -22,6 +22,7 @@ def test_admin_ai_usage_report_is_admin_only_and_private(monkeypatch):
         "by_provider_model": [], "by_endpoint": [], "by_day": [],
         "actual_billed_cost_usd": None, "billing_reconciliation": "not_available",
         "cost_disclaimer": "estimate only", "truncated": False,
+        "today_by_provider": [],
     }
     audit = []
     monkeypatch.setattr(main_module, "get_admin_ai_usage_report", lambda *a, **k: expected)
@@ -36,7 +37,16 @@ def test_admin_ai_usage_report_is_admin_only_and_private(monkeypatch):
             params={"date_from": "2026-11-23", "date_to": "2026-11-23"},
         )
         assert response.status_code == 200
-        assert response.json() == expected
+        payload = response.json()
+        assert payload["period"] == expected["period"]
+        assert payload["totals"] == expected["totals"]
+        assert payload["daily_budget_status"] == [
+            {"provider": "deepseek", "daily_budget_usd": None, "estimated_spend_usd": "0",
+             "unknown_cost_events": 0, "utilization_percent": None, "status": "unconfigured"},
+            {"provider": "gemini", "daily_budget_usd": None, "estimated_spend_usd": "0",
+             "unknown_cost_events": 0, "utilization_percent": None, "status": "unconfigured"},
+        ]
+        assert "not a hard billing cap" in payload["budget_status_note"]
         assert response.headers["cache-control"] == "private, no-store"
         assert len(audit) == 1
         assert audit[0]["reason"] == "Viewed aggregate AI usage report"
