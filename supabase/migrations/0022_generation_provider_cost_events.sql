@@ -26,7 +26,7 @@ create table if not exists public.generation_provider_cost_events (
   model text not null check (length(model) between 1 and 200),
   provider_usage_id text,
   cost_usd numeric(20,10),
-  cost_source text not null check (cost_source in ('reported', 'estimated', 'unknown')),
+  cost_source text not null,
   input_units bigint check (input_units is null or input_units >= 0),
   output_units bigint check (output_units is null or output_units >= 0),
   total_units bigint check (total_units is null or total_units >= 0),
