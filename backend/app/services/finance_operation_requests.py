@@ -74,6 +74,8 @@ def create_finance_operation_request(
 ) -> UUID:
     if not isinstance(requester_id, UUID) or not isinstance(target_user_id, UUID):
         raise ValueError("Verified requester and target UUIDs are required.")
+    if requester_id == target_user_id:
+        raise ValueError("Finance requests must target a different user from the requester.")
     if request_type not in REQUEST_TYPES:
         raise ValueError("Unsupported finance request type.")
     try:
