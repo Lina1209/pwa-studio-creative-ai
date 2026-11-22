@@ -48,7 +48,7 @@ values (
   262144000,
   array[
     'image/jpeg','image/png','image/webp','image/gif',
-    'audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/webm',
+    'audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/webm','application/pdf',
     'video/mp4','video/webm','video/quicktime'
   ]
 )
