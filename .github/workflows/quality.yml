@@ -34,3 +34,32 @@ jobs:
         run: pytest -q
       - name: Validate PWA manifest JSON
         run: python -m json.tool manifest.webmanifest > /dev/null
+
+  postgres-migration-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: studio_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d studio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Apply migrations and verify ownership, RLS, outbox, and delete behavior
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/generation_jobs_migration_test.sql
