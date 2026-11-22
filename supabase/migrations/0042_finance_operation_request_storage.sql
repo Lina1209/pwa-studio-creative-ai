@@ -7,15 +7,15 @@ create table public.finance_operation_requests (
   target_user_id uuid not null references auth.users(id) on delete restrict,
   amount numeric(18,4) not null check (amount > 0),
   currency_code text not null check (currency_code ~ '^[A-Z]{3}$'),
-  scope_key text not null check (length(scope_key) between 1 and 200),
-  reason text not null check (length(reason) between 1 and 500),
+  scope_key text not null check (length(scope_key) between 1 and 200 and scope_key = btrim(scope_key)),
+  reason text not null check (length(reason) between 1 and 500 and reason = btrim(reason)),
   idempotency_key uuid not null,
   status text not null default 'pending'
     check (status in ('pending', 'approved', 'rejected', 'cancelled')),
   requested_at timestamptz not null default now(),
   decided_by uuid references auth.users(id) on delete restrict,
   decided_at timestamptz,
-  decision_reason text check (decision_reason is null or length(decision_reason) between 1 and 500),
+  decision_reason text check (decision_reason is null or (length(decision_reason) between 1 and 500 and decision_reason = btrim(decision_reason))),
   cancelled_at timestamptz,
   constraint finance_operation_request_amount_semantics check (
     (request_type = 'credit_compensation' and currency_code = 'CRD' and amount = trunc(amount))
@@ -43,8 +43,14 @@ create table public.finance_operation_request_events (
   )),
   previous_status text,
   new_status text not null check (new_status in ('pending', 'approved', 'rejected', 'cancelled')),
-  reason text not null check (length(reason) between 1 and 500),
-  occurred_at timestamptz not null default now()
+  reason text not null check (length(reason) between 1 and 500 and reason = btrim(reason)),
+  occurred_at timestamptz not null default now(),
+  constraint finance_operation_request_event_shape check (
+    (event_type = 'request.created' and previous_status is null and new_status = 'pending')
+    or (event_type = 'request.approved' and previous_status = 'pending' and new_status = 'approved')
+    or (event_type = 'request.rejected' and previous_status = 'pending' and new_status = 'rejected')
+    or (event_type = 'request.cancelled' and previous_status = 'pending' and new_status = 'cancelled')
+  )
 );
 create index finance_operation_request_events_timeline_idx
   on public.finance_operation_request_events(request_id, occurred_at, id);
