@@ -91,6 +91,8 @@ def _aggregate(rows: list[dict[str, Any]], date_from: date, date_to: date) -> di
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     endpoints: dict[str, int] = {}
     days: dict[str, dict[str, Any]] = {}
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+    today_by_provider: dict[str, dict[str, Any]] = {}
     for row in rows:
         item = grouped.setdefault((row["provider"], row["model"]), {
             "provider": row["provider"], "model": row["model"], "requests": 0,
@@ -124,6 +126,18 @@ def _aggregate(rows: list[dict[str, Any]], date_from: date, date_to: date) -> di
         else:
             totals["reported_estimated_cost_usd"] += cost
             item["reported_estimated_cost_usd"] += cost
+        if row["day"] == today_utc:
+            daily = today_by_provider.setdefault(row["provider"], {
+                "provider": row["provider"],
+                "reported_estimated_cost_usd": Decimal("0"),
+                "cost_unknown_events": 0,
+                "requests": 0,
+            })
+            daily["requests"] += 1
+            if cost is None:
+                daily["cost_unknown_events"] += 1
+            else:
+                daily["reported_estimated_cost_usd"] += cost
 
     def finalize(item: dict[str, Any]) -> dict[str, Any]:
         result = dict(item)
@@ -139,6 +153,19 @@ def _aggregate(rows: list[dict[str, Any]], date_from: date, date_to: date) -> di
         "by_provider_model": [finalize(grouped[key]) for key in sorted(grouped)],
         "by_endpoint": [{"endpoint": key, "requests": endpoints[key]} for key in sorted(endpoints)],
         "by_day": [days[key] for key in sorted(days)],
+        "today_utc": today_utc,
+        "today_by_provider": [
+            {
+                **{
+                    key: value for key, value in today_by_provider[provider].items()
+                    if key != "reported_estimated_cost_usd"
+                },
+                "reported_estimated_cost_usd": _money(
+                    today_by_provider[provider]["reported_estimated_cost_usd"]
+                ),
+            }
+            for provider in sorted(today_by_provider)
+        ],
         "actual_billed_cost_usd": None,
         "billing_reconciliation": "not_available",
         "cost_disclaimer": "LiteLLM cost is an estimate. Actual provider charges and Free Tier eligibility are not available from request telemetry and must be reconciled in the provider billing console.",
