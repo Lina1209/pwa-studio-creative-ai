@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
@@ -295,7 +296,7 @@ def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_resul
     quote = issue_pricing_quote(
         secret="test-signing-secret-with-at-least-32-bytes",
         catalog=PricingCatalog("test-v1", (
-            PricingRule("image_generation", "provider-test", "model-test", 10, "image", 1, 3),
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image", 1, 3, Decimal("0.075")),
         )),
         user_id=USER_ID,
         job_type="image_generation",
@@ -346,7 +347,7 @@ def test_create_credited_generation_job_rejects_tampered_quote_before_network(mo
     quote = issue_pricing_quote(
         secret="test-signing-secret-with-at-least-32-bytes",
         catalog=PricingCatalog("test-v1", (
-            PricingRule("image_generation", "provider-test", "model-test", 10, "image"),
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image", 1, 1, Decimal("0.075")),
         )),
         user_id=USER_ID,
         job_type="image_generation",
@@ -381,7 +382,7 @@ def test_create_credited_generation_job_rejects_quote_for_another_request(monkey
     quote = issue_pricing_quote(
         secret="test-signing-secret-with-at-least-32-bytes",
         catalog=PricingCatalog("test-v1", (
-            PricingRule("image_generation", "provider-test", "model-test", 10, "image"),
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image", 1, 1, Decimal("0.075")),
         )),
         user_id=USER_ID,
         job_type="image_generation",
@@ -431,7 +432,7 @@ def test_store_pricing_quote_persists_owner_key_and_returns_original_snapshot(mo
     quote = issue_pricing_quote(
         secret="test-signing-secret-with-at-least-32-bytes",
         catalog=PricingCatalog("catalog-v1", (
-            PricingRule("image_generation", "provider-test", "model-test", 10, "image"),
+            PricingRule("image_generation", "provider-test", "model-test", 10, "image", 1, 1, Decimal("0.075")),
         )),
         user_id=USER_ID,
         job_type="image_generation",
