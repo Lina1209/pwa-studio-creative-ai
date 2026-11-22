@@ -343,9 +343,26 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <article class="admin-module"><b>Кредиты и кошельки</b><p>Начисления, резервы, списания, возвраты кредитов, истечения и сверка балансов.</p><small>Изменение балансов заблокировано</small></article>
           <article class="admin-module"><b>API и AI-интеграции</b><p>Доступность провайдеров, задержки, ошибки, лимиты, квоты и состояние очередей.</p><small>Секретные ключи не отображаются</small></article>
           <article class="admin-module"><b>Журналы и инциденты</b><p>Технические ошибки, подозрительные запросы, отказы авторизации и события безопасности.</p><small>Без раскрытия токенов и секретов</small></article>
-          <article class="admin-module"><b>Роли и действия администраторов</b><p>Разрешения, история входов, изменения тарифов, запросы на подтверждение и audit log.</p><small>Изменение ролей пока заблокировано</small></article>
+          <article class="admin-module"><b>Роли и действия администраторов</b><p>Разрешения, история входов, изменения тарифов, запросы на подтверждение и audit log.</p><small>Управление делегированными ролями — через защищённую форму ниже</small></article>
           <article class="admin-module"><b>Резервные копии и восстановление</b><p>Статус резервирования, контроль целостности, сроки хранения и результаты тестов восстановления.</p><small>Удаление резервных копий запрещено</small></article>
         </div>
+        <section class="panel finance-role-admin-panel" id="financeRoleAdminPanel" aria-labelledby="financeRoleAdminHeading">
+          <div class="panel-heading"><div><h2 id="financeRoleAdminHeading">Назначение финансовых полномочий</h2><p>Только владелец с разрешением управления ролями. Самоназначение запрещено; срок действия обязателен.</p></div></div>
+          <form id="financeRoleGrantForm" class="finance-request-form">
+            <label>ID аккаунта сотрудника<input id="financeRolePrincipalId" type="text" minlength="36" maxlength="36" placeholder="UUID аккаунта оператора / проверяющего" required></label>
+            <label>Роль<select id="financeRoleCode" required><option value="finance_operator">Финансовый оператор</option><option value="finance_approver">Финансовый проверяющий</option><option value="auditor_readonly">Аудитор · только чтение</option><option value="support_readonly">Поддержка · без финансовых полномочий</option><option value="finance_executor">Исполнитель · пока без активного выполнения</option></select></label>
+            <label>Область доступа — ID пользователя<input id="financeRoleScopeUserId" type="text" minlength="36" maxlength="36" placeholder="UUID пользователя, по которому разрешены операции" required></label>
+            <label>Действует до<input id="financeRoleValidUntil" type="datetime-local" required></label>
+            <label class="finance-request-reason">Основание назначения<textarea id="financeRoleReason" minlength="1" maxlength="500" rows="2" required></textarea></label>
+            <button class="primary-button" type="submit" id="grantFinanceRoleButton">Назначить роль</button>
+          </form>
+          <div class="finance-role-lookup">
+            <label for="financeRoleLookupId">Проверить активные роли аккаунта</label>
+            <div class="finance-queue-controls"><input id="financeRoleLookupId" type="text" minlength="36" maxlength="36" placeholder="UUID аккаунта"><button class="secondary-button" id="loadFinanceRoles" type="button">Загрузить роли</button></div>
+          </div>
+          <p class="helper-text" id="financeRoleAdminStatus" role="status">Назначения и отзыв фиксируются сервером. Роль не активирует платежи и не начисляет кредиты.</p>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Роль</th><th>Область</th><th>Действует до</th><th>Назначил</th><th>Действия</th></tr></thead><tbody id="financeRoleRows"></tbody></table></div>
+        </section>
         <section class="panel admin-audit-panel" aria-labelledby="adminAuditHeading">
           <div class="panel-heading"><div><h2 id="adminAuditHeading">Журнал административного аудита</h2><p>Защищённая история действий. Доступ только при наличии серверного разрешения.</p></div><button class="secondary-button" id="refreshAdminAudit" type="button">Обновить</button></div>
           <p class="helper-text" id="adminAuditStatus" role="status">Журнал загружается после проверки роли администратора.</p>
