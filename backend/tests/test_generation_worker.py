@@ -572,10 +572,8 @@ async def test_ambiguous_provider_acceptance_recovers_with_same_idempotency_key_
     assert accepted[1][-1] == "provider-request-after-ambiguous-acceptance"
     assert any(call[0] == "journal_result" for call in repo.calls)
     cost = next(call[1] for call in repo.calls if call[0] == "provider_cost")
-    assert cost["operation_key"] == (
-        f"provider-usage:{JOB_ID}:"
-        "c2c1f3b50a9f0c6f5e4a2d0d0f6e8f0c"
-    ) or cost["provider_usage_id"] == "usage-after-ambiguous-acceptance"
+    assert cost["provider_usage_id"] == "usage-after-ambiguous-acceptance"
+    assert cost["operation_key"].startswith(f"provider-usage:{JOB_ID}:")
     assert cost["cost_usd"] == Decimal("0.0125")
     assert sum(call[0] == "complete" for call in repo.calls) == 1
 
