@@ -45,7 +45,7 @@ values (
   'studio-media',
   'studio-media',
   false,
-  104857600,
+  262144000,
   array[
     'image/jpeg','image/png','image/webp','image/gif',
     'audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/webm',
