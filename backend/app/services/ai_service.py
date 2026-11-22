@@ -37,6 +37,7 @@ class AIResult:
     cost_usd: Decimal | None
     cost_source: str | None
     actual_model: str
+    request_id: UUID
 
 
 def _semaphore_for_capacity(capacity: int) -> threading.BoundedSemaphore:
