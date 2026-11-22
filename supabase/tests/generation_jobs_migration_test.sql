@@ -1384,6 +1384,19 @@ begin
     raise exception 'Credited completion replay accepted a different result path';
   end if;
 
+  -- Even the same path cannot be replayed with a different content digest.
+  v_rejected := false;
+  begin
+    perform public.complete_credited_generation_job(
+      v_job_id, 'atomic-test-worker',
+      '22222222-2222-4222-8222-222222222222/generated/atomic-result.png', repeat('d', 64)
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Credited completion replay accepted a different result SHA-256';
+  end if;
+
   if not exists (select 1 from public.credit_holds
                  where id = v_hold_id and status = 'captured' and captured_at is not null) then
     raise exception 'Atomic completion did not capture the hold';
@@ -1396,6 +1409,7 @@ begin
   if not exists (select 1 from public.generation_jobs
                  where id = v_job_id and status = 'succeeded'
                    and result_storage_path = '22222222-2222-4222-8222-222222222222/generated/atomic-result.png'
+                   and result_sha256 = repeat('a', 64)
                    and lease_owner is null and completed_at is not null) then
     raise exception 'Atomic completion did not finalize the job consistently';
   end if;
