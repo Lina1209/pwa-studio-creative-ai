@@ -116,6 +116,11 @@ revoke all on public.generation_provider_cost_reservations from public, anon, au
 revoke insert, update, delete, truncate on public.generation_provider_cost_reservations from service_role;
 grant select on public.generation_provider_cost_reservations to service_role;
 
+-- The daily spend scan is global across users/providers and must remain
+-- index-backed as the append-only cost ledger grows.
+create index if not exists generation_provider_cost_events_created_at_idx
+  on public.generation_provider_cost_events(created_at);
+
 -- The operator-facing configuration RPC is the only supported policy write path.
 create or replace function public.configure_provider_budget_policy(
   p_daily_budget_usd numeric,
