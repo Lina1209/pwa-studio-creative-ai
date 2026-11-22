@@ -26,6 +26,16 @@ class GenerationJobInventoryRow:
     last_error_code: str | None = None
 
 
+
+
+@dataclass(frozen=True)
+class ProviderOperationJournal:
+    operation_id: UUID
+    state: str
+    provider_request_id: str | None
+    created: bool
+
+
 class WorkerRepositoryNotConfiguredError(RuntimeError):
     pass
 
@@ -64,6 +74,101 @@ class SupabaseGenerationJobRepository:
             raise WorkerRepositoryError(
                 f"Generation worker database operation failed (HTTP {status})."
             ) from exc
+
+
+    async def begin_provider_operation(
+        self, job_id: UUID, worker_id: str, provider: str, idempotency_key: str
+    ) -> ProviderOperationJournal:
+        data = await self._rpc(
+            "begin_generation_provider_operation",
+            {
+                "p_job_id": str(job_id),
+                "p_worker_id": worker_id,
+                "p_provider": provider,
+                "p_idempotency_key": idempotency_key,
+            },
+        )
+        if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+            raise WorkerRepositoryError("Provider operation journal returned an invalid response.")
+        row = data[0]
+        try:
+            state = row["operation_state"]
+            request_id = row.get("provider_request_id")
+            if state not in {"submitting", "accepted", "unknown", "provider_failed", "result_received"}:
+                raise ValueError("state")
+            if request_id is not None and (not isinstance(request_id, str) or not request_id):
+                raise ValueError("provider_request_id")
+            if not isinstance(row["created"], bool):
+                raise ValueError("created")
+            return ProviderOperationJournal(
+                UUID(str(row["operation_id"])), state, request_id, row["created"]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkerRepositoryError("Provider operation journal metadata is invalid.") from exc
+
+    async def mark_provider_operation_accepted(
+        self, job_id: UUID, worker_id: str, provider_request_id: str
+    ) -> bool:
+        return await self._boolean_rpc(
+            "mark_generation_provider_operation_accepted",
+            {"p_job_id": str(job_id), "p_worker_id": worker_id,
+             "p_provider_request_id": provider_request_id},
+        )
+
+    async def mark_provider_operation_unknown(
+        self, job_id: UUID, worker_id: str, error_code: str
+    ) -> bool:
+        return await self._boolean_rpc(
+            "mark_generation_provider_operation_unknown",
+            {"p_job_id": str(job_id), "p_worker_id": worker_id, "p_error_code": error_code},
+        )
+
+    async def mark_provider_operation_failed(
+        self, job_id: UUID, worker_id: str, error_code: str
+    ) -> bool:
+        return await self._boolean_rpc(
+            "mark_generation_provider_operation_failed",
+            {"p_job_id": str(job_id), "p_worker_id": worker_id, "p_error_code": error_code},
+        )
+
+    async def mark_provider_operation_result_received(
+        self, job_id: UUID, worker_id: str, provider_request_id: str | None = None
+    ) -> bool:
+        return await self._boolean_rpc(
+            "mark_generation_provider_operation_result_received",
+            {"p_job_id": str(job_id), "p_worker_id": worker_id,
+             "p_provider_request_id": provider_request_id},
+        )
+
+    async def get_provider_operation(self, job_id: UUID) -> ProviderOperationJournal | None:
+        try:
+            response = await self._client.get(
+                f"{self._base_url}/rest/v1/generation_provider_operations",
+                params={"select": "id,state,provider_request_id", "job_id": f"eq.{job_id}", "limit": "2"},
+                headers=self._headers,
+            )
+            response.raise_for_status()
+            rows = response.json()
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+            raise WorkerRepositoryError(
+                f"Provider operation journal read failed (HTTP {status})."
+            ) from exc
+        if not isinstance(rows, list) or len(rows) > 1:
+            raise WorkerRepositoryError("Provider operation journal read returned an invalid response.")
+        if not rows:
+            return None
+        row = rows[0]
+        try:
+            state = row["state"]
+            request_id = row.get("provider_request_id")
+            if state not in {"submitting", "accepted", "unknown", "provider_failed", "result_received"}:
+                raise ValueError("state")
+            if request_id is not None and (not isinstance(request_id, str) or not request_id):
+                raise ValueError("provider_request_id")
+            return ProviderOperationJournal(UUID(str(row["id"])), state, request_id, False)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkerRepositoryError("Provider operation journal row is invalid.") from exc
 
     async def list_owner_job_inventory(
         self, owner_id: UUID, *, page_size: int = 500, max_pages: int = 20
