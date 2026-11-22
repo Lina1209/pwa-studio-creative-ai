@@ -122,11 +122,22 @@ class MovieStoryboardRequest(BaseModel):
         return self
 
 
+class MovieCharacterReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    appearance: str = Field(min_length=1, max_length=600)
+    wardrobe: str = Field(min_length=1, max_length=400)
+    signature_details: str = Field(min_length=1, max_length=400)
+    reference_prompt: str = Field(min_length=1, max_length=1600)
+
+
 class MovieStoryboardFrame(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     frame_number: int = Field(ge=1, le=20)
     duration_seconds: int = Field(ge=1, le=600)
+    characters: list[str] = Field(default_factory=list, max_length=20)
     shot_type: str = Field(min_length=1, max_length=100)
     camera_angle: str = Field(min_length=1, max_length=160)
     camera_movement: str = Field(min_length=1, max_length=160)
@@ -144,6 +155,7 @@ class MovieStoryboardScene(BaseModel):
 
 
 class MovieStoryboardResponse(BaseModel):
+    characters: list[MovieCharacterReference] = Field(max_length=100)
     scenes: list[MovieStoryboardScene] = Field(min_length=1, max_length=50)
     provider: str
     model: str
