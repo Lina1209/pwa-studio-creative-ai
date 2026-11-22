@@ -300,6 +300,6 @@ Migration `0021_persist_pricing_quotes.sql` adds `generation_pricing_quotes` wit
 
 The quote table is owner-readable under RLS but has no client mutation grants. A trigger rejects UPDATE/DELETE even from service_role, preserving immutable quote history. The authenticated preview endpoint now persists the quote and re-verifies the exact database-returned snapshot before returning it. A replay therefore returns the original quote ID, amount, catalog version and expiry.
 
-The disposable PostgreSQL integration suite now applies migration 0021 and tests first insert, replay returning the original quote, changed-request rejection, immutability and client execute denial. Python tests cover the service adapter, endpoint replay and expired-key behavior.
+The disposable PostgreSQL integration suite now applies migration 0021 and tests first insert, replay returning the original quote, changed-request/quantity rejection, foreign project/scene rejection, immutability and client execute denial. CI also runs two concurrent database sessions against one owner/idempotency key and verifies that exactly one quote is created and both callers receive the same original snapshot. Python tests cover the service adapter, endpoint replay and expired-key behavior.
 
 This is still quote persistence only: it does not charge credits, submit provider work, or activate paid generation. The production catalog remains empty by default; all generation, worker and billing flags remain disabled.
