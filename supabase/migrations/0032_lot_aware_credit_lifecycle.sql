@@ -473,16 +473,15 @@ begin
   if not found then
     raise exception 'Generation job not found for owner' using errcode = 'P0002';
   end if;
-  if v_job.status not in ('queued', 'running', 'retry_wait') then
-    raise exception 'Generation job is not eligible for reservation' using errcode = '55000';
-  end if;
-
   insert into public.credit_wallets(user_id) values (p_user_id)
   on conflict (user_id) do nothing;
   perform public.expire_credit_lots_for_user(p_user_id);
   select * into v_wallet from public.credit_wallets
    where user_id = p_user_id for update;
 
+  -- Resolve exact idempotent replays before checking current job eligibility:
+  -- a retry after capture/release must not create a new reservation, but may
+  -- safely return the original hold and current wallet snapshot.
   select * into v_hold from public.credit_holds
    where user_id = p_user_id and operation_key = p_operation_key;
   if found then
@@ -492,6 +491,10 @@ begin
     end if;
     return query select v_hold.id, v_wallet.available_credits, v_wallet.reserved_credits, true;
     return;
+  end if;
+
+  if v_job.status not in ('queued', 'running', 'retry_wait') then
+    raise exception 'Generation job is not eligible for reservation' using errcode = '55000';
   end if;
 
   if exists (select 1 from public.credit_holds where job_id = p_job_id) then
