@@ -764,7 +764,7 @@ const movieHistoryStyle = document.createElement("style");
     const localKey = "pwa-studio-movie-projects:" + ownerId;
     try {
       const record = await window.PWAMovieVault?.get(movieVaultKey("projects", ownerId));
-      if (authSession?.user?.id !== (ownerId === "guest" ? null : ownerId)) return;
+      if ((authSession?.user?.id || null) !== (ownerId === "guest" ? null : ownerId)) return;
       const durableProjects = Array.isArray(record?.value) ? record.value : [];
       let localProjects = [];
       try { const parsed = JSON.parse(localStorage.getItem(localKey) || "[]"); if (Array.isArray(parsed)) localProjects = parsed; } catch {}
