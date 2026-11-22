@@ -960,6 +960,7 @@ do $credit_ledger_schema_test$
 declare
   v_hold_id uuid;
   v_wallet_id uuid;
+  v_cross_owner_job_id uuid;
 begin
   insert into public.credit_wallets(user_id, available_credits, reserved_credits)
   values
@@ -1004,12 +1005,19 @@ begin
   exception when sqlstate '55000' then null;
   end;
 
+  select job_id into v_cross_owner_job_id
+    from public.create_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111', null,
+      'image_generation', 'cross-owner-test-provider', 'cross-owner-test-model',
+      'cross-owner-hold-job-001', repeat('7', 64), '{}'::jsonb, '{}'::jsonb
+    );
+
   begin
     insert into public.credit_holds(
       user_id, job_id, amount, quote_snapshot, operation_key
     ) values (
       '22222222-2222-4222-8222-222222222222',
-      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      v_cross_owner_job_id,
       5, '{}'::jsonb, 'cross-owner-hold-001'
     );
     raise exception 'Cross-owner credit hold was accepted';
