@@ -82,6 +82,7 @@ create table public.studio_media (
 \ir ../migrations/0014_outbox_delivery_lifecycle.sql
 \ir ../migrations/0015_generation_job_terminal_failure.sql
 \ir ../migrations/0016_harden_generation_job_idempotency.sql
+\ir ../migrations/0017_generation_provider_operation_journal.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -789,4 +790,147 @@ begin
 end;
 $$;
 
-select 'generation jobs and movie scene migration integration checks passed' as result;
+
+
+-- Provider-operation journal: durable identity, lease ownership, monotonic state and privileges.
+do $provider_journal_test$
+declare
+  v_created record;
+  v_replay record;
+  v_claim record;
+  v_job_id uuid;
+  v_operation_id uuid;
+  v_state text;
+  v_request_id text;
+begin
+  -- Isolate this fixture so the claim target is deterministic.
+  update public.generation_jobs
+     set status = 'failed', completed_at = now(), updated_at = now()
+   where status in ('queued', 'retry_wait');
+
+  select * into v_created
+    from public.create_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111', null,
+      'image_generation', 'journal-provider', 'journal-model',
+      'provider-journal-request-key-001', repeat('9', 64),
+      '{"prompt":"provider journal integration"}'::jsonb, '{}'::jsonb
+    );
+  v_job_id := v_created.job_id;
+
+  select * into v_claim
+    from public.claim_next_generation_job('journal-worker-a', 120);
+  if v_claim.job_id is distinct from v_job_id then
+    raise exception 'Provider journal fixture was not claimed';
+  end if;
+
+  select * into v_created
+    from public.begin_generation_provider_operation(
+      v_job_id, 'journal-worker-a', 'journal-provider', v_job_id::text
+    );
+  if not v_created.created or v_created.operation_state <> 'submitting' then
+    raise exception 'First provider journal begin did not create submitting row';
+  end if;
+  v_operation_id := v_created.operation_id;
+
+  select * into v_replay
+    from public.begin_generation_provider_operation(
+      v_job_id, 'journal-worker-a', 'journal-provider', v_job_id::text
+    );
+  if v_replay.created or v_replay.operation_id <> v_operation_id
+     or v_replay.operation_state <> 'submitting' then
+    raise exception 'Provider journal replay did not return the original row';
+  end if;
+
+  begin
+    perform public.begin_generation_provider_operation(
+      v_job_id, 'journal-worker-a', 'different-provider', v_job_id::text
+    );
+    raise exception 'Provider identity mismatch was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+
+  begin
+    perform public.begin_generation_provider_operation(
+      v_job_id, 'journal-worker-a', 'journal-provider', 'client-request-key'
+    );
+    raise exception 'Client request key was accepted as provider key';
+  exception when sqlstate '22023' then null;
+  end;
+
+  if public.mark_generation_provider_operation_unknown(
+       v_job_id, 'wrong-worker', 'response_lost') then
+    raise exception 'A different worker changed provider journal state';
+  end if;
+  if not public.mark_generation_provider_operation_unknown(
+       v_job_id, 'journal-worker-a', 'response_lost') then
+    raise exception 'Lease owner could not mark ambiguous provider operation';
+  end if;
+
+  if not public.mark_generation_provider_operation_accepted(
+       v_job_id, 'journal-worker-a', 'provider-request-123'
+     ) then
+    raise exception 'Lease owner could not record provider acceptance after lookup';
+  end if;
+  if public.mark_generation_provider_operation_accepted(
+       v_job_id, 'journal-worker-a', 'conflicting-provider-request'
+     ) then
+    raise exception 'Conflicting provider request ID overwrote durable identity';
+  end if;
+
+  if not public.mark_generation_provider_operation_result_received(
+       v_job_id, 'journal-worker-a', 'provider-request-123'
+     ) then
+    raise exception 'Lease owner could not record received provider result';
+  end if;
+  if public.mark_generation_provider_operation_unknown(
+       v_job_id, 'journal-worker-a', 'late_ambiguous_response'
+     ) then
+    raise exception 'A stale unknown transition overwrote result_received';
+  end if;
+
+  select state, provider_request_id
+    into v_state, v_request_id
+    from public.generation_provider_operations where job_id = v_job_id;
+  if v_state <> 'result_received' or v_request_id <> 'provider-request-123' then
+    raise exception 'Provider journal terminal result metadata is inconsistent';
+  end if;
+
+  if not public.heartbeat_generation_job(v_job_id, 'journal-worker-a', 120) then
+    raise exception 'Journal fixture lease unexpectedly expired';
+  end if;
+  if not public.complete_generation_job(
+       v_job_id, 'journal-worker-a',
+       '11111111-1111-4111-8111-111111111111/generated/provider-journal.png'
+     ) then
+    raise exception 'Journal fixture job could not complete';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.generation_provider_operations', 'SELECT')
+     or has_table_privilege('authenticated', 'public.generation_provider_operations', 'INSERT')
+     or has_table_privilege('authenticated', 'public.generation_provider_operations', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.generation_provider_operations', 'DELETE') then
+    raise exception 'Authenticated role unexpectedly has provider journal table privileges';
+  end if;
+  if has_function_privilege('authenticated',
+       'public.begin_generation_provider_operation(uuid,text,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.mark_generation_provider_operation_accepted(uuid,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.mark_generation_provider_operation_unknown(uuid,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.mark_generation_provider_operation_failed(uuid,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.mark_generation_provider_operation_result_received(uuid,text,text)', 'EXECUTE') then
+    raise exception 'Authenticated role unexpectedly has provider journal RPC privileges';
+  end if;
+  if not has_function_privilege('service_role',
+       'public.begin_generation_provider_operation(uuid,text,text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.mark_generation_provider_operation_result_received(uuid,text,text)', 'EXECUTE') then
+    raise exception 'service_role is missing provider journal RPC grants';
+  end if;
+end;
+$provider_journal_test$;
+
+
+select 'generation jobs, movie scenes and provider journal integration checks passed' as result;
