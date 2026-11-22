@@ -36,6 +36,15 @@ class FakeClient:
         item = next(self.responses)
         if isinstance(item, Exception):
             raise item
+        if isinstance(item, dict):
+            lots = item.get("lots", [])
+            allocations = item.get("allocations", [])
+            item.setdefault("lot_available_total", item.get("available_credits", 0))
+            item.setdefault("lot_reserved_total", item.get("reserved_credits", 0))
+            item.setdefault("lot_count", len(lots))
+            item.setdefault("lots_truncated", False)
+            item.setdefault("allocation_count", len(allocations))
+            item.setdefault("allocations_truncated", False)
         return FakeResponse(item)
 
 
@@ -247,3 +256,46 @@ def test_expired_lot_is_not_counted_as_spendable_wallet_balance(monkeypatch):
 
     assert result.available_credits == 0
     assert result.lots[0]["available_credits"] == 0
+
+
+
+def test_wallet_accepts_truncated_lot_sample_using_complete_aggregates(monkeypatch):
+    lots = [{
+        "id": f"cccccccc-cccc-4ccc-8ccc-{index:012d}",
+        "lot_type": "purchased", "granted_credits": 1,
+        "available_credits": 1, "reserved_credits": 0,
+        "expires_at": None, "created_at": "2026-11-22T00:00:00Z",
+    } for index in range(100)]
+    payload = {
+        "user_id": str(USER_ID), "currency_unit": "credit",
+        "available_credits": 125, "reserved_credits": 0,
+        "lot_available_total": 125, "lot_reserved_total": 0,
+        "lot_count": 125, "lots_truncated": True,
+        "allocation_count": 0, "allocations_truncated": False,
+        "holds": [], "ledger": [], "lots": lots, "allocations": [],
+    }
+    client = FakeClient([payload])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    result = wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+    assert result.available_credits == 125
+    assert len(result.lots) == 100
+    assert result.lot_count == 125
+    assert result.lots_truncated is True
+
+
+def test_wallet_rejects_inconsistent_truncation_metadata(monkeypatch):
+    payload = {
+        "user_id": str(USER_ID), "currency_unit": "credit",
+        "available_credits": 0, "reserved_credits": 0,
+        "lot_available_total": 0, "lot_reserved_total": 0,
+        "lot_count": 101, "lots_truncated": False,
+        "allocation_count": 0, "allocations_truncated": False,
+        "holds": [], "ledger": [], "lots": [], "allocations": [],
+    }
+    client = FakeClient([payload])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(wallet.CreditWalletUnavailable):
+        wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
