@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     generation_worker_runtime_enabled: bool = False
     generation_worker_idle_poll_seconds: float = Field(default=3.0, ge=0.25, le=60.0)
     generation_worker_error_backoff_seconds: float = Field(default=5.0, ge=0.25, le=300.0)
+    generation_storage_bucket: str = "studio-media"
+    generation_storage_timeout_seconds: float = Field(default=30.0, ge=1.0, le=180.0)
     image_generation_provider: str | None = None
     image_generation_model: str | None = None
     owner_email: str | None = None
