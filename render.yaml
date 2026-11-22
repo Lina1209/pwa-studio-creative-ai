@@ -24,14 +24,10 @@ services:
         value: "90"
       - key: AI_MAX_RETRIES
         value: "1"
-      - key: OPENAI_API_KEY
-        sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
-      - key: OLLAMA_API_BASE
-        value: http://localhost:11434
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
