@@ -70,6 +70,7 @@ set search_path = pg_catalog, public
 as $$
 declare
   v_quote public.generation_pricing_quotes%rowtype;
+  v_inserted integer := 0;
 begin
   if p_quote_id is null or p_user_id is null
      or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 200
@@ -116,15 +117,18 @@ begin
     p_quote_id, p_user_id, p_idempotency_key, p_request_hash, p_job_type,
     p_provider, p_model, p_project_id, p_studio_scene_id, p_quote_snapshot, p_expires_at
   )
-  on conflict (user_id, idempotency_key) do nothing;
+  on conflict (user_id, idempotency_key) do nothing
+  returning * into v_quote;
+  get diagnostics v_inserted = row_count;
 
-  select * into v_quote
-    from public.generation_pricing_quotes
-   where user_id = p_user_id and idempotency_key = p_idempotency_key
-   for update;
-
-  if not found then
-    raise exception 'Pricing quote persistence failed' using errcode = '55000';
+  if v_inserted = 0 then
+    select * into v_quote
+      from public.generation_pricing_quotes
+     where user_id = p_user_id and idempotency_key = p_idempotency_key
+     for update;
+    if not found then
+      raise exception 'Pricing quote persistence failed' using errcode = '55000';
+    end if;
   end if;
 
   if v_quote.request_hash <> p_request_hash
@@ -138,7 +142,7 @@ begin
       using errcode = '22023';
   end if;
 
-  return query select v_quote.quote_snapshot, v_quote.quote_id = p_quote_id,
+  return query select v_quote.quote_snapshot, v_inserted = 1,
     v_quote.expires_at <= now();
 end;
 $$;
