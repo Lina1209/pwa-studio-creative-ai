@@ -42,7 +42,7 @@ Pricing quote snapshots are serialized with strict JSON handling before canonica
 
 Implemented:
 - AI provider calls use a bounded in-process semaphore, a bounded queue wait, provider timeout, a small retry ceiling, and a configurable maximum output-token limit (`AI_MAX_OUTPUT_TOKENS`, default 2,048; allowed range 1–8,192).
-- `chat` and `prompts` also reserve capacity through PostgreSQL before contacting the AI provider. Limits are per authenticated user: 10 admitted requests/minute and 2 concurrent requests by default; operators can lower/raise them through `AI_MAX_REQUESTS_PER_MINUTE_PER_USER` (1–120) and `AI_MAX_CONCURRENT_REQUESTS_PER_USER` (1–16).
+- `chat` and `prompts` also reserve capacity through PostgreSQL before contacting the AI provider. Limits are per authenticated user: 10 admitted requests/minute and 2 concurrent requests by default; operators can tune them through `AI_MAX_REQUESTS_PER_MINUTE_PER_USER` (1–120) and `AI_MAX_CONCURRENT_REQUESTS_PER_USER` (1–16). A shared global concurrency ceiling defaults to 16 across all accounts and replicas (`AI_MAX_GLOBAL_CONCURRENT_REQUESTS`, 1–128).
 - Admission is shared across backend replicas, uses service-role-only RPCs, and fails closed if Supabase admission storage is unavailable. Reservations are finalized on success/failure; stale reservations stop counting toward concurrency after ten minutes.
 - Overload returns HTTP 503 with `Retry-After`.
 - Analytics has database-side per-token event limits and deduplication.
