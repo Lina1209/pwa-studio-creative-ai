@@ -96,6 +96,7 @@ create table public.studio_media (
 \ir ../migrations/0028_site_visit_admin_analytics.sql
 \ir ../migrations/0029_ai_request_admission.sql
 \ir ../migrations/0030_credit_wallet_snapshot.sql
+\ir ../migrations/0031_credit_lots_and_allocations.sql
 
 -- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
 do $credit_ledger_privileges_test$
@@ -2529,25 +2530,35 @@ declare
 begin
   insert into auth.users(id) values (v_user), (v_empty_user);
   insert into public.credit_wallets(user_id, available_credits, reserved_credits)
-  values (v_user, 125, 25);
+  values (v_user, 125, 0);
+  insert into public.credit_lots(
+    user_id, lot_type, source_reference, idempotency_key,
+    granted_credits, available_credits, reserved_credits
+  ) values (
+    v_user, 'legacy', 'test-source-001', 'test-lot-0001',
+    125, 125, 0
+  );
   insert into public.credit_ledger(
     user_id, operation_type, operation_key,
     delta_available, delta_reserved,
     balance_available_after, balance_reserved_after, metadata
   ) values (
     v_user, 'grant', 'grant:test-wallet-001',
-    150, 0, 125, 25, '{"source":"integration_test"}'::jsonb
+    125, 0, 125, 0, '{"source":"integration_test"}'::jsonb
   );
 
   v_snapshot := public.get_credit_wallet_snapshot(v_user, 50);
   if v_snapshot->>'user_id' <> v_user::text
      or v_snapshot->>'currency_unit' <> 'credit'
      or (v_snapshot->>'available_credits')::bigint <> 125
-     or (v_snapshot->>'reserved_credits')::bigint <> 25
+     or (v_snapshot->>'reserved_credits')::bigint <> 0
      or jsonb_array_length(v_snapshot->'ledger') <> 1
      or v_snapshot->'ledger'->0->>'operation_type' <> 'grant'
+     or jsonb_array_length(v_snapshot->'lots') <> 1
+     or v_snapshot->'lots'->0->>'lot_type' <> 'legacy'
+     or jsonb_array_length(v_snapshot->'allocations') <> 0
      or v_snapshot ? 'quote_snapshot' then
-    raise exception 'Wallet snapshot did not return the expected owner-scoped balances/history';
+    raise exception 'Wallet snapshot did not return the expected owner-scoped balances/history/lots';
   end if;
 
   v_snapshot := public.get_credit_wallet_snapshot(v_empty_user, 10);
