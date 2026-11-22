@@ -425,6 +425,14 @@ def admin_ai_provider_status(
         ),
         "automatic_fallback": False,
         "runtime_provider_switching": False,
+        "admission_limits": {
+            "requests_per_user_per_minute": settings.ai_max_requests_per_minute_per_user,
+            "requests_per_user_per_24h": settings.ai_max_requests_per_day_per_user,
+            "requests_global_per_24h": settings.ai_max_requests_per_day_global,
+            "concurrent_per_user": settings.ai_max_concurrent_requests_per_user,
+            "concurrent_global": settings.ai_max_global_concurrent_requests,
+            "output_tokens_per_request": settings.ai_max_output_tokens,
+        },
         "providers": providers,
         "safety_note": (
             "Gemini 3.1 Flash-Lite is listed as Free Tier eligible by Google, but actual project "
