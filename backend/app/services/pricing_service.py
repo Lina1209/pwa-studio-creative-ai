@@ -10,6 +10,7 @@ import hmac
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -27,6 +28,7 @@ class PricingRule:
     unit_label: str
     min_quantity: int = 1
     max_quantity: int = 1
+    max_provider_cost_usd: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not all(isinstance(value, str) and value and value.strip() == value
@@ -44,6 +46,17 @@ class PricingRule:
             or not 1 <= self.min_quantity <= self.max_quantity <= 10000
         ):
             raise PricingError("Pricing rule quantity bounds are invalid.")
+        if (
+            self.max_provider_cost_usd is not None
+            and (
+                not isinstance(self.max_provider_cost_usd, Decimal)
+                or not self.max_provider_cost_usd.is_finite()
+                or self.max_provider_cost_usd <= 0
+                or self.max_provider_cost_usd.as_tuple().exponent < -10
+                or self.max_provider_cost_usd > Decimal("9999999999.9999999999")
+            )
+        ):
+            raise PricingError("Pricing rule provider cost ceiling must be a positive finite USD decimal.")
 
 
 @dataclass(frozen=True)
@@ -81,6 +94,7 @@ class VerifiedPricingQuote:
     quantity: int
     unit_label: str
     amount: int
+    max_provider_cost_usd: Decimal
     price_version: str
     issued_at: datetime
     expires_at: datetime
@@ -103,6 +117,8 @@ class VerifiedPricingQuote:
             "credit_unit": "credit",
             "amount": self.amount,
             "maximum_authorized_charge": self.amount,
+            "maximum_provider_cost_usd": format(self.max_provider_cost_usd, "f"),
+            "provider_cost_currency": "USD",
             "price_version": self.price_version,
             "issued_at": self.issued_at.isoformat(),
             "expires_at": self.expires_at.isoformat(),
@@ -128,7 +144,7 @@ def canonical_request_hash(request_snapshot: dict[str, Any]) -> str:
 def _quote_payload(
     *, quote_id: UUID, user_id: UUID, job_type: str, provider: str,
     model: str, request_hash: str, idempotency_key: str, project_id: UUID | None, studio_scene_id: UUID | None, quantity: int, unit_label: str,
-    amount: int, price_version: str, issued_at: datetime, expires_at: datetime,
+    amount: int, max_provider_cost_usd: Decimal, price_version: str, issued_at: datetime, expires_at: datetime,
 ) -> dict[str, Any]:
     return {
         "schema": "pwa-studio-pricing-quote-v1",
@@ -146,6 +162,8 @@ def _quote_payload(
         "credit_unit": "credit",
         "amount": amount,
         "maximum_authorized_charge": amount,
+        "maximum_provider_cost_usd": format(max_provider_cost_usd, "f"),
+        "provider_cost_currency": "USD",
         "price_version": price_version,
         "issued_at": issued_at.isoformat(),
         "expires_at": expires_at.isoformat(),
@@ -190,6 +208,8 @@ def issue_pricing_quote(
     if not rule.min_quantity <= quantity <= rule.max_quantity:
         raise PricingError("Requested quantity is outside the approved pricing bounds.")
     amount = rule.credits_per_unit * quantity
+    if rule.max_provider_cost_usd is None:
+        raise PricingError("Approved pricing rule has no provider cost ceiling; generation is disabled.")
     if amount > 1_000_000_000_000:
         raise PricingError("Calculated quote exceeds the supported credit limit.")
 
@@ -203,6 +223,7 @@ def issue_pricing_quote(
         quote_id=quote_id, user_id=user_id, job_type=job_type,
         provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
         project_id=project_id, studio_scene_id=studio_scene_id, quantity=quantity, unit_label=rule.unit_label, amount=amount,
+        max_provider_cost_usd=rule.max_provider_cost_usd,
         price_version=catalog.version, issued_at=issued_at, expires_at=expires_at,
     )
     return VerifiedPricingQuote(
@@ -210,6 +231,7 @@ def issue_pricing_quote(
         provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
         project_id=project_id, studio_scene_id=studio_scene_id,
         quantity=quantity, unit_label=rule.unit_label, amount=amount,
+        max_provider_cost_usd=rule.max_provider_cost_usd,
         price_version=catalog.version, issued_at=issued_at,
         expires_at=expires_at, signature=_sign(payload, secret),
     )
@@ -226,7 +248,8 @@ def verify_pricing_quote(
     allowed_fields = {
         "schema", "quote_id", "user_id", "job_type", "provider", "model",
         "request_hash", "idempotency_key", "project_id", "studio_scene_id", "quantity", "unit_label",
-        "credit_unit", "amount", "maximum_authorized_charge", "price_version",
+        "credit_unit", "amount", "maximum_authorized_charge", "maximum_provider_cost_usd",
+        "provider_cost_currency", "price_version",
         "issued_at", "expires_at", "signature",
     }
     if (
@@ -261,7 +284,8 @@ def verify_pricing_quote(
         quote_scene_id = UUID(snapshot["studio_scene_id"]) if snapshot["studio_scene_id"] else None
         unit_label = snapshot["unit_label"]
         price_version = snapshot["price_version"]
-    except (KeyError, TypeError, ValueError) as exc:
+        max_provider_cost_usd = Decimal(snapshot["maximum_provider_cost_usd"])
+    except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
         raise PricingError("Pricing quote is incomplete or malformed.") from exc
 
     if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 1:
@@ -276,6 +300,14 @@ def verify_pricing_quote(
         or maximum_charge != amount
     ):
         raise PricingError("Pricing quote authorization limit is inconsistent.")
+    if (
+        snapshot.get("provider_cost_currency") != "USD"
+        or not max_provider_cost_usd.is_finite()
+        or max_provider_cost_usd <= 0
+        or max_provider_cost_usd.as_tuple().exponent < -10
+        or max_provider_cost_usd > Decimal("9999999999.9999999999")
+    ):
+        raise PricingError("Pricing quote provider cost ceiling is invalid.")
     if quantity > 10000:
         raise PricingError("Pricing quote quantity is invalid.")
     if (quoted_user, quote_job_type, quote_provider, quote_model, quote_hash) != (
@@ -319,6 +351,7 @@ def verify_pricing_quote(
         quote_id=quote_id, user_id=quoted_user, job_type=quote_job_type,
         provider=quote_provider, model=quote_model, request_hash=quote_hash, idempotency_key=quote_idempotency_key,
         project_id=quote_project_id, studio_scene_id=quote_scene_id, quantity=quantity, unit_label=unit_label, amount=amount,
+        max_provider_cost_usd=max_provider_cost_usd,
         price_version=price_version, issued_at=issued_at, expires_at=expires_at,
     )
     expected = _sign(payload, secret)
@@ -329,6 +362,7 @@ def verify_pricing_quote(
         provider=quote_provider, model=quote_model, request_hash=quote_hash,
         idempotency_key=quote_idempotency_key, project_id=quote_project_id, studio_scene_id=quote_scene_id,
         quantity=quantity, unit_label=unit_label, amount=amount,
+        max_provider_cost_usd=max_provider_cost_usd,
         price_version=price_version, issued_at=issued_at,
         expires_at=expires_at, signature=signature,
     )
@@ -349,7 +383,7 @@ def load_pricing_catalog(raw_json: str) -> PricingCatalog:
     rules = []
     required = {
         "job_type", "provider", "model", "credits_per_unit",
-        "unit_label", "min_quantity", "max_quantity",
+        "unit_label", "min_quantity", "max_quantity", "max_provider_cost_usd",
     }
     for item in payload["rules"]:
         if not isinstance(item, dict) or set(item) - required or not {
@@ -357,6 +391,9 @@ def load_pricing_catalog(raw_json: str) -> PricingCatalog:
         }.issubset(item):
             raise PricingError("Server pricing catalog rule schema is invalid.")
         try:
+            raw_cost_ceiling = item.get("max_provider_cost_usd")
+            if raw_cost_ceiling is not None and not isinstance(raw_cost_ceiling, str):
+                raise PricingError("Server pricing catalog provider cost ceiling must be a decimal string.")
             rules.append(PricingRule(
                 job_type=item["job_type"],
                 provider=item["provider"],
@@ -365,6 +402,7 @@ def load_pricing_catalog(raw_json: str) -> PricingCatalog:
                 unit_label=item["unit_label"],
                 min_quantity=item.get("min_quantity", 1),
                 max_quantity=item.get("max_quantity", 1),
+                max_provider_cost_usd=Decimal(raw_cost_ceiling) if raw_cost_ceiling is not None else None,
             ))
         except (TypeError, ValueError) as exc:
             if isinstance(exc, PricingError):
