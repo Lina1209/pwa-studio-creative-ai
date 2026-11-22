@@ -88,7 +88,7 @@ declare
   v_day_start timestamptz := date_trunc('day', now() at time zone 'UTC') at time zone 'UTC';
 begin
   if p_request_id is null or p_user_id is null
-     or p_provider not in ('deepseek', 'gemini')
+     or p_provider is null or p_provider not in ('deepseek', 'gemini')
      or p_model is null or length(p_model) not between 1 and 200
      or p_reserved_cost_usd is null or p_reserved_cost_usd <= 0
      or p_reserved_cost_usd > 1000000000 then
