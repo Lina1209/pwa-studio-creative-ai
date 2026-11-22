@@ -319,8 +319,8 @@ class GenerationWorker:
                 )
                 if lost.is_set():
                     return WorkerResult("lease_lost", "lease_lost_before_completion")
-                completion = await self.repository.complete_credited(
-                    job.job_id, self.worker_id, verified.object_path
+                completion = await self._complete_credited_with_recovery(
+                    job.job_id, verified.object_path
                 )
                 if not completion.completed:
                     return WorkerResult("lease_lost", "completion_rejected")
@@ -352,6 +352,25 @@ class GenerationWorker:
         except Exception:
             logger.exception("generation_worker_job_error job_id=%s", job.job_id)
             return await self._schedule_retry(job, "worker_internal_error")
+
+    async def _complete_credited_with_recovery(self, job_id: UUID, result_path: str):
+        """Resolve an ambiguous completion response with an idempotent RPC replay.
+
+        The first request may commit capture + success in Postgres while its HTTP
+        response is lost. Repeating the exact job/path is safe: the RPC verifies
+        the captured hold and returns replayed without changing balances.
+        """
+        for attempt in range(2):
+            try:
+                return await self.repository.complete_credited(
+                    job_id, self.worker_id, result_path
+                )
+            except WorkerRepositoryError as exc:
+                if not exc.retryable or attempt == 1:
+                    raise
+                await asyncio.sleep(0.1)
+
+        raise RuntimeError("Unreachable credited completion recovery state")
 
     async def _terminal_failure(self, job: ClaimedImageJob, code: str) -> WorkerResult:
         try:
