@@ -30,17 +30,17 @@ alter table public.projects add column if not exists updated_at timestamptz not 
 -- Existing installations may already have a projects table. Do not silently
 -- leave owner_id nullable: stop with an actionable error if legacy rows need
 -- an explicit ownership backfill before enabling the stricter constraint.
-do $
+do $$
 begin
   if exists (select 1 from public.projects where owner_id is null) then
     raise exception 'Migration 0005 cannot enforce project ownership: public.projects contains rows with NULL owner_id. Backfill each row to its verified auth.users owner, then rerun this migration.';
   end if;
 end;
-$;
+$$;
 
 alter table public.projects alter column owner_id set not null;
 
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_constraint
@@ -52,7 +52,7 @@ begin
       foreign key (owner_id) references auth.users(id) on delete cascade;
   end if;
 end;
-$;
+$$;
 
 create index if not exists projects_owner_type_updated_idx
   on public.projects(owner_id, project_type, updated_at desc);
