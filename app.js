@@ -399,7 +399,8 @@ const movieHistoryStyle = document.createElement("style");
         [
           item.provider, item.model, number(item.requests),
           number(item.input_tokens), number(item.output_tokens),
-          Number(item.reported_estimated_cost_usd || 0).toFixed(6)
+          Number(item.reported_estimated_cost_usd || 0).toFixed(6),
+          number(item.cost_unknown_events)
         ].forEach(value => {
           const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
         });
