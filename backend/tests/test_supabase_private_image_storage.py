@@ -1,3 +1,4 @@
+import json
 from uuid import UUID
 
 import httpx
@@ -460,7 +461,7 @@ async def test_upload_paginates_owner_inventory_until_expected_object_is_found()
         if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
             return httpx.Response(200, json={"public": False})
         if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
-            offset = int(request.content and __import__("json").loads(request.content).get("offset", 0))
+            offset = int(request.content and json.loads(request.content).get("offset", 0))
             offsets.append(offset)
             if offset == 0:
                 return httpx.Response(200, json=[
