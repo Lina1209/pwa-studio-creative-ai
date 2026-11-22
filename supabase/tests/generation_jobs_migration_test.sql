@@ -3689,7 +3689,7 @@ begin
   begin
     perform public.create_finance_operation_request(
       '11111111-1111-4111-8111-111111111111',
-      'credit_compensation',
+      'billing_refund',
       '22222222-2222-4222-8222-222222222222',
       0.00001, 'USD', 'test-scope', 'Excess scale amount',
       'dddddddd-4444-4444-8444-444444444444'
@@ -3699,6 +3699,22 @@ begin
   end;
   if not v_rejected then
     raise exception 'Finance amount with excessive scale was accepted';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.create_finance_operation_request(
+      '11111111-1111-4111-8111-111111111111',
+      'credit_compensation',
+      '22222222-2222-4222-8222-222222222222',
+      1.5, 'CRD', 'test-scope', 'Fractional credits',
+      'eeeeeeee-5555-4555-8555-555555555555'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Fractional credit compensation was accepted';
   end if;
 
   v_rejected := false;
