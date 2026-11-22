@@ -200,3 +200,8 @@ The verified JWT subject supplies the actor identity; client-supplied actor IDs 
 ### Scope boundary
 
 The current finance request API derives scope on the server as `user:<target UUID>`; the client cannot choose or widen it. Each delegated finance permission must explicitly cover that exact target-user scope. Decision and cancellation routes re-check the scope stored in the request against its target user. Organization/tenant-wide finance scopes are intentionally not enabled until a trusted membership-to-scope mapping exists.
+
+
+### Financial amount semantics
+
+Credit-compensation proposals use whole credit units only (`currency_code=CRD`), matching the integer credit wallet. Cash-refund proposals use a three-letter uppercase currency code such as KZT, USD, EUR, or RUB and a positive monetary amount with at most four decimal places. The API and PostgreSQL both enforce the distinction; fractional credits, non-finite values, and cash refunds denominated in the internal CRD unit are rejected. These remain proposals only, not actual wallet or payment movements.
