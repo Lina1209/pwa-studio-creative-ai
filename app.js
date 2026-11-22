@@ -309,6 +309,10 @@ const movieHistoryStyle = document.createElement("style");
         || (data.permissions || []).some(permission => permission.endsWith(".request"))
       ));
       panel.hidden = !financeUiAuthorized;
+      const createPanel = $("#financeRequestCreatePanel");
+      if (createPanel) createPanel.hidden = !(data.permissions || []).some(permission =>
+        permission === "credit.compensation.request" || permission === "billing.refund.request"
+      );
       if (financeUiAuthorized) {
         $("#financeAccessStatus").textContent = "Назначено областей доступа: " + Number(data.scope_count || 0) + ". Полномочия проверяются сервером при каждом действии.";
         loadFinanceQueue(true);
