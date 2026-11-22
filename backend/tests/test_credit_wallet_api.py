@@ -26,6 +26,8 @@ def test_wallet_endpoint_returns_owner_scoped_no_store_snapshot(monkeypatch):
                 "created_at": "2026-11-23T00:00:00Z",
             }],
             ledger=[],
+            lots=[],
+            allocations=[],
         ),
     )
     response = Response()
@@ -38,6 +40,8 @@ def test_wallet_endpoint_returns_owner_scoped_no_store_snapshot(monkeypatch):
     assert result["available_credits"] == 80
     assert result["reserved_credits"] == 20
     assert result["total_credits"] == 100
+    assert result["lots"] == []
+    assert result["allocations"] == []
     assert response.headers["Cache-Control"] == "private, no-store"
 
 
