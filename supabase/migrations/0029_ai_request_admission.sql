@@ -47,7 +47,7 @@ declare
   v_existing public.ai_request_admission_reservations%rowtype;
 begin
   if p_user_id is null or p_request_id is null
-     or p_endpoint not in ('chat', 'prompts')
+     or p_endpoint is null or p_endpoint not in ('chat', 'prompts')
      or p_max_per_minute not between 1 and 120
      or p_max_concurrent not between 1 and 16 then
     raise exception 'Invalid AI admission request';
