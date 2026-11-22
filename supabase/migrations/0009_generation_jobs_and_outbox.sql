@@ -5,7 +5,7 @@
 create extension if not exists pgcrypto;
 
 -- Fail early with an actionable message instead of relying on an opaque FK error.
-do $
+do $$
 declare
   server_version integer := current_setting('server_version_num')::integer;
   projects_table regclass := to_regclass('public.projects');
@@ -32,7 +32,7 @@ begin
     raise exception 'Migration 0009 requires PostgreSQL 15 or newer because its project foreign key uses column-specific ON DELETE SET NULL. Detected server_version_num=%.', server_version;
   end if;
 end;
-$;
+$$;
 
 -- Composite parent key allows the database to enforce that a job's project
 -- belongs to the same user who owns the job.
