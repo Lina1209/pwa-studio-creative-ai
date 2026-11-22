@@ -205,6 +205,15 @@ class FinanceOperationRequestCreate(BaseModel):
             raise ValueError("Value must not contain surrounding whitespace.")
         return value
 
+    @model_validator(mode="after")
+    def validate_finance_amount_unit(self):
+        if self.request_type == "credit_compensation":
+            if self.currency_code != "CRD" or self.amount != self.amount.to_integral_value():
+                raise ValueError("Credit compensation requires whole credits and CRD.")
+        elif self.currency_code == "CRD":
+            raise ValueError("Cash refunds require a currency code, not CRD.")
+        return self
+
 
 class FinanceOperationDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
