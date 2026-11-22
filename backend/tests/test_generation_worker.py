@@ -873,3 +873,77 @@ async def test_worker_does_not_create_provider_cost_event_when_adapter_has_no_us
 
     assert result.outcome == "succeeded"
     assert not any(call[0] == "provider_cost" for call in repo.calls)
+
+
+
+@pytest.mark.asyncio
+async def test_worker_restart_replays_same_provider_cost_operation_after_result_checkpoint():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class MeteredRecoverableProvider(FakeProvider):
+        supports_lookup = True
+
+        def __init__(self):
+            super().__init__()
+            self.result = ImageGenerationResult(
+                IMAGE, "image/png", "fake", "fake-v1",
+                provider_request_id="provider-request-stable",
+                usage=ProviderUsage(
+                    cost_usd=Decimal("0.0075"),
+                    cost_source="reported",
+                    provider_usage_id="usage-stable-after-restart",
+                ),
+            )
+            self.lookup_keys = []
+
+        async def generate(self, request, *, idempotency_key):
+            self.idempotency_keys.append(idempotency_key)
+            return self.result
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            self.lookup_keys.append(idempotency_key)
+            return ImageGenerationLookup(
+                "succeeded", result=self.result,
+                provider_request_id="provider-request-stable",
+            )
+
+    class FailOnceStorage(FakeStorage):
+        def __init__(self):
+            self.calls = 0
+
+        async def upload_image(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise GenerationStorageAdapterError(
+                    "temporary_storage_timeout", retryable=True
+                )
+            return await super().upload_image(**kwargs)
+
+    provider = MeteredRecoverableProvider()
+    storage = FailOnceStorage()
+    first_repository = FakeRepository()
+    first = await make_worker(first_repository, provider, storage).process(make_job())
+
+    assert first.outcome == "retry_scheduled"
+    first_cost = next(
+        call[1] for call in first_repository.calls if call[0] == "provider_cost"
+    )
+
+    # A fresh worker process reclaims the durable result_received operation.
+    # Provider lookup returns the original result; generation is not submitted again.
+    restarted_repository = FakeRepository(
+        journal_created=False, journal_state="result_received"
+    )
+    second = await make_worker(
+        restarted_repository, provider, storage
+    ).process(make_job(attempt_count=2))
+
+    second_cost = next(
+        call[1] for call in restarted_repository.calls if call[0] == "provider_cost"
+    )
+    assert second.outcome == "succeeded"
+    assert first_cost["operation_key"] == second_cost["operation_key"]
+    assert first_cost["provider_usage_id"] == second_cost["provider_usage_id"]
+    assert first_cost["cost_usd"] == second_cost["cost_usd"] == Decimal("0.0075")
+    assert provider.idempotency_keys == [str(JOB_ID)]
+    assert provider.lookup_keys == [str(JOB_ID)]
