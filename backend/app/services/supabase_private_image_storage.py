@@ -155,7 +155,7 @@ class SupabasePrivateImageStorage:
             content=image_bytes,
             headers={
                 "Content-Type": mime_type,
-                "Cache-Control": "no-store",
+                "Cache-Control": "max-age=0",
                 "x-upsert": "false",
             },
         )
