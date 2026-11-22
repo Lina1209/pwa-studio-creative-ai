@@ -94,10 +94,16 @@ class ImageGenerationProvider(Protocol):
 
     name: str
 
+    supports_idempotency: bool
+
     async def generate(
-        self, request: ImageGenerationRequest
+        self, request: ImageGenerationRequest, *, idempotency_key: str
     ) -> ImageGenerationResult:
-        """Generate one image; return decoded bytes and verified MIME metadata."""
+        """Generate once per stable key; provider must deduplicate retries.
+
+        The provider's idempotency retention window must cover the complete
+        application retry and reconciliation horizon.
+        """
         ...
 
 
