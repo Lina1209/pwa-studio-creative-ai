@@ -2,6 +2,7 @@ from types import SimpleNamespace
 import threading
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.services import ai_service
@@ -120,5 +121,5 @@ def test_output_token_limit_is_configurable_and_bounded(monkeypatch):
     )
     assert seen["max_tokens"] == 512
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Settings(ai_max_output_tokens=8193)
