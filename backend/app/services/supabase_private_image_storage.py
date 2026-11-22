@@ -354,6 +354,7 @@ class SupabasePrivateImageStorage:
                         "prefix": prefix,
                         "limit": page_size,
                         "offset": page * page_size,
+                        "sortBy": {"column": "created_at", "order": "asc"},
                     },
                 )
                 listing = listing_response.json()
