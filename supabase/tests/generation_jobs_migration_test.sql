@@ -2504,7 +2504,7 @@ begin
      or has_function_privilege('anon',
        'public.finish_ai_request(uuid,uuid,text)', 'EXECUTE')
      or not has_function_privilege('service_role',
-       'public.reserve_ai_request(uuid,uuid,text,integer,integer)', 'EXECUTE')
+       'public.reserve_ai_request(uuid,uuid,text,integer,integer,integer)', 'EXECUTE')
      or not has_function_privilege('service_role',
        'public.finish_ai_request(uuid,uuid,text)', 'EXECUTE')
      or has_table_privilege('authenticated',
