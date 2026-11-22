@@ -41,7 +41,7 @@ def test_create_request_rejects_invalid_amount_before_rpc(monkeypatch, amount):
         service.create_finance_operation_request(
             SETTINGS, requester_id=ACTOR, request_type="billing_refund",
             target_user_id=TARGET, amount=amount, currency_code="USD",
-            scope_key="tenant-a", reason="Refund review",
+            scope_key=f"user:{TARGET}", reason="Refund review",
             idempotency_key=IDEMPOTENCY,
         )
     assert called == []
