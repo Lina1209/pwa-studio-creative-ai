@@ -81,6 +81,7 @@ create table public.studio_media (
 \ir ../migrations/0013_generation_job_worker_lifecycle.sql
 \ir ../migrations/0014_outbox_delivery_lifecycle.sql
 \ir ../migrations/0015_generation_job_terminal_failure.sql
+\ir ../migrations/0016_harden_generation_job_idempotency.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -185,6 +186,66 @@ begin
   end;
 end;
 $$;
+
+-- Generic job creation validates idempotency inputs and returns the same job/event.
+do $generic_idempotency$
+declare
+  v_first record;
+  v_replay record;
+  v_count integer;
+begin
+  select * into v_first from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'generic-provider', 'generic-model',
+    'generic-idempotency-001', repeat('a', 64),
+    '{"prompt":"same canonical request"}'::jsonb, '{"price_version":"v1"}'::jsonb
+  );
+  select * into v_replay from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'generic-provider', 'generic-model',
+    'generic-idempotency-001', repeat('a', 64),
+    '{"prompt":"same canonical request"}'::jsonb, '{"price_version":"v1"}'::jsonb
+  );
+  if not v_first.created or v_replay.created
+     or v_first.job_id <> v_replay.job_id
+     or v_first.event_id <> v_replay.event_id then
+    raise exception 'Generic idempotent replay did not return original job and event';
+  end if;
+  select count(*) into v_count from public.outbox_events
+   where aggregate_id = v_first.job_id and event_type = 'generation_job.created';
+  if v_count <> 1 then raise exception 'Generic replay created a duplicate outbox event'; end if;
+
+  begin
+    perform public.create_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111', null,
+      'image_generation', 'generic-provider', 'generic-model',
+      'generic-idempotency-001', repeat('b', 64), '{}'::jsonb, '{}'::jsonb
+    );
+    raise exception 'Mismatched generic idempotency replay was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+
+  begin
+    perform public.create_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111', null,
+      'image_generation', 'generic-provider', 'generic-model',
+      'short', repeat('c', 64), '{}'::jsonb, '{}'::jsonb
+    );
+    raise exception 'Short idempotency key was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+
+  begin
+    perform public.create_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111', null,
+      'image_generation', 'generic-provider', 'generic-model',
+      'generic-invalid-hash-001', 'not-a-valid-hash', '{}'::jsonb, '{}'::jsonb
+    );
+    raise exception 'Malformed request hash was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+end;
+$generic_idempotency$;
 
 -- Worker lifecycle: atomic claim, lease ownership, retry, and verified-result completion.
 do $$
