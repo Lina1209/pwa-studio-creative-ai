@@ -141,3 +141,21 @@ def test_unscoped_legacy_assignment_fails_closed(monkeypatch):
             Settings(supabase_url="https://example.test", supabase_service_role_key="x"),
             principal_id=TARGET,
         )
+
+
+def test_finance_auditor_can_read_scoped_requests_but_cannot_mutate(monkeypatch):
+    now = datetime.now(timezone.utc).isoformat()
+    monkeypatch.setattr(registry, "_rpc", lambda *a, **k: [{
+        "assignment_id": str(ASSIGNMENT), "principal_id": str(TARGET),
+        "role_code": "auditor_readonly", "scope_key": "user:" + str(TARGET),
+        "valid_from": now, "valid_until": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "granted_by": str(ACTOR), "created_at": now,
+    }])
+    grant = registry.resolve_finance_grant(
+        Settings(supabase_url="https://example.test", supabase_service_role_key="x"),
+        principal_id=TARGET,
+    )
+    assert "credit.compensation.read" in grant.permissions
+    assert "billing.refund.read" in grant.permissions
+    assert "credit.compensation.request" not in grant.permissions
+    assert "billing.refund.approve" not in grant.permissions
