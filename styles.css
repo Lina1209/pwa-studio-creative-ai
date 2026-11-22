@@ -211,3 +211,14 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
   .finance-request-form { grid-template-columns: 1fr; }
   .finance-queue-controls { width: 100%; flex-wrap: wrap; }
 }
+
+.finance-event-row td {
+  background: var(--surface, rgba(255,255,255,.035));
+  white-space: normal;
+  line-height: 1.6;
+}
+.finance-event-row ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.finance-event-row li { margin: 6px 0; overflow-wrap: anywhere; }
