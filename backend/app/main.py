@@ -25,6 +25,11 @@ from app.services.admin_audit_service import (
     get_admin_audit_events,
     record_admin_audit_event,
 )
+from app.services.admin_ai_usage_reporting import (
+    AIUsageReportError,
+    AIUsageReportNotConfiguredError,
+    get_admin_ai_usage_report,
+)
 from app.services.admin_financial_reporting import (
     ProviderCostReportError,
     ProviderCostReportNotConfiguredError,
@@ -427,6 +432,27 @@ def admin_ai_provider_status(
             "controlled backend configuration update and redeployment."
         ),
     }
+
+
+@app.get(f"{settings.api_prefix}/admin/ai/usage")
+def admin_ai_usage_report(
+    date_from: date,
+    date_to: date,
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
+):
+    """Owner-only aggregate AI request and token usage; no prompts or user IDs."""
+    try:
+        report = get_admin_ai_usage_report(settings, date_from=date_from, date_to=date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="The AI usage date range is invalid or exceeds 31 days.") from exc
+    except AIUsageReportNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail="AI usage reporting is not configured.") from exc
+    except AIUsageReportError as exc:
+        raise HTTPException(status_code=502, detail="AI usage report is temporarily unavailable.") from exc
+    _audit_admin_read(user, resource_type="platform", reason="Viewed aggregate AI usage report")
+    response.headers["Cache-Control"] = "private, no-store"
+    return report
 
 
 @app.get(f"{settings.api_prefix}/admin/analytics/site-visits")
