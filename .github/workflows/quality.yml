@@ -64,6 +64,11 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/generation_jobs_migration_test.sql
+      - name: Verify site visit deduplication, rate limits, and storage privacy
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/site_visit_analytics_test.sql
       - name: Verify concurrent provider budget reservations cannot overbook exposure
         env:
           PGPASSWORD: postgres
