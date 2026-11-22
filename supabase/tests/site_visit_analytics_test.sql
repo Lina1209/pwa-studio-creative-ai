@@ -13,6 +13,9 @@ declare
   v_rate_event uuid := gen_random_uuid();
   v_blocked_event uuid := gen_random_uuid();
   v_event_count bigint;
+  v_total_before_block bigint;
+  v_total_after_block bigint;
+  v_rate_count integer;
   v_hash text := repeat('a', 64);
   v_rate_hash text := repeat('b', 64);
   i integer;
@@ -82,6 +85,16 @@ begin
       raise exception 'rate limit triggered before the 21st event';
     end if;
   end loop;
+  select request_count into v_rate_count
+  from public.site_visit_rate_limits
+  where visitor_token_hash = v_rate_hash
+    and window_start = date_trunc('minute', now());
+  if v_rate_count <> 20 then
+    raise exception 'idempotent event replay changed the rate-limit count';
+  end if;
+
+  select total_page_views into v_total_before_block
+  from public.site_visit_totals where singleton = true;
   v_limited := public.record_site_visit(
     v_blocked_event, (now() at time zone 'UTC')::date, v_rate_hash, 'other'
   );
@@ -95,6 +108,11 @@ begin
   end if;
   if exists (select 1 from public.site_visit_events where event_id = v_blocked_event) then
     raise exception 'rate-limited event ID was persisted';
+  end if;
+  select total_page_views into v_total_after_block
+  from public.site_visit_totals where singleton = true;
+  if v_total_after_block <> v_total_before_block then
+    raise exception 'rate-limited event changed the lifetime counter';
   end if;
 end;
 $$;
