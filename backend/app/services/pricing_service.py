@@ -277,6 +277,12 @@ def verify_pricing_quote(
     if not isinstance(idempotency_key, str) or quote_idempotency_key != idempotency_key or not 8 <= len(idempotency_key) <= 200:
         raise PricingError("Pricing quote does not match this idempotency key.")
     if (
+        quote_project_id != project_id
+        or quote_scene_id != studio_scene_id
+        or (project_id is not None and studio_scene_id is not None)
+    ):
+        raise PricingError("Pricing quote does not match this project or scene.")
+    if (
         not isinstance(signature, str) or len(signature) != 64
         or any(char not in "0123456789abcdef" for char in signature)
         or not isinstance(unit_label, str) or not 1 <= len(unit_label) <= 40
