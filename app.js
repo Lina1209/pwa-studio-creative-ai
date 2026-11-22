@@ -418,6 +418,67 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#refreshAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(true));
   $("#loadMoreAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(false));
+  
+  const localDateInput = (date) => {
+    const y = date.getFullYear(), m = String(date.getMonth() + 1).padStart(2, "0"), d = String(date.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + d;
+  };
+  const costFrom = $("#adminCostDateFrom"), costTo = $("#adminCostDateTo");
+  if (costFrom && costTo) {
+    const today = new Date(), weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 6);
+    costFrom.value = localDateInput(weekAgo); costTo.value = localDateInput(today);
+  }
+  const loadAdminProviderCosts = async () => {
+    const status = $("#adminProviderCostStatus"), body = $("#adminProviderCostRows");
+    if (!status || !body || !adminUiAuthorized) return;
+    const from = costFrom?.value, to = costTo?.value;
+    if (!from || !to || from > to) { status.textContent = "Укажите корректный период."; return; }
+    const days = (Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 86400000 + 1;
+    if (!Number.isInteger(days) || days < 1 || days > 31) { status.textContent = "Период должен составлять от 1 до 31 дня."; return; }
+    status.textContent = "Загружаем подтверждённые данные…"; body.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/financial/provider-costs?date_from=" + encodeURIComponent(from) + "&date_to=" + encodeURIComponent(to));
+      if (!adminUiAuthorized) return;
+      $("#adminKnownProviderCost").textContent = String(data.known_provider_cost_usd ?? "—");
+      $("#adminProviderCostEvents").textContent = formatMetric(data.event_count ?? 0);
+      $("#adminUnknownProviderCosts").textContent = formatMetric(data.cost_evidence?.unknown ?? 0);
+      (data.by_provider_model || []).forEach(row => {
+        const tr = document.createElement("tr");
+        [row.provider, row.model, formatMetric(row.events), String(row.known_cost_usd), formatMetric(row.unknown_events)].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value ?? "—"); tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+      if (!body.children.length) {
+        const tr = document.createElement("tr"), td = document.createElement("td");
+        td.colSpan = 5; td.textContent = "За выбранный период записей нет."; tr.appendChild(td); body.appendChild(tr);
+      }
+      status.textContent = "Отчёт за " + from + " — " + to + " (UTC). Неизвестные суммы не включены в известный итог.";
+    } catch (error) { status.textContent = "Отчёт недоступен: " + error.message; }
+  };
+  $("#loadAdminProviderCosts")?.addEventListener("click", loadAdminProviderCosts);
+
+  const loadAdminWallet = async () => {
+    const status = $("#adminWalletStatus"), id = $("#adminWalletUserId")?.value.trim();
+    if (!status || !adminUiAuthorized) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id || "")) {
+      status.textContent = "Введите корректный UUID аккаунта."; return;
+    }
+    status.textContent = "Проверяем доступ и загружаем сводку…";
+    ["adminWalletAvailable","adminWalletReserved","adminWalletTotal"].forEach(key => { const el = $("#" + key); if (el) el.textContent = "—"; });
+    try {
+      const data = await apiRequest("/api/admin/financial/wallets/" + encodeURIComponent(id));
+      if (!adminUiAuthorized) return;
+      $("#adminWalletAvailable").textContent = formatMetric(data.available_credits);
+      $("#adminWalletReserved").textContent = formatMetric(data.reserved_credits);
+      $("#adminWalletTotal").textContent = formatMetric(data.total_credits);
+      $("#adminWalletDetails").textContent = "Активных резервов: " + formatMetric(data.active_holds_count) + " · партий: " + formatMetric(data.lot_count) + " · распределений: " + formatMetric(data.allocation_count) + ".";
+      status.textContent = "Сводка загружена. Доступ к кошельку записан в административный аудит.";
+    } catch (error) { status.textContent = "Сводка недоступна: " + error.message; }
+  };
+  $("#loadAdminWallet")?.addEventListener("click", loadAdminWallet);
+
 
   let financeQueueCursor = null;
   let financeQueueLoading = false;
