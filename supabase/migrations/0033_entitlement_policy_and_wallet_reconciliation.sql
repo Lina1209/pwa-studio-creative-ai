@@ -44,8 +44,7 @@ create table if not exists public.credit_entitlement_events (
 );
 alter table public.credit_entitlement_events enable row level security;
 revoke all on public.credit_entitlement_events from public, anon, authenticated;
-grant select, insert, update on public.credit_entitlement_events to service_role;
-grant usage, select on sequence public.credit_entitlement_events_id_seq to service_role;
+-- Event rows are written only inside the SECURITY DEFINER grant function.
 
 create or replace function public.grant_user_credit_entitlement(
   p_user_id uuid,
