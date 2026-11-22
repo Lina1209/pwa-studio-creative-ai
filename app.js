@@ -413,10 +413,17 @@ const movieHistoryStyle = document.createElement("style");
       });
       const disclaimer = $("#adminAiUsageDisclaimer");
       if (disclaimer) disclaimer.textContent = data.cost_disclaimer || "Оценка стоимости не является фактическим списанием.";
+      const budgetLabels = { unconfigured: "лимит не настроен", within_limit: "ниже порога", warning: "внимание: достигнуто 80% лимита", threshold_reached: "порог достигнут", unknown_costs: "есть запросы с неизвестной стоимостью" };
+      const budgetSummary = (data.daily_budget_status || []).map(item =>
+        item.provider + ": " + (budgetLabels[item.status] || item.status)
+        + (item.utilization_percent === null ? "" : " (" + item.utilization_percent + "%)")
+      ).join("; ");
       status.textContent = "Период UTC: " + data.period.from + " — " + data.period.to
         + ". Запросов без оценки стоимости: " + number(totals.cost_unknown_events)
         + ". Запросов с неполными данными токенов: " + number(totals.token_count_unknown_events)
+        + ". Сегодня: " + (budgetSummary || "нет данных")
         + ". Фактические списания не сверены.";
+      if (disclaimer && data.budget_status_note) disclaimer.textContent += " " + data.budget_status_note;
     } catch (error) {
       status.textContent = "Не удалось загрузить статистику: " + error.message;
     }
