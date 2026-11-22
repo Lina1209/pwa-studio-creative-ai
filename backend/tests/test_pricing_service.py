@@ -123,3 +123,16 @@ def test_canonical_request_hash_is_stable_and_rejects_non_json_values():
     assert canonical_request_hash({"b": 2, "a": 1}) == canonical_request_hash({"a": 1, "b": 2})
     with pytest.raises(PricingError, match="canonical JSON"):
         canonical_request_hash({"not_json": object()})
+
+
+def test_quote_is_bound_to_exact_project_or_scene_target():
+    scene_id = UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
+    project_id = UUID("ffffffff-ffff-4fff-8fff-ffffffffffff")
+    snapshot = make_quote(studio_scene_id=scene_id).snapshot()
+    verify(snapshot, studio_scene_id=scene_id)
+    with pytest.raises(PricingError, match="project or scene"):
+        verify(snapshot, studio_scene_id=project_id)
+    with pytest.raises(PricingError, match="project or scene"):
+        verify(snapshot)
+    with pytest.raises(PricingError, match="both"):
+        make_quote(project_id=project_id, studio_scene_id=scene_id)
