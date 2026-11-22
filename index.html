@@ -272,6 +272,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="eyebrow">OWNER WORKSPACE · PRIVATE ANALYTICS</div>
           <div class="owner-dashboard-heading"><div><h2>Панель владельца</h2><p>Агрегированная статистика посещений. Личные данные посетителей не отображаются.</p></div><button class="secondary-button" id="refreshSiteAnalytics" type="button">↻ Обновить</button></div>
           <span class="account-role">Доступ владельца подтверждён сервером</span>
+          <div class="admin-entry-actions"><button class="primary-button" type="button" data-go="admin-platform">Управление платформой →</button><button class="secondary-button" type="button" data-go="admin-technical">Технический и финансовый центр →</button></div>
           <p id="adminAnalyticsStatus" class="helper-text" role="status" aria-live="polite">Загрузка статистики…</p>
           <div class="owner-metrics">
             <article><span>За всё время</span><strong id="adminTotalVisits">—</strong><small>Все учтённые просмотры</small></article>
@@ -285,6 +286,38 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="owner-routes-panel"><b>Популярные разделы за 30 дней</b><div id="adminPopularRoutes" class="owner-popular-routes"><span class="helper-text">Пока нет данных.</span></div></div>
           <p class="owner-privacy-note">География посетителей намеренно не собирается: мы не храним IP-адреса и не пытаемся определять страны. Данные — агрегированные просмотры, а не точное число людей.</p>
         </div>
+      </section>
+
+      <section class="view admin-view" id="view-admin-platform">
+        <div class="page-heading"><div class="eyebrow">PRIVATE OWNER CONSOLE · 01</div><h1>Управление <span class="gradient-text">платформой</span></h1><p>Закрытая рабочая область владельца. Все операции должны дополнительно проверяться сервером.</p></div>
+        <div class="admin-security-banner"><b>Защищённый раздел</b><span>Доступ к этой странице в интерфейсе не заменяет серверную проверку полномочий. Сейчас доступны только обзорные разделы; изменение данных не включено.</span></div>
+        <div class="admin-module-grid">
+          <article class="admin-module"><b>Пользователи и аккаунты</b><p>Поиск учётных записей, статусы, даты регистрации, роли и история активности.</p><small>Подключение данных: следующий этап</small></article>
+          <article class="admin-module"><b>Сообщения и обращения</b><p>Входящие сообщения, переписка с поддержкой, статусы, приоритеты и история ответов.</p><small>Подключение данных: следующий этап</small></article>
+          <article class="admin-module"><b>Обратная связь</b><p>Предложения, жалобы, сообщения об ошибках, оценки и модерация обращений.</p><small>Подключение данных: следующий этап</small></article>
+          <article class="admin-module"><b>Тарифы и категории</b><p>Категории планов, цены, лимиты, квоты, сроки действия и версии тарифов.</p><small>Изменения цен пока заблокированы</small></article>
+          <article class="admin-module"><b>Валюты и курсы</b><p>KZT, USD, EUR, RUB и другие валюты; источник курса, дата обновления и история конвертации.</p><small>Без проведения платежей</small></article>
+          <article class="admin-module"><b>Посещения и аудитория</b><p>Счётчик за всё время, сегодня, периоды, популярные разделы и агрегированная статистика.</p><small>Доступна отдельная статистика посещений</small></article>
+          <article class="admin-module"><b>Уведомления и объявления</b><p>Системные сообщения, уведомления пользователей, шаблоны и журнал отправок.</p><small>Отправка рассылок выключена</small></article>
+          <article class="admin-module"><b>Настройки платформы</b><p>Функции, доступность инструментов, ограничения, режим обслуживания и feature flags.</p><small>Критические переключатели заблокированы</small></article>
+        </div>
+        <button class="secondary-button" type="button" data-go="account">← Вернуться в личный кабинет</button>
+      </section>
+
+      <section class="view admin-view" id="view-admin-technical">
+        <div class="page-heading"><div class="eyebrow">PRIVATE OWNER CONSOLE · 02</div><h1>Технический и <span class="gradient-text">финансовый центр</span></h1><p>Контроль затрат, поступлений, технического состояния и безопасности.</p></div>
+        <div class="admin-security-banner"><b>Финансовая защита</b><span>Просмотр и изменение разделены. Возвраты, списания, начисления и тарифные операции не активируются без отдельных разрешений, подтверждения и журнала аудита.</span></div>
+        <div class="admin-module-grid">
+          <article class="admin-module"><b>Поступления и платежи</b><p>Оплаты, подписки, статусы транзакций, комиссии провайдеров и возвраты.</p><small>Платёжные операции выключены</small></article>
+          <article class="admin-module"><b>Расходы и себестоимость</b><p>Расходы AI-провайдеров, API, серверов, хранения, трафика и инфраструктуры.</p><small>Подключение источников: следующий этап</small></article>
+          <article class="admin-module"><b>Доходы, расходы и результат</b><p>Выручка, операционные расходы, комиссии, валовая и чистая динамика по периодам.</p><small>Только подтверждённые финансовые события</small></article>
+          <article class="admin-module"><b>Кредиты и кошельки</b><p>Начисления, резервы, списания, возвраты кредитов, истечения и сверка балансов.</p><small>Изменение балансов заблокировано</small></article>
+          <article class="admin-module"><b>API и AI-интеграции</b><p>Доступность провайдеров, задержки, ошибки, лимиты, квоты и состояние очередей.</p><small>Секретные ключи не отображаются</small></article>
+          <article class="admin-module"><b>Журналы и инциденты</b><p>Технические ошибки, подозрительные запросы, отказы авторизации и события безопасности.</p><small>Без раскрытия токенов и секретов</small></article>
+          <article class="admin-module"><b>Роли и действия администраторов</b><p>Разрешения, история входов, изменения тарифов, запросы на подтверждение и audit log.</p><small>Изменение ролей пока заблокировано</small></article>
+          <article class="admin-module"><b>Резервные копии и восстановление</b><p>Статус резервирования, контроль целостности, сроки хранения и результаты тестов восстановления.</p><small>Удаление резервных копий запрещено</small></article>
+        </div>
+        <button class="secondary-button" type="button" data-go="account">← Вернуться в личный кабинет</button>
       </section>
 
       <section class="view" id="view-rules">
