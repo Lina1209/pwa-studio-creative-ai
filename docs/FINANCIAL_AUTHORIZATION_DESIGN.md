@@ -11,7 +11,7 @@
 - Existing admin endpoints are read-only operational reporting (site analytics and provider-cost reporting). There is no delegated finance role registry, approval workflow, compensation mutation endpoint, or payment-provider refund workflow. The current static owner read-capability allowlist is a transitional least-privilege boundary, not delegated role management.
 - Supabase service-role credentials remain server-only. Browser clients and ordinary authenticated users must never receive finance mutation privileges.
 
-The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for future credit or cash mutations.
+The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for future credit or cash mutations.\n\n### Registry implementation checkpoint\n\nThe branch now contains a private finance role registry, append-only grant/revocation events, server-only RPCs, an owner-gated management API, and integration tests for RLS, grants, revocations, self-assignment rejection, duplicate assignments, and service-role-only execution. A follow-up migration requires every new assignment to have an explicit scope and finite expiry. These migrations have only been added to the review branch; they have not been applied to production. Finance roles are not yet assigned to real users, and these role-management endpoints do not enable credit compensation or cash refunds.\n
 
 ### Registry schema checkpoint (migration 0037)
 
@@ -96,7 +96,7 @@ Requirements:
 1. Assignments are created only by a separately authorized owner workflow, never by user self-service.
 2. UUIDs must correspond to real Supabase Auth users. No placeholder identities or guessed IDs.
 3. Email changes do not change identity or preserve access for a different UUID.
-4. Grants have explicit scope, expiry/review date, and reason.
+4. Every delegated grant must have a non-empty explicit scope, a future timezone-aware expiry, and a reason. Permanent or global finance assignments are rejected.
 5. Revocation/suspension takes effect immediately on the next authorization check.
 6. Authorization data is not writable by `anon` or `authenticated` clients. Backend/service access is narrowly controlled and audited.
 7. Missing, stale, malformed, or unavailable authorization data fails closed.
