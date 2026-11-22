@@ -105,15 +105,18 @@ def _aggregate(rows: list[dict[str, Any]], date_from: date, date_to: date) -> di
             "output_tokens": 0, "total_tokens": 0,
         })
         day["requests"] += 1
+        missing_token_count = False
         for field in ("input_tokens", "output_tokens", "total_tokens"):
             value = row[field]
             if value is None:
-                totals["token_count_unknown_events"] += 1
-                item["token_count_unknown_events"] += 1
+                missing_token_count = True
             else:
                 totals[field] += value
                 item[field] += value
                 day[field] += value
+        if missing_token_count:
+            totals["token_count_unknown_events"] += 1
+            item["token_count_unknown_events"] += 1
         cost = row["reported_estimated_cost_usd"]
         if cost is None:
             totals["cost_unknown_events"] += 1
