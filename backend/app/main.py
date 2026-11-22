@@ -58,6 +58,20 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def apply_security_headers(request, call_next):
+    """Apply defensive browser headers to API and health responses."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    if settings.app_env == "production":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
 @app.post(f"{settings.api_prefix}/analytics/visit")
 def analytics_record_visit(payload: SiteVisitRequest, response: Response):
     """Record one anonymous page view; the database deduplicates event retries."""
