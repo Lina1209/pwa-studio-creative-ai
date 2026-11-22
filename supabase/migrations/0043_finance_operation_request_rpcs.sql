@@ -153,3 +153,34 @@ grant execute on function public.decide_finance_operation_request(uuid,uuid,text
   to service_role;
 grant execute on function public.cancel_finance_operation_request(uuid,uuid,text)
   to service_role;
+ 
+create or replace function public.read_finance_operation_request(p_request_id uuid)
+returns table (
+  request_id uuid,
+  requester_id uuid,
+  request_type text,
+  target_user_id uuid,
+  amount numeric,
+  currency_code text,
+  scope_key text,
+  status text,
+  requested_at timestamptz,
+  decided_by uuid,
+  decided_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select r.id, r.requester_id, r.request_type, r.target_user_id,
+         r.amount, r.currency_code, r.scope_key, r.status,
+         r.requested_at, r.decided_by, r.decided_at
+    from public.finance_operation_requests r
+   where r.id = p_request_id
+   limit 1
+$$;
+
+revoke all on function public.read_finance_operation_request(uuid)
+  from public, anon, authenticated;
+grant execute on function public.read_finance_operation_request(uuid) to service_role;
