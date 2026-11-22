@@ -169,3 +169,16 @@ def test_oversized_bearer_token_is_rejected_before_jwks_lookup(monkeypatch):
         auth.get_current_user(credentials)
 
     assert error.value.status_code == 401
+
+
+def test_owner_read_permissions_do_not_include_financial_mutations():
+    assert "admin.analytics.read" in auth.OWNER_READ_PERMISSIONS
+    assert "admin.finance.costs.read" in auth.OWNER_READ_PERMISSIONS
+    assert "billing.refund.execute" not in auth.OWNER_READ_PERMISSIONS
+    assert "credit.compensation.execute" not in auth.OWNER_READ_PERMISSIONS
+    assert "admin.tariffs.write" not in auth.OWNER_READ_PERMISSIONS
+
+
+def test_unknown_permission_dependency_is_rejected():
+    with pytest.raises(ValueError):
+        auth.require_permission("billing.refund.execute")
