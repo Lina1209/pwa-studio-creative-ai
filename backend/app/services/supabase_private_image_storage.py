@@ -5,6 +5,7 @@ metadata and the downloaded bytes through Storage's authenticated API. The
 service-role key is server-only. No public URLs or signed URLs are produced.
 """
 import logging
+from dataclasses import dataclass
 from urllib.parse import quote
 from uuid import UUID
 
@@ -31,6 +32,14 @@ class SupabaseStorageAdapterError(RuntimeError):
         super().__init__(error_code)
         self.error_code = error_code
         self.retryable = retryable
+
+
+@dataclass(frozen=True)
+class ListedGeneratedObject:
+    object_path: str
+    size_bytes: int
+    content_type: str | None
+    created_at: str | None
 
 
 class SupabasePrivateImageStorage:
@@ -130,6 +139,57 @@ class SupabasePrivateImageStorage:
             )
         except Exception:
             logger.warning("generation_storage_orphan_cleanup_failed bucket=%s", self._bucket)
+
+    async def list_owner_generated_objects(
+        self, *, owner_id: UUID, page_size: int = 100, max_pages: int = 10
+    ) -> list[ListedGeneratedObject]:
+        """Inventory one owner's generated folder without mutating any object."""
+        if not 1 <= page_size <= 1000 or not 1 <= max_pages <= 100:
+            raise ValueError("Storage inventory pagination is out of bounds.")
+        encoded_bucket = quote(self._bucket, safe="")
+        prefix = f"{owner_id}/generated"
+        results: list[ListedGeneratedObject] = []
+        for page in range(max_pages):
+            response = await self._request(
+                "POST",
+                f"{self._base_url}/object/list/{encoded_bucket}",
+                json={
+                    "prefix": prefix,
+                    "limit": page_size,
+                    "offset": page * page_size,
+                    "sortBy": {"column": "created_at", "order": "asc"},
+                },
+            )
+            rows = response.json()
+            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                raise SupabaseStorageAdapterError("storage_inventory_response_invalid")
+            for row in rows:
+                name = row.get("name")
+                metadata = row.get("metadata")
+                if not isinstance(name, str) or not name or "/" in name or not isinstance(metadata, dict):
+                    raise SupabaseStorageAdapterError("storage_inventory_metadata_invalid")
+                raw_size = metadata.get("size")
+                if isinstance(raw_size, bool):
+                    raise SupabaseStorageAdapterError("storage_inventory_size_invalid")
+                if isinstance(raw_size, int):
+                    size = raw_size
+                elif isinstance(raw_size, str) and raw_size.isdecimal():
+                    size = int(raw_size)
+                else:
+                    raise SupabaseStorageAdapterError("storage_inventory_size_invalid")
+                if size < 0 or size > MAX_IMAGE_BYTES:
+                    raise SupabaseStorageAdapterError("storage_inventory_size_out_of_range")
+                results.append(
+                    ListedGeneratedObject(
+                        object_path=f"{prefix}/{name}",
+                        size_bytes=size,
+                        content_type=metadata.get("mimetype") or metadata.get("contentType"),
+                        created_at=row.get("created_at") or row.get("updated_at"),
+                    )
+                )
+            if len(rows) < page_size:
+                return results
+        raise SupabaseStorageAdapterError("storage_inventory_page_limit_reached")
 
     async def upload_image(
         self, *, owner_id: UUID, job_id: UUID, image_bytes: bytes, mime_type: str
