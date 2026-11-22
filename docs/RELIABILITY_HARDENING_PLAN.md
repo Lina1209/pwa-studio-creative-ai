@@ -40,6 +40,19 @@
 - Added API tests for worker-not-ready, no-provider-selected, and invalid dimensions. Added PostgreSQL integration coverage for scene ownership, idempotency, and outbox atomicity.
 - This is an API contract and guarded submission path, not a working image generator. The frontend is not yet wired to it; no worker, provider adapter, storage upload, webhook, or credit ledger is active.
 
+
+
+### Atomic worker lifecycle primitives (schema/RPC only)
+
+- Added migration `0013_generation_job_worker_lifecycle.sql`.
+- `claim_next_generation_job` atomically claims one eligible job using `FOR UPDATE SKIP LOCKED`, increments its attempt count, and assigns a bounded lease. Expired leases can be reclaimed; exhausted jobs become terminal failures.
+- `heartbeat_generation_job` extends only the unexpired lease owned by the named worker.
+- `retry_generation_job` clears the active lease and schedules a bounded retry, or marks the job failed after its configured attempt limit.
+- `complete_generation_job` accepts only the active lease owner and an owner-prefixed storage path. The worker must verify the uploaded object (private bucket, MIME, size, checksum and ownership) before calling it; the RPC does not independently inspect Storage.
+- All four RPCs are executable only by `service_role`; authenticated clients cannot claim, heartbeat, retry or complete jobs.
+- PostgreSQL integration tests cover exclusive claims, lease ownership, heartbeat, retry/reclaim, owner-scoped result paths and RPC grants.
+- These are database lifecycle primitives, not a deployed worker. There is still no polling process, outbox dispatcher, provider adapter, storage uploader or live job execution. Feature flags remain disabled, and no provider has been selected.
+
 ## 2. Текущая функциональная реальность
 
 В репозитории пока нет подключённого полноценного видеогенератора, монтажного timeline engine, FFmpeg pipeline, durable job queue, provider webhooks, S3/CDN asset pipeline или пользовательского биллинга с hold/capture/refund.
