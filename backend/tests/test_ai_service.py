@@ -89,17 +89,17 @@ def test_gemini_uses_explicit_google_model_and_server_key(monkeypatch):
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="Gemini response"))],
             usage={"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
         )
 
     monkeypatch.setattr(ai_service, "completion", fake_completion)
     result = ai_service.ask_ai(
-        settings(ai_provider="gemini", ai_model="gemini-2.5-flash", gemini_api_key="google-secret"),
+        settings(ai_provider="gemini", ai_model="gemini-2.5-flash-lite", gemini_api_key="google-secret"),
         [{"role": "user", "content": "hello"}],
     )
 
     assert result.text == "Gemini response"
-    assert seen["model"] == "gemini/gemini-2.5-flash"
+    assert seen["model"] == "gemini/gemini-2.5-flash-lite"
     assert seen["api_key"] == "google-secret"
 
 
