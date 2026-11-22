@@ -54,7 +54,11 @@ def test_movie_script_rejects_oversized_duration_and_unknown_fields():
     finally:
         app.dependency_overrides.clear()
 
-def test_movie_script_requires_authentication():
+def test_movie_script_requires_authentication(monkeypatch):
+    import app.services.auth as auth
+    # Simulate a configured auth service but omit the bearer token. This
+    # isolates the authentication contract from deployment configuration.
+    monkeypatch.setattr(auth, "get_settings", lambda: SimpleNamespace(supabase_url="https://auth.example.test"))
     c=TestClient(app)
     response=c.post("/api/movie/script",json={"title":"История","idea":"Идея"})
-    assert response.status_code in {401,403}
+    assert response.status_code == 401
