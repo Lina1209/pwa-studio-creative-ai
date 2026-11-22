@@ -93,7 +93,7 @@ begin
     from public.ai_request_admission_reservations
    where user_id = p_user_id
      and state = 'reserved'
-     and reserved_at >= now() - interval '5 minutes';
+     and reserved_at >= now() - interval '10 minutes';
 
   if v_active >= p_max_concurrent then
     return jsonb_build_object(
