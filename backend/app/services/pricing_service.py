@@ -66,6 +66,7 @@ class VerifiedPricingQuote:
     provider: str
     model: str
     request_hash: str
+    idempotency_key: str
     quantity: int
     unit_label: str
     amount: int
@@ -83,6 +84,7 @@ class VerifiedPricingQuote:
             "provider": self.provider,
             "model": self.model,
             "request_hash": self.request_hash,
+            "idempotency_key": self.idempotency_key,
             "quantity": self.quantity,
             "unit_label": self.unit_label,
             "credit_unit": "credit",
@@ -112,7 +114,7 @@ def canonical_request_hash(request_snapshot: dict[str, Any]) -> str:
 
 def _quote_payload(
     *, quote_id: UUID, user_id: UUID, job_type: str, provider: str,
-    model: str, request_hash: str, quantity: int, unit_label: str,
+    model: str, request_hash: str, idempotency_key: str, quantity: int, unit_label: str,
     amount: int, price_version: str, issued_at: datetime, expires_at: datetime,
 ) -> dict[str, Any]:
     return {
@@ -123,6 +125,7 @@ def _quote_payload(
         "provider": provider,
         "model": model,
         "request_hash": request_hash,
+        "idempotency_key": idempotency_key,
         "quantity": quantity,
         "unit_label": unit_label,
         "credit_unit": "credit",
@@ -145,7 +148,7 @@ def _sign(payload: dict[str, Any], secret: str) -> str:
 def issue_pricing_quote(
     *, secret: str | None, catalog: PricingCatalog, user_id: UUID,
     job_type: str, provider: str, model: str, request_hash: str,
-    quantity: int = 1, ttl_seconds: int = 600,
+    idempotency_key: str, quantity: int = 1, ttl_seconds: int = 600,
     now: datetime | None = None,
 ) -> VerifiedPricingQuote:
     if not secret or len(secret.encode("utf-8")) < 32:
@@ -154,6 +157,8 @@ def issue_pricing_quote(
         raise PricingError("Authenticated user identity is required.")
     if len(request_hash) != 64 or any(c not in "0123456789abcdef" for c in request_hash):
         raise PricingError("Canonical request hash must be lowercase SHA-256 hex.")
+    if not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 200:
+        raise PricingError("Generation idempotency key is invalid.")
     if isinstance(quantity, bool) or not isinstance(quantity, int):
         raise PricingError("Generation quantity must be an integer.")
     if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or not 30 <= ttl_seconds <= 1800:
@@ -190,7 +195,7 @@ def issue_pricing_quote(
 def verify_pricing_quote(
     snapshot: dict[str, Any], *, secret: str | None, user_id: UUID,
     job_type: str, provider: str, model: str, request_hash: str,
-    now: datetime | None = None,
+    idempotency_key: str, now: datetime | None = None,
 ) -> VerifiedPricingQuote:
     if not secret or len(secret.encode("utf-8")) < 32:
         raise PricingError("Pricing quote signing secret is not configured securely.")
@@ -208,6 +213,7 @@ def verify_pricing_quote(
         quote_provider = snapshot["provider"]
         quote_model = snapshot["model"]
         quote_hash = snapshot["request_hash"]
+        quote_idempotency_key = snapshot["idempotency_key"]
         unit_label = snapshot["unit_label"]
         price_version = snapshot["price_version"]
     except (KeyError, TypeError, ValueError) as exc:
@@ -223,6 +229,8 @@ def verify_pricing_quote(
         user_id, job_type, provider, model, request_hash
     ):
         raise PricingError("Pricing quote does not match this user or generation request.")
+    if quote_idempotency_key != idempotency_key or not 8 <= len(idempotency_key) <= 200:
+        raise PricingError("Pricing quote does not match this idempotency key.")
     if not all(isinstance(v, str) and v for v in (signature, unit_label, price_version)):
         raise PricingError("Pricing quote metadata is invalid.")
     if issued_at.tzinfo is None or expires_at.tzinfo is None:
