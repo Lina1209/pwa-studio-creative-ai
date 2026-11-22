@@ -1007,7 +1007,7 @@ declare
 begin
   insert into public.credit_wallets(user_id, available_credits, reserved_credits)
   values
-    ('11111111-1111-4111-8111-111111111111', 100, 0),
+    ('11111111-1111-4111-8111-111111111111', 90, 10),
     ('22222222-2222-4222-8222-222222222222', 50, 0);
 
   select id into v_wallet_id from public.credit_wallets
