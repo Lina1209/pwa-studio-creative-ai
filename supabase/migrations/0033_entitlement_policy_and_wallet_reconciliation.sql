@@ -23,8 +23,7 @@ create index if not exists credit_entitlement_policies_enabled_idx
 alter table public.credit_entitlement_policies enable row level security;
 revoke all on public.credit_entitlement_policies from public, anon, authenticated;
 grant select on public.credit_entitlement_policies to service_role;
-grant insert, update, delete on public.credit_entitlement_policies to service_role;
-grant usage, select on sequence public.credit_entitlement_policies_id_seq to service_role;
+-- Policy changes are deployment/admin operations, not runtime service-role writes.
 
 create table if not exists public.credit_entitlement_events (
   id bigint generated always as identity primary key,
