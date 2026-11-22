@@ -145,3 +145,16 @@ def test_global_concurrency_limit_response_is_rejected(monkeypatch):
         )
 
     assert error.value.reason == "global_concurrency_limited"
+
+
+@pytest.mark.parametrize("endpoint", ["movie_script", "movie_director", "movie_storyboard"])
+def test_movie_ai_endpoints_are_admitted_and_recorded(monkeypatch, endpoint):
+    client = FakeClient([
+        FakeResponse({"admitted": True, "duplicate": False, "state": "reserved"})
+    ])
+    monkeypatch.setattr(ai_admission.httpx, "Client", lambda timeout: client)
+    reservation = ai_admission.reserve_ai_request(
+        make_settings(), user_id=uuid4(), endpoint=endpoint
+    )
+    assert reservation.request_id
+    assert client.calls[0][1]["p_endpoint"] == endpoint
