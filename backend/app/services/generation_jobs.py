@@ -5,7 +5,7 @@ from uuid import UUID
 import httpx
 
 from app.core.config import Settings
-from app.services.pricing_service import PricingError, verify_pricing_quote
+from app.services.pricing_service import PricingError, canonical_request_hash, verify_pricing_quote
 
 
 class GenerationJobsNotConfiguredError(RuntimeError):
@@ -254,6 +254,8 @@ def create_credited_generation_job(
     if not isinstance(request_snapshot, dict):
         raise GenerationJobsServiceError("Generation request snapshot must be an object.")
     try:
+        if canonical_request_hash(request_snapshot) != request_hash:
+            raise PricingError("Generation request hash does not match its canonical snapshot.")
         quote = verify_pricing_quote(
             quote_snapshot,
             secret=settings.pricing_quote_signing_secret,
@@ -262,6 +264,7 @@ def create_credited_generation_job(
             provider=provider,
             model=model,
             request_hash=request_hash,
+            idempotency_key=idempotency_key,
         )
     except PricingError as exc:
         raise GenerationJobsServiceError("The server pricing quote is invalid or expired.") from exc
