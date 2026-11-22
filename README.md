@@ -22,7 +22,7 @@
 - FastAPI health endpoint.
 - JWT verification against Supabase JWKS.
 - Authenticated AI Companion and prompt-generation endpoints with PostgreSQL-backed per-user rate/concurrency admission.
-- LiteLLM adapter for configured OpenAI, DeepSeek, Anthropic or Ollama provider.
+- LiteLLM adapter supports DeepSeek (default) and Google Gemini as an explicitly selected alternative. No automatic provider fallback is performed.
 - Initial text safety checks. This is not full multimodal moderation.
 
 ## Важные ограничения
@@ -92,3 +92,11 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 - Frontend: https://lina1209.github.io/pwa-studio-creative-ai/
 - Repository: https://github.com/Lina1209/pwa-studio-creative-ai
+
+
+### AI-провайдеры и бесплатный режим
+
+- По умолчанию используется только DeepSeek (`AI_PROVIDER=deepseek`, `AI_MODEL=deepseek-flash`). Google Gemini доступен как явно выбираемый дополнительный провайдер (`AI_PROVIDER=gemini`, `AI_MODEL=gemini-2.5-flash` или `gemini-2.5-flash-lite`) с серверным `GEMINI_API_KEY`.
+- Автоматического переключения на Gemini при ошибке DeepSeek нет. Провайдер выбирается только конфигурацией backend; frontend не получает API-ключи и не может менять провайдера.
+- Бесплатный тариф Gemini имеет квоты и ограничения, а Google может использовать данные бесплатного тарифа для улучшения продуктов. Не отправляйте туда конфиденциальные материалы пользователей без отдельного информированного согласия. Бесплатная квота не является денежным балансом или гарантией постоянной бесплатности.
+- Gemini API не включается автоматически: без явного изменения `AI_PROVIDER` активным остаётся DeepSeek. Платные модели и платный биллинг не настраиваются автоматически.
