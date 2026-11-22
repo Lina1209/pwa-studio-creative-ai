@@ -18,7 +18,7 @@ from app.services.admin_financial_reporting import (
     get_provider_cost_report,
 )
 from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
-from app.services.site_analytics import SiteAnalyticsUnavailable, record_visit, get_visit_stats
+from app.services.site_analytics import SiteAnalyticsUnavailable, record_visit, get_visit_stats, get_admin_visit_stats
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
@@ -289,7 +289,7 @@ def admin_site_visit_stats(
 ):
     """Owner-only aggregate analytics endpoint."""
     try:
-        stats = get_visit_stats(settings)
+        stats = get_admin_visit_stats(settings)
     except SiteAnalyticsUnavailable as exc:
         raise HTTPException(status_code=503, detail="Visit analytics is not configured.") from exc
     response.headers["Cache-Control"] = "private, no-store"
