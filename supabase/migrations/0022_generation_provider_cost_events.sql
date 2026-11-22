@@ -126,11 +126,13 @@ begin
      or p_provider is null or length(p_provider) not between 1 and 100
      or p_model is null or length(p_model) not between 1 and 200
      or (p_provider_usage_id is not null and length(p_provider_usage_id) not between 1 and 255)
+     or p_cost_source is null
      or p_cost_source not in ('reported', 'estimated', 'unknown')
      or (p_cost_source = 'unknown' and p_cost_usd is not null)
      or (p_cost_source in ('reported', 'estimated')
          and (p_cost_usd is null or p_cost_usd < 0 or p_cost_usd > 1000000000))
      or p_input_units < 0 or p_output_units < 0 or p_total_units < 0
+     or p_unit_kind is null
      or p_unit_kind not in ('token', 'image', 'second', 'character', 'request', 'unknown')
      or p_metadata is null or jsonb_typeof(p_metadata) <> 'object'
      or octet_length(p_metadata::text) > 16384 then
