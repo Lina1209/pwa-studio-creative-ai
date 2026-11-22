@@ -41,7 +41,8 @@ create index if not exists generation_pricing_quotes_expiry_idx
 alter table public.generation_pricing_quotes enable row level security;
 revoke all on public.generation_pricing_quotes from anon, authenticated;
 grant select on public.generation_pricing_quotes to authenticated;
-grant all on public.generation_pricing_quotes to service_role;
+grant select, insert on public.generation_pricing_quotes to service_role;
+revoke update, delete, truncate on public.generation_pricing_quotes from service_role;
 
 drop policy if exists generation_pricing_quotes_select_own
   on public.generation_pricing_quotes;
