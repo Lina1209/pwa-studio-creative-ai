@@ -359,9 +359,14 @@ const movieHistoryStyle = document.createElement("style");
       });
       const note = $("#adminAiProviderSafetyNote");
       if (note) note.textContent = data.safety_note || "Проверьте тариф и квоты в кабинете провайдера.";
-      status.textContent = data.runtime_provider_switching
+      const limits = data.admission_limits || {};
+      status.textContent = (data.runtime_provider_switching
         ? "Провайдер может изменяться настройками."
-        : "Текущий провайдер: " + data.selected_provider + ". Переключение выполняется только контролируемым обновлением backend.";
+        : "Текущий провайдер: " + data.selected_provider + ". Переключение выполняется только контролируемым обновлением backend.")
+        + " Лимиты: " + (limits.requests_per_user_per_minute ?? "—") + " запросов/мин на пользователя; "
+        + (limits.requests_per_user_per_24h ?? "—") + " запросов/24 ч на пользователя; "
+        + (limits.requests_global_per_24h ?? "—") + " запросов/24 ч глобально; "
+        + "вывод до " + (limits.output_tokens_per_request ?? "—") + " токенов.";
     } catch (error) {
       status.textContent = "Не удалось получить состояние провайдеров: " + error.message;
     }
