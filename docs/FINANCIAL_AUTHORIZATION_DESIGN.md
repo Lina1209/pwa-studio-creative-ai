@@ -12,7 +12,12 @@
 - The review branch contains the request/approval/cancellation workflow and scoped queue/timeline APIs. There is no credit-ledger execution endpoint or payment-provider refund workflow.
 - Supabase service-role credentials remain server-only. Browser clients and ordinary authenticated users never receive direct finance-table or service-role privileges.
 
-The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for delegated financial actions. The current implementation checks the exact delegated permission and target scope on every request.\n\n### Registry implementation checkpoint\n\nThe branch contains private role assignments, append-only grant/revocation events, server-only RPCs, owner-gated management API and UI, and integration tests for RLS, grants, revocations, self-assignment rejection, duplicate assignments, and service-role-only execution. New assignments require an explicit scope and finite expiry. These migrations have only been added to the review branch; they have not been applied to production. No real finance roles are assigned yet.\n
+The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for delegated financial actions. The current implementation checks the exact delegated permission and target scope on every request.
+
+### Registry implementation checkpoint
+
+The branch contains private role assignments, append-only grant/revocation events, server-only RPCs, owner-gated management API and UI, and integration tests for RLS, grants, revocations, self-assignment rejection, duplicate assignments, and service-role-only execution. New assignments require an explicit scope and finite expiry. These migrations have only been added to the review branch; they have not been applied to production. No real finance roles are assigned yet.
+
 
 ### Registry schema checkpoint (migration 0037)
 
