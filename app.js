@@ -344,7 +344,7 @@ const movieHistoryStyle = document.createElement("style");
       (data.providers || []).forEach(provider => {
         const tr = document.createElement("tr");
         const tier = provider.pricing_mode === "google_free_tier_eligible"
-          ? "Free Tier eligible · квоты Google"
+          ? "Free Tier у модели · доступ проекта не подтверждён"
           : "Платный API";
         [
           provider.label + (provider.selected ? " · активен" : ""),
