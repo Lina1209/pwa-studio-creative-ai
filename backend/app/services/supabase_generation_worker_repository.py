@@ -11,6 +11,7 @@ import httpx
 
 from app.core.config import Settings
 from app.services.generation_worker import ClaimedImageJob
+from app.services.worker_repository_errors import WorkerRepositoryError
 
 
 @dataclass(frozen=True)
