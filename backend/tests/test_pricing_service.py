@@ -180,6 +180,37 @@ def test_quote_is_bound_to_exact_project_or_scene_target():
         make_quote(project_id=project_id, studio_scene_id=scene_id)
 
 
+def test_server_catalog_loads_decimal_string_cost_ceiling():
+    catalog = load_pricing_catalog(json.dumps({
+        "version": "server-v2",
+        "rules": [{
+            "job_type": "image_generation",
+            "provider": "provider-a",
+            "model": "model-a",
+            "credits_per_unit": 9,
+            "unit_label": "image",
+            "max_provider_cost_usd": "0.012500",
+        }],
+    }))
+    quote = make_quote(catalog=catalog)
+    assert quote.snapshot()["maximum_provider_cost_usd"] == "0.012500"
+
+
+def test_server_catalog_rejects_non_string_provider_cost_ceiling():
+    with pytest.raises(PricingError, match="decimal string"):
+        load_pricing_catalog(json.dumps({
+            "version": "server-v2",
+            "rules": [{
+                "job_type": "image_generation",
+                "provider": "provider-a",
+                "model": "model-a",
+                "credits_per_unit": 9,
+                "unit_label": "image",
+                "max_provider_cost_usd": 0.0125,
+            }],
+        }))
+
+
 def test_server_catalog_loader_parses_rules_and_fails_closed_on_invalid_schema():
     catalog = load_pricing_catalog(json.dumps({
         "version": "server-v1",
