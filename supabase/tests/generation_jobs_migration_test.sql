@@ -3631,14 +3631,14 @@ begin
     '11111111-1111-4111-8111-111111111111',
     'credit_compensation',
     '22222222-2222-4222-8222-222222222222',
-    12, 'CRD', 'test-scope', 'Compensation review fixture',
+    12, 'CRD', 'user:22222222-2222-4222-8222-222222222222', 'Compensation review fixture',
     'aaaaaaaa-1111-4111-8111-111111111111'
   );
   v_replay := public.create_finance_operation_request(
     '11111111-1111-4111-8111-111111111111',
     'credit_compensation',
     '22222222-2222-4222-8222-222222222222',
-    12, 'CRD', 'test-scope', 'Compensation review fixture',
+    12, 'CRD', 'user:22222222-2222-4222-8222-222222222222', 'Compensation review fixture',
     'aaaaaaaa-1111-4111-8111-111111111111'
   );
   if v_request <> v_replay then
@@ -3650,7 +3650,7 @@ begin
    where request_id = v_request
      and requester_id = '11111111-1111-4111-8111-111111111111'
      and target_user_id = '22222222-2222-4222-8222-222222222222'
-     and scope_key = 'test-scope'
+     and scope_key = 'user:22222222-2222-4222-8222-222222222222'
      and status = 'pending';
   if v_event_count <> 1 then
     raise exception 'Server-only finance request lookup returned incorrect data';
@@ -3694,7 +3694,7 @@ begin
       '11111111-1111-4111-8111-111111111111',
       'credit_compensation',
       '22222222-2222-4222-8222-222222222222',
-      99, 'CRD', 'test-scope', 'Changed payload',
+      99, 'CRD', 'user:22222222-2222-4222-8222-222222222222', 'Changed payload',
       'aaaaaaaa-1111-4111-8111-111111111111'
     );
   exception when sqlstate '22023' then
@@ -3710,7 +3710,7 @@ begin
       '11111111-1111-4111-8111-111111111111',
       'credit_compensation',
       '22222222-2222-4222-8222-222222222222',
-      'NaN'::numeric, 'CRD', 'test-scope', 'Non-finite amount',
+      'NaN'::numeric, 'CRD', 'user:22222222-2222-4222-8222-222222222222', 'Non-finite amount',
       'cccccccc-3333-4333-8333-333333333333'
     );
   exception when sqlstate '22023' then
@@ -3726,7 +3726,7 @@ begin
       '11111111-1111-4111-8111-111111111111',
       'billing_refund',
       '22222222-2222-4222-8222-222222222222',
-      0.00001, 'USD', 'test-scope', 'Excess scale amount',
+      0.00001, 'USD', 'user:22222222-2222-4222-8222-222222222222', 'Excess scale amount',
       'dddddddd-4444-4444-8444-444444444444'
     );
   exception when sqlstate '22023' then
@@ -3742,7 +3742,7 @@ begin
       '11111111-1111-4111-8111-111111111111',
       'credit_compensation',
       '22222222-2222-4222-8222-222222222222',
-      1.5, 'CRD', 'test-scope', 'Fractional credits',
+      1.5, 'CRD', 'user:22222222-2222-4222-8222-222222222222', 'Fractional credits',
       'eeeeeeee-5555-4555-8555-555555555555'
     );
   exception when sqlstate '22023' then
@@ -3750,6 +3750,23 @@ begin
   end;
   if not v_rejected then
     raise exception 'Fractional credit compensation was accepted';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.create_finance_operation_request(
+      '11111111-1111-4111-8111-111111111111',
+      'credit_compensation',
+      '22222222-2222-4222-8222-222222222222',
+      1, 'CRD', 'user:11111111-1111-4111-8111-111111111111',
+      'Mismatched target scope',
+      '88888888-8888-4888-8888-888888888888'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Finance request accepted a scope for a different target';
   end if;
 
   v_rejected := false;
@@ -3791,7 +3808,7 @@ begin
     '22222222-2222-4222-8222-222222222222',
     'billing_refund',
     '11111111-1111-4111-8111-111111111111',
-    4.0000, 'USD', 'test-scope', 'Cancellation review fixture',
+    4.0000, 'USD', 'user:11111111-1111-4111-8111-111111111111', 'Cancellation review fixture',
     'bbbbbbbb-2222-4222-8222-222222222222'
   );
   v_rejected := false;
