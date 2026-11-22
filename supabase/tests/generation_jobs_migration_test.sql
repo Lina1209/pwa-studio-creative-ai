@@ -87,6 +87,7 @@ create table public.studio_media (
 \ir ../migrations/0019_credit_hold_lifecycle.sql
 \ir ../migrations/0020_atomic_credited_generation.sql
 \ir ../migrations/0021_persist_pricing_quotes.sql
+\ir ../migrations/0022_generation_provider_cost_events.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -1565,3 +1566,133 @@ begin
 end;
 $pricing_quote_persistence_test$;
 
+
+
+-- Provider costs are owner-bound, append-only, idempotent, and compared to an
+-- optional server-authored per-job USD ceiling without changing user credits.
+insert into public.generation_jobs(
+  id, user_id, job_type, provider, model, idempotency_key, request_hash, pricing_snapshot
+) values (
+  '12121212-1212-4121-8121-121212121212',
+  '11111111-1111-4111-8111-111111111111',
+  'image_generation', 'cost-test-provider', 'cost-test-model',
+  'provider-cost-test-job-001', repeat('f', 64),
+  '{"maximum_provider_cost_usd":0.05,"pricing_version":"test-cost-v1"}'::jsonb
+);
+
+do $provider_cost_event_test$
+declare
+  v_first record;
+  v_replay record;
+  v_second record;
+  v_unknown record;
+  v_rejected boolean := false;
+begin
+  select * into v_first from public.record_generation_provider_cost(
+    '12121212-1212-4121-8121-121212121212',
+    '11111111-1111-4111-8111-111111111111',
+    'provider-call-attempt-001',
+    'cost-test-provider', 'cost-test-model', 'provider-usage-001',
+    0.03, 'reported', 100, 20, 120, 'token',
+    '{"billing_reference":"synthetic-test-001"}'::jsonb
+  );
+  if not v_first.created or v_first.cumulative_known_cost_usd <> 0.03
+     or v_first.budget_limit_usd <> 0.05
+     or v_first.budget_exceeded is distinct from false then
+    raise exception 'First provider cost event or under-budget calculation failed';
+  end if;
+
+  select * into v_replay from public.record_generation_provider_cost(
+    '12121212-1212-4121-8121-121212121212',
+    '11111111-1111-4111-8111-111111111111',
+    'provider-call-attempt-001',
+    'cost-test-provider', 'cost-test-model', 'provider-usage-001',
+    0.03, 'reported', 100, 20, 120, 'token',
+    '{"billing_reference":"synthetic-test-001"}'::jsonb
+  );
+  if v_replay.created or v_replay.event_id <> v_first.event_id
+     or v_replay.cumulative_known_cost_usd <> 0.03 then
+    raise exception 'Provider cost event replay was not idempotent';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.record_generation_provider_cost(
+      '12121212-1212-4121-8121-121212121212',
+      '11111111-1111-4111-8111-111111111111',
+      'provider-call-attempt-001',
+      'cost-test-provider', 'cost-test-model', 'provider-usage-001',
+      0.04, 'reported', 100, 20, 120, 'token',
+      '{"billing_reference":"synthetic-test-001"}'::jsonb
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Provider cost idempotency key accepted changed cost evidence';
+  end if;
+
+  select * into v_second from public.record_generation_provider_cost(
+    '12121212-1212-4121-8121-121212121212',
+    '11111111-1111-4111-8111-111111111111',
+    'provider-call-attempt-002',
+    'cost-test-provider', 'cost-test-model', 'provider-usage-002',
+    0.03, 'estimated', 50, 10, 60, 'token', '{}'::jsonb
+  );
+  if not v_second.created or v_second.cumulative_known_cost_usd <> 0.06
+     or v_second.budget_exceeded is distinct from true then
+    raise exception 'Cumulative provider cost ceiling was not detected';
+  end if;
+
+  select * into v_unknown from public.record_generation_provider_cost(
+    '12121212-1212-4121-8121-121212121212',
+    '11111111-1111-4111-8111-111111111111',
+    'provider-call-attempt-003',
+    'cost-test-provider', 'cost-test-model', null,
+    null, 'unknown', null, null, null, 'unknown',
+    '{"reason":"provider did not return usage"}'::jsonb
+  );
+  if not v_unknown.created or v_unknown.cumulative_known_cost_usd <> 0.06
+     or v_unknown.budget_exceeded is distinct from true then
+    raise exception 'Unknown usage evidence corrupted known-cost over-budget status';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.record_generation_provider_cost(
+      '12121212-1212-4121-8121-121212121212',
+      '22222222-2222-4222-8222-222222222222',
+      'provider-foreign-owner-001',
+      'cost-test-provider', 'cost-test-model', null,
+      0.01, 'reported', null, null, null, 'request', '{}'::jsonb
+    );
+  exception when sqlstate '42501' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Provider cost event accepted a foreign job owner';
+  end if;
+
+  v_rejected := false;
+  begin
+    update public.generation_provider_cost_events
+       set cost_usd = 999
+     where job_id = '12121212-1212-4121-8121-121212121212';
+    raise exception 'Provider cost events were mutable';
+  exception when sqlstate '55000' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Provider cost append-only trigger did not fire'; end if;
+
+  if has_function_privilege('authenticated',
+       'public.record_generation_provider_cost(uuid,uuid,text,text,text,text,numeric,text,bigint,bigint,bigint,text,jsonb)', 'EXECUTE')
+     or has_table_privilege('authenticated', 'public.generation_provider_cost_events', 'SELECT')
+     or has_table_privilege('anon', 'public.generation_provider_cost_events', 'SELECT')
+     or has_table_privilege('service_role', 'public.generation_provider_cost_events', 'UPDATE')
+     or has_table_privilege('service_role', 'public.generation_provider_cost_events', 'DELETE')
+     or has_table_privilege('service_role', 'public.generation_provider_cost_events', 'TRUNCATE')
+     or not has_table_privilege('service_role', 'public.generation_provider_cost_events', 'INSERT')
+     or not has_table_privilege('service_role', 'public.generation_provider_cost_events', 'SELECT') then
+    raise exception 'Provider cost event privileges are not least-privilege';
+  end if;
+end;
+$provider_cost_event_test$;
+
+select 'provider cost event audit checks passed' as result;
