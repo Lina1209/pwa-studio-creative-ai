@@ -16,14 +16,14 @@ PWA Studio is a multi-user creative platform with a public guest-facing area, pr
 - Rules and safety page has been added to the public interface.
 - Backend AI chat and prompt-generation routes now require a valid Supabase access token.
 - The backend has an initial text safety guard for a limited set of clearly harmful request patterns.
-- A Supabase migration has been added for private storage buckets, per-user storage policies, moderation reports and an admin audit log.
-- PWA shell cache is v12; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback.
+- Migration 0002 defines private Storage buckets and owner-path policies only; it does not create moderation reports or an admin audit log. Migration 0005 defines the private `studio-media` bucket and project table.
+- PWA shell cache is v14; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback.
 
 ## Important gaps — do not describe these as finished
 
-- The live Supabase schema was created earlier through SQL Editor. Compare it with the repository's original 0001_initial_schema.sql before running any older migration. Do not rerun 0001 blindly.
-- The new 0002_storage_and_moderation.sql has been committed but has NOT been run in Supabase. Storage buckets and report/audit tables therefore are not yet confirmed live.
-- No cloud project CRUD API exists yet. Mini Movie Studio drafts and their version history remain device-local and are not synchronized across devices.
+- The live Supabase schema was created through SQL Editor and later migrations. Compare it with the repository's original 0001_initial_schema.sql before running older migrations. Do not rerun 0001 blindly.
+- Migration 0005 has been applied and the `public.projects` table, owner policies, and private `studio-media` bucket were verified. The `studio-exports` bucket from migration 0002 is not confirmed. Migration 0002 does not create moderation reports or audit tables.
+- Mini Movie Studio uses direct Supabase client synchronization rather than a FastAPI project CRUD API. Cross-device persistence, conflict handling, and deletion synchronization are not yet verified.
 - No actual file upload/download UI is connected to Supabase Storage.
 - No real video-generation provider is connected. DeepSeek currently handles text AI only.
 - No photorealistic character training, identity consistency, voice cloning or CGI rendering pipeline is connected.
