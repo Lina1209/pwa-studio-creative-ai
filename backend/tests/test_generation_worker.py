@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
@@ -18,6 +19,7 @@ from app.services.image_generation import (
     ImageGenerationError,
     ImageGenerationResult,
     ImageProviderRegistry,
+    ProviderUsage,
 )
 
 
@@ -75,6 +77,15 @@ class FakeRepository:
     async def complete(self, *args):
         self.calls.append(("complete", args))
         return self.complete_result
+
+    async def record_provider_cost(self, **kwargs):
+        self.calls.append(("provider_cost", kwargs))
+        return SimpleNamespace(
+            event_id=1, created=True,
+            cumulative_known_cost_usd=kwargs["cost_usd"] or Decimal("0"),
+            budget_limit_usd=None, budget_exceeded=None,
+        )
+
 
 
 class FakeProvider:
@@ -723,3 +734,96 @@ async def test_worker_fails_closed_on_permanent_database_credential_rejection():
     assert result.error_code == "database_credentials_rejected"
     assert provider.idempotency_keys == []
     assert any(call[0] == "fail" for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_persists_reported_provider_usage_before_upload_and_completion():
+    class MeteredProvider(FakeProvider):
+        async def generate(self, request, *, idempotency_key):
+            return ImageGenerationResult(
+                image_bytes=IMAGE,
+                mime_type="image/png",
+                provider="fake",
+                model="fake-v1",
+                provider_request_id="provider-request-metered",
+                usage=ProviderUsage(
+                    cost_usd=Decimal("0.0042"),
+                    cost_source="reported",
+                    provider_usage_id="usage-metered-001",
+                    input_units=120,
+                    output_units=80,
+                    total_units=200,
+                    unit_kind="token",
+                    metadata={"billing_reference": "provider-invoice-line-1"},
+                ),
+            )
+
+    repo = FakeRepository()
+    result = await make_worker(repo, MeteredProvider()).process(make_job())
+
+    assert result.outcome == "succeeded"
+    cost_call = next(call for call in repo.calls if call[0] == "provider_cost")
+    evidence = cost_call[1]
+    assert evidence["job_id"] == JOB_ID
+    assert evidence["user_id"] == OWNER
+    assert evidence["provider"] == "fake"
+    assert evidence["model"] == "fake-v1"
+    assert evidence["provider_usage_id"] == "usage-metered-001"
+    assert evidence["cost_usd"] == Decimal("0.0042")
+    assert evidence["cost_source"] == "reported"
+    assert evidence["total_units"] == 200
+    assert evidence["operation_key"].startswith(f"provider-usage:{JOB_ID}:")
+    assert [call[0] for call in repo.calls].index("provider_cost") < [call[0] for call in repo.calls].index("complete")
+
+
+@pytest.mark.asyncio
+async def test_worker_records_explicit_unknown_usage_without_fabricating_zero_cost():
+    class UnknownUsageProvider(FakeProvider):
+        async def generate(self, request, *, idempotency_key):
+            return ImageGenerationResult(
+                IMAGE, "image/png", "fake", "fake-v1",
+                usage=ProviderUsage(cost_source="unknown", metadata={"reason": "provider_usage_unavailable"}),
+            )
+
+    repo = FakeRepository()
+    result = await make_worker(repo, UnknownUsageProvider()).process(make_job())
+
+    assert result.outcome == "succeeded"
+    evidence = next(call[1] for call in repo.calls if call[0] == "provider_cost")
+    assert evidence["cost_source"] == "unknown"
+    assert evidence["cost_usd"] is None
+    assert evidence["operation_key"].endswith(":result")
+
+
+@pytest.mark.asyncio
+async def test_worker_retries_if_provider_usage_cannot_be_durably_recorded():
+    from app.services.worker_repository_errors import WorkerRepositoryError
+
+    class FailingCostRepository(FakeRepository):
+        async def record_provider_cost(self, **kwargs):
+            self.calls.append(("provider_cost_failed", kwargs))
+            raise WorkerRepositoryError("database_connection_error", retryable=True)
+
+    class MeteredProvider(FakeProvider):
+        async def generate(self, request, *, idempotency_key):
+            return ImageGenerationResult(
+                IMAGE, "image/png", "fake", "fake-v1",
+                usage=ProviderUsage(cost_usd=Decimal("0.01"), cost_source="reported"),
+            )
+
+    repo = FailingCostRepository()
+    result = await make_worker(repo, MeteredProvider()).process(make_job())
+
+    assert result.outcome == "retry_scheduled"
+    assert result.error_code == "database_connection_error"
+    assert any(call[0] == "provider_cost_failed" for call in repo.calls)
+    assert not any(call[0] == "complete" for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_create_provider_cost_event_when_adapter_has_no_usage_contract():
+    repo = FakeRepository()
+    result = await make_worker(repo).process(make_job())
+
+    assert result.outcome == "succeeded"
+    assert not any(call[0] == "provider_cost" for call in repo.calls)
