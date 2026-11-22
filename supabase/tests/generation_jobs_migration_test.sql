@@ -2484,6 +2484,14 @@ begin
     raise exception 'one user's rate limit incorrectly affected another user';
   end if;
 
+  v_result := public.reserve_ai_request(
+    v_user, gen_random_uuid(), 'chat', 2, 1, 1
+  );
+  if v_result->>'admitted' <> 'false'
+     or v_result->>'reason' <> 'global_concurrency_limited' then
+    raise exception 'global AI concurrency limit was not enforced across accounts';
+  end if;
+
   if not public.finish_ai_request(v_user, v_second, 'released') then
     raise exception 'could not release failed AI request reservation';
   end if;
@@ -2492,7 +2500,7 @@ begin
   end if;
 
   if has_function_privilege('authenticated',
-       'public.reserve_ai_request(uuid,uuid,text,integer,integer)', 'EXECUTE')
+       'public.reserve_ai_request(uuid,uuid,text,integer,integer,integer)', 'EXECUTE')
      or has_function_privilege('anon',
        'public.finish_ai_request(uuid,uuid,text)', 'EXECUTE')
      or not has_function_privilege('service_role',
