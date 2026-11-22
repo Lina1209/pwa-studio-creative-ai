@@ -76,12 +76,8 @@ values ('generation_job', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         'generation_job.created', '{"test": true}'::jsonb);
 
 
--- The backend-only RPC creates one job and one outbox event atomically.
-do $
-declare
-  v_first record;
-  v_second record;
-  v_event_count integer;
+-- Only the trusted backend service role may execute the RPC.
+do $$
 begin
   if has_function_privilege(
     'authenticated',
@@ -90,8 +86,17 @@ begin
   ) then
     raise exception 'Authenticated role unexpectedly has execute permission on the job creation RPC';
   end if;
+end;
+$$;
 
-  execute 'set local role service_role';
+-- The backend-only RPC creates one job and one outbox event atomically.
+set role service_role;
+do $$
+declare
+  v_first record;
+  v_second record;
+  v_event_count integer;
+begin
   select * into v_first
   from public.create_generation_job_with_outbox(
     '11111111-1111-4111-8111-111111111111',
@@ -133,8 +138,7 @@ begin
   end if;
 
   begin
-    perform *
-    from public.create_generation_job_with_outbox(
+    perform public.create_generation_job_with_outbox(
       '11111111-1111-4111-8111-111111111111',
       null,
       'ai_processing',
@@ -149,9 +153,9 @@ begin
   exception when sqlstate '22023' then
     null;
   end;
-  execute 'reset role';
 end;
-$;
+$$;
+reset role;
 
 -- A job must not reference another user's project.
 do $$
