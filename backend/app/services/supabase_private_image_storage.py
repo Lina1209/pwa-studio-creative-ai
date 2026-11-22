@@ -66,11 +66,47 @@ class SupabasePrivateImageStorage:
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         try:
+            extra_headers = kwargs.pop("headers", {})
+            merged_headers = {**self._headers, **extra_headers}
             response = await self._client.request(
-                method, url, headers=self._headers, timeout=self._timeout, **kwargs
+                method, url, headers=merged_headers, timeout=self._timeout, **kwargs
             )
             response.raise_for_status()
             return response
+        except httpx.TimeoutException as exc:
+            raise SupabaseStorageAdapterError(
+                "storage_request_timeout", retryable=True
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            raise SupabaseStorageAdapterError(
+                "storage_service_unavailable" if status >= 500 else "storage_request_rejected",
+                retryable=status >= 500 or status == 429,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise SupabaseStorageAdapterError(
+                "storage_transport_error", retryable=True
+            ) from exc
+
+    async def _download_object(self, url: str) -> bytes:
+        payload = bytearray()
+        try:
+            async with self._client.stream(
+                "GET", url, headers=self._headers, timeout=self._timeout
+            ) as response:
+                response.raise_for_status()
+                declared_length = response.headers.get("content-length")
+                if declared_length:
+                    try:
+                        if int(declared_length) > MAX_IMAGE_BYTES:
+                            raise GenerationResultStorageError("stored_object_too_large")
+                    except ValueError as exc:
+                        raise SupabaseStorageAdapterError("storage_content_length_invalid") from exc
+                async for chunk in response.aiter_bytes():
+                    payload.extend(chunk)
+                    if len(payload) > MAX_IMAGE_BYTES:
+                        raise GenerationResultStorageError("stored_object_too_large")
+            return bytes(payload)
         except httpx.TimeoutException as exc:
             raise SupabaseStorageAdapterError(
                 "storage_request_timeout", retryable=True
@@ -161,11 +197,9 @@ class SupabasePrivateImageStorage:
             if stored_mime != mime_type or size_bytes != len(image_bytes):
                 raise GenerationResultStorageError("uploaded_object_content_mismatch")
 
-            download_response = await self._request(
-                "GET",
-                f"{self._base_url}/object/authenticated/{encoded_bucket}/{encoded_path}",
+            downloaded = await self._download_object(
+                f"{self._base_url}/object/authenticated/{encoded_bucket}/{encoded_path}"
             )
-            downloaded = download_response.content
             if len(downloaded) > MAX_IMAGE_BYTES or downloaded != image_bytes:
                 raise GenerationResultStorageError("stored_object_bytes_mismatch")
             digest = calculate_sha256(downloaded)
