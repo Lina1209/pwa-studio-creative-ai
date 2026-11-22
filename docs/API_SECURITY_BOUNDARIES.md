@@ -41,7 +41,7 @@ Pricing quote snapshots are serialized with strict JSON handling before canonica
 ## Resource protection: current limits and remaining work
 
 Implemented:
-- AI provider calls use a bounded in-process semaphore, a bounded queue wait, provider timeout, and a small retry ceiling.
+- AI provider calls use a bounded in-process semaphore, a bounded queue wait, provider timeout, a small retry ceiling, and a configurable maximum output-token limit (`AI_MAX_OUTPUT_TOKENS`, default 2,048; allowed range 1–8,192).
 - Overload returns HTTP 503 with `Retry-After`.
 - Analytics has database-side per-token event limits and deduplication.
 
