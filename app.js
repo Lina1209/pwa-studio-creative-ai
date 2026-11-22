@@ -100,6 +100,8 @@
       refreshAuthUI(session);
       setTimeout(() => {
         if (accountChanged) {
+          financeUiAuthorized = false; financeAccess = null;
+          const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
           activeAssistantConversationId = null;
           $("#assistantHistoryList")?.replaceChildren();
           $("#assistantMessages")?.replaceChildren();
