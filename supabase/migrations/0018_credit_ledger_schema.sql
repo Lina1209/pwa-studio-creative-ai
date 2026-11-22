@@ -98,7 +98,12 @@ revoke all on public.credit_wallets from anon, authenticated;
 revoke all on public.credit_holds from anon, authenticated;
 revoke all on public.credit_ledger from anon, authenticated;
 grant select on public.credit_wallets, public.credit_holds, public.credit_ledger to authenticated;
-grant all on public.credit_wallets, public.credit_holds, public.credit_ledger to service_role;
+-- SECURITY DEFINER lifecycle RPCs own all financial mutations. The service role
+-- may inspect balances/history but cannot bypass those transaction boundaries.
+grant select on public.credit_wallets, public.credit_holds, public.credit_ledger to service_role;
+revoke insert, update, delete, truncate
+  on public.credit_wallets, public.credit_holds, public.credit_ledger
+  from service_role;
 
 drop policy if exists "Users read own credit wallet" on public.credit_wallets;
 create policy "Users read own credit wallet" on public.credit_wallets
