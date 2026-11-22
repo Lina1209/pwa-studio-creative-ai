@@ -3,6 +3,7 @@
 No real provider is registered here yet. Provider credentials and network clients
 belong in server-side adapters, never in frontend code or request payloads.
 """
+import json
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
@@ -116,7 +117,7 @@ class ProviderUsage:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.cost_source not in {"reported", "estimated", "unknown"}:
+        if not isinstance(self.cost_source, str) or self.cost_source not in {"reported", "estimated", "unknown"}:
             raise ValueError("Provider usage cost source is invalid.")
         if (self.cost_source == "unknown") != (self.cost_usd is None):
             raise ValueError("Provider usage cost and source are inconsistent.")
@@ -137,10 +138,16 @@ class ProviderUsage:
                 isinstance(value, bool) or not isinstance(value, int) or value < 0
             ):
                 raise ValueError("Provider usage units must be nonnegative integers.")
-        if self.unit_kind not in {"token", "image", "second", "character", "request", "unknown"}:
+        if not isinstance(self.unit_kind, str) or self.unit_kind not in {"token", "image", "second", "character", "request", "unknown"}:
             raise ValueError("Provider usage unit kind is invalid.")
         if not isinstance(self.metadata, dict):
             raise ValueError("Provider usage metadata must be an object.")
+        try:
+            encoded_metadata = json.dumps(self.metadata, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Provider usage metadata must contain finite JSON values.") from exc
+        if len(encoded_metadata.encode("utf-8")) > 16384:
+            raise ValueError("Provider usage metadata exceeds 16 KiB.")
 
 
 @dataclass(frozen=True)
