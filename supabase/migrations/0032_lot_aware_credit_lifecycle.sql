@@ -359,10 +359,11 @@ begin
     return;
   end if;
 
-  update public.credit_wallets
-     set available_credits = available_credits + p_amount, updated_at = now()
-   where user_id = p_user_id
-   returning * into v_wallet;
+  update public.credit_wallets as wallet
+     set available_credits = wallet.available_credits + p_amount,
+         updated_at = now()
+   where wallet.user_id = p_user_id
+   returning wallet.* into v_wallet;
 
   insert into public.credit_lots(
     user_id, lot_type, source_reference, idempotency_key,
