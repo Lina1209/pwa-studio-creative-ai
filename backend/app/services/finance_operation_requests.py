@@ -185,3 +185,81 @@ def read_finance_operation_request(settings: Settings, *, request_id: UUID) -> d
         return parsed
     except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
         raise FinanceRequestUnavailable("Finance request lookup returned malformed data.") from exc
+
+
+
+def list_finance_operation_requests(
+    settings: Settings, *, credit_scope_keys: list[str], billing_scope_keys: list[str],
+    status: str | None, before: object | None, before_id: UUID | None, limit: int,
+) -> list[dict]:
+    from datetime import datetime
+
+    if not isinstance(credit_scope_keys, list) or not isinstance(billing_scope_keys, list):
+        raise ValueError("Finance scopes must be explicit lists.")
+    if len(credit_scope_keys) > 100 or len(billing_scope_keys) > 100:
+        raise ValueError("Too many finance scopes.")
+    for scope in credit_scope_keys + billing_scope_keys:
+        if not isinstance(scope, str) or not scope.startswith("user:") or len(scope) != 41:
+            raise ValueError("Finance scope is invalid.")
+        UUID(scope[5:])
+    if status is not None and status not in {"pending", "approved", "rejected", "cancelled"}:
+        raise ValueError("Finance request status is invalid.")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 101:
+        raise ValueError("Finance request page size is invalid.")
+    if (before is None) != (before_id is None):
+        raise ValueError("Both finance queue cursor fields are required.")
+    if before is not None and (
+        not isinstance(before, datetime) or before.tzinfo is None
+        or not isinstance(before_id, UUID)
+    ):
+        raise ValueError("Finance queue cursor must be timezone-aware and complete.")
+
+    result = _rpc(settings, "list_finance_operation_requests", {
+        "p_credit_scope_keys": credit_scope_keys,
+        "p_billing_scope_keys": billing_scope_keys,
+        "p_status": status,
+        "p_before": before.isoformat() if before is not None else None,
+        "p_before_id": str(before_id) if before_id is not None else None,
+        "p_limit": limit,
+    })
+    if not isinstance(result, list) or len(result) > limit:
+        raise FinanceRequestUnavailable("Finance request queue returned an invalid page.")
+
+    parsed_rows: list[dict] = []
+    for row in result:
+        if not isinstance(row, dict):
+            raise FinanceRequestUnavailable("Finance request queue returned malformed data.")
+        try:
+            item = {
+                "request_id": UUID(str(row["request_id"])),
+                "requester_id": UUID(str(row["requester_id"])),
+                "request_type": str(row["request_type"]),
+                "target_user_id": UUID(str(row["target_user_id"])),
+                "amount": Decimal(str(row["amount"])),
+                "currency_code": str(row["currency_code"]),
+                "scope_key": str(row["scope_key"]),
+                "reason": str(row["reason"]),
+                "status": str(row["status"]),
+                "requested_at": datetime.fromisoformat(str(row["requested_at"]).replace("Z", "+00:00")),
+                "decided_by": UUID(str(row["decided_by"])) if row.get("decided_by") else None,
+                "decided_at": datetime.fromisoformat(str(row["decided_at"]).replace("Z", "+00:00")) if row.get("decided_at") else None,
+                "decision_reason": str(row["decision_reason"]) if row.get("decision_reason") is not None else None,
+                "cancelled_at": datetime.fromisoformat(str(row["cancelled_at"]).replace("Z", "+00:00")) if row.get("cancelled_at") else None,
+            }
+            if item["request_type"] not in REQUEST_TYPES or item["status"] not in {
+                "pending", "approved", "rejected", "cancelled"
+            }:
+                raise ValueError("unknown request type or status")
+            if not item["amount"].is_finite() or item["amount"] <= 0:
+                raise ValueError("invalid amount")
+            if item["requested_at"].tzinfo is None or item["scope_key"] != f"user:{item['target_user_id']}":
+                raise ValueError("invalid scope or timestamp")
+            if item["request_type"] == "credit_compensation":
+                if item["currency_code"] != "CRD" or item["amount"] != item["amount"].to_integral_value():
+                    raise ValueError("invalid credit units")
+            elif item["currency_code"] == "CRD":
+                raise ValueError("invalid refund currency")
+            parsed_rows.append(item)
+        except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
+            raise FinanceRequestUnavailable("Finance request queue returned malformed data.") from exc
+    return parsed_rows
