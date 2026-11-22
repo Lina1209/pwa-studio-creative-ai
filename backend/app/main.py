@@ -1023,9 +1023,15 @@ def _run_admitted_ai(operation: str, user_id: str, call):
             settings, user_id=UUID(user_id), endpoint=operation
         )
     except AIAdmissionRejected as exc:
+        if exc.reason == "daily_user_limit":
+            detail = "Вы достигли дневного лимита AI-запросов. Лимит обновится по скользящему 24-часовому окну."
+        elif exc.reason == "daily_global_limit":
+            detail = "Дневной лимит AI-сервиса временно исчерпан. Попробуйте позже."
+        else:
+            detail = "Достигнут временный лимит AI-запросов. Попробуйте немного позже."
         raise HTTPException(
             status_code=429,
-            detail="Достигнут временный лимит AI-запросов. Попробуйте немного позже.",
+            detail=detail,
             headers={"Retry-After": str(exc.retry_after_seconds)},
         ) from exc
     except AIAdmissionUnavailable as exc:
