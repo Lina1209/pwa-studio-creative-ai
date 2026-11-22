@@ -1,5 +1,5 @@
 """Server-only client for the private finance role registry RPCs."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -58,6 +58,8 @@ class ResolvedFinanceGrant:
     permissions: frozenset[str]
     active: bool
     scope_ids: frozenset[str]
+    permission_scopes: dict[str, frozenset[str]] = field(default_factory=dict)
+    global_permissions: frozenset[str] = frozenset()
 
 
 def _headers(settings: Settings) -> dict[str, str]:
