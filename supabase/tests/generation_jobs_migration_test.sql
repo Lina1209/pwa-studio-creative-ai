@@ -3628,14 +3628,14 @@ begin
     '11111111-1111-4111-8111-111111111111',
     'credit_compensation',
     '22222222-2222-4222-8222-222222222222',
-    12.5000, 'KZT', 'test-scope', 'Compensation review fixture',
+    12, 'CRD', 'test-scope', 'Compensation review fixture',
     'aaaaaaaa-1111-4111-8111-111111111111'
   );
   v_replay := public.create_finance_operation_request(
     '11111111-1111-4111-8111-111111111111',
     'credit_compensation',
     '22222222-2222-4222-8222-222222222222',
-    12.5000, 'KZT', 'test-scope', 'Compensation review fixture',
+    12, 'CRD', 'test-scope', 'Compensation review fixture',
     'aaaaaaaa-1111-4111-8111-111111111111'
   );
   if v_request <> v_replay then
@@ -3659,7 +3659,7 @@ begin
       '11111111-1111-4111-8111-111111111111',
       'credit_compensation',
       '22222222-2222-4222-8222-222222222222',
-      99.0000, 'KZT', 'test-scope', 'Changed payload',
+      99, 'CRD', 'test-scope', 'Changed payload',
       'aaaaaaaa-1111-4111-8111-111111111111'
     );
   exception when sqlstate '22023' then
@@ -3675,7 +3675,7 @@ begin
       '11111111-1111-4111-8111-111111111111',
       'credit_compensation',
       '22222222-2222-4222-8222-222222222222',
-      'NaN'::numeric, 'KZT', 'test-scope', 'Non-finite amount',
+      'NaN'::numeric, 'CRD', 'test-scope', 'Non-finite amount',
       'cccccccc-3333-4333-8333-333333333333'
     );
   exception when sqlstate '22023' then
@@ -3691,7 +3691,7 @@ begin
       '11111111-1111-4111-8111-111111111111',
       'credit_compensation',
       '22222222-2222-4222-8222-222222222222',
-      0.00001, 'KZT', 'test-scope', 'Excess scale amount',
+      0.00001, 'USD', 'test-scope', 'Excess scale amount',
       'dddddddd-4444-4444-8444-444444444444'
     );
   exception when sqlstate '22023' then
