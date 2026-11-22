@@ -106,7 +106,29 @@ jobs:
           sleep 1
           SECOND_OUTPUT="$("${DB[@]}" -c "select public.authorize_generation_provider_operation('$JOB_B', 'budget-race-worker-b');")"
           wait "$FIRST_PID"
-          FIRST_RESULT="$(grep -E '^(t|f)        env:
+          FIRST_RESULT="$(grep -E '^[tf]' "$FIRST_OUTPUT" | head -n 1)"
+          if { [ "$FIRST_RESULT" = "t" ] && [ "$SECOND_OUTPUT" = "f" ]; } || { [ "$FIRST_RESULT" = "f" ] && [ "$SECOND_OUTPUT" = "t" ]; }; then
+            :
+          else
+            echo "Concurrent provider admissions did not produce exactly one success and one denial."
+            cat "$FIRST_OUTPUT"
+            echo "Second admission: $SECOND_OUTPUT"
+            exit 1
+          fi
+          RESERVATION_COUNT="$("${DB[@]}" -c "select count(*) from public.generation_provider_cost_reservations
+            where job_id in ('$JOB_A', '$JOB_B') and status = 'reserved';")"
+          test "$RESERVATION_COUNT" = "1"
+          ADMITTED_JOB="$("${DB[@]}" -c "select job_id from public.generation_provider_cost_reservations
+            where job_id in ('$JOB_A', '$JOB_B') and status = 'reserved' limit 1;")"
+          "${DB[@]}" -c "select public.resolve_generation_provider_reservation(
+            '$ADMITTED_JOB', 'budget-race-cleanup-001', 'release_no_charge', null,
+            'Concurrent fixture was never submitted to a provider.'
+          );"
+          "${DB[@]}" -c "select public.configure_provider_budget_policy(null, null);"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
+
+        env:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
