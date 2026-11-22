@@ -501,3 +501,24 @@ async def test_permanent_storage_failure_uses_terminal_failure():
     assert result.error_code == "storage_not_configured"
     assert repo.calls[-1][0] == "fail"
     assert not any(call[0] == "complete" for call in repo.calls)
+
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_provider_failed_journal_fails_job_without_lookup_or_resubmit():
+    class ProviderMustNotBeContacted(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            raise AssertionError("A provider_failed journal is already terminal")
+
+        async def generate(self, request, *, idempotency_key):
+            raise AssertionError("A provider_failed journal must never resubmit")
+
+    repo = FakeRepository(journal_created=False, journal_state="provider_failed")
+    result = await make_worker(repo, ProviderMustNotBeContacted()).process(make_job())
+
+    assert result.outcome == "failed"
+    assert result.error_code == "provider_operation_failed"
+    assert any(call[0] == "fail" for call in repo.calls)
+    assert not any(call[0] in {"journal_unknown", "journal_accepted", "journal_result"} for call in repo.calls)
