@@ -1663,7 +1663,22 @@ declare
   v_second record;
   v_unknown record;
   v_rejected boolean := false;
+  v_admitted boolean;
 begin
+  -- Every synthetic billable operation must first obtain its durable reserve.
+  perform public.configure_provider_budget_policy(1.00, 1.00);
+  update public.generation_jobs
+     set status = 'running', lease_owner = 'cost-test-worker',
+         lease_expires_at = now() + interval '120 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id = '12121212-1212-4121-8121-121212121212';
+  select public.authorize_generation_provider_operation(
+    '12121212-1212-4121-8121-121212121212', 'cost-test-worker'
+  ) into v_admitted;
+  if v_admitted is distinct from true then
+    raise exception 'Provider cost fixture could not reserve its maximum cost';
+  end if;
+
   select * into v_first from public.record_generation_provider_cost(
     '12121212-1212-4121-8121-121212121212',
     '11111111-1111-4111-8111-111111111111',
@@ -1806,6 +1821,14 @@ begin
      or not has_table_privilege('service_role', 'public.generation_provider_cost_events', 'SELECT') then
     raise exception 'Provider cost event privileges are not least-privilege';
   end if;
+  if not public.resolve_generation_provider_reservation(
+       '12121212-1212-4121-8121-121212121212',
+       'provider-cost-event-test-reconcile', 'settle_known_cost', 0.01,
+       'Synthetic test invoice resolves unknown provider usage.'
+     ) then
+    raise exception 'Provider cost test reservation could not be reconciled';
+  end if;
+  perform public.configure_provider_budget_policy(null, null);
 end;
 $provider_cost_event_test$;
 
@@ -2228,7 +2251,7 @@ begin
   end if;
 
   -- Daily limit 0.30 USD and outstanding exposure limit 0.15 USD.
-  if not public.configure_provider_budget_policy(0.30, 0.15) then
+  if not public.configure_provider_budget_policy(0.40, 0.15) then
     raise exception 'Operator could not configure the global provider budget policy';
   end if;
 
@@ -2326,7 +2349,7 @@ begin
      set created_at = now() - interval '1 day'
    where job_id in (v_job_b, v_job_unknown);
 
-  if not public.configure_provider_budget_policy(0.25, 0.30) then
+  if not public.configure_provider_budget_policy(0.32, 0.30) then
     raise exception 'Could not configure the daily-limit rejection assertion';
   end if;
   select public.authorize_generation_provider_operation(v_job_next_day, 'global-budget-worker')
@@ -2335,7 +2358,7 @@ begin
     raise exception 'Admission exceeded the configured daily budget';
   end if;
 
-  if not public.configure_provider_budget_policy(0.26, 0.30) then
+  if not public.configure_provider_budget_policy(0.33, 0.30) then
     raise exception 'Could not adjust test policy for UTC rollover assertion';
   end if;
   select public.authorize_generation_provider_operation(v_job_next_day, 'global-budget-worker')
