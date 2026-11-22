@@ -584,6 +584,11 @@ def admin_revoke_finance_role(
 
 
 
+def _finance_target_scope(target_user_id: UUID) -> str:
+    """Current finance scope is per-user until a trusted tenant membership model exists."""
+    return f"user:{target_user_id}"
+
+
 def _require_finance_action(user: StudioUser, *, request_type: str, action: str, scope_key: str) -> None:
     prefix = "credit.compensation" if request_type == "credit_compensation" else "billing.refund"
     try:
@@ -607,16 +612,17 @@ def finance_request_create(
     user: StudioUser = Depends(get_current_user),
 ):
     """Create an idempotent finance proposal; this never moves money or credits."""
+    target_scope = _finance_target_scope(payload.target_user_id)
     _require_finance_action(
         user, request_type=payload.request_type, action="request",
-        scope_key=payload.scope_key,
+        scope_key=target_scope,
     )
     try:
         request_id = create_finance_operation_request(
             settings, requester_id=UUID(user.user_id),
             request_type=payload.request_type, target_user_id=payload.target_user_id,
             amount=payload.amount, currency_code=payload.currency_code,
-            scope_key=payload.scope_key, reason=payload.reason,
+            scope_key=target_scope, reason=payload.reason,
             idempotency_key=payload.idempotency_key,
         )
     except ValueError as exc:
@@ -647,6 +653,8 @@ def finance_request_decide(
         raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
     if item["requester_id"] == UUID(user.user_id):
         raise HTTPException(status_code=403, detail="A requester cannot approve or reject their own finance request.")
+    if item["scope_key"] != _finance_target_scope(item["target_user_id"]):
+        raise HTTPException(status_code=403, detail="Finance request scope does not match its target.")
     _require_finance_action(
         user, request_type=item["request_type"], action="approve",
         scope_key=item["scope_key"],
@@ -686,6 +694,8 @@ def finance_request_cancel(
         raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
     if item["requester_id"] != UUID(user.user_id):
         raise HTTPException(status_code=404, detail="Finance request was not found.")
+    if item["scope_key"] != _finance_target_scope(item["target_user_id"]):
+        raise HTTPException(status_code=403, detail="Finance request scope does not match its target.")
     _require_finance_action(
         user, request_type=item["request_type"], action="cancel",
         scope_key=item["scope_key"],
