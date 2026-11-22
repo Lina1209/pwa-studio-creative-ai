@@ -12,7 +12,9 @@ from typing import Protocol
 from uuid import UUID
 
 from app.services.generation_result_storage import (
+    GenerationResultStorageError,
     StoredObjectMetadata,
+    calculate_sha256,
     validate_generation_result_object,
 )
 from app.services.image_generation import (
