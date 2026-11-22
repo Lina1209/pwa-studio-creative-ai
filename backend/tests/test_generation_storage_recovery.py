@@ -169,7 +169,7 @@ async def test_verify_owner_succeeded_results_defers_transient_storage_errors():
 
     class Repository:
         async def list_owner_job_inventory(self, owner_id):
-            return [job(JOB_OK, "succeeded", path)]
+            return [job(JOB_OK, "succeeded", path, result_sha256="a" * 64)]
 
     class Storage:
         async def verify_existing_image(self, **kwargs):
@@ -206,6 +206,6 @@ async def test_verify_owner_succeeded_results_rejects_missing_or_mismatched_data
 
     assert report.verified_results == ()
     assert report.integrity_failures == (
-        (str(JOB_FAILED), "stored_result_sha256_mismatch"),
         (str(JOB_OK), "succeeded_job_missing_result_sha256"),
+        (str(JOB_FAILED), "stored_result_sha256_mismatch"),
     )
