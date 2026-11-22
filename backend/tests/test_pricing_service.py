@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import json
 from uuid import UUID
 
@@ -21,7 +22,7 @@ SECRET = "pricing-test-signing-secret-with-32-bytes-minimum"
 NOW = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
 CATALOG = PricingCatalog(
     "approved-test-v3",
-    (PricingRule("image_generation", "provider-a", "model-a", 7, "image", 1, 4),),
+    (PricingRule("image_generation", "provider-a", "model-a", 7, "image", 1, 4, Decimal("0.075")) ,),
 )
 
 
@@ -63,6 +64,8 @@ def test_quote_uses_server_catalog_and_calculates_integer_amount():
     assert quote.price_version == "approved-test-v3"
     assert quote.snapshot()["maximum_authorized_charge"] == 21
     assert quote.snapshot()["credit_unit"] == "credit"
+    assert quote.snapshot()["maximum_provider_cost_usd"] == "0.075"
+    assert quote.snapshot()["provider_cost_currency"] == "USD"
     verified = verify(quote.snapshot())
     assert verified.quote_id == quote.quote_id
     assert verified.amount == 21
@@ -78,6 +81,29 @@ def test_quote_is_bound_to_owner_and_exact_generation_request():
         verify(snapshot, model="model-b")
     with pytest.raises(PricingError, match="idempotency key"):
         verify(snapshot, idempotency_key="another-idempotency-key")
+
+
+def test_provider_cost_ceiling_is_signed_and_tampering_is_rejected():
+    snapshot = make_quote().snapshot()
+    snapshot["maximum_provider_cost_usd"] = "999.00"
+    with pytest.raises(PricingError, match="signature"):
+        verify(snapshot)
+
+
+def test_quote_cannot_be_issued_without_an_approved_provider_cost_ceiling():
+    catalog = PricingCatalog(
+        "missing-cost-cap-v1",
+        (PricingRule("image_generation", "provider-a", "model-a", 7, "image"),),
+    )
+    with pytest.raises(PricingError, match="no provider cost ceiling"):
+        make_quote(catalog=catalog)
+
+
+def test_provider_cost_ceiling_must_be_positive_finite_decimal():
+    for invalid in (Decimal("0"), Decimal("-0.01"), Decimal("NaN"), Decimal("Infinity")):
+        with pytest.raises(PricingError, match="positive finite USD decimal"):
+            PricingRule("image_generation", "provider-a", "model-a", 7, "image",
+                        max_provider_cost_usd=invalid)
 
 
 def test_quote_tampering_is_detected_even_when_amount_and_limit_are_changed():
@@ -168,6 +194,7 @@ def test_server_catalog_loader_parses_rules_and_fails_closed_on_invalid_schema()
         }],
     }))
     assert catalog.version == "server-v1"
+    assert catalog.find("image_generation", "provider-a", "model-a").max_provider_cost_usd is None
     assert catalog.find("image_generation", "provider-a", "model-a").credits_per_unit == 9
     assert load_pricing_catalog('{"version":"unconfigured","rules":[]}').rules == ()
     with pytest.raises(PricingError, match="schema"):
