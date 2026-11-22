@@ -130,15 +130,27 @@ def resolve_finance_grant(settings: Settings, *, principal_id: UUID) -> Resolved
     assignments = list_active_finance_roles(settings, principal_id=principal_id)
     permissions: set[str] = set()
     scopes: set[str] = set()
+    permission_scopes: dict[str, set[str]] = {}
+    global_permissions: set[str] = set()
     for assignment in assignments:
-        permissions.update(ROLE_PERMISSIONS[assignment.role_code])
-        if assignment.scope_key is not None:
+        role_permissions = ROLE_PERMISSIONS[assignment.role_code]
+        permissions.update(role_permissions)
+        if assignment.scope_key is None:
+            global_permissions.update(role_permissions)
+        else:
             scopes.add(assignment.scope_key)
+            for permission in role_permissions:
+                permission_scopes.setdefault(permission, set()).add(assignment.scope_key)
     return ResolvedFinanceGrant(
         principal_id=principal_id,
         permissions=frozenset(permissions),
         active=bool(assignments),
         scope_ids=frozenset(scopes),
+        permission_scopes={
+            permission: frozenset(values)
+            for permission, values in permission_scopes.items()
+        },
+        global_permissions=frozenset(global_permissions),
     )
 
 
