@@ -174,7 +174,7 @@ revoke all on function public.reserve_ai_request(uuid, uuid, text, integer, inte
   from public, anon, authenticated;
 revoke all on function public.finish_ai_request(uuid, uuid, text)
   from public, anon, authenticated;
-grant execute on function public.reserve_ai_request(uuid, uuid, text, integer, integer)
+grant execute on function public.reserve_ai_request(uuid, uuid, text, integer, integer, integer)
   to service_role;
 grant execute on function public.finish_ai_request(uuid, uuid, text)
   to service_role;
