@@ -3,10 +3,10 @@
 This module deliberately returns aggregates only: no prompts, raw metadata,
 provider usage identifiers, emails, or customer credit balances.
 """
-from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from uuid import UUID
 
 import httpx
 
@@ -66,11 +66,15 @@ def _row(raw: Any) -> dict[str, Any]:
     job_id = raw.get("job_id")
     if not isinstance(job_id, str) or len(job_id) > 64:
         raise ValueError("invalid_job_id")
+    try:
+        UUID(job_id)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValueError("invalid_job_id") from exc
     cost = _decimal(raw.get("cost_usd"), nullable=(source == "unknown"))
     if (source == "unknown") != (cost is None):
         raise ValueError("cost_source_mismatch")
     budget = raw.get("budget_exceeded")
-    if budget not in (True, False, None):
+    if budget is not True and budget is not False and budget is not None:
         raise ValueError("invalid_budget_state")
     created = _timestamp(raw.get("created_at"))
     return {
