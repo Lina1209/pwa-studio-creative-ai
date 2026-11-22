@@ -93,6 +93,8 @@ def create_finance_operation_request(
         raise ValueError("Cash refunds must use a currency code, not the CRD credit unit.")
     if not isinstance(scope_key, str) or not 1 <= len(scope_key) <= 200 or scope_key.strip() != scope_key:
         raise ValueError("An explicit finance request scope is required.")
+    if scope_key != f"user:{target_user_id}":
+        raise ValueError("Finance request scope must match its target user.")
     if not isinstance(reason, str) or not 1 <= len(reason) <= 500 or reason.strip() != reason:
         raise ValueError("A trimmed reason of 1 to 500 characters is required.")
     if not isinstance(idempotency_key, UUID):
