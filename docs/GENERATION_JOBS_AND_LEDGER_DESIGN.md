@@ -383,3 +383,11 @@ The signed quote verifier also now rejects a boolean
 integer amount (for example, `True == 1`), and independently enforces the
 global quantity ceiling. This is strict input validation; it does not activate
 pricing or credit charging.
+
+## 19. Mini Movie Studio AI screenplay and storyboard
+
+The authenticated API now exposes `POST /api/movie/script` for the first AI-assisted creative workflow. It accepts a bounded project brief (title, idea, genre, target duration, frame ratio and output language) and returns two editable text fields: screenplay and scene-matched storyboard. The request uses the shared distributed AI admission controls, server-held provider credentials, content-safety checks and AI usage telemetry. Provider errors and malformed model output are not exposed to the browser.
+
+The Mini Movie Studio's first workflow stage adds an explicit AI action. It fills the screenplay and storyboard editors but does not silently mark the stage complete or persist generated text; the creator reviews the result and chooses the existing draft-save or stage-complete action. This is AI-assisted pre-production, not video rendering. It does not enqueue a generation job, reserve credits, or claim to render/export a film.
+
+Backend API tests cover successful structured output, malformed AI output, request bounds, unknown fields and authentication.
