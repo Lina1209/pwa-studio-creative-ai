@@ -10,6 +10,8 @@
     ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.publishableKey)
     : null;
   let authSession = null;
+  let activeAssistantConversationId = null;
+  let lastAuthUserId = null;
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -69,10 +71,42 @@
   } else {
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
-      refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); }, 0);
+      const session = data?.session || null;
+      lastAuthUserId = session?.user?.id || null;
+      refreshAuthUI(session);
+      setTimeout(() => {
+        if (typeof renderMovieProjects === "function") renderMovieProjects();
+        if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
+        if (typeof loadAccountRole === "function") loadAccountRole();
+        if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+      }, 0);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      const nextUserId = session?.user?.id || null;
+      const accountChanged = lastAuthUserId !== nextUserId;
+      lastAuthUserId = nextUserId;
+      refreshAuthUI(session);
+      setTimeout(() => {
+        if (accountChanged) {
+          activeAssistantConversationId = null;
+          $("#assistantHistoryList")?.replaceChildren();
+          $("#assistantMessages")?.replaceChildren();
+          const workflow = $("#movieWorkflowPanel");
+          if (workflow) { workflow.hidden = true; workflow.replaceChildren(); }
+          if (typeof setMovieCreationFormVisible === "function") setMovieCreationFormVisible(true);
+          if (typeof activeMovieId !== "undefined") activeMovieId = null;
+          if (typeof editingMovieId !== "undefined") editingMovieId = null;
+          if (typeof movieCloudState !== "undefined") {
+            clearTimeout(movieCloudState.timer);
+            movieCloudState.pending = false;
+          }
+        }
+        if (typeof loadAccountRole === "function") loadAccountRole();
+        if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+        if (typeof renderMovieProjects === "function") renderMovieProjects();
+        if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
+      }, 0);
+    });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -212,11 +246,28 @@ const movieHistoryStyle = document.createElement("style");
     const base = getApiBase();
     if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
     const token = authSession?.access_token;
-    const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(options.headers || {}) } });
-    let data = {};
-    try { data = await response.json(); } catch {}
-    if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
-    return data;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 100000);
+    try {
+      const response = await fetch(base + path, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...(token ? { Authorization: "Bearer " + token } : {}),
+          ...(options.headers || {})
+        }
+      });
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
+      return data;
+    } catch (error) {
+      if (error?.name === "AbortError") throw new Error("Сервер не ответил за 100 секунд. Попробуйте ещё раз.");
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
   if (authSession?.user) setTimeout(loadAccountRole, 0);
   const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
@@ -244,6 +295,10 @@ const movieHistoryStyle = document.createElement("style");
 
   const initial = location.hash.replace("#","");
   if (labels[initial]) navigate(initial);
+  window.addEventListener("hashchange", () => {
+    const view = location.hash.replace(/^#/, "") || "home";
+    if (labels[view]) navigate(view);
+  });
 
   $("#themeToggle").addEventListener("click", () => {
     document.body.classList.toggle("light");
@@ -312,7 +367,6 @@ const movieHistoryStyle = document.createElement("style");
     $("#assistantInput").focus();
   }));
   // AI Companion cloud history. Supabase RLS restricts every row to its owner.
-  let activeAssistantConversationId = null;
   let assistantHistoryBusy = false;
   const assistantHistoryList = $("#assistantHistoryList");
   const assistantMessages = $("#assistantMessages");
@@ -656,7 +710,7 @@ const movieHistoryStyle = document.createElement("style");
     if(!project||!panel)return;
     activeMovieId=projectId; editingMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards(); panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
-    const title=document.createElement("h2"); title.textContent="Этап 1 из 5 · Основные сведения о фильме";
+    const title=document.createElement("h2"); title.textContent="Основные сведения о фильме";
     const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+(project.name||"Без названия")+" · Измените сведения и перейдите к сценарию. Уже сохранённые материалы останутся на месте.";
     head.append(title,subtitle);
     const form=document.createElement("div"); form.className="movie-stage-fields movie-details-fields";
@@ -938,10 +992,16 @@ const movieHistoryStyle = document.createElement("style");
     updateMovieStageCards();
   };
   $("#movieStart").addEventListener("click",()=>{
-    editingMovieId=null; $("#movieForm").reset();
-    const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
+    editingMovieId=null;
+    $("#movieForm").reset();
+    setMovieCreationFormVisible(true);
+    const workflow=$("#movieWorkflowPanel");
+    if(workflow){workflow.hidden=true;workflow.removeAttribute("data-active-stage");}
+    const submit=$("#movieForm button[type='submit']");
+    if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
     $("#movieFeedback").textContent="Задайте основу нового фильма. Уже существующие проекты останутся без изменений.";
-    $("#movieName").focus(); $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
+    $("#movieName").focus();
+    $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
   });
   $("#movieForm").addEventListener("submit",event=>{
     event.preventDefault();
