@@ -190,6 +190,8 @@ declare
   v_forfeited bigint := 0;
   v_new_available bigint;
   v_new_reserved bigint;
+  v_lot_available_total bigint;
+  v_lot_reserved_total bigint;
 begin
   if p_user_id is null or p_hold_id is null
      or p_action not in ('capture', 'release')
@@ -200,9 +202,19 @@ begin
     raise exception 'Invalid credit hold resolution parameters' using errcode = '22023';
   end if;
 
+  perform public.expire_credit_lots_for_user(p_user_id);
   select * into v_wallet from public.credit_wallets
    where user_id = p_user_id for update;
   if not found then raise exception 'Credit wallet is missing' using errcode = '23514'; end if;
+  select coalesce(sum(l.available_credits), 0),
+         coalesce(sum(l.reserved_credits), 0)
+    into v_lot_available_total, v_lot_reserved_total
+    from public.credit_lots as l where l.user_id = p_user_id;
+  if v_lot_available_total <> v_wallet.available_credits
+     or v_lot_reserved_total <> v_wallet.reserved_credits then
+    raise exception 'Credit lot totals do not reconcile before hold resolution'
+      using errcode = '23514';
+  end if;
   select * into v_hold from public.credit_holds
    where id = p_hold_id and user_id = p_user_id for update;
   if not found or v_hold.status <> 'held' then
@@ -461,6 +473,7 @@ begin
 
   insert into public.credit_wallets(user_id) values (p_user_id)
   on conflict (user_id) do nothing;
+  perform public.expire_credit_lots_for_user(p_user_id);
   select * into v_wallet from public.credit_wallets
    where user_id = p_user_id for update;
 
@@ -593,6 +606,7 @@ begin
         using errcode = '55000';
     end if;
 
+    perform public.expire_credit_lots_for_user(p_user_id);
     select * into v_wallet from public.credit_wallets
      where user_id = p_user_id for update;
     return query select v_existing.id, v_event_id, v_hold.id,
@@ -678,6 +692,7 @@ begin
     if not found then
       raise exception 'Successful credited job is missing its capture ledger entry' using errcode = '55000';
     end if;
+    perform public.expire_credit_lots_for_user(v_job.user_id);
     select * into v_wallet from public.credit_wallets
      where user_id = v_job.user_id;
     return query select true, true, v_wallet.available_credits, v_wallet.reserved_credits;
@@ -757,6 +772,7 @@ begin
 
   insert into public.credit_wallets(user_id) values (p_user_id)
   on conflict (user_id) do nothing;
+  perform public.expire_credit_lots_for_user(p_user_id);
   select * into v_wallet from public.credit_wallets
    where user_id = p_user_id for update;
   select * into v_hold from public.credit_holds
