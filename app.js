@@ -636,7 +636,7 @@ const movieHistoryStyle = document.createElement("style");
       const payload = {
         principal_id:principalId,
         role_code:$("#financeRoleCode").value,
-        scope_key:"user:" + scopeTargetId,
+        scope_key:"user:" + scopeTargetId.toLowerCase(),
         valid_until:validUntil.toISOString(),
         reason:$("#financeRoleReason").value.trim()
       };
