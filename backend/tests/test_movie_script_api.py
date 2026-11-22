@@ -112,3 +112,63 @@ def test_movie_director_requires_authentication(monkeypatch):
     c=TestClient(app)
     response=c.post("/api/movie/director",json={"title":"Фильм","story":"Это достаточно длинный сценарий для проверки структуры сцен."})
     assert response.status_code==401
+
+
+def test_movie_storyboard_returns_scene_matched_ordered_frames(monkeypatch):
+    import app.main as main
+    frames = [
+        {"frame_number":1,"duration_seconds":4,"shot_type":"Общий план","camera_angle":"На уровне глаз",
+         "camera_movement":"Медленный наезд","composition":"Героиня слева, маяк на горизонте.",
+         "subject_focus":"Девочка на берегу","visual_prompt":"Кинематографичный широкий кадр девочки на берегу у маяка, мягкий рассветный свет.",
+         "continuity_notes":"Красный шарф героини остаётся неизменным."},
+        {"frame_number":2,"duration_seconds":3,"shot_type":"Крупный план","camera_angle":"Три четверти",
+         "camera_movement":"Статичная камера","composition":"Лицо героини в центре кадра.",
+         "subject_focus":"Взгляд героини","visual_prompt":"Крупный кинематографичный портрет девочки с красным шарфом на фоне моря.",
+         "continuity_notes":"Сохранить красный шарф и направление взгляда."}
+    ]
+    result_scenes=[{"scene_number":1,"frames":frames}]
+    calls=[]; usage=[]
+    monkeypatch.setattr(main,"_run_admitted_ai",lambda operation,user_id,call: calls.append(operation) or SimpleNamespace(text=json.dumps({"scenes":result_scenes},ensure_ascii=False),actual_model="storyboard-test"))
+    monkeypatch.setattr(main,"record_ai_usage",lambda *a,**k: usage.append(k))
+    c=_client()
+    scene={"scene_number":1,"title":"У маяка","location":"Берег моря","time_of_day":"Рассвет",
+           "estimated_seconds":12,"characters":["Аня"],"action":"Аня смотрит на маяк.",
+           "visual_description":"Девочка в красном шарфе стоит у моря.",
+           "camera_shots":["Общий план"],"lighting":"Рассветный свет","transition":"Затемнение"}
+    try:
+        response=c.post("/api/movie/storyboard",json={"title":"Маяк","scenes":[scene],"frame":"16:9"})
+        assert response.status_code==200
+        assert len(response.json()["scenes"][0]["frames"])==2
+        assert calls==["movie_storyboard"]
+        assert usage[0]["endpoint"]=="movie_storyboard"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_movie_storyboard_rejects_frame_sequence_or_scene_mismatch(monkeypatch):
+    import app.main as main
+    frame={"frame_number":2,"duration_seconds":4,"shot_type":"Общий","camera_angle":"Спереди",
+           "camera_movement":"Статика","composition":"Центр","subject_focus":"Героиня",
+           "visual_prompt":"Героиня у моря в мягком свете.","continuity_notes":"Красный шарф."}
+    monkeypatch.setattr(main,"_run_admitted_ai",lambda *a,**k: SimpleNamespace(text=json.dumps({"scenes":[{"scene_number":1,"frames":[frame]}]}),actual_model="test"))
+    monkeypatch.setattr(main,"record_ai_usage",lambda *a,**k: None)
+    c=_client()
+    scene={"scene_number":1,"title":"Сцена","location":"Берег","time_of_day":"День",
+           "estimated_seconds":10,"characters":[],"action":"Действие","visual_description":"Описание",
+           "camera_shots":["Общий"],"lighting":"Свет","transition":"Склейка"}
+    try:
+        response=c.post("/api/movie/storyboard",json={"title":"Фильм","scenes":[scene]})
+        assert response.status_code==502
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_movie_storyboard_requires_authentication(monkeypatch):
+    import app.services.auth as auth
+    monkeypatch.setattr(auth, "get_settings", lambda: SimpleNamespace(supabase_url="https://auth.example.test"))
+    c=TestClient(app)
+    scene={"scene_number":1,"title":"Сцена","location":"Берег","time_of_day":"День",
+           "estimated_seconds":10,"characters":[],"action":"Действие","visual_description":"Описание",
+           "camera_shots":["Общий"],"lighting":"Свет","transition":"Склейка"}
+    response=c.post("/api/movie/storyboard",json={"title":"Фильм","scenes":[scene]})
+    assert response.status_code==401
