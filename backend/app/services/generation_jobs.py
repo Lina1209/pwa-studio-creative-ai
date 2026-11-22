@@ -330,3 +330,69 @@ def create_credited_generation_job(
         raise GenerationJobsServiceError(
             "The credited job service returned incomplete or invalid metadata."
         ) from exc
+
+
+@dataclass(frozen=True)
+class PersistedPricingQuote:
+    snapshot: dict[str, Any]
+    created: bool
+    expired: bool
+
+
+def store_pricing_quote(
+    settings: Settings,
+    *,
+    user_id: UUID,
+    idempotency_key: str,
+    request_hash: str,
+    job_type: str,
+    provider: str,
+    model: str,
+    project_id: UUID | None,
+    studio_scene_id: UUID | None,
+    quote_snapshot: dict[str, Any],
+) -> PersistedPricingQuote:
+    """Persist one immutable quote per owner/idempotency key via service-role RPC."""
+    headers = _headers(settings)
+    if not isinstance(quote_snapshot, dict):
+        raise GenerationJobsServiceError("Pricing quote snapshot must be an object.")
+    try:
+        quote_id = UUID(str(quote_snapshot["quote_id"]))
+        expires_at = quote_snapshot["expires_at"]
+        if not isinstance(expires_at, str) or len(expires_at) > 64:
+            raise ValueError("expiry")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GenerationJobsServiceError("Pricing quote snapshot is incomplete.") from exc
+    payload = {
+        "p_quote_id": str(quote_id),
+        "p_user_id": str(user_id),
+        "p_idempotency_key": idempotency_key,
+        "p_request_hash": request_hash,
+        "p_job_type": job_type,
+        "p_provider": provider,
+        "p_model": model,
+        "p_project_id": str(project_id) if project_id else None,
+        "p_studio_scene_id": str(studio_scene_id) if studio_scene_id else None,
+        "p_quote_snapshot": quote_snapshot,
+        "p_expires_at": expires_at,
+    }
+    url = f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/store_generation_pricing_quote"
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        raise GenerationJobsServiceError(
+            f"Could not persist pricing quote (HTTP {status_code})."
+        ) from exc
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise GenerationJobsServiceError("Pricing quote persistence returned an invalid response.")
+    row = data[0]
+    snapshot = row.get("quote_snapshot")
+    created = row.get("created")
+    expired = row.get("expired")
+    if not isinstance(snapshot, dict) or not isinstance(created, bool) or not isinstance(expired, bool):
+        raise GenerationJobsServiceError("Pricing quote persistence returned incomplete metadata.")
+    return PersistedPricingQuote(snapshot=snapshot, created=created, expired=expired)
