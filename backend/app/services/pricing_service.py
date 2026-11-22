@@ -236,6 +236,15 @@ def verify_pricing_quote(
     ):
         raise PricingError("Pricing quote format is invalid.")
     try:
+        encoded_snapshot = json.dumps(
+            snapshot, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False, allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise PricingError("Pricing quote is not canonical JSON.") from exc
+    if len(encoded_snapshot) > 16384:
+        raise PricingError("Pricing quote exceeds 16 KiB.")
+    try:
         quote_id = UUID(snapshot["quote_id"])
         quoted_user = UUID(snapshot["user_id"])
         quantity = snapshot["quantity"]
@@ -267,7 +276,17 @@ def verify_pricing_quote(
         raise PricingError("Pricing quote does not match this user or generation request.")
     if not isinstance(idempotency_key, str) or quote_idempotency_key != idempotency_key or not 8 <= len(idempotency_key) <= 200:
         raise PricingError("Pricing quote does not match this idempotency key.")
-    if not all(isinstance(v, str) and v for v in (signature, unit_label, price_version)):
+    if (
+        not isinstance(signature, str) or len(signature) != 64
+        or any(char not in "0123456789abcdef" for char in signature)
+        or not isinstance(unit_label, str) or not 1 <= len(unit_label) <= 40
+        or not isinstance(price_version, str) or not 1 <= len(price_version) <= 80
+        or not isinstance(quote_job_type, str) or not 1 <= len(quote_job_type) <= 64
+        or not isinstance(quote_provider, str) or not 1 <= len(quote_provider) <= 100
+        or not isinstance(quote_model, str) or not 1 <= len(quote_model) <= 200
+        or not isinstance(quote_hash, str) or len(quote_hash) != 64
+        or any(char not in "0123456789abcdef" for char in quote_hash)
+    ):
         raise PricingError("Pricing quote metadata is invalid.")
     if issued_at.tzinfo is None or expires_at.tzinfo is None:
         raise PricingError("Pricing quote timestamps must include a timezone.")
