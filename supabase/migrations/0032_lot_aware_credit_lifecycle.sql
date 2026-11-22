@@ -193,12 +193,12 @@ declare
   v_lot_available_total bigint;
   v_lot_reserved_total bigint;
 begin
-  if p_user_id is null or p_hold_id is null
+  if p_user_id is null or p_hold_id is null or p_action is null
      or p_action not in ('capture', 'release')
      or p_metadata is null or jsonb_typeof(p_metadata) <> 'object'
      or octet_length(p_metadata::text) > 4096
      or (p_action = 'release' and
-         (p_reason_code is null or p_reason_code !~ '^[a-z0-9_]{3,64}
+         (p_reason_code is null or p_reason_code !~ '^[a-z0-9_]{3,64}$')) then
     raise exception 'Invalid credit hold resolution parameters' using errcode = '22023';
   end if;
 
