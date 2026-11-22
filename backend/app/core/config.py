@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     # Server-only key; never expose to frontend or API responses.
     supabase_service_role_key: str | None = None
+    # Comma-separated immutable Supabase Auth user UUIDs allowed to administer the app.
+    # Empty means no administrator is configured; email addresses are never authorization identities.
+    owner_user_ids: str | None = None
     # Keep job endpoints disabled until migrations 0009/0010 and the worker path are reviewed.
     generation_jobs_enabled: bool = False
     # HMAC secret for short-lived, owner-bound server pricing quotes (>=32 bytes).
@@ -49,7 +52,6 @@ class Settings(BaseSettings):
     generation_storage_timeout_seconds: float = Field(default=30.0, ge=1.0, le=180.0)
     image_generation_provider: str | None = None
     image_generation_model: str | None = None
-    owner_email: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
