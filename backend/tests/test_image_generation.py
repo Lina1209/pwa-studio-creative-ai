@@ -32,7 +32,9 @@ def test_result_rejects_empty_or_unsupported_payload():
     with pytest.raises(ValueError, match="empty"):
         ImageGenerationResult(b"", "image/png", "test", "model")
     with pytest.raises(ValueError, match="MIME"):
-        ImageGenerationResult(b"image", "image/svg+xml", "test", "model")
+        ImageGenerationResult(bytes.fromhex("89504e470d0a1a0a"), "image/svg+xml", "test", "model")
+    with pytest.raises(ValueError, match="do not match"):
+        ImageGenerationResult(b"not-an-image", "image/png", "test", "model")
 
 
 def test_registry_does_not_fall_back_to_a_fake_provider():
