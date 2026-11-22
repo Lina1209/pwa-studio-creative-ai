@@ -77,6 +77,7 @@ create table public.studio_media (
 );
 
 \ir ../migrations/0011_link_generation_jobs_to_movie_scenes.sql
+\ir ../migrations/0012_create_scene_generation_job_rpc.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -119,6 +120,68 @@ insert into public.outbox_events(aggregate_type, aggregate_id, event_type, paylo
 values ('generation_job', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         'generation_job.created', '{"test": true}'::jsonb);
 
+
+
+-- Scene-bound creation is atomic, owner-scoped, and idempotent.
+do $
+declare
+  v_first record;
+  v_second record;
+  v_event_count integer;
+begin
+  select * into v_first from public.create_scene_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111',
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    'image_generation', 'test-image-provider', 'test-image-model',
+    'scene-job-idempotency-1', repeat('d', 64),
+    '{"prompt":"scene image test"}'::jsonb, '{}'::jsonb
+  );
+  select * into v_second from public.create_scene_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111',
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    'image_generation', 'test-image-provider', 'test-image-model',
+    'scene-job-idempotency-1', repeat('d', 64),
+    '{"prompt":"scene image test"}'::jsonb, '{}'::jsonb
+  );
+  if not v_first.created or v_second.created
+     or v_first.job_id <> v_second.job_id
+     or v_first.event_id is distinct from v_second.event_id then
+    raise exception 'Scene job idempotency did not return the original job and event';
+  end if;
+  if not exists (select 1 from public.generation_jobs
+                 where id = v_first.job_id
+                   and user_id = '11111111-1111-4111-8111-111111111111'
+                   and studio_scene_id = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+                   and project_id is null) then
+    raise exception 'Scene job was not stored with the correct owner and scene';
+  end if;
+  select count(*) into v_event_count from public.outbox_events
+    where aggregate_id = v_first.job_id and event_type = 'generation_job.created';
+  if v_event_count <> 1 then raise exception 'Expected one scene-job outbox event'; end if;
+
+  begin
+    perform public.create_scene_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      'image_generation', 'test-image-provider', 'test-image-model',
+      'cross-owner-scene-key', repeat('c', 64), '{}'::jsonb, '{}'::jsonb
+    );
+    raise exception 'Cross-owner scene job creation was accepted';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    perform public.create_scene_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111',
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      'image_generation', 'test-image-provider', 'test-image-model',
+      'scene-job-idempotency-1', repeat('e', 64), '{}'::jsonb, '{}'::jsonb
+    );
+    raise exception 'Mismatched scene-job idempotency replay was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+end;
+$;
 
 -- Only the trusted backend service role may execute the RPC.
 do $$
