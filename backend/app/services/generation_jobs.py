@@ -5,6 +5,7 @@ from uuid import UUID
 import httpx
 
 from app.core.config import Settings
+from app.services.pricing_service import VerifiedPricingQuote
 
 
 class GenerationJobsNotConfiguredError(RuntimeError):
@@ -243,27 +244,28 @@ def create_credited_generation_job(
     idempotency_key: str,
     request_hash: str,
     request_snapshot: dict[str, Any],
-    quote_snapshot: dict[str, Any],
-    credit_amount: int,
+    quote: VerifiedPricingQuote,
 ) -> CreditedGenerationJobCreateResult:
-    """Atomically admit a credited job; quote creation remains server-owned.
-
-    This adapter deliberately does not calculate prices or accept browser
-    credentials. Callers must derive user_id from verified auth and supply an
-    immutable quote produced by a future trusted pricing service.
-    """
+    """Admit a job using a server-issued, owner/request-bound verified quote."""
     if not settings.generation_jobs_enabled:
         raise GenerationJobsNotConfiguredError(
             "Generation jobs are not enabled on this server."
         )
-    if isinstance(credit_amount, bool) or not isinstance(credit_amount, int) or not 1 <= credit_amount <= 1_000_000_000_000:
-        raise GenerationJobsServiceError("The server-generated credit quote is invalid.")
-    if not isinstance(request_snapshot, dict) or not isinstance(quote_snapshot, dict):
-        raise GenerationJobsServiceError("Generation request and quote snapshots must be objects.")
-    if len(idempotency_key) < 8 or len(idempotency_key) > 200:
-        raise GenerationJobsServiceError("The generation idempotency key is invalid.")
-    if len(request_hash) < 32 or len(request_hash) > 128 or any(c not in "0123456789abcdef" for c in request_hash):
-        raise GenerationJobsServiceError("The canonical generation request hash is invalid.")
+    if not isinstance(quote, VerifiedPricingQuote):
+        raise GenerationJobsServiceError("A verified server pricing quote is required.")
+    if (
+        quote.user_id != user_id
+        or quote.job_type != job_type
+        or quote.provider != provider
+        or quote.model != model
+        or quote.request_hash != request_hash
+        or quote.expires_at.timestamp() <= __import__("time").time()
+    ):
+        raise GenerationJobsServiceError("The pricing quote does not match this generation request.")
+    if not isinstance(request_snapshot, dict):
+        raise GenerationJobsServiceError("Generation request snapshot must be an object.")
+    quote_snapshot = quote.snapshot()
+    credit_amount = quote.amount
 
     headers = _headers(settings)
     payload = {
