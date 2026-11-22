@@ -1537,6 +1537,14 @@ begin
        'public.store_generation_pricing_quote(uuid,uuid,text,text,text,text,text,uuid,uuid,jsonb,timestamp with time zone)', 'EXECUTE') then
     raise exception 'Authenticated role unexpectedly can persist pricing quotes';
   end if;
+
+  if has_table_privilege('service_role', 'public.generation_pricing_quotes', 'UPDATE')
+     or has_table_privilege('service_role', 'public.generation_pricing_quotes', 'DELETE')
+     or has_table_privilege('service_role', 'public.generation_pricing_quotes', 'TRUNCATE')
+     or not has_table_privilege('service_role', 'public.generation_pricing_quotes', 'INSERT')
+     or not has_table_privilege('service_role', 'public.generation_pricing_quotes', 'SELECT') then
+    raise exception 'Pricing quote table grants do not enforce append-only access';
+  end if;
 end;
 $pricing_quote_persistence_test$;
 
