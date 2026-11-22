@@ -1152,6 +1152,15 @@ begin
        'public.release_job_credit_hold(uuid,uuid,text)', 'EXECUTE') then
     raise exception 'Authenticated role unexpectedly has credit mutation RPC privileges';
   end if;
+  v_rejected := false;
+  begin
+    delete from auth.users where id = '22222222-2222-4222-8222-222222222222';
+  exception when foreign_key_violation then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Account deletion unexpectedly removed append-only ledger history';
+  end if;
+
   if not has_function_privilege('service_role',
        'public.grant_user_credits(uuid,bigint,text,jsonb)', 'EXECUTE')
      or not has_function_privilege('service_role',
