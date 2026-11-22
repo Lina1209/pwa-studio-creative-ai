@@ -51,9 +51,12 @@ def test_admin_audit_journal_returns_bounded_private_page(monkeypatch):
     monkeypatch.setattr(main_module, "get_admin_audit_events", lambda *a, **k: [event])
     client = _client_for(StudioUser(user_id=actor, email=None, role="admin"))
     try:
-        response = client.get("/api/admin/audit-events?limit=25")
+        response = client.get("/api/admin/audit-events?limit=1")
         assert response.status_code == 200
         assert response.json()["events"] == [event]
+        assert response.json()["next_cursor"] == {
+            "before": event["occurred_at"], "before_id": event["id"]
+        }
         assert response.headers["cache-control"] == "private, no-store"
         assert calls["actor_user_id"] == UUID(actor)
         assert "service_role" not in response.text
