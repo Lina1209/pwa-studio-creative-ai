@@ -268,3 +268,115 @@ def test_scene_job_creation_is_disabled_without_server_flag(monkeypatch):
             idempotency_key="scene-idempotency-key-2",
             request_hash="a" * 64,
         )
+
+
+def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_result(monkeypatch):
+    calls = []
+    hold_id = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(
+            FakeResponse([{
+                "job_id": str(JOB_ID),
+                "event_id": str(EVENT_ID),
+                "hold_id": str(hold_id),
+                "available_credits": 40,
+                "reserved_credits": 10,
+                "created": True,
+                "replayed": False,
+            }]),
+            calls,
+        ),
+    )
+
+    result = generation_jobs.create_credited_generation_job(
+        configured_settings(),
+        user_id=USER_ID,
+        project_id=None,
+        studio_scene_id=UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+        job_type="image_generation",
+        provider="provider-test",
+        model="model-test",
+        idempotency_key="credited-job-key-001",
+        request_hash="a" * 64,
+        request_snapshot={"prompt": "test"},
+        quote_snapshot={"price_version": "test-v1", "approved_maximum": 10},
+        credit_amount=10,
+    )
+
+    assert result.job_id == JOB_ID
+    assert result.event_id == EVENT_ID
+    assert result.hold_id == hold_id
+    assert result.available_credits == 40
+    assert result.reserved_credits == 10
+    assert result.created is True
+    assert result.replayed is False
+    method, url, payload, headers = calls[0]
+    assert method == "POST"
+    assert url.endswith("/rpc/create_credited_generation_job_with_outbox")
+    assert payload["p_user_id"] == str(USER_ID)
+    assert payload["p_studio_scene_id"] == "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    assert payload["p_project_id"] is None
+    assert payload["p_quote_snapshot"]["price_version"] == "test-v1"
+    assert payload["p_credit_amount"] == 10
+    assert headers["apikey"] == "sb_secret_test_key"
+
+
+def test_create_credited_generation_job_rejects_bad_quote_and_hash_before_network(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("Invalid server quote must be rejected before network access")
+
+    monkeypatch.setattr(generation_jobs.httpx, "Client", unexpected_client)
+    with pytest.raises(generation_jobs.GenerationJobsServiceError, match="credit quote"):
+        generation_jobs.create_credited_generation_job(
+            configured_settings(),
+            user_id=USER_ID,
+            project_id=None,
+            studio_scene_id=None,
+            job_type="image_generation",
+            provider="provider-test",
+            model="model-test",
+            idempotency_key="credited-job-key-002",
+            request_hash="b" * 64,
+            request_snapshot={},
+            quote_snapshot={},
+            credit_amount=True,
+        )
+    with pytest.raises(generation_jobs.GenerationJobsServiceError, match="request hash"):
+        generation_jobs.create_credited_generation_job(
+            configured_settings(),
+            user_id=USER_ID,
+            project_id=None,
+            studio_scene_id=None,
+            job_type="image_generation",
+            provider="provider-test",
+            model="model-test",
+            idempotency_key="credited-job-key-003",
+            request_hash="NOT-HEX",
+            request_snapshot={},
+            quote_snapshot={},
+            credit_amount=1,
+        )
+
+
+def test_create_credited_generation_job_remains_disabled_by_default(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("Credited generation must remain disabled")
+
+    monkeypatch.setattr(generation_jobs.httpx, "Client", unexpected_client)
+    with pytest.raises(generation_jobs.GenerationJobsNotConfiguredError):
+        generation_jobs.create_credited_generation_job(
+            Settings(),
+            user_id=USER_ID,
+            project_id=None,
+            studio_scene_id=None,
+            job_type="image_generation",
+            provider="provider-test",
+            model="model-test",
+            idempotency_key="credited-job-key-004",
+            request_hash="c" * 64,
+            request_snapshot={},
+            quote_snapshot={},
+            credit_amount=1,
+        )
