@@ -66,7 +66,7 @@ def test_quote_endpoint_returns_signed_owner_and_scene_bound_preview(monkeypatch
         ),
     )
     stored = {}
-    def persist(**kwargs):
+    def persist(_settings, **kwargs):
         key = kwargs["idempotency_key"]
         if key not in stored:
             stored[key] = kwargs["quote_snapshot"]
@@ -155,7 +155,7 @@ def test_quote_endpoint_rejects_expired_persisted_idempotency_key(monkeypatch):
     monkeypatch.setattr(
         main,
         "store_pricing_quote",
-        lambda **kwargs: PersistedPricingQuote(kwargs["quote_snapshot"], False, True),
+        lambda _settings, **kwargs: PersistedPricingQuote(kwargs["quote_snapshot"], False, True),
     )
     with pytest.raises(HTTPException) as error:
         main.create_pricing_quote(
