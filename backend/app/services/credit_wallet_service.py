@@ -23,6 +23,8 @@ class CreditWalletSnapshot:
     reserved_credits: int
     holds: list[dict[str, Any]]
     ledger: list[dict[str, Any]]
+    lots: list[dict[str, Any]]
+    allocations: list[dict[str, Any]]
 
 
 def _headers(settings: Settings) -> dict[str, str]:
@@ -72,10 +74,16 @@ def get_credit_wallet_snapshot(
     reserved = _integer(data.get("reserved_credits"), "reserved balance")
     holds = data.get("holds")
     ledger = data.get("ledger")
+    lots = data.get("lots")
+    allocations = data.get("allocations")
     if not isinstance(holds, list) or len(holds) > 20:
         raise CreditWalletUnavailable("Credit hold history is invalid.")
     if not isinstance(ledger, list) or len(ledger) > history_limit:
         raise CreditWalletUnavailable("Credit ledger history is invalid.")
+    if not isinstance(lots, list) or len(lots) > 100:
+        raise CreditWalletUnavailable("Credit lot history is invalid.")
+    if not isinstance(allocations, list) or len(allocations) > 100:
+        raise CreditWalletUnavailable("Credit hold allocations are invalid.")
 
     safe_holds: list[dict[str, Any]] = []
     for hold in holds:
@@ -107,12 +115,52 @@ def get_credit_wallet_snapshot(
             ),
             "created_at": entry.get("created_at"),
         })
+    safe_lots: list[dict[str, Any]] = []
+    allowed_lot_types = {"free", "subscription", "purchased", "bonus", "adjustment", "legacy"}
+    for lot in lots:
+        if not isinstance(lot, dict) or lot.get("lot_type") not in allowed_lot_types:
+            raise CreditWalletUnavailable("Credit lot metadata is invalid.")
+        granted = _integer(lot.get("granted_credits"), "lot granted amount", minimum=1)
+        lot_available = _integer(lot.get("available_credits"), "lot available amount")
+        lot_reserved = _integer(lot.get("reserved_credits"), "lot reserved amount")
+        if lot_available + lot_reserved > granted:
+            raise CreditWalletUnavailable("Credit lot balances exceed granted credits.")
+        safe_lots.append({
+            "id": str(lot.get("id", "")),
+            "lot_type": lot["lot_type"],
+            "granted_credits": granted,
+            "available_credits": lot_available,
+            "reserved_credits": lot_reserved,
+            "expires_at": lot.get("expires_at"),
+            "created_at": lot.get("created_at"),
+        })
+
+    safe_allocations: list[dict[str, Any]] = []
+    for allocation in allocations:
+        if not isinstance(allocation, dict) or allocation.get("status") != "held":
+            raise CreditWalletUnavailable("Credit hold allocation metadata is invalid.")
+        safe_allocations.append({
+            "id": str(allocation.get("id", "")),
+            "hold_id": str(allocation.get("hold_id", "")),
+            "lot_id": str(allocation.get("lot_id", "")),
+            "amount": _integer(allocation.get("amount"), "allocation amount", minimum=1),
+            "status": "held",
+            "created_at": allocation.get("created_at"),
+        })
+
+    if sum(item["available_credits"] for item in safe_lots) != available:
+        raise CreditWalletUnavailable("Credit lot available balances do not match wallet.")
+    if sum(item["reserved_credits"] for item in safe_lots) != reserved:
+        raise CreditWalletUnavailable("Credit lot reserved balances do not match wallet.")
+
     return CreditWalletSnapshot(
         user_id=user_id,
         available_credits=available,
         reserved_credits=reserved,
         holds=safe_holds,
         ledger=safe_ledger,
+        lots=safe_lots,
+        allocations=safe_allocations,
     )
 
 
