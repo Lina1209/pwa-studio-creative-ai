@@ -12,6 +12,7 @@
   let authSession = null;
   let activeAssistantConversationId = null;
   let lastAuthUserId = null;
+  let authStateEventReceived = false;
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -71,6 +72,7 @@
   } else {
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
+      if (authStateEventReceived) return;
       const session = data?.session || null;
       lastAuthUserId = session?.user?.id || null;
       refreshAuthUI(session);
@@ -82,6 +84,7 @@
       }, 0);
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => {
+      authStateEventReceived = true;
       const nextUserId = session?.user?.id || null;
       const accountChanged = lastAuthUserId !== nextUserId;
       lastAuthUserId = nextUserId;
@@ -91,6 +94,11 @@
           activeAssistantConversationId = null;
           $("#assistantHistoryList")?.replaceChildren();
           $("#assistantMessages")?.replaceChildren();
+          const assistantInput = $("#assistantInput"); if (assistantInput) assistantInput.value = "";
+          const promptIdea = $("#promptIdea"); if (promptIdea) promptIdea.value = "";
+          $("#promptOutput")?.replaceChildren();
+          const topic = $("#topic"); if (topic) topic.value = "";
+          $("#movieForm")?.reset();
           const workflow = $("#movieWorkflowPanel");
           if (workflow) { workflow.hidden = true; workflow.replaceChildren(); }
           if (typeof setMovieCreationFormVisible === "function") setMovieCreationFormVisible(true);
