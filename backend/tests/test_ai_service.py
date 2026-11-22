@@ -1,11 +1,32 @@
 from types import SimpleNamespace
+from decimal import Decimal
 import threading
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.services import ai_service
+from app.services.ai_cost_admission import AIProviderCostReservation, estimate_actual_cost
+
+
+@pytest.fixture(autouse=True)
+def stub_cost_admission(monkeypatch):
+    def reserve(settings, *, user_id, request_id, messages):
+        return AIProviderCostReservation(request_id=request_id, reserved_cost_usd=Decimal("0.1"))
+
+    monkeypatch.setattr(ai_service, "reserve_ai_provider_cost", reserve)
+    monkeypatch.setattr(
+        ai_service, "settle_ai_provider_cost",
+        lambda settings, reservation, *, input_tokens, output_tokens:
+            estimate_actual_cost(settings, input_tokens=input_tokens, output_tokens=output_tokens),
+    )
+    monkeypatch.setattr(ai_service, "mark_ai_provider_cost_unknown", lambda *args, **kwargs: None)
+
+
+def run_ai(settings_value, messages):
+    return ai_service.ask_ai(settings_value, messages, user_id=uuid4())
 
 
 def settings(**overrides):
@@ -35,14 +56,16 @@ def test_successful_completion_returns_usage_and_cost(monkeypatch):
         )
 
     monkeypatch.setattr(ai_service, "completion", fake_completion)
-    result = ai_service.ask_ai(settings(), [{"role": "user", "content": "hello"}])
+    result = run_ai(settings(), [{"role": "user", "content": "hello"}])
 
     assert result.text == "Ready."
     assert result.input_tokens == 4
     assert result.output_tokens == 2
     assert result.total_tokens == 6
-    assert str(result.cost_usd) == "0.012"
+    assert str(result.cost_usd) == "0.0000048000"
     assert result.actual_model == "gpt-test-version"
+    assert result.request_id is not None
+    assert result.cost_source == "server_peak_price_estimate"
     assert seen["timeout"] == 17
     assert seen["max_retries"] == 0
     assert seen["max_tokens"] == 2048
@@ -54,7 +77,7 @@ def test_missing_provider_key_fails_before_network_call(monkeypatch):
 
     monkeypatch.setattr(ai_service, "completion", unexpected_call)
     with pytest.raises(ai_service.AIConfigurationError):
-        ai_service.ask_ai(settings(deepseek_api_key=None), [{"role": "user", "content": "hello"}])
+        run_ai(settings(deepseek_api_key=None), [{"role": "user", "content": "hello"}])
 
 
 def test_capacity_limit_returns_retryable_overload(monkeypatch):
@@ -93,7 +116,7 @@ def test_gemini_uses_explicit_google_model_and_server_key(monkeypatch):
         )
 
     monkeypatch.setattr(ai_service, "completion", fake_completion)
-    result = ai_service.ask_ai(
+    result = run_ai(
         settings(ai_provider="gemini", ai_model="gemini-3.1-flash-lite", gemini_api_key="google-secret"),
         [{"role": "user", "content": "hello"}],
     )
@@ -115,7 +138,7 @@ def test_output_token_limit_is_configurable_and_bounded(monkeypatch):
         )
 
     monkeypatch.setattr(ai_service, "completion", fake_completion)
-    ai_service.ask_ai(
+    run_ai(
         settings(ai_max_output_tokens=512),
         [{"role": "user", "content": "hello"}],
     )
