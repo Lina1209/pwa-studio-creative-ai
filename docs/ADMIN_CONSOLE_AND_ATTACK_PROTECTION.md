@@ -38,3 +38,29 @@ The pages are navigation groupings, not trust boundaries. Every API operation an
 Before enabling the admin console or public paid generation: MFA and recovery are configured; owner UUID is configured in the hosting secret store; all admin routes have capability tests; RLS and grants are reviewed; edge rate limiting/WAF is configured; CSP is deployed on the frontend; dependency and secret scans are enabled; backup restore and incident-response exercises pass; and a security review covers IDOR, XSS, CSRF, injection, brute force, privilege escalation, replay, race conditions and spending abuse.
 
 A successful CI run is not a penetration test. No claim of being impossible to hack or fully secure is appropriate.
+
+
+## Append-only administrative audit journal (migration 0035)
+
+Migration `0035_admin_audit_journal.sql` adds a dedicated `admin_audit_events` table.
+The table stores only a verified actor UUID, a constrained action/outcome, a constrained
+resource category, optional resource/correlation UUIDs, timestamp, and a short reason.
+It intentionally does not store email addresses, access tokens, API keys, payment
+credentials, prompts, or arbitrary request/response bodies.
+
+- RLS is enabled; direct table privileges are revoked from public, anon, authenticated,
+  and service_role.
+- Writes and bounded reads are exposed through SECURITY DEFINER RPCs granted only to
+  service_role. The application must authenticate and authorize the actor before calling
+  the write RPC; the actor UUID must come from the verified JWT subject, never the browser.
+- A database trigger rejects UPDATE and DELETE so ordinary application roles cannot
+  rewrite or erase existing events.
+- Read pagination is bounded to 1–200 records and uses a timestamp cursor.
+- Action, outcome, resource category, and reason length are validated in the database.
+
+The migration and SQL integration assertions are included in the disposable PostgreSQL
+quality workflow. This establishes the database storage boundary; it does not yet mean
+all admin endpoints emit events or that the admin UI exposes the journal. Those
+application integrations remain a separate step. A database owner/superuser can still
+alter schema or disable triggers, so production-grade tamper evidence additionally
+requires restricted database ownership, protected backups, and external log export.
