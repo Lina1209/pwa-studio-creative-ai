@@ -47,11 +47,13 @@ class FakeRepository:
 
 class FakeProvider:
     name = "fake"
+    supports_idempotency = True
 
     def __init__(self, *, error=None):
         self.error = error
 
-    async def generate(self, request):
+    async def generate(self, request, *, idempotency_key):
+        self.idempotency_keys = getattr(self, "idempotency_keys", []) + [idempotency_key]
         if self.error:
             raise self.error
         return ImageGenerationResult(
@@ -139,7 +141,8 @@ async def test_retryable_provider_error_uses_bounded_retry():
 @pytest.mark.asyncio
 async def test_worker_rejects_result_from_wrong_model():
     class WrongModel(FakeProvider):
-        async def generate(self, request):
+        async def generate(self, request, *, idempotency_key):
+            self.idempotency_keys = [idempotency_key]
             return ImageGenerationResult(IMAGE, "image/png", "fake", "other-model")
 
     repo = FakeRepository()
@@ -181,7 +184,7 @@ async def test_worker_reports_lost_lease_when_completion_is_rejected():
 @pytest.mark.asyncio
 async def test_worker_stops_provider_when_lease_is_lost():
     class SlowProvider(FakeProvider):
-        async def generate(self, request):
+        async def generate(self, request, *, idempotency_key):
             await asyncio.sleep(0.2)
             return await super().generate(request)
 
@@ -211,3 +214,30 @@ async def test_worker_rejects_storage_checksum_not_bound_to_generated_bytes():
     assert result.outcome == "failed"
     assert repo.calls[0][0] == "fail"
     assert not any(call[0] == "complete" for call in repo.calls)
+
+
+
+@pytest.mark.asyncio
+async def test_worker_passes_stable_job_id_as_provider_idempotency_key():
+    provider = FakeProvider()
+    worker = make_worker(provider=provider)
+    first = await worker.process(make_job(attempt_count=1))
+    second = await worker.process(make_job(attempt_count=2))
+    assert first.outcome == "succeeded"
+    assert second.outcome == "succeeded"
+    assert provider.idempotency_keys == [str(JOB_ID), str(JOB_ID)]
+
+
+@pytest.mark.asyncio
+async def test_worker_fails_closed_for_provider_without_idempotency_support():
+    class UnsafeProvider(FakeProvider):
+        supports_idempotency = False
+
+        async def generate(self, request, *, idempotency_key):
+            raise AssertionError("Provider must not be called without idempotency support")
+
+    repo = FakeRepository()
+    result = await make_worker(repo, UnsafeProvider()).process(make_job())
+    assert result.outcome == "failed"
+    assert result.error_code == "provider_idempotency_not_supported"
+    assert repo.calls[0][0] == "fail"
