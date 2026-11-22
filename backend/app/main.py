@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, MovieCharacterReference, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.finance_authorization import FinanceAuthorizationDenied, require_finance_permission
@@ -1112,11 +1112,17 @@ def create_movie_storyboard(payload: MovieStoryboardRequest, user: StudioUser = 
         "You are a cinematographer and storyboard artist for PWA Studio. "
         "Create a practical visual storyboard for every supplied scene. Preserve the scene order, "
         "story beats, named characters, locations, props, and visual continuity. "
-        "Return ONLY a JSON object with exactly one key 'scenes'. Each scene object has scene_number "
-        "and frames. Each frame has exactly: frame_number (starting at 1 within its scene), "
-        "duration_seconds (integer), shot_type, camera_angle, camera_movement, composition, "
-        "subject_focus, visual_prompt, continuity_notes. Create 2-6 meaningful frames per scene, "
-        "not repetitive variations. visual_prompt must be a self-contained image-generation prompt "
+        "Return ONLY a JSON object with exactly two keys: 'characters' and 'scenes'. "
+        "characters is a canonical character bible with one object per distinct named character, "
+        "in first-appearance order. Each character object has exactly: name, appearance, wardrobe, "
+        "signature_details, reference_prompt. Describe only story-supported, non-sensitive visible "
+        "traits. reference_prompt is a reusable image-reference prompt that locks the character's "
+        "face, age-appropriate appearance, hair, silhouette, wardrobe and distinctive details. "
+        "Each scene object has scene_number and frames. Each frame has exactly: frame_number "
+        "(starting at 1 within its scene), duration_seconds (integer), characters (array containing "
+        "only names assigned to that source scene), shot_type, camera_angle, camera_movement, "
+        "composition, subject_focus, visual_prompt, continuity_notes. Create 2-6 meaningful frames "
+        "per scene, not repetitive variations. visual_prompt must be a self-contained image-generation prompt "
         "describing visible subjects, environment, action, framing, lighting, palette, mood, "
         "and requested aspect ratio. Do not include text, logos, watermarks, or UI in the image. "
         "Keep recurring characters visually consistent using concrete appearance descriptors based "
@@ -1145,20 +1151,33 @@ def create_movie_storyboard(payload: MovieStoryboardRequest, user: StudioUser = 
         if raw.endswith(chr(96) * 3): raw = raw[:-3].strip()
     try:
         data = json.loads(raw)
-        if not isinstance(data, dict) or set(data) != {"scenes"} or not isinstance(data["scenes"], list):
+        if not isinstance(data, dict) or set(data) != {"characters", "scenes"}:
             raise ValueError("invalid_storyboard_collection")
+        if not isinstance(data["characters"], list) or not isinstance(data["scenes"], list):
+            raise ValueError("invalid_storyboard_collection")
+        characters = [MovieCharacterReference.model_validate(item) for item in data["characters"]]
         scenes = [MovieStoryboardScene.model_validate(item) for item in data["scenes"]]
         expected_numbers = [scene.scene_number for scene in payload.scenes]
         if [scene.scene_number for scene in scenes] != expected_numbers:
             raise ValueError("storyboard_scene_mismatch")
-        for scene in scenes:
-            if [frame.frame_number for frame in scene.frames] != list(range(1, len(scene.frames) + 1)):
+        expected_characters = list(dict.fromkeys(
+            name for source_scene in payload.scenes for name in source_scene.characters
+        ))
+        actual_characters = [character.name for character in characters]
+        if actual_characters != expected_characters:
+            raise ValueError("storyboard_character_bible_mismatch")
+        for source_scene, storyboard_scene in zip(payload.scenes, scenes):
+            if [frame.frame_number for frame in storyboard_scene.frames] != list(range(1, len(storyboard_scene.frames) + 1)):
                 raise ValueError("invalid_frame_sequence")
+            allowed_scene_characters = set(source_scene.characters)
+            if any(not set(frame.characters).issubset(allowed_scene_characters)
+                   for frame in storyboard_scene.frames):
+                raise ValueError("frame_character_not_in_scene")
         if sum(len(scene.frames) for scene in scenes) > 300:
             raise ValueError("storyboard_frame_limit")
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="AI не вернул раскадровку в ожидаемом формате. Попробуйте повторить запрос.") from exc
-    return MovieStoryboardResponse(scenes=scenes, provider=settings.ai_provider, model=result.actual_model)
+    return MovieStoryboardResponse(characters=characters, scenes=scenes, provider=settings.ai_provider, model=result.actual_model)
 
 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
