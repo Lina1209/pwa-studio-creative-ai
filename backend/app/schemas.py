@@ -70,3 +70,11 @@ class PricingQuoteRequest(BaseModel):
         if not value.strip() or value.strip() != value:
             raise ValueError("Pricing identity fields must be trimmed and non-empty.")
         return value
+
+
+class SiteVisitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: UUID
+    visitor_token: str = Field(min_length=20, max_length=128, pattern=r"^[a-f0-9]+$")
+    route_group: str = Field(default="other", min_length=1, max_length=32)
