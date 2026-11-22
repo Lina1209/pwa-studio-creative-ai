@@ -25,7 +25,7 @@ def test_financial_report_denies_non_admin_before_reading_data(monkeypatch):
             params={"date_from": "2026-11-01", "date_to": "2026-11-02"},
         )
         assert response.status_code == 403
-        assert response.json()["detail"] == "Administrator access is required."
+        assert response.json()["detail"] == "This operation is not permitted."
     finally:
         app.dependency_overrides.clear()
 
