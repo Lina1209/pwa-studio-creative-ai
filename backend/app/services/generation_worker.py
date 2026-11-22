@@ -19,7 +19,7 @@ from app.services.generation_result_storage import (
     validate_generation_result_object,
 )
 from app.services.provider_operation_recovery import decide_provider_recovery
-from app.services.supabase_generation_worker_repository import WorkerRepositoryError
+from app.services.worker_repository_errors import WorkerRepositoryError
 from app.services.image_generation import (
     ImageGenerationError,
     ImageGenerationProvider,
