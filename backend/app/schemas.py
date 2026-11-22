@@ -43,3 +43,20 @@ class SceneImageJobRequest(BaseModel):
         if value % 64:
             raise ValueError("Image dimensions must be multiples of 64.")
         return value
+
+
+class PricingQuoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_type: str = Field(min_length=1, max_length=64)
+    provider: str = Field(min_length=1, max_length=100)
+    model: str = Field(min_length=1, max_length=200)
+    request_snapshot: dict = Field()
+    quantity: int = Field(default=1, ge=1, le=10000)
+
+    @field_validator("job_type", "provider", "model")
+    @classmethod
+    def reject_whitespace_only_identity(cls, value: str) -> str:
+        if not value.strip() or value.strip() != value:
+            raise ValueError("Pricing identity fields must be trimmed and non-empty.")
+        return value
