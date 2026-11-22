@@ -21,7 +21,9 @@ create table auth.users (
 create or replace function auth.uid()
 returns uuid
 language sql stable
-as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+as $ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $;
+grant usage on schema auth to authenticated, service_role;
+grant execute on function auth.uid() to authenticated, service_role;
 
 create table storage.buckets (
   id text primary key,
@@ -40,7 +42,12 @@ create table storage.objects (
 create or replace function storage.foldername(object_name text)
 returns text[]
 language sql immutable
-as $$ select string_to_array(trim(both '/' from object_name), '/') [1:greatest(array_length(string_to_array(trim(both '/' from object_name), '/'), 1) - 1, 0)] $$;
+as $
+  select case
+    when position('/' in trim(both '/' from object_name)) = 0 then array[]::text[]
+    else (string_to_array(trim(both '/' from object_name), '/'))[1:array_length(string_to_array(trim(both '/' from object_name), '/'), 1) - 1]
+  end
+$;
 
 \ir ../migrations/0005_cloud_projects_and_storage.sql
 \ir ../migrations/0007_enforce_project_owner_integrity.sql
