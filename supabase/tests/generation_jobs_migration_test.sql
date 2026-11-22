@@ -179,6 +179,7 @@ $$;
 -- Authenticated users can read only their own jobs, and cannot write jobs/outbox.
 set request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
 set role authenticated;
+select current_user, session_user, auth.uid() as request_user, (select rolbypassrls from pg_roles where rolname = current_user) as bypass_rls, (select relrowsecurity from pg_class where oid = 'public.generation_jobs'::regclass) as rls_enabled;
 do $$
 declare visible_count integer;
 begin
