@@ -217,3 +217,18 @@ The ledger remains a design only. Do not add a mutable client balance or connect
 ### Activation gate
 
 Keep billing, payment collection, credit deductions, and any public paid-generation endpoint disabled until pricing/unit economics, refund/cancellation rules, provider billing behavior, and legal terms are approved; all adversarial SQL tests pass; and a two-account end-to-end test has evidence. This document and the existing job/provider migrations do not implement a wallet or ledger and must not be presented as active billing.
+
+
+## 27. Credit ledger schema foundation (migration 0018; not active billing)
+
+Migration `0018_credit_ledger_schema.sql` introduces only the database structures needed for a future credit ledger:
+
+- `credit_wallets`: one owner-scoped balance projection per user, with non-negative available and reserved credit counters.
+- `credit_holds`: one quote-backed hold per generation job, with an explicit held/captured/released state and owner-matched composite foreign key.
+- `credit_ledger`: append-only operation history with unique owner-scoped operation keys, balance-after snapshots, bounded metadata and owner-matched hold reference.
+- RLS lets authenticated users read only their own rows. Authenticated clients have no insert/update/delete privileges; trusted service role has table privileges.
+- A database trigger rejects UPDATE and DELETE against ledger history, including accidental privileged application writes. Corrections must be represented by compensating entries.
+
+The migration deliberately does not create wallet mutation RPCs, grant/adjustment workflows, reserve/capture/release logic, payment integration, price catalog, or a paid submission endpoint. It does not initialize users with credits or alter any existing balance. Existing job creation remains separate and must not be treated as an atomic paid submission.
+
+The disposable PostgreSQL integration script now applies migration 0018 and checks wallet creation, owner-matched hold constraints, ledger append-only behavior, and the absence of client mutation privileges. The CI run must pass before this schema is considered validated. Next implementation step is a single transaction boundary for paid job creation + outbox + wallet hold + reserve ledger entry, followed by lease-safe atomic completion/capture and terminal release RPCs. Do not apply this migration to production or enable billing until those RPCs and concurrency tests are complete.
