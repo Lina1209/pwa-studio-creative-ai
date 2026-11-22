@@ -2777,6 +2777,16 @@ begin
     raise exception 'Captured generation did not terminalize its lot allocations';
   end if;
 
+  if not exists (
+    select 1 from public.credit_ledger
+     where hold_id = (select id from public.credit_holds where job_id = v_second_job)
+       and operation_type = 'capture'
+       and metadata->>'result_storage_path' = v_user::text || '/generated/lot-capture.png'
+       and metadata->>'result_sha256' = repeat('c', 64)
+  ) then
+    raise exception 'Capture ledger did not preserve verified result path and SHA-256';
+  end if;
+
   update public.generation_jobs
      set status = 'failed', last_error_code = 'lot_release_test',
          completed_at = now(), updated_at = now()
