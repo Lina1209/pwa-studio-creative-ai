@@ -137,3 +137,6 @@ revoke all on function public.reserve_ai_request(uuid, uuid, text, integer, inte
   from public, anon, authenticated;
 grant execute on function public.reserve_ai_request(uuid, uuid, text, integer, integer, integer, integer, integer)
   to service_role;
+
+-- Remove the previous overload so no server caller can bypass daily limits.
+drop function if exists public.reserve_ai_request(uuid, uuid, text, integer, integer, integer);
