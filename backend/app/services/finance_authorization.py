@@ -55,12 +55,13 @@ def require_finance_permission(
         raise FinanceAuthorizationDenied("No active finance assignment.")
     if permission not in grant.permissions:
         raise FinanceAuthorizationDenied("Required finance permission is not granted.")
-    if target_scope is not None:
-        if permission in grant.global_permissions:
-            return
-        allowed_scopes = grant.permission_scopes.get(permission, grant.scope_ids)
-        if target_scope not in allowed_scopes:
-            raise FinanceAuthorizationDenied("Finance assignment does not cover this scope.")
+    if permission in grant.global_permissions:
+        return
+    if target_scope is None:
+        raise FinanceAuthorizationDenied("A target scope is required for scoped finance permissions.")
+    allowed_scopes = grant.permission_scopes.get(permission, grant.scope_ids)
+    if target_scope not in allowed_scopes:
+        raise FinanceAuthorizationDenied("Finance assignment does not cover this scope.")
 
 
 def require_independent_approval(*, requester_id: UUID, approver_id: UUID) -> None:
