@@ -839,7 +839,7 @@ comment on function public.expire_credit_lots_for_user(uuid) is
   'Expires available credits and writes compensating adjustment ledger entries; invoke from trusted scheduled maintenance.';
 comment on function public.allocate_credit_hold_lots(uuid,uuid) is
   'Atomically allocates a quote-backed hold from unexpired lots in earliest-expiry-first order.';
-comment on function public.resolve_credit_hold_lots(uuid,uuid,text,text) is
+comment on function public.resolve_credit_hold_lots(uuid,uuid,text,text,jsonb) is
   'Captures or releases exact lot allocations; expired allocations are forfeited on release, never resurrected.';
 
 
