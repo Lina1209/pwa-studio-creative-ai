@@ -1059,6 +1059,7 @@ declare
   v_release record;
   v_release_replay record;
   v_job_id uuid := 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  v_insufficient_job_id uuid;
   v_hold_id uuid;
   v_rejected boolean;
   v_ledger_count integer;
@@ -1130,10 +1131,18 @@ begin
   end;
   if not v_rejected then raise exception 'Mismatched reservation replay was accepted'; end if;
 
+  select job_id into v_insufficient_job_id
+    from public.create_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null,
+      'image_generation', 'credit-test-provider', 'credit-test-model',
+      'integration-test-insufficient-job-001', repeat('9', 64),
+      '{}'::jsonb, '{}'::jsonb
+    );
+
   v_rejected := false;
   begin
     perform public.reserve_job_credits(
-      '22222222-2222-4222-8222-222222222222', v_job_id, 100,
+      '22222222-2222-4222-8222-222222222222', v_insufficient_job_id, 100,
       'integration-test-reserve-insufficient',
       '{"price_version":"test-v1","approved_maximum":100}'::jsonb
     );
