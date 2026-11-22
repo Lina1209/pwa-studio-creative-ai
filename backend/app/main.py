@@ -1,4 +1,5 @@
 import hashlib
+from datetime import date
 import json
 from uuid import UUID, uuid4
 
@@ -11,6 +12,11 @@ from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
+from app.services.admin_financial_reporting import (
+    ProviderCostReportError,
+    ProviderCostReportNotConfiguredError,
+    get_provider_cost_report,
+)
 from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
@@ -246,6 +252,35 @@ def auth_me(user: StudioUser = Depends(get_current_user)):
 @app.get(f"{settings.api_prefix}/admin/me")
 def admin_me(user: StudioUser = Depends(require_admin)):
     return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
+
+
+@app.get(f"{settings.api_prefix}/admin/financial/provider-costs")
+def admin_provider_cost_report(
+    date_from: date,
+    date_to: date,
+    response: Response,
+    user: StudioUser = Depends(require_admin),
+):
+    """Read-only operational cost report; never exposes raw usage metadata."""
+    try:
+        report = get_provider_cost_report(
+            settings, date_from=date_from, date_to=date_to
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="The report date range is invalid or exceeds 31 days.",
+        ) from exc
+    except ProviderCostReportNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503, detail="Provider cost reporting is not configured."
+        ) from exc
+    except ProviderCostReportError as exc:
+        raise HTTPException(
+            status_code=502, detail="Provider cost report is temporarily unavailable."
+        ) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return report
 
 
 def _run_ai(operation: str, call):
