@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.site_analytics import SiteAnalyticsUnavailable, get_visit_stats, record_visit, visitor_token_hash
+from app.services.site_analytics import SiteAnalyticsUnavailable, SiteAnalyticsRateLimited, get_visit_stats, record_visit, visitor_token_hash
 
 
 def test_visitor_token_is_hashed_and_never_returned():
@@ -53,3 +53,13 @@ def test_admin_stats_validate_daily_series_and_routes(monkeypatch):
     monkeypatch.setattr(site_analytics, "_rpc", lambda *args: {**payload, "top_routes": [{"route_group": "../../", "page_views": 1}]})
     with pytest.raises(SiteAnalyticsUnavailable):
         site_analytics.get_admin_visit_stats(object())
+
+
+
+def test_record_visit_raises_when_rpc_rate_limit_is_reached(monkeypatch):
+    from app.services import site_analytics
+    monkeypatch.setattr(site_analytics, "_rpc", lambda *args: {
+        "rate_limited": True, "retry_after_seconds": 60
+    })
+    with pytest.raises(SiteAnalyticsRateLimited):
+        record_visit(object(), event_id=uuid4(), visitor_token="v" * 32, route_group="home")
