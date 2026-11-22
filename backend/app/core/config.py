@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     # Keep job endpoints disabled until migrations 0009/0010 and the worker path are reviewed.
     generation_jobs_enabled: bool = False
+    # Keep submission disabled until a durable dispatcher and worker are deployed.
+    generation_job_worker_ready: bool = False
+    image_generation_provider: str | None = None
+    image_generation_model: str | None = None
     owner_email: str | None = None
 
     model_config = SettingsConfigDict(
