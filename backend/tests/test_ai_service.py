@@ -10,9 +10,9 @@ from app.services import ai_service
 
 def settings(**overrides):
     values = {
-        "ai_provider": "openai",
-        "ai_model": "gpt-test",
-        "openai_api_key": "test-key",
+        "ai_provider": "deepseek",
+        "ai_model": "deepseek-flash",
+        "deepseek_api_key": "test-key",
         "ai_max_concurrent_requests": 2,
         "ai_queue_wait_seconds": 0,
         "ai_request_timeout_seconds": 17,
@@ -54,7 +54,7 @@ def test_missing_provider_key_fails_before_network_call(monkeypatch):
 
     monkeypatch.setattr(ai_service, "completion", unexpected_call)
     with pytest.raises(ai_service.AIConfigurationError):
-        ai_service.ask_ai(settings(openai_api_key=None), [{"role": "user", "content": "hello"}])
+        ai_service.ask_ai(settings(deepseek_api_key=None), [{"role": "user", "content": "hello"}])
 
 
 def test_capacity_limit_returns_retryable_overload(monkeypatch):
@@ -81,26 +81,26 @@ def test_empty_provider_response_is_rejected(monkeypatch):
         ai_service.ask_ai(settings(), [{"role": "user", "content": "hello"}])
 
 
-def test_ollama_uses_configured_base_without_api_key(monkeypatch):
+def test_gemini_uses_explicit_google_model_and_server_key(monkeypatch):
     seen = {}
 
     def fake_completion(**kwargs):
         seen.update(kwargs)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="Local response"))],
-            usage=None,
-            model="ollama/test",
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Gemini response"))],
+            usage={"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            model="gemini-2.5-flash",
         )
 
     monkeypatch.setattr(ai_service, "completion", fake_completion)
     result = ai_service.ask_ai(
-        settings(ai_provider="ollama", ollama_api_base="http://localhost:11434/"),
+        settings(ai_provider="gemini", ai_model="gemini-2.5-flash", gemini_api_key="google-secret"),
         [{"role": "user", "content": "hello"}],
     )
 
-    assert result.text == "Local response"
-    assert seen["api_base"] == "http://localhost:11434"
-    assert seen["api_key"] is None
+    assert result.text == "Gemini response"
+    assert seen["model"] == "gemini/gemini-2.5-flash"
+    assert seen["api_key"] == "google-secret"
 
 
 def test_output_token_limit_is_configurable_and_bounded(monkeypatch):
@@ -123,3 +123,13 @@ def test_output_token_limit_is_configurable_and_bounded(monkeypatch):
 
     with pytest.raises(ValidationError):
         Settings(ai_max_output_tokens=8193)
+
+
+def test_unsupported_provider_is_rejected_at_configuration_boundary():
+    with pytest.raises(ValidationError):
+        Settings(ai_provider="openai", ai_model="gpt-test")
+
+
+def test_provider_model_mismatch_is_rejected():
+    with pytest.raises(ValidationError):
+        Settings(ai_provider="gemini", ai_model="deepseek-flash", gemini_api_key="test")
