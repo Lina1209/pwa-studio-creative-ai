@@ -59,15 +59,6 @@ class WorkerRepositoryNotConfiguredError(RuntimeError):
     pass
 
 
-class WorkerRepositoryError(RuntimeError):
-    """Sanitized database adapter failure with an explicit retry policy."""
-
-    def __init__(self, error_code: str, *, retryable: bool = True):
-        self.error_code = error_code
-        self.retryable = retryable
-        super().__init__(error_code)
-
-
 def _repository_error_code(exc: Exception) -> tuple[str, bool]:
     """Classify transport and HTTP failures without exposing response bodies."""
     response = getattr(exc, "response", None)
