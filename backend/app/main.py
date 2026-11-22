@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, MovieCharacterReference, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
+from app.services.ai_cost_admission import AIProviderBudgetRejected, AIProviderBudgetUnavailable
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.finance_authorization import FinanceAuthorizationDenied, require_finance_permission
 from app.services.content_safety import check_content
@@ -1109,6 +1110,20 @@ def _run_admitted_ai(operation: str, user_id: str, call):
 def _run_ai(operation: str, call):
     try:
         return call()
+    except AIProviderBudgetRejected as exc:
+        if exc.reason == "input_size_limit":
+            raise HTTPException(status_code=413, detail="Текст запроса слишком большой для безопасного расчёта стоимости.") from exc
+        raise HTTPException(
+            status_code=429,
+            detail="Достигнут денежный лимит AI-сервиса. Попробуйте позже или обратитесь к администратору.",
+            headers={"Retry-After": "300"},
+        ) from exc
+    except AIProviderBudgetUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка денежного лимита AI временно недоступна. Запрос к провайдеру не выполнен.",
+            headers={"Retry-After": "10"},
+        ) from exc
     except AIConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except AIOverloadedError as exc:
@@ -1139,8 +1154,8 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
     result = _run_admitted_ai("chat", user.user_id, lambda: ask_ai(settings, [
         {"role": "system", "content": system},
         {"role": "user", "content": payload.message},
-    ]))
-    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="chat",
+    ], user_id=UUID(user.user_id)))
+    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="chat",
                     provider=settings.ai_provider, result=result)
     return ChatResponse(reply=result.text, provider=settings.ai_provider, model=result.actual_model)
 
@@ -1168,8 +1183,8 @@ def generate_movie_script(payload: MovieScriptRequest, user: StudioUser = Depend
     result = _run_admitted_ai("movie_script", user.user_id, lambda: ask_ai(settings, [
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
-    ]))
-    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="movie_script",
+    ], user_id=UUID(user.user_id)))
+    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="movie_script",
                     provider=settings.ai_provider, result=result)
     raw = result.text.strip()
     if raw.startswith(chr(96) * 3):
@@ -1209,8 +1224,8 @@ def direct_movie_scenes(payload: MovieDirectorRequest, user: StudioUser = Depend
     result = _run_admitted_ai("movie_director", user.user_id, lambda: ask_ai(settings, [
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
-    ]))
-    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="movie_director",
+    ], user_id=UUID(user.user_id)))
+    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="movie_director",
                     provider=settings.ai_provider, result=result)
     raw = result.text.strip()
     if raw.startswith(chr(96) * 3):
@@ -1276,8 +1291,8 @@ def create_movie_storyboard(payload: MovieStoryboardRequest, user: StudioUser = 
     result = _run_admitted_ai("movie_storyboard", user.user_id, lambda: ask_ai(settings, [
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
-    ]))
-    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="movie_storyboard",
+    ], user_id=UUID(user.user_id)))
+    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="movie_storyboard",
                     provider=settings.ai_provider, result=result)
     raw = result.text.strip()
     if raw.startswith(chr(96) * 3):
@@ -1334,7 +1349,7 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
     result = _run_admitted_ai("prompts", user.user_id, lambda: ask_ai(settings, [
         {"role": "system", "content": system},
         {"role": "user", "content": request},
-    ]))
-    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="prompts",
+    ], user_id=UUID(user.user_id)))
+    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="prompts",
                     provider=settings.ai_provider, result=result)
     return PromptResponse(prompt=result.text, provider=settings.ai_provider, model=result.actual_model)
