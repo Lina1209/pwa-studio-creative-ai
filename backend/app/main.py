@@ -51,6 +51,7 @@ from app.services.finance_operation_requests import (
     decide_finance_operation_request,
     read_finance_operation_request,
     list_finance_operation_requests,
+    read_finance_operation_request_events,
 )
 from app.services.credit_wallet_service import (
     CreditWalletNotConfigured,
@@ -719,6 +720,44 @@ def finance_request_queue(
         } if has_more and page else None),
         "execution_enabled": False,
     }
+
+
+@app.get(f"{settings.api_prefix}/finance/requests/{{request_id}}/events")
+def finance_request_events(
+    request_id: UUID,
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Read an append-only request timeline only within the caller's delegated scope."""
+    try:
+        item = read_finance_operation_request(settings, request_id=request_id)
+    except FinanceRequestNotFound as exc:
+        raise HTTPException(status_code=404, detail="Finance request was not found.") from exc
+    except FinanceRequestNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    if item["scope_key"] != _finance_target_scope(item["target_user_id"]):
+        raise HTTPException(status_code=403, detail="Finance request scope does not match its target.")
+    _require_finance_action(
+        user, request_type=item["request_type"], action="read", scope_key=item["scope_key"],
+    )
+    try:
+        events = read_finance_operation_request_events(settings, request_id=request_id)
+    except FinanceRequestNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request timeline is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"request_id": str(request_id), "events": [{
+        "event_id": str(event["event_id"]),
+        "actor_id": str(event["actor_id"]),
+        "event_type": event["event_type"],
+        "previous_status": event["previous_status"],
+        "new_status": event["new_status"],
+        "reason": event["reason"],
+        "occurred_at": event["occurred_at"].isoformat(),
+    } for event in events]}
 
 
 @app.post(f"{settings.api_prefix}/finance/requests", status_code=201)
