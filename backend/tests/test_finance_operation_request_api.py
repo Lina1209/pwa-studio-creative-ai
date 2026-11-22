@@ -46,7 +46,7 @@ def test_create_finance_request_uses_verified_actor_and_exact_permission_scope(m
     try:
         response = client.post("/api/finance/requests", json={
             "request_type": "credit_compensation", "target_user_id": str(OTHER),
-            "amount": "12.5000", "currency_code": "KZT",
+            "amount": "12", "currency_code": "CRD",
             "reason": "Support case", "idempotency_key": str(IDEMPOTENCY),
         })
         assert response.status_code == 201
@@ -70,7 +70,7 @@ def test_finance_request_rejects_missing_delegated_permission(monkeypatch):
     try:
         response = client.post("/api/finance/requests", json={
             "request_type": "credit_compensation", "target_user_id": str(OTHER),
-            "amount": "2", "currency_code": "KZT",
+            "amount": "2", "currency_code": "CRD",
             "reason": "Support case", "idempotency_key": str(IDEMPOTENCY),
         })
         assert response.status_code == 403
@@ -169,7 +169,7 @@ def test_request_schema_rejects_client_actor_fields(monkeypatch):
     try:
         response = client.post("/api/finance/requests", json={
             "requester_id": str(OTHER), "request_type": "credit_compensation",
-            "target_user_id": str(OTHER), "amount": "1", "currency_code": "KZT",
+            "target_user_id": str(OTHER), "amount": "1", "currency_code": "CRD",
             "reason": "Forged actor",
             "idempotency_key": str(IDEMPOTENCY),
         })
