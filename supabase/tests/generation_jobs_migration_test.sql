@@ -249,7 +249,6 @@ begin
     exception when sqlstate '22023' then v_rejected := true;
     end;
     if not v_rejected then raise exception 'Malformed request hash was accepted'; end if;
-  end;
 end;
 $generic_idempotency$;
 
