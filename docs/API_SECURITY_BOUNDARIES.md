@@ -42,16 +42,18 @@ Pricing quote snapshots are serialized with strict JSON handling before canonica
 
 Implemented:
 - AI provider calls use a bounded in-process semaphore, a bounded queue wait, provider timeout, a small retry ceiling, and a configurable maximum output-token limit (`AI_MAX_OUTPUT_TOKENS`, default 2,048; allowed range 1–8,192).
+- `chat` and `prompts` also reserve capacity through PostgreSQL before contacting the AI provider. Limits are per authenticated user: 10 admitted requests/minute and 2 concurrent requests by default; operators can lower/raise them through `AI_MAX_REQUESTS_PER_MINUTE_PER_USER` (1–120) and `AI_MAX_CONCURRENT_REQUESTS_PER_USER` (1–16).
+- Admission is shared across backend replicas, uses service-role-only RPCs, and fails closed if Supabase admission storage is unavailable. Reservations are finalized on success/failure; stale reservations stop counting toward concurrency after five minutes.
 - Overload returns HTTP 503 with `Retry-After`.
 - Analytics has database-side per-token event limits and deduplication.
 
 Not yet implemented:
-- The AI semaphore is per process. It is not a distributed concurrency limit and does not enforce a per-user quota across multiple backend replicas.
-- There is no shared per-user/per-IP request-rate limiter for chat and prompt generation.
+- The in-process AI semaphore remains a second, per-process safety layer; the PostgreSQL gate supplies distributed per-user request/concurrency limits for chat and prompt generation.
+- There is not yet a shared per-IP/CDN limit for chat and prompt generation.
 - AI usage telemetry is best-effort. It is reporting, not a billing ledger or quota enforcement mechanism.
 - The application does not yet enforce free/paid plan entitlements at every AI endpoint.
 
-Before public AI launch, add shared server-side quota admission keyed by authenticated user and plan, with atomic usage reservation, expiry/reconciliation, and explicit fail-closed behavior when the quota service is unavailable. Add edge/CDN request limits and bot filtering as a second layer. Do not treat frontend quotas or the current in-process semaphore as security controls.
+Before public AI launch, extend admission to plan-based monthly credit/usage entitlements with atomic ledger reservations and reconciliation, and add edge/CDN request limits and bot filtering as a second layer. The current per-minute gate is not a subscription quota or a billing ledger. Do not treat frontend quotas as security controls.
 
 ## Validation status
 
@@ -59,4 +61,4 @@ The PostgreSQL integration workflow run #1017 completed successfully for commit 
 
 Authentication role/UUID tests and pricing payload-size tests were added in later commits. Their CI result must be checked separately; run #1017 does not validate those later changes.
 
-No production migrations, deployments, billing activation, or merge to `main` are performed as part of this review.
+Migration `0029_ai_request_admission.sql` must be applied before deploying backend code that depends on it; until both are installed, AI routes fail closed with HTTP 503. The migration is included in the disposable PostgreSQL integration harness. No production migrations, deployments, billing activation, or merge to `main` are performed as part of this review.
