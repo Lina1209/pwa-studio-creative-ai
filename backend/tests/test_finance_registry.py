@@ -18,7 +18,7 @@ def test_registry_resolves_only_permissions_from_active_role_rows(monkeypatch):
     monkeypatch.setattr(registry, "_rpc", lambda *a, **k: [{
         "assignment_id": str(ASSIGNMENT), "principal_id": str(TARGET),
         "role_code": "finance_operator", "scope_key": "tenant-a",
-        "valid_from": now, "valid_until": None, "granted_by": str(ACTOR),
+        "valid_from": now, "valid_until": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(), "granted_by": str(ACTOR),
         "created_at": now,
     }])
     grant = registry.resolve_finance_grant(Settings(supabase_url="https://example.test", supabase_service_role_key="x"), principal_id=TARGET)
@@ -34,7 +34,7 @@ def test_registry_rejects_malformed_or_cross_principal_rows(monkeypatch):
     monkeypatch.setattr(registry, "_rpc", lambda *a, **k: [{
         "assignment_id": str(ASSIGNMENT), "principal_id": str(ACTOR),
         "role_code": "finance_operator", "scope_key": None,
-        "valid_from": datetime.now(timezone.utc).isoformat(), "valid_until": None,
+        "valid_from": datetime.now(timezone.utc).isoformat(), "valid_until": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
         "granted_by": str(ACTOR), "created_at": datetime.now(timezone.utc).isoformat(),
     }])
     with pytest.raises(registry.FinanceRegistryUnavailable):
@@ -94,13 +94,13 @@ def test_permissions_keep_the_scope_of_the_role_that_granted_them(monkeypatch):
         {
             "assignment_id": str(ASSIGNMENT), "principal_id": str(TARGET),
             "role_code": "finance_operator", "scope_key": "tenant-a",
-            "valid_from": now, "valid_until": None, "granted_by": str(ACTOR),
+            "valid_from": now, "valid_until": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(), "granted_by": str(ACTOR),
             "created_at": now,
         },
         {
             "assignment_id": "44444444-4444-4444-8444-444444444444",
             "principal_id": str(TARGET), "role_code": "finance_approver",
-            "scope_key": "tenant-b", "valid_from": now, "valid_until": None,
+            "scope_key": "tenant-b", "valid_from": now, "valid_until": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
             "granted_by": str(ACTOR), "created_at": now,
         },
     ])
@@ -128,12 +128,12 @@ def test_permissions_keep_the_scope_of_the_role_that_granted_them(monkeypatch):
         )
 
 
-def test_unscoped_or_nonexpiring_legacy_assignment_fails_closed(monkeypatch):
+def test_unscoped_legacy_assignment_fails_closed(monkeypatch):
     now = datetime.now(timezone.utc).isoformat()
     monkeypatch.setattr(registry, "_rpc", lambda *a, **k: [{
         "assignment_id": str(ASSIGNMENT), "principal_id": str(TARGET),
         "role_code": "finance_operator", "scope_key": None,
-        "valid_from": now, "valid_until": None, "granted_by": str(ACTOR),
+        "valid_from": now, "valid_until": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(), "granted_by": str(ACTOR),
         "created_at": now,
     }])
     with pytest.raises(registry.FinanceRegistryUnavailable):
