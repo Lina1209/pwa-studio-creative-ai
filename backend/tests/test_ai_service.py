@@ -44,6 +44,7 @@ def test_successful_completion_returns_usage_and_cost(monkeypatch):
     assert result.actual_model == "gpt-test-version"
     assert seen["timeout"] == 17
     assert seen["max_retries"] == 0
+    assert seen["max_tokens"] == 2048
 
 
 def test_missing_provider_key_fails_before_network_call(monkeypatch):
@@ -99,3 +100,25 @@ def test_ollama_uses_configured_base_without_api_key(monkeypatch):
     assert result.text == "Local response"
     assert seen["api_base"] == "http://localhost:11434"
     assert seen["api_key"] is None
+
+
+def test_output_token_limit_is_configurable_and_bounded(monkeypatch):
+    seen = {}
+
+    def fake_completion(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Bounded"))],
+            usage=None,
+            model="gpt-test",
+        )
+
+    monkeypatch.setattr(ai_service, "completion", fake_completion)
+    ai_service.ask_ai(
+        settings(ai_max_output_tokens=512),
+        [{"role": "user", "content": "hello"}],
+    )
+    assert seen["max_tokens"] == 512
+
+    with pytest.raises(Exception):
+        Settings(ai_max_output_tokens=8193)
