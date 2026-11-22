@@ -282,6 +282,20 @@ def admin_me(user: StudioUser = Depends(require_admin)):
     return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
 
 
+@app.get(f"{settings.api_prefix}/admin/analytics/site-visits")
+def admin_site_visit_stats(
+    response: Response,
+    user: StudioUser = Depends(require_admin),
+):
+    """Owner-only aggregate analytics endpoint."""
+    try:
+        stats = get_visit_stats(settings)
+    except SiteAnalyticsUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Visit analytics is not configured.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return stats
+
+
 @app.get(f"{settings.api_prefix}/admin/financial/provider-costs")
 def admin_provider_cost_report(
     date_from: date,
