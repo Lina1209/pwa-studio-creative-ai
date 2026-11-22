@@ -339,7 +339,6 @@ begin
      or p_source_reference is null or length(p_source_reference) not between 8 and 240
      or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 234
      or (p_lot_type in ('free', 'subscription') and p_expires_at is null)
-     or (p_expires_at is not null and p_expires_at <= now())
      or p_metadata is null or jsonb_typeof(p_metadata) <> 'object'
      or octet_length(p_metadata::text) > 16384 then
     raise exception 'Invalid source-separated credit grant parameters' using errcode = '22023';
@@ -386,6 +385,13 @@ begin
     end if;
     return query select v_wallet.available_credits, v_wallet.reserved_credits, true;
     return;
+  end if;
+
+  -- Exact retries remain idempotent even after the original lot expires.
+  -- Only a genuinely new grant must carry a future expiry timestamp.
+  if p_expires_at is not null and p_expires_at <= now() then
+    raise exception 'A new credit lot cannot be granted with an expired timestamp'
+      using errcode = '22023';
   end if;
 
   update public.credit_wallets as wallet
