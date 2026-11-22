@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
@@ -26,6 +26,11 @@ from app.services.admin_financial_reporting import (
 )
 from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
 from app.services.site_analytics import SiteAnalyticsUnavailable, SiteAnalyticsRateLimited, record_visit, get_admin_visit_stats
+from app.services.credit_wallet_service import (
+    CreditWalletNotConfigured,
+    CreditWalletUnavailable,
+    get_credit_wallet_snapshot,
+)
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
@@ -271,6 +276,33 @@ def create_scene_image_job(
         "status": "queued",
         "created": result.created,
     }
+
+@app.get(f"{settings.api_prefix}/credits/wallet", response_model=CreditWalletResponse)
+def get_my_credit_wallet(
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Read the authenticated user's wallet, active holds, and recent ledger."""
+    try:
+        snapshot = get_credit_wallet_snapshot(
+            settings, user_id=UUID(user.user_id), history_limit=50
+        )
+    except CreditWalletNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Credit wallet is not configured yet.") from exc
+    except CreditWalletUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Credit wallet is temporarily unavailable.") from exc
+
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "user_id": str(snapshot.user_id),
+        "currency_unit": "credit",
+        "available_credits": snapshot.available_credits,
+        "reserved_credits": snapshot.reserved_credits,
+        "total_credits": snapshot.available_credits + snapshot.reserved_credits,
+        "holds": snapshot.holds,
+        "ledger": snapshot.ledger,
+    }
+
 
 @app.get(f"{settings.api_prefix}/auth/me")
 def auth_me(user: StudioUser = Depends(get_current_user)):
