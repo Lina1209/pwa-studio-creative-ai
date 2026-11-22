@@ -79,6 +79,7 @@ create table public.studio_media (
 \ir ../migrations/0011_link_generation_jobs_to_movie_scenes.sql
 \ir ../migrations/0012_create_scene_generation_job_rpc.sql
 \ir ../migrations/0013_generation_job_worker_lifecycle.sql
+\ir ../migrations/0014_outbox_delivery_lifecycle.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -326,6 +327,93 @@ begin
   end if;
 end;
 $lease_test$;
+
+-- Outbox delivery leases, worker ownership, retry, and dead-letter behavior.
+do $outbox_test$
+declare
+  v_created record;
+  v_claim record;
+  v_retry_created record;
+  v_retry_claim record;
+  v_event_id uuid;
+  v_retry_event_id uuid;
+  v_failed_at timestamptz;
+begin
+  -- Isolate the test from earlier fixture events.
+  update public.outbox_events
+     set published_at = now(), lease_owner = null, lease_expires_at = null
+   where published_at is null and failed_at is null;
+
+  select * into v_created from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'test-provider', 'test-model',
+    'outbox-delivery-idempotency-1', repeat('a', 64),
+    '{"prompt":"outbox delivery test"}'::jsonb, '{}'::jsonb
+  );
+  select event_id into v_event_id
+    from public.outbox_events where aggregate_id = v_created.job_id;
+
+  select * into v_claim from public.claim_next_outbox_event('outbox-worker-a', 60);
+  if v_claim.event_id is distinct from v_event_id or v_claim.delivery_attempts <> 1 then
+    raise exception 'Outbox worker did not claim the expected event';
+  end if;
+
+  select * into v_claim from public.claim_next_outbox_event('outbox-worker-b', 60);
+  if v_claim.event_id is not null then
+    raise exception 'A second outbox worker claimed an event with an active lease';
+  end if;
+  if public.mark_outbox_event_published(v_event_id, 'outbox-worker-b') then
+    raise exception 'A worker without the lease published the event';
+  end if;
+  if not public.mark_outbox_event_published(v_event_id, 'outbox-worker-a') then
+    raise exception 'The active outbox lease owner could not publish the event';
+  end if;
+
+  select * into v_retry_created from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'test-provider', 'test-model',
+    'outbox-retry-idempotency-1', repeat('b', 64),
+    '{"prompt":"outbox retry test"}'::jsonb, '{}'::jsonb
+  );
+  select event_id into v_retry_event_id
+    from public.outbox_events where aggregate_id = v_retry_created.job_id;
+  update public.outbox_events
+     set max_delivery_attempts = 2
+   where event_id = v_retry_event_id;
+
+  select * into v_retry_claim
+    from public.claim_next_outbox_event('outbox-retry-worker-a', 60);
+  if v_retry_claim.event_id is distinct from v_retry_event_id
+     or v_retry_claim.delivery_attempts <> 1 then
+    raise exception 'Outbox retry fixture was not claimed on attempt one';
+  end if;
+  if not public.retry_outbox_event(v_retry_event_id, 'outbox-retry-worker-a', 'broker_unavailable', 1) then
+    raise exception 'Outbox retry was not scheduled';
+  end if;
+
+  update public.outbox_events set available_at = now()
+   where event_id = v_retry_event_id;
+  select * into v_retry_claim
+    from public.claim_next_outbox_event('outbox-retry-worker-b', 60);
+  if v_retry_claim.event_id is distinct from v_retry_event_id
+     or v_retry_claim.delivery_attempts <> 2 then
+    raise exception 'Outbox event was not reclaimed on its second attempt';
+  end if;
+  if not public.retry_outbox_event(v_retry_event_id, 'outbox-retry-worker-b', 'broker_unavailable', 1) then
+    raise exception 'Final outbox retry attempt was not accepted';
+  end if;
+
+  select failed_at into v_failed_at
+    from public.outbox_events where event_id = v_retry_event_id;
+  if v_failed_at is null then
+    raise exception 'Outbox event was not dead-lettered after exhausting attempts';
+  end if;
+  select * into v_claim from public.claim_next_outbox_event('outbox-worker-c', 60);
+  if v_claim.event_id is not null then
+    raise exception 'A dead-lettered outbox event was claimed again';
+  end if;
+end;
+$outbox_test$;
 
 -- Only the trusted backend service role may execute worker lifecycle RPCs.
 do $$
