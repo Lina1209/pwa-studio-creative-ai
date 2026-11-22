@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
@@ -18,6 +18,7 @@ from app.services.admin_financial_reporting import (
     get_provider_cost_report,
 )
 from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
+from app.services.site_analytics import SiteAnalyticsUnavailable, record_visit, get_visit_stats
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
@@ -42,6 +43,33 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
 )
+
+
+@app.post(f"{settings.api_prefix}/analytics/visit")
+def analytics_record_visit(payload: SiteVisitRequest, response: Response):
+    """Record one anonymous page view; the database deduplicates event retries."""
+    try:
+        stats = record_visit(
+            settings, event_id=payload.event_id,
+            visitor_token=payload.visitor_token, route_group=payload.route_group,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid analytics event.") from exc
+    except SiteAnalyticsUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Visit counter is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "no-store"
+    return stats
+
+
+@app.get(f"{settings.api_prefix}/analytics/stats")
+def analytics_public_stats(response: Response):
+    """Return aggregate counters only; never expose visitor-level records."""
+    try:
+        stats = get_visit_stats(settings)
+    except SiteAnalyticsUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Visit counter is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "no-store"
+    return stats
 
 
 @app.get("/")
