@@ -94,6 +94,7 @@ create table public.studio_media (
 \ir ../migrations/0026_global_provider_budget_reservations.sql
 \ir ../migrations/0027_site_visit_analytics.sql
 \ir ../migrations/0028_site_visit_admin_analytics.sql
+\ir ../migrations/0029_ai_request_admission.sql
 
 -- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
 do $credit_ledger_privileges_test$
@@ -2440,3 +2441,71 @@ end;
 $global_provider_budget_reservations_test$;
 
 select 'global provider budget reservation checks passed' as result;
+
+
+do $ai_request_admission_test$
+declare
+  v_user uuid := gen_random_uuid();
+  v_other_user uuid := gen_random_uuid();
+  v_first uuid := gen_random_uuid();
+  v_second uuid := gen_random_uuid();
+  v_third uuid := gen_random_uuid();
+  v_other_request uuid := gen_random_uuid();
+  v_result jsonb;
+begin
+  v_result := public.reserve_ai_request(v_user, v_first, 'chat', 2, 1);
+  if v_result->>'admitted' <> 'true' then
+    raise exception 'first AI request was not admitted';
+  end if;
+
+  v_result := public.reserve_ai_request(v_user, v_second, 'prompts', 2, 1);
+  if v_result->>'admitted' <> 'false'
+     or v_result->>'reason' <> 'concurrency_limited' then
+    raise exception 'per-user concurrent AI limit was not enforced';
+  end if;
+
+  if not public.finish_ai_request(v_user, v_first, 'completed') then
+    raise exception 'could not finalize admitted AI request';
+  end if;
+
+  v_result := public.reserve_ai_request(v_user, v_second, 'prompts', 2, 1);
+  if v_result->>'admitted' <> 'true' then
+    raise exception 'released concurrency slot did not admit next request';
+  end if;
+
+  v_result := public.reserve_ai_request(v_user, v_third, 'chat', 2, 1);
+  if v_result->>'admitted' <> 'false'
+     or v_result->>'reason' <> 'rate_limited' then
+    raise exception 'per-minute AI request limit was not enforced';
+  end if;
+
+  v_result := public.reserve_ai_request(v_other_user, v_other_request, 'chat', 2, 1);
+  if v_result->>'admitted' <> 'true' then
+    raise exception 'one user's rate limit incorrectly affected another user';
+  end if;
+
+  if not public.finish_ai_request(v_user, v_second, 'released') then
+    raise exception 'could not release failed AI request reservation';
+  end if;
+  if not public.finish_ai_request(v_other_user, v_other_request, 'released') then
+    raise exception 'could not release isolated AI request reservation';
+  end if;
+
+  if has_function_privilege('authenticated',
+       'public.reserve_ai_request(uuid,uuid,text,integer,integer)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.finish_ai_request(uuid,uuid,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.reserve_ai_request(uuid,uuid,text,integer,integer)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.finish_ai_request(uuid,uuid,text)', 'EXECUTE')
+     or has_table_privilege('authenticated',
+       'public.ai_request_admission_reservations', 'SELECT')
+     or has_table_privilege('anon',
+       'public.ai_request_admission_windows', 'SELECT') then
+    raise exception 'AI admission storage/RPC privileges are not least-privilege';
+  end if;
+end;
+$ai_request_admission_test$;
+
+select 'distributed AI admission checks passed' as result;
