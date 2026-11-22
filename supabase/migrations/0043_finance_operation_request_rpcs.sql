@@ -18,7 +18,7 @@ declare
   v_existing public.finance_operation_requests%rowtype;
   v_id uuid;
 begin
-  if p_requester_id is null or p_target_user_id is null
+  if p_requester_id is null or p_target_user_id is null or p_requester_id = p_target_user_id
      or p_request_type is null or p_currency_code is null
      or p_request_type not in ('credit_compensation', 'billing_refund')
      or p_amount is null or p_amount <= 0
