@@ -87,6 +87,94 @@ begin
      or p_quote_snapshot ->> 'job_type' <> p_job_type
      or p_quote_snapshot ->> 'provider' <> p_provider
      or p_quote_snapshot ->> 'model' <> p_model
+     or coalesce(p_quote_snapshot ->> 'quantity', '') !~ '^[1-9][0-9]{0,4}     or nullif(p_quote_snapshot ->> 'project_id', '') is distinct from p_project_id::text
+     or nullif(p_quote_snapshot ->> 'studio_scene_id', '') is distinct from p_studio_scene_id::text
+     or p_expires_at is null or p_expires_at <= now()
+     or (p_quote_snapshot ->> 'expires_at')::timestamptz is distinct from p_expires_at then
+    raise exception 'Invalid pricing quote persistence request' using errcode = '22023';
+  end if;
+
+  if p_project_id is not null and not exists (
+    select 1 from public.projects p
+     where p.id = p_project_id and p.owner_id = p_user_id
+  ) then
+    raise exception 'Pricing quote project is not owned by user' using errcode = '42501';
+  end if;
+  if p_studio_scene_id is not null and not exists (
+    select 1 from public.studio_scenes s
+     where s.id = p_studio_scene_id and s.user_id = p_user_id
+  ) then
+    raise exception 'Pricing quote scene is not owned by user' using errcode = '42501';
+  end if;
+
+  insert into public.generation_pricing_quotes(
+    quote_id, user_id, idempotency_key, request_hash, job_type,
+    provider, model, project_id, studio_scene_id, quote_snapshot, expires_at
+  ) values (
+    p_quote_id, p_user_id, p_idempotency_key, p_request_hash, p_job_type,
+    p_provider, p_model, p_project_id, p_studio_scene_id, p_quote_snapshot, p_expires_at
+  )
+  on conflict (user_id, idempotency_key) do nothing;
+
+  select * into v_quote
+    from public.generation_pricing_quotes
+   where user_id = p_user_id and idempotency_key = p_idempotency_key
+   for update;
+
+  if not found then
+    raise exception 'Pricing quote persistence failed' using errcode = '55000';
+  end if;
+
+  if v_quote.request_hash <> p_request_hash
+     or v_quote.job_type <> p_job_type
+     or v_quote.provider <> p_provider
+     or v_quote.model <> p_model
+     or v_quote.quote_snapshot ->> 'quantity' <> p_quote_snapshot ->> 'quantity'
+     or v_quote.project_id is distinct from p_project_id
+     or v_quote.studio_scene_id is distinct from p_studio_scene_id then
+    raise exception 'Pricing quote idempotency key was reused for a different request'
+      using errcode = '22023';
+  end if;
+
+  return query select v_quote.quote_snapshot, v_quote.quote_id = p_quote_id,
+    v_quote.expires_at <= now();
+end;
+$$;
+
+revoke all on function public.store_generation_pricing_quote(
+  uuid, uuid, text, text, text, text, text, uuid, uuid, jsonb, timestamptz
+) from public, anon, authenticated;
+grant execute on function public.store_generation_pricing_quote(
+  uuid, uuid, text, text, text, text, text, uuid, uuid, jsonb, timestamptz
+) to service_role;
+
+comment on table public.generation_pricing_quotes is
+  'Immutable owner-scoped pricing quote snapshots; unique idempotency keys return the original quote.';
+comment on function public.store_generation_pricing_quote(
+  uuid, uuid, text, text, text, text, text, uuid, uuid, jsonb, timestamptz
+) is 'Stores one signed quote per owner/idempotency key; exact replays return the original quote and changed requests are rejected.';
+
+
+create or replace function public.reject_generation_pricing_quote_mutation()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public
+as $$
+begin
+  raise exception 'Generation pricing quotes are immutable'
+    using errcode = '55000';
+end;
+$$;
+
+drop trigger if exists generation_pricing_quotes_immutable
+  on public.generation_pricing_quotes;
+create trigger generation_pricing_quotes_immutable
+before update or delete on public.generation_pricing_quotes
+for each row execute function public.reject_generation_pricing_quote_mutation();
+
+revoke all on function public.reject_generation_pricing_quote_mutation() from public, anon, authenticated, service_role;
+
+     or (p_quote_snapshot ->> 'quantity')::integer > 10000
      or nullif(p_quote_snapshot ->> 'project_id', '') is distinct from p_project_id::text
      or nullif(p_quote_snapshot ->> 'studio_scene_id', '') is distinct from p_studio_scene_id::text
      or p_expires_at is null or p_expires_at <= now()
