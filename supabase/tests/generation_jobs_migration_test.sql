@@ -888,6 +888,18 @@ begin
     raise exception 'A stale unknown transition overwrote result_received';
   end if;
 
+  update public.generation_jobs
+     set lease_expires_at = now() - interval '1 second'
+   where id = v_job_id;
+  if public.mark_generation_provider_operation_result_received(
+       v_job_id, 'journal-worker-a', 'provider-request-123'
+     ) then
+    raise exception 'An expired lease changed provider journal state';
+  end if;
+  update public.generation_jobs
+     set lease_expires_at = now() + interval '120 seconds'
+   where id = v_job_id;
+
   select state, provider_request_id
     into v_state, v_request_id
     from public.generation_provider_operations where job_id = v_job_id;
@@ -925,6 +937,12 @@ begin
   end if;
   if not has_function_privilege('service_role',
        'public.begin_generation_provider_operation(uuid,text,text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.mark_generation_provider_operation_accepted(uuid,text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.mark_generation_provider_operation_unknown(uuid,text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.mark_generation_provider_operation_failed(uuid,text,text)', 'EXECUTE')
      or not has_function_privilege('service_role',
        'public.mark_generation_provider_operation_result_received(uuid,text,text)', 'EXECUTE') then
     raise exception 'service_role is missing provider journal RPC grants';
