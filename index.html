@@ -317,6 +317,12 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <article class="admin-module"><b>Роли и действия администраторов</b><p>Разрешения, история входов, изменения тарифов, запросы на подтверждение и audit log.</p><small>Изменение ролей пока заблокировано</small></article>
           <article class="admin-module"><b>Резервные копии и восстановление</b><p>Статус резервирования, контроль целостности, сроки хранения и результаты тестов восстановления.</p><small>Удаление резервных копий запрещено</small></article>
         </div>
+        <section class="panel admin-audit-panel" aria-labelledby="adminAuditHeading">
+          <div class="panel-heading"><div><h2 id="adminAuditHeading">Журнал административного аудита</h2><p>Защищённая история действий. Доступ только при наличии серверного разрешения.</p></div><button class="secondary-button" id="refreshAdminAudit" type="button">Обновить</button></div>
+          <p class="helper-text" id="adminAuditStatus" role="status">Журнал загружается после проверки роли администратора.</p>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Время (UTC)</th><th>ID администратора</th><th>Действие</th><th>Результат</th><th>Объект</th><th>Примечание</th></tr></thead><tbody id="adminAuditRows"></tbody></table></div>
+          <button class="secondary-button" id="loadMoreAdminAudit" type="button" hidden>Загрузить более ранние события</button>
+        </section>
         <button class="secondary-button" type="button" data-go="account">← Вернуться в личный кабинет</button>
       </section>
 
