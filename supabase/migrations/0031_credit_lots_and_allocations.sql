@@ -38,6 +38,7 @@ create table public.credit_lots (
   expires_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  constraint credit_lots_id_user_id_key unique(id, user_id),
   constraint credit_lots_user_idempotency_unique unique(user_id, idempotency_key),
   constraint credit_lots_amounts_within_grant
     check (available_credits + reserved_credits <= granted_credits),
