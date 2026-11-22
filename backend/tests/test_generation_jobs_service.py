@@ -4,7 +4,7 @@ import pytest
 
 from app.core.config import Settings
 from app.services import generation_jobs
-from app.services.pricing_service import PricingCatalog, PricingRule, issue_pricing_quote
+from app.services.pricing_service import PricingCatalog, PricingRule, canonical_request_hash, issue_pricing_quote
 
 
 USER_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -301,7 +301,8 @@ def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_resul
         job_type="image_generation",
         provider="provider-test",
         model="model-test",
-        request_hash="a" * 64,
+        request_hash=canonical_request_hash({"prompt": "test"}),
+        idempotency_key="credited-job-key-001",
         quantity=1,
     )
     result = generation_jobs.create_credited_generation_job(
@@ -313,7 +314,7 @@ def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_resul
         provider="provider-test",
         model="model-test",
         idempotency_key="credited-job-key-001",
-        request_hash="a" * 64,
+        request_hash=canonical_request_hash({"prompt": "test"}),
         request_snapshot={"prompt": "test"},
         quote_snapshot=quote.snapshot(),
     )
@@ -351,6 +352,7 @@ def test_create_credited_generation_job_rejects_tampered_quote_before_network(mo
         provider="provider-test",
         model="model-test",
         request_hash="b" * 64,
+        idempotency_key="credited-job-key-002",
     ).snapshot()
     quote["amount"] = 1
     quote["maximum_authorized_charge"] = 1
@@ -385,6 +387,7 @@ def test_create_credited_generation_job_rejects_quote_for_another_request(monkey
         provider="provider-test",
         model="model-test",
         request_hash="c" * 64,
+        idempotency_key="credited-job-key-003",
     ).snapshot()
     with pytest.raises(generation_jobs.GenerationJobsServiceError, match="quote is invalid"):
         generation_jobs.create_credited_generation_job(
