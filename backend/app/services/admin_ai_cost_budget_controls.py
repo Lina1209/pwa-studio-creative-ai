@@ -80,7 +80,7 @@ def resolve_unknown_reservation(settings: Settings, *, request_id: UUID, resolut
         raise ValueError("resolution_note_required")
     amount = None
     if resolution == "record_estimated_cost":
-        amount = _amount(actual_estimated_cost_usd, maximum=Decimal("1000000000"))
+        try:\n            amount = Decimal(str(actual_estimated_cost_usd))\n        except (InvalidOperation, ValueError, TypeError) as exc:\n            raise ValueError("invalid_resolution_amount") from exc\n        if not amount.is_finite() or amount < 0 or amount > Decimal("1000000000"):\n            raise ValueError("invalid_resolution_amount")
     elif actual_estimated_cost_usd is not None:
         raise ValueError("unexpected_resolution_amount")
     result = _rpc(settings, "resolve_ai_provider_cost_reservation", {
