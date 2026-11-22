@@ -235,6 +235,7 @@ const movieHistoryStyle = document.createElement("style");
       if (authSession?.user?.id !== userId) return;
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       panel.hidden = data.role !== "admin";
+      if (data.role === "admin") loadAdminAnalytics();
     } catch {
       if (authSession?.user?.id === userId) panel.hidden = true;
     }
@@ -278,6 +279,53 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   if (authSession?.user) setTimeout(loadAccountRole, 0);
+  const routeLabels = {home:"Главная",create:"Создание",movie:"Миникиностудия",editor:"Редактор",prompts:"Prompt Studio",library:"Медиатека",account:"Кабинет",voice:"Голос и музыка",scenes:"Сцены",assistant:"AI Companion",guide:"Путеводитель",rules:"Правила",settings:"Настройки",other:"Другие"};
+  const formatMetric = value => new Intl.NumberFormat("ru-RU").format(value);
+  const loadAdminAnalytics = async () => {
+    const status = $("#adminAnalyticsStatus");
+    if (!authSession?.user || !$("#adminPanel") || $("#adminPanel").hidden) return;
+    if (status) status.textContent = "Обновляем агрегированную статистику…";
+    try {
+      const data = await apiRequest("/api/admin/analytics/site-visits");
+      if (!authSession?.user) return;
+      $("#adminTotalVisits").textContent = formatMetric(data.total_page_views);
+      $("#adminTodayVisits").textContent = formatMetric(data.today_page_views);
+      $("#adminUniqueToday").textContent = formatMetric(data.today_unique_visitors);
+      $("#adminWeekVisits").textContent = formatMetric(data.last_7_days_page_views);
+      $("#adminMonthVisits").textContent = formatMetric(data.last_30_days_page_views);
+      const chart = $("#adminVisitsChart"); chart.replaceChildren();
+      const series = data.daily_series || [];
+      const max = Math.max(1, ...series.map(row => row.page_views));
+      series.forEach(row => {
+        const bar = document.createElement("button"); bar.type = "button";
+        bar.style.setProperty("--bar-height", Math.max(3, Math.round(row.page_views / max * 100)) + "%");
+        bar.title = row.date + ": " + formatMetric(row.page_views) + " просмотров";
+        bar.setAttribute("aria-label", bar.title);
+        const label = document.createElement("span"); label.textContent = row.date.slice(8, 10);
+        bar.appendChild(label); chart.appendChild(bar);
+      });
+      const routes = $("#adminPopularRoutes"); routes.replaceChildren();
+      const routeRows = data.top_routes || [];
+      if (!routeRows.length) {
+        const empty = document.createElement("span"); empty.className = "helper-text";
+        empty.textContent = "Пока нет накопленных данных по разделам."; routes.appendChild(empty);
+      } else {
+        const routeMax = Math.max(1, ...routeRows.map(row => row.page_views));
+        routeRows.forEach(row => {
+          const item = document.createElement("div"); item.className = "owner-route-row";
+          const name = document.createElement("span"); name.textContent = routeLabels[row.route_group] || "Другие";
+          const track = document.createElement("div"); track.className = "owner-route-bar";
+          const fill = document.createElement("i"); fill.style.width = Math.round(row.page_views / routeMax * 100) + "%"; track.appendChild(fill);
+          const count = document.createElement("strong"); count.textContent = formatMetric(row.page_views);
+          item.append(name, track, count); routes.appendChild(item);
+        });
+      }
+      if (status) status.textContent = "Данные обновлены. Период графика и разделов — последние 30 дней (UTC).";
+    } catch (error) {
+      if (status) status.textContent = "Не удалось загрузить статистику: " + error.message;
+    }
+  };
+  $("#refreshSiteAnalytics")?.addEventListener("click", loadAdminAnalytics);
   const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
