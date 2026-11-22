@@ -2608,6 +2608,12 @@ begin
   v_snapshot := public.get_credit_wallet_snapshot(v_user, 50);
   if v_snapshot->>'user_id' <> v_user::text
      or v_snapshot->>'currency_unit' <> 'credit'
+     or (v_snapshot->>'lot_count')::bigint <> 1
+     or (v_snapshot->>'lot_available_total')::bigint <> 125
+     or (v_snapshot->>'lot_reserved_total')::bigint <> 0
+     or (v_snapshot->>'lots_truncated')::boolean
+     or (v_snapshot->>'allocation_count')::bigint <> 0
+     or (v_snapshot->>'allocations_truncated')::boolean
      or (v_snapshot->>'available_credits')::bigint <> 125
      or (v_snapshot->>'reserved_credits')::bigint <> 0
      or jsonb_array_length(v_snapshot->'ledger') <> 1
