@@ -147,6 +147,12 @@ class SupabasePrivateImageStorage:
         if not 1 <= page_size <= 1000 or not 1 <= max_pages <= 100:
             raise ValueError("Storage inventory pagination is out of bounds.")
         encoded_bucket = quote(self._bucket, safe="")
+        bucket_response = await self._request(
+            "GET", f"{self._base_url}/bucket/{encoded_bucket}"
+        )
+        bucket_info = bucket_response.json()
+        if not isinstance(bucket_info, dict) or bucket_info.get("public") is not False:
+            raise GenerationResultStorageError("object_bucket_must_be_private")
         prefix = f"{owner_id}/generated"
         results: list[ListedGeneratedObject] = []
         for page in range(max_pages):
