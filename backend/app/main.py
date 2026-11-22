@@ -2,15 +2,16 @@ import hashlib
 import json
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
+from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
@@ -65,6 +66,40 @@ def health():
         "image_generation_configured": bool(settings.image_generation_provider and settings.image_generation_model),
     }
 
+
+
+@app.post(f"{settings.api_prefix}/pricing/quotes", status_code=200)
+def create_pricing_quote(
+    payload: PricingQuoteRequest,
+    response: Response,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
+    user: StudioUser = Depends(get_current_user),
+):
+    """Return a short-lived, owner-bound quote; this endpoint never reserves or charges."""
+    if not settings.pricing_quote_signing_secret or len(
+        settings.pricing_quote_signing_secret.encode("utf-8")
+    ) < 32:
+        raise HTTPException(status_code=503, detail="Pricing quotes are not configured yet.")
+    try:
+        catalog = load_pricing_catalog(settings.pricing_catalog_json)
+        if not catalog.rules:
+            raise PricingError("No approved production prices are configured.")
+        request_hash = canonical_request_hash(payload.request_snapshot)
+        quote = issue_pricing_quote(
+            secret=settings.pricing_quote_signing_secret,
+            catalog=catalog,
+            user_id=UUID(user.user_id),
+            job_type=payload.job_type,
+            provider=payload.provider,
+            model=payload.model,
+            request_hash=request_hash,
+            idempotency_key=idempotency_key,
+            quantity=payload.quantity,
+        )
+    except PricingError as exc:
+        raise HTTPException(status_code=503, detail="The requested generation price is not available.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return quote.snapshot()
 
 @app.get(f"{settings.api_prefix}/jobs/{{job_id}}")
 def generation_job_status(
