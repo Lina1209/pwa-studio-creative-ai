@@ -386,6 +386,17 @@ class SupabaseGenerationJobRepository:
                 "Credited completion returned incomplete or invalid metadata."
             ) from exc
 
+    async def authorize_provider_operation(self, job_id: UUID, worker_id: str) -> bool:
+        """Authorize a billable provider call only while the job remains under its USD cap.
+
+        The database returns false when the cap is missing, malformed, exhausted,
+        or cost evidence is uncertain. This is deliberately fail-closed.
+        """
+        return await self._boolean_rpc(
+            "authorize_generation_provider_operation",
+            {"p_job_id": str(job_id), "p_worker_id": worker_id},
+        )
+
     async def record_provider_cost(
         self,
         *,
