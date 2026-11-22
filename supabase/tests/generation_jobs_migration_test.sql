@@ -2528,6 +2528,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0034_paginated_wallet_reconciliation.sql
 \ir ../migrations/0035_admin_audit_journal.sql
 \ir ../migrations/0036_admin_audit_keyset_pagination.sql
+\ir ../migrations/0037_finance_authorization_registry.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3340,3 +3341,100 @@ begin
   end;
 end;
 $$;
+
+
+-- Delegated finance assignments are private, immutable records. Until a reviewed
+-- server-side assignment RPC exists, even service_role has no direct table access.
+do $finance_authorization_registry_test$
+declare
+  v_assignment uuid;
+  v_event uuid;
+  v_blocked boolean;
+begin
+  if not (
+    select relrowsecurity from pg_class
+     where oid = 'public.finance_role_assignments'::regclass
+  ) or not (
+    select relrowsecurity from pg_class
+     where oid = 'public.finance_role_revocations'::regclass
+  ) or not (
+    select relrowsecurity from pg_class
+     where oid = 'public.finance_authorization_events'::regclass
+  ) then
+    raise exception 'Finance authorization registry tables must enforce RLS';
+  end if;
+
+  if has_table_privilege('anon', 'public.finance_role_assignments', 'SELECT')
+     or has_table_privilege('authenticated', 'public.finance_role_assignments', 'SELECT')
+     or has_table_privilege('service_role', 'public.finance_role_assignments', 'SELECT')
+     or has_table_privilege('service_role', 'public.finance_role_assignments', 'INSERT')
+     or has_table_privilege('service_role', 'public.finance_role_revocations', 'INSERT')
+     or has_table_privilege('service_role', 'public.finance_authorization_events', 'INSERT') then
+    raise exception 'Application roles unexpectedly have direct finance registry table access';
+  end if;
+
+  insert into public.finance_role_assignments(
+    principal_id, role_code, scope_key, valid_from, valid_until, granted_by, reason
+  ) values (
+    '22222222-2222-4222-8222-222222222222',
+    'finance_operator', 'test-scope',
+    now(), now() + interval '1 day',
+    '11111111-1111-4111-8111-111111111111',
+    'Disposable integration fixture'
+  ) returning id into v_assignment;
+
+  v_blocked := false;
+  begin
+    update public.finance_role_assignments
+       set reason = 'tampered fixture'
+     where id = v_assignment;
+  exception when sqlstate '55000' then
+    v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'Finance role grant history was mutable';
+  end if;
+
+  insert into public.finance_role_revocations(
+    assignment_id, revoked_by, reason
+  ) values (
+    v_assignment, '11111111-1111-4111-8111-111111111111',
+    'Disposable revocation fixture'
+  );
+
+  v_blocked := false;
+  begin
+    update public.finance_role_revocations
+       set reason = 'tampered revocation'
+     where assignment_id = v_assignment;
+  exception when sqlstate '55000' then
+    v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'Finance role revocation history was mutable';
+  end if;
+
+  insert into public.finance_authorization_events(
+    assignment_id, actor_user_id, target_principal_id,
+    event_type, role_code, scope_key, reason
+  ) values (
+    v_assignment,
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+    'role.granted', 'finance_operator', 'test-scope',
+    'Disposable authorization event fixture'
+  ) returning id into v_event;
+
+  v_blocked := false;
+  begin
+    delete from public.finance_authorization_events where id = v_event;
+  exception when sqlstate '55000' then
+    v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'Finance authorization event history was deletable';
+  end if;
+end;
+$finance_authorization_registry_test$;
+
+select 'finance authorization registry security checks passed' as result;
