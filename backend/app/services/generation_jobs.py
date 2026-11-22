@@ -16,6 +16,11 @@ class GenerationJobsServiceError(RuntimeError):
     pass
 
 
+class GenerationPricingQuoteConflictError(GenerationJobsServiceError):
+    """An idempotency key was already bound to a different quote request."""
+
+
+
 @dataclass(frozen=True)
 class GenerationJobCreateResult:
     job_id: UUID
@@ -384,6 +389,10 @@ def store_pricing_quote(
             data = response.json()
     except Exception as exc:
         status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        if status_code in {400, 409}:
+            raise GenerationPricingQuoteConflictError(
+                "Pricing quote idempotency key conflicts with an earlier request."
+            ) from exc
         raise GenerationJobsServiceError(
             f"Could not persist pricing quote (HTTP {status_code})."
         ) from exc
