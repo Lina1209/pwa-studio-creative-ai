@@ -178,3 +178,10 @@ The detailed case-by-case automation checklist is maintained in [Financial autho
 ## 11. Activation boundary
 
 This file is documentation only. It creates no database migration, table, RPC, API endpoint, role assignment, permission grant, scheduler, refund integration, or production configuration. Existing owner UUID configuration remains a prerequisite for owner access, but configuring it does not automatically grant finance permissions. Implementation must proceed in small reviewed steps after the decisions above are approved.
+
+
+### Finance operation request lifecycle checkpoint
+
+Migrations 0042 and 0043 add private request storage and server-only transactional RPCs for credit-compensation and billing-refund proposals. A request is created in `pending`, then may be approved, rejected, or cancelled by its requester while pending. Approval/rejection by the requester is rejected; decisions lock the row and allow only one transition from pending. Each transition writes an append-only event. The requester/idempotency-key pair is unique; exact retries return the original request, while changed payloads using the same key are rejected.
+
+Important boundary: this is a request and decision ledger only. It does not grant credits, modify wallet balances, initiate refunds, or execute payment-provider operations. Backend endpoints and delegated-role checks must be added and tested before any user-facing finance request workflow is enabled. The new migrations are in the review branch only and have not been applied to production.
