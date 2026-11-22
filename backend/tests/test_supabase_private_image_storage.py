@@ -60,6 +60,7 @@ async def test_upload_verifies_private_bucket_object_metadata_and_downloaded_byt
     assert uploaded.metadata.sha256_hex == calculate_sha256(PNG)
     assert len(seen) == 4
     assert all("authorization" not in req.headers for req in seen)
+    assert all(req.headers["apikey"] == "sb_secret_server_only" for req in seen)
 
 
 @pytest.mark.asyncio
@@ -138,3 +139,60 @@ def test_storage_adapter_fails_closed_without_service_key():
             Settings(supabase_url="https://project.supabase.co"),
             httpx.AsyncClient(),
         )
+
+
+@pytest.mark.asyncio
+async def test_legacy_jwt_service_key_is_sent_as_bearer():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            return httpx.Response(200, json={"Key": "uploaded"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        raise AssertionError("Unexpected request")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(
+            make_settings(supabase_service_role_key="eyJlegacy.jwt.key"), client
+        )
+        await storage.upload_image(
+            owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+        )
+    assert all(req.headers["authorization"] == "Bearer eyJlegacy.jwt.key" for req in seen)
+
+
+@pytest.mark.asyncio
+async def test_storage_download_size_limit_is_enforced_before_buffer_growth():
+    oversized = PNG + (b"x" * (20 * 1024 * 1024 + 1))
+
+    def handler(request):
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            return httpx.Response(200, json={"Key": "uploaded"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=oversized)
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"message": "deleted"})
+        raise AssertionError("Unexpected request")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(GenerationResultStorageError):
+            await storage.upload_image(
+                owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+            )
