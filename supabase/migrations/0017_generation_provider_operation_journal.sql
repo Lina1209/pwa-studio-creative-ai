@@ -66,8 +66,10 @@ begin
     raise exception 'Active generation job lease required' using errcode = '42501';
   end if;
 
+  -- Provider idempotency is deliberately namespaced to the immutable job UUID.
+  -- The job's client-facing request idempotency key is a different identifier.
   if v_job.provider <> btrim(p_provider)
-     or v_job.idempotency_key <> p_idempotency_key then
+     or p_idempotency_key <> p_job_id::text then
     raise exception 'Provider operation does not match generation job' using errcode = '22023';
   end if;
 
