@@ -307,3 +307,13 @@ def plan_generation_job_recovery(
         retry_wait_delayed=tuple(sorted(retry_delayed)),
         integrity_warnings=tuple(sorted(warnings)),
     )
+
+async def scan_owner_generation_jobs(
+    *,
+    owner_id: UUID,
+    repository: SupabaseGenerationJobRepository,
+    now: datetime | None = None,
+) -> GenerationJobRecoveryReport:
+    """Fetch a complete bounded owner inventory and return a read-only report."""
+    jobs = await repository.list_owner_job_inventory(owner_id)
+    return plan_generation_job_recovery(owner_id=owner_id, jobs=jobs, now=now)
