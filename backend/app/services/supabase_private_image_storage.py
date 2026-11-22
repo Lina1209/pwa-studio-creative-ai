@@ -88,8 +88,13 @@ class SupabasePrivateImageStorage:
             ) from exc
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
+            error_code = (
+                "storage_service_unavailable" if status >= 500
+                else "storage_object_already_exists" if status == 409
+                else "storage_request_rejected"
+            )
             raise SupabaseStorageAdapterError(
-                "storage_service_unavailable" if status >= 500 else "storage_request_rejected",
+                error_code,
                 retryable=status >= 500 or status == 429,
             ) from exc
         except httpx.HTTPError as exc:
@@ -293,18 +298,25 @@ class SupabasePrivateImageStorage:
         encoded_path = self._encoded_path(object_path)
         object_url = f"{self._base_url}/object/{encoded_bucket}/{encoded_path}"
 
-        # POST without x-upsert is deliberately create-only: retries cannot
-        # silently overwrite an existing result object.
-        await self._request(
-            "POST",
-            object_url,
-            content=image_bytes,
-            headers={
-                "Content-Type": mime_type,
-                "Cache-Control": "max-age=0",
-                "x-upsert": "false",
-            },
-        )
+        # POST without x-upsert is deliberately create-only. If a previous
+        # attempt succeeded but its response was lost, a retry receives 409;
+        # verify the deterministic existing object instead of overwriting it.
+        already_exists = False
+        try:
+            await self._request(
+                "POST",
+                object_url,
+                content=image_bytes,
+                headers={
+                    "Content-Type": mime_type,
+                    "Cache-Control": "max-age=0",
+                    "x-upsert": "false",
+                },
+            )
+        except SupabaseStorageAdapterError as exc:
+            if exc.error_code != "storage_object_already_exists":
+                raise
+            already_exists = True
 
         try:
             bucket_response = await self._request(
@@ -370,5 +382,8 @@ class SupabasePrivateImageStorage:
                 expected_sha256_hex=digest,
             )
         except Exception:
-            await self._delete_own_object(object_path)
+            # Never delete an object that existed before this attempt. It may
+            # be the only durable copy of a result from an earlier worker.
+            if not already_exists:
+                await self._delete_own_object(object_path)
             raise
