@@ -2,7 +2,7 @@
 
 ## Current status
 
-The application currently stores Mini Movie Studio drafts in the browser's localStorage. The Supabase project and authentication are configured, but cloud project synchronization and private media storage are not yet connected.
+Mini Movie Studio keeps a local-first copy in browser `localStorage` and synchronizes signed-in users' projects with `public.projects` through Supabase. Migration `0005_cloud_projects_and_storage.sql` has been applied and the project table, owner policies, and private `studio-media` bucket were verified in the live project. Cross-device behavior, concurrent edits, and deletion synchronization still require end-to-end tests. No media upload UI exists yet.
 
 The live database must be inspected before project CRUD is implemented. The repository's original schema file may not match the tables already created manually in the Supabase dashboard.
 
@@ -22,18 +22,14 @@ Keep the results available. They determine the safe mapping for cloud synchroniz
 
 ## Step 2 — create private media buckets
 
-After the diagnostic, run the contents of:
-
-`supabase/migrations/0002_storage_and_moderation.sql`
-
-This migration creates or updates two **private** buckets:
+After the diagnostic, compare the result with the live setup before changing anything. The `studio-media` bucket is already created by migration 0005 and was verified. Only apply migration 0002 if the required `studio-exports` bucket is missing and you have reviewed its policies. Migration 0002 creates or updates two **private** buckets:
 - `studio-media` for source images, audio, and video (250 MiB per object limit);
 - `studio-exports` for rendered exports (1 GiB per object limit).
 
 Object paths must begin with the authenticated user's UUID, for example:
 `<user-uuid>/projects/<project-uuid>/source/photo.webp`
 
-RLS policies restrict listing, reading, uploading, updating, and deleting to the owner of that UUID path. Do not make either bucket public.
+RLS policies restrict listing, reading, uploading, updating, and deleting to the owner of that UUID path. Do not make either bucket public. Migration 0002 is named `storage_and_moderation` for historical reasons; it does not create moderation tables or workflows.
 
 The configured object-size limits are application choices and do not override Supabase plan-level limits, storage quotas, or bandwidth limits.
 
