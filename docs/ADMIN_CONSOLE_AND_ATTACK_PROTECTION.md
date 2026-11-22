@@ -54,11 +54,7 @@ Pagination uses a composite `(occurred_at, id)` keyset cursor, so multiple event
 Successful journal views are recorded as `admin.access`. Failed permission
 checks for a verified signed-in user are recorded as
 `admin.permission.denied`; if the audit store is unavailable, the access
-denial remains enforced and a generic server warning is emitted. The journal
-currently does not yet capture every successful administrative read endpoint
-or all future state-changing operations. Each such operation must be wired to
-the audit service before it is enabled. No payment, tariff, credit, or role
-mutation has been enabled by this integration.
+denial remains enforced and a generic server warning is emitted. The journal captures the administrator identity view, aggregate site analytics, provider-cost report, audit-journal views, and the read-only per-user wallet summary. The wallet summary requires `admin.finance.wallets.read`, records the verified actor and target wallet UUID, and returns only balances and aggregate counts (not ledger entries or payment details). If its audit write fails, the financial data is not returned. Other administrative reads and all future state-changing operations must be wired to the audit service before they are enabled. No payment, tariff, credit, or role mutation has been enabled by this integration.
 
 ## Append-only administrative audit journal (migration 0035)
 
