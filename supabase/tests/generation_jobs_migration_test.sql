@@ -2067,3 +2067,79 @@ $terminal_worker_credit_release_test$;
 
 select 'terminal worker credit release checks passed' as result;
 
+
+
+-- Provider budget admission requires a live lease, explicit USD ceiling, and
+-- complete known costs below the ceiling. Missing/unknown/exhausted evidence fails closed.
+do $provider_budget_admission_test$
+declare
+  v_job_id uuid := '13131313-1313-4131-8131-131313131313';
+  v_allowed boolean;
+begin
+  insert into public.generation_jobs(
+    id, user_id, job_type, provider, model, idempotency_key,
+    request_hash, pricing_snapshot
+  ) values (
+    v_job_id, '11111111-1111-4111-8111-111111111111',
+    'image_generation', 'budget-test-provider', 'budget-test-model',
+    'provider-budget-admission-001', repeat('d', 64),
+    '{"maximum_provider_cost_usd":0.05,"pricing_version":"budget-test-v1"}'::jsonb
+  );
+
+  update public.generation_jobs
+     set status = 'running', lease_owner = 'budget-test-worker',
+         lease_expires_at = now() + interval '120 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id = v_job_id;
+
+  select public.authorize_generation_provider_operation(v_job_id, 'budget-test-worker')
+    into v_allowed;
+  if v_allowed is distinct from true then
+    raise exception 'Under-budget job with a valid lease was not admitted';
+  end if;
+
+  perform public.record_generation_provider_cost(
+    v_job_id, '11111111-1111-4111-8111-111111111111',
+    'budget-test-operation-001', 'budget-test-provider', 'budget-test-model',
+    'budget-test-usage-001', 0.05, 'reported', 10, 10, 20, 'token', '{}'::jsonb
+  );
+  select public.authorize_generation_provider_operation(v_job_id, 'budget-test-worker')
+    into v_allowed;
+  if v_allowed is distinct from false then
+    raise exception 'Budget gate admitted a new call after reaching the USD ceiling';
+  end if;
+
+  update public.generation_jobs
+     set pricing_snapshot = '{"maximum_provider_cost_usd":0.10,"pricing_version":"budget-test-v1"}'::jsonb
+   where id = v_job_id;
+  perform public.record_generation_provider_cost(
+    v_job_id, '11111111-1111-4111-8111-111111111111',
+    'budget-test-operation-unknown', 'budget-test-provider', 'budget-test-model',
+    null, null, 'unknown', null, null, null, 'unknown',
+    '{"reason":"provider usage unavailable"}'::jsonb
+  );
+  select public.authorize_generation_provider_operation(v_job_id, 'budget-test-worker')
+    into v_allowed;
+  if v_allowed is distinct from false then
+    raise exception 'Budget gate admitted a new call while prior provider cost was unknown';
+  end if;
+
+  update public.generation_jobs
+     set lease_expires_at = now() - interval '1 second'
+   where id = v_job_id;
+  select public.authorize_generation_provider_operation(v_job_id, 'budget-test-worker')
+    into v_allowed;
+  if v_allowed is distinct from false then
+    raise exception 'Budget gate admitted a stale worker lease';
+  end if;
+
+  if has_function_privilege('authenticated',
+       'public.authorize_generation_provider_operation(uuid,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.authorize_generation_provider_operation(uuid,text)', 'EXECUTE') then
+    raise exception 'Provider budget admission RPC privileges are not least-privilege';
+  end if;
+end;
+$provider_budget_admission_test$;
+
+select 'provider budget admission checks passed' as result;
