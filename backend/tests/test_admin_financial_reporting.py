@@ -46,8 +46,8 @@ def test_report_aggregates_evidence_and_budget_without_sensitive_metadata():
     sample(cost_usd="NaN"), sample(cost_usd="-1"),
     sample(cost_usd=None, cost_source="reported"),
     sample(cost_usd="0", cost_source="unknown"),
-    sample(budget_exceeded="true"),
-    sample(created_at="2026-11-22T12:00:00"),
+    sample(budget_exceeded="true"), sample(budget_exceeded=0),
+    sample(created_at="2026-11-22T12:00:00"), sample(job="not-a-uuid"),
 ])
 def test_invalid_database_rows_fail_closed(bad):
     with pytest.raises(ValueError):
