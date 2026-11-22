@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse
-from app.services.ai_service import AIConfigurationError, ask_ai
+from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
@@ -15,7 +15,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     description="Private API for PWA Studio — Creative AI.",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.add_middleware(
@@ -48,6 +48,7 @@ def health():
         "environment": settings.app_env,
         "ai_provider": provider,
         "ai_configured": ai_configured,
+        "ai_capacity": settings.ai_max_concurrent_requests,
         "authentication_configured": bool(settings.supabase_url),
         "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
     }
@@ -63,10 +64,28 @@ def admin_me(user: StudioUser = Depends(require_admin)):
     return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
 
 
+def _run_ai(operation: str, call):
+    try:
+        return call()
+    except AIConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AIOverloadedError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Сейчас много запросов к AI. Попробуйте ещё раз через несколько секунд.",
+            headers={"Retry-After": "10"},
+        ) from exc
+    except Exception as exc:
+        # Provider details and user content are deliberately not exposed to clients.
+        raise HTTPException(
+            status_code=502,
+            detail=f"Не удалось завершить запрос к AI ({operation}). Попробуйте позже.",
+        ) from exc
+
+
 @app.post(f"{settings.api_prefix}/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
     check_content(payload.message)
-    # Platform instructions are server-controlled. Never accept a client-supplied system prompt.
     system = (
         "You are Studio AI Companion, a helpful creative assistant inside PWA Studio. "
         "Help users develop video ideas, scripts, scenes and prompts. Be clear and practical. "
@@ -75,18 +94,13 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
         "doxxing, harassment or malware. Respect consent for real people’s likenesses and voices. "
         "When a request is unsafe, briefly explain the boundary and offer a safe creative alternative."
     )
-    try:
-        result = ask_ai(settings, [
-            {"role": "system", "content": system},
-            {"role": "user", "content": payload.message},
-        ])
-        record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="chat",
-                        provider=settings.ai_provider, result=result)
-        return ChatResponse(reply=result.text, provider=settings.ai_provider, model=result.actual_model)
-    except AIConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail="The AI provider could not complete the request.") from exc
+    result = _run_ai("chat", lambda: ask_ai(settings, [
+        {"role": "system", "content": system},
+        {"role": "user", "content": payload.message},
+    ]))
+    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="chat",
+                    provider=settings.ai_provider, result=result)
+    return ChatResponse(reply=result.text, provider=settings.ai_provider, model=result.actual_model)
 
 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
@@ -106,15 +120,10 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         f"Visual style: {payload.style or 'Choose a fitting style'}\n"
         f"User idea: {payload.idea}"
     )
-    try:
-        result = ask_ai(settings, [
-            {"role": "system", "content": system},
-            {"role": "user", "content": request},
-        ])
-        record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="prompts",
-                        provider=settings.ai_provider, result=result)
-        return PromptResponse(prompt=result.text, provider=settings.ai_provider, model=result.actual_model)
-    except AIConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail="The AI provider could not create the prompt.") from exc
+    result = _run_ai("prompts", lambda: ask_ai(settings, [
+        {"role": "system", "content": system},
+        {"role": "user", "content": request},
+    ]))
+    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="prompts",
+                    provider=settings.ai_provider, result=result)
+    return PromptResponse(prompt=result.text, provider=settings.ai_provider, model=result.actual_model)
