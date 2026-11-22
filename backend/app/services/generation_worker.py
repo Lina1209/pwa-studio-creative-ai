@@ -55,7 +55,7 @@ class GenerationJobRepository(Protocol):
     async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> bool: ...
     async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool: ...
     async def fail(self, job_id: UUID, worker_id: str, error_code: str) -> bool: ...
-    async def complete(self, job_id: UUID, worker_id: str, result_path: str) -> bool: ...
+    async def complete_credited(self, job_id: UUID, worker_id: str, result_path: str): ...
     async def record_provider_cost(
         self, *, job_id: UUID, user_id: UUID, operation_key: str,
         provider: str, model: str, provider_usage_id: str | None,
@@ -319,10 +319,14 @@ class GenerationWorker:
                 )
                 if lost.is_set():
                     return WorkerResult("lease_lost", "lease_lost_before_completion")
-                if not await self.repository.complete(
+                completion = await self.repository.complete_credited(
                     job.job_id, self.worker_id, verified.object_path
-                ):
+                )
+                if not completion.completed:
                     return WorkerResult("lease_lost", "completion_rejected")
+                # A replay means the database committed before a previous
+                # worker lost its response. The RPC verifies the exact path and
+                # captured hold, and does not capture credits a second time.
                 return WorkerResult("succeeded")
             finally:
                 heartbeat.cancel()
