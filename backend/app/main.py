@@ -1155,7 +1155,7 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
         {"role": "system", "content": system},
         {"role": "user", "content": payload.message},
     ], user_id=UUID(user.user_id)))
-    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="chat",
+    record_ai_usage(settings, user_id=user.user_id, request_id=getattr(result, "request_id", uuid4()), endpoint="chat",
                     provider=settings.ai_provider, result=result)
     return ChatResponse(reply=result.text, provider=settings.ai_provider, model=result.actual_model)
 
