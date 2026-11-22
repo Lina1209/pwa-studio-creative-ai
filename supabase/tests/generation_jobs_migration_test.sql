@@ -84,6 +84,7 @@ create table public.studio_media (
 \ir ../migrations/0016_harden_generation_job_idempotency.sql
 \ir ../migrations/0017_generation_provider_operation_journal.sql
 \ir ../migrations/0018_credit_ledger_schema.sql
+\ir ../migrations/0019_credit_hold_lifecycle.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -1035,4 +1036,132 @@ end;
 $credit_ledger_schema_test$;
 
 
-select 'generation jobs, movie scenes, provider journal and credit ledger schema checks passed' as result;
+
+
+-- Credit lifecycle RPCs: idempotent grant/reserve/release and guarded balance arithmetic.
+do $credit_lifecycle_rpc_test$
+declare
+  v_grant record;
+  v_grant_replay record;
+  v_hold record;
+  v_hold_replay record;
+  v_release record;
+  v_release_replay record;
+  v_job_id uuid := 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  v_hold_id uuid;
+  v_rejected boolean;
+  v_ledger_count integer;
+begin
+  select * into v_grant from public.grant_user_credits(
+    '22222222-2222-4222-8222-222222222222', 25,
+    'integration-test-grant-001', '{"source":"test"}'::jsonb
+  );
+  if v_grant.available_credits <> 75 or v_grant.reserved_credits <> 0 or v_grant.replayed then
+    raise exception 'Initial credit grant produced unexpected wallet balances';
+  end if;
+
+  select * into v_grant_replay from public.grant_user_credits(
+    '22222222-2222-4222-8222-222222222222', 25,
+    'integration-test-grant-001', '{"source":"test"}'::jsonb
+  );
+  if not v_grant_replay.replayed or v_grant_replay.available_credits <> 75 then
+    raise exception 'Duplicate credit grant was not idempotent';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.grant_user_credits(
+      '22222222-2222-4222-8222-222222222222', 26,
+      'integration-test-grant-001', '{"source":"test"}'::jsonb
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Mismatched grant replay was accepted'; end if;
+
+  select * into v_hold from public.reserve_job_credits(
+    '22222222-2222-4222-8222-222222222222', v_job_id, 20,
+    'integration-test-reserve-001',
+    '{"price_version":"test-v1","approved_maximum":20}'::jsonb
+  );
+  v_hold_id := v_hold.hold_id;
+  if v_hold_id is null or v_hold.available_credits <> 55
+     or v_hold.reserved_credits <> 20 or v_hold.replayed then
+    raise exception 'Credit reservation produced unexpected result';
+  end if;
+
+  select * into v_hold_replay from public.reserve_job_credits(
+    '22222222-2222-4222-8222-222222222222', v_job_id, 20,
+    'integration-test-reserve-001',
+    '{"price_version":"test-v1","approved_maximum":20}'::jsonb
+  );
+  if v_hold_replay.hold_id <> v_hold_id or not v_hold_replay.replayed
+     or v_hold_replay.available_credits <> 55
+     or v_hold_replay.reserved_credits <> 20 then
+    raise exception 'Duplicate reservation changed wallet or hold identity';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.reserve_job_credits(
+      '22222222-2222-4222-8222-222222222222', v_job_id, 21,
+      'integration-test-reserve-001',
+      '{"price_version":"test-v1","approved_maximum":21}'::jsonb
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Mismatched reservation replay was accepted'; end if;
+
+  v_rejected := false;
+  begin
+    perform public.reserve_job_credits(
+      '22222222-2222-4222-8222-222222222222', v_job_id, 100,
+      'integration-test-reserve-insufficient',
+      '{"price_version":"test-v1","approved_maximum":100}'::jsonb
+    );
+  exception when sqlstate 'P0001' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Insufficient credit reservation was accepted'; end if;
+
+  select * into v_release from public.release_job_credit_hold(
+    '22222222-2222-4222-8222-222222222222', v_hold_id, 'test_terminal_failure'
+  );
+  if v_release.available_credits <> 75 or v_release.reserved_credits <> 0
+     or v_release.replayed then
+    raise exception 'Credit hold release produced unexpected wallet balances';
+  end if;
+
+  select * into v_release_replay from public.release_job_credit_hold(
+    '22222222-2222-4222-8222-222222222222', v_hold_id, 'test_terminal_failure'
+  );
+  if not v_release_replay.replayed or v_release_replay.available_credits <> 75
+     or v_release_replay.reserved_credits <> 0 then
+    raise exception 'Duplicate credit release changed wallet balances';
+  end if;
+
+  select count(*) into v_ledger_count from public.credit_ledger
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  if v_ledger_count <> 3 then
+    raise exception 'Expected exactly grant, reserve and release ledger entries; got %', v_ledger_count;
+  end if;
+
+  if has_function_privilege('authenticated',
+       'public.grant_user_credits(uuid,bigint,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.reserve_job_credits(uuid,uuid,bigint,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.release_job_credit_hold(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'Authenticated role unexpectedly has credit mutation RPC privileges';
+  end if;
+  if not has_function_privilege('service_role',
+       'public.grant_user_credits(uuid,bigint,text,jsonb)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.reserve_job_credits(uuid,uuid,bigint,text,jsonb)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.release_job_credit_hold(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'service_role is missing credit lifecycle RPC grants';
+  end if;
+end;
+$credit_lifecycle_rpc_test$;
+
+
+select 'generation jobs, provider journal, credit ledger schema and lifecycle RPC checks passed' as result;
