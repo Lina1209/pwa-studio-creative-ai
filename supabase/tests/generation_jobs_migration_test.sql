@@ -1345,3 +1345,104 @@ $atomic_credited_generation_test$;
 
 
 select 'generation jobs, provider journal, credit ledger, atomic admission and capture checks passed' as result;
+
+
+-- Durable, immutable, owner/idempotency-bound pricing quote persistence.
+do $pricing_quote_persistence_test$
+declare
+  v_first record;
+  v_replay record;
+  v_candidate jsonb;
+  v_original_quote_id uuid;
+  v_rejected boolean := false;
+  v_expiry timestamptz := now() + interval '5 minutes';
+begin
+  v_original_quote_id := 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  v_candidate := jsonb_build_object(
+    'schema', 'pwa-studio-pricing-quote-v1',
+    'quote_id', v_original_quote_id,
+    'user_id', '11111111-1111-4111-8111-111111111111',
+    'idempotency_key', 'pricing-db-idempotency-001',
+    'request_hash', repeat('a', 64),
+    'job_type', 'image_generation',
+    'provider', 'pricing-test-provider',
+    'model', 'pricing-test-model',
+    'project_id', null,
+    'studio_scene_id', null,
+    'expires_at', v_expiry
+  );
+
+  select * into v_first from public.store_generation_pricing_quote(
+    v_original_quote_id,
+    '11111111-1111-4111-8111-111111111111',
+    'pricing-db-idempotency-001',
+    repeat('a', 64),
+    'image_generation',
+    'pricing-test-provider',
+    'pricing-test-model',
+    null, null, v_candidate, v_expiry
+  );
+  if not v_first.created or v_first.expired
+     or v_first.quote_snapshot ->> 'quote_id' <> v_original_quote_id::text then
+    raise exception 'First pricing quote was not persisted as expected';
+  end if;
+
+  -- A retry produces a fresh candidate UUID and timestamp, but the database
+  -- must return the first immutable quote for this owner/idempotency key.
+  v_candidate := jsonb_set(
+    v_candidate, '{quote_id}',
+    to_jsonb('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::text)
+  );
+  select * into v_replay from public.store_generation_pricing_quote(
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    '11111111-1111-4111-8111-111111111111',
+    'pricing-db-idempotency-001',
+    repeat('a', 64),
+    'image_generation',
+    'pricing-test-provider',
+    'pricing-test-model',
+    null, null, v_candidate, v_expiry
+  );
+  if v_replay.created or v_replay.expired
+     or v_replay.quote_snapshot ->> 'quote_id' <> v_original_quote_id::text then
+    raise exception 'Pricing quote replay did not return the original snapshot';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.store_generation_pricing_quote(
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      '11111111-1111-4111-8111-111111111111',
+      'pricing-db-idempotency-001',
+      repeat('b', 64),
+      'image_generation',
+      'pricing-test-provider',
+      'pricing-test-model',
+      null, null,
+      jsonb_set(v_candidate, '{request_hash}', to_jsonb(repeat('b', 64))),
+      v_expiry
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Pricing quote idempotency key accepted a changed request hash';
+  end if;
+
+  v_rejected := false;
+  begin
+    update public.generation_pricing_quotes
+       set quote_snapshot = '{}'::jsonb
+     where user_id = '11111111-1111-4111-8111-111111111111'
+       and idempotency_key = 'pricing-db-idempotency-001';
+    raise exception 'Stored pricing quote was mutable';
+  exception when sqlstate '55000' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Pricing quote mutation trigger did not fire'; end if;
+
+  if has_function_privilege('authenticated',
+       'public.store_generation_pricing_quote(uuid,uuid,text,text,text,text,text,uuid,uuid,jsonb,timestamp with time zone)', 'EXECUTE') then
+    raise exception 'Authenticated role unexpectedly can persist pricing quotes';
+  end if;
+end;
+$pricing_quote_persistence_test$;
+
