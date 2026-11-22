@@ -26,3 +26,24 @@ class PromptResponse(BaseModel):
     prompt: str
     provider: str
     model: str
+
+
+from uuid import UUID
+from pydantic import field_validator
+
+
+class SceneImageJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(min_length=1, max_length=8000)
+    negative_prompt: str | None = Field(default=None, max_length=2000)
+    width: int = Field(default=1024, ge=256, le=2048)
+    height: int = Field(default=1024, ge=256, le=2048)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
+
+    @field_validator("width", "height")
+    @classmethod
+    def dimensions_must_be_multiple_of_64(cls, value: int) -> int:
+        if value % 64:
+            raise ValueError("Image dimensions must be multiples of 64.")
+        return value
