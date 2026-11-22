@@ -14,10 +14,47 @@ ALLOWED_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
 class ImageGenerationError(RuntimeError):
     """Safe, provider-independent failure information for job orchestration."""
 
-    def __init__(self, error_code: str, *, retryable: bool = False):
+    def __init__(
+        self, error_code: str, *, retryable: bool = False, ambiguous: bool = False
+    ):
         super().__init__(error_code)
         self.error_code = error_code
         self.retryable = retryable
+        # True only when the request may have reached the provider but its
+        # acceptance/result could not be established (e.g. response lost).
+        self.ambiguous = ambiguous
+
+
+@dataclass(frozen=True)
+class ImageGenerationLookup:
+    """Normalized result of querying a provider by the original idempotency key.
+
+    status is one of: not_found, pending, succeeded, failed, unknown.
+    A provider adapter must document lookup consistency and retention semantics.
+    """
+
+    status: str
+    result: "ImageGenerationResult | None" = None
+    provider_request_id: str | None = None
+    error_code: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in {"not_found", "pending", "succeeded", "failed", "unknown"}:
+            raise ValueError("Unsupported provider lookup status.")
+        if self.status == "succeeded" and self.result is None:
+            raise ValueError("Successful provider lookup requires a result.")
+        if self.status != "succeeded" and self.result is not None:
+            raise ValueError("Only successful provider lookup may include a result.")
+        if self.provider_request_id is not None and (
+            not isinstance(self.provider_request_id, str)
+            or not 1 <= len(self.provider_request_id) <= 500
+        ):
+            raise ValueError("Provider request ID is invalid.")
+        if self.error_code is not None and not (
+            isinstance(self.error_code, str) and 1 <= len(self.error_code) <= 80
+            and all(ch.islower() or ch.isdigit() or ch == "_" for ch in self.error_code)
+        ):
+            raise ValueError("Provider lookup error code is invalid.")
 
 
 class ImageProviderNotConfiguredError(ImageGenerationError):
@@ -95,6 +132,14 @@ class ImageGenerationProvider(Protocol):
     name: str
 
     supports_idempotency: bool
+
+    supports_lookup: bool
+
+    async def lookup_by_idempotency_key(
+        self, *, idempotency_key: str
+    ) -> ImageGenerationLookup:
+        """Look up the existing operation; must never create a new generation."""
+        ...
 
     async def generate(
         self, request: ImageGenerationRequest, *, idempotency_key: str
