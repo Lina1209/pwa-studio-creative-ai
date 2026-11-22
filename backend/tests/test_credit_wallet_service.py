@@ -31,12 +31,12 @@ class FakeClient:
     def __exit__(self, *args):
         return False
 
-    def get(self, url, params, headers):
-        self.calls.append((url, params, headers))
+    def post(self, url, json, headers):
+        self.calls.append((url, json, headers))
         item = next(self.responses)
         if isinstance(item, Exception):
             raise item
-        return item
+        return FakeResponse(item)
 
 
 def settings():
@@ -46,22 +46,25 @@ def settings():
     )
 
 
-def test_wallet_reads_only_authenticated_owner_and_returns_ledger(monkeypatch):
-    client = FakeClient([
-        FakeResponse([{"available_credits": 120, "reserved_credits": 30, "currency_unit": "credit"}]),
-        FakeResponse([{
+def test_wallet_uses_one_atomic_owner_scoped_rpc_and_returns_history(monkeypatch):
+    client = FakeClient([{
+        "user_id": str(USER_ID),
+        "currency_unit": "credit",
+        "available_credits": 120,
+        "reserved_credits": 30,
+        "holds": [{
             "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             "job_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             "amount": 30, "status": "held", "created_at": "2026-11-23T00:00:00Z",
-            "quote_snapshot": {"private": "must not be selected"},
-        }]),
-        FakeResponse([{
+            "quote_snapshot": {"private": "must not be returned"},
+        }],
+        "ledger": [{
             "id": 9, "operation_type": "reserve", "operation_key": "reserve:job-1234",
             "delta_available": -30, "delta_reserved": 30,
             "balance_available_after": 120, "balance_reserved_after": 30,
             "created_at": "2026-11-23T00:00:00Z",
-        }]),
-    ])
+        }],
+    }])
     monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
 
     result = wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
@@ -71,17 +74,22 @@ def test_wallet_reads_only_authenticated_owner_and_returns_ledger(monkeypatch):
     assert result.holds[0]["amount"] == 30
     assert "quote_snapshot" not in result.holds[0]
     assert result.ledger[0]["delta_available"] == -30
-    assert all(call[1]["user_id"] == f"eq.{USER_ID}" for call in client.calls)
-    assert "quote_snapshot" not in client.calls[1][1]["select"]
-    assert client.calls[0][2]["apikey"] == "sb_secret_test_key"
+    assert len(client.calls) == 1
+    url, payload, headers = client.calls[0]
+    assert url.endswith("/rpc/get_credit_wallet_snapshot")
+    assert payload == {"p_user_id": str(USER_ID), "p_history_limit": 50}
+    assert headers["apikey"] == "sb_secret_test_key"
 
 
 def test_missing_wallet_is_zero_balance_not_an_implicit_grant(monkeypatch):
-    client = FakeClient([
-        FakeResponse([]),
-        FakeResponse([]),
-        FakeResponse([]),
-    ])
+    client = FakeClient([{
+        "user_id": str(USER_ID),
+        "currency_unit": "credit",
+        "available_credits": 0,
+        "reserved_credits": 0,
+        "holds": [],
+        "ledger": [],
+    }])
     monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
 
     result = wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
@@ -110,11 +118,29 @@ def test_missing_database_configuration_fails_closed():
 
 
 def test_invalid_wallet_balance_is_rejected(monkeypatch):
-    client = FakeClient([
-        FakeResponse([{"available_credits": -1, "reserved_credits": 0, "currency_unit": "credit"}]),
-        FakeResponse([]),
-        FakeResponse([]),
-    ])
+    client = FakeClient([{
+        "user_id": str(USER_ID),
+        "currency_unit": "credit",
+        "available_credits": -1,
+        "reserved_credits": 0,
+        "holds": [],
+        "ledger": [],
+    }])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(wallet.CreditWalletUnavailable):
+        wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+
+def test_wallet_snapshot_identity_mismatch_is_rejected(monkeypatch):
+    client = FakeClient([{
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "currency_unit": "credit",
+        "available_credits": 100,
+        "reserved_credits": 0,
+        "holds": [],
+        "ledger": [],
+    }])
     monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
 
     with pytest.raises(wallet.CreditWalletUnavailable):
