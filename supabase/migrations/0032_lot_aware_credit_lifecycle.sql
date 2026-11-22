@@ -318,7 +318,7 @@ begin
      or p_amount > 1000000000000
      or p_lot_type not in ('free', 'subscription', 'purchased', 'bonus', 'adjustment')
      or p_source_reference is null or length(p_source_reference) not between 8 and 240
-     or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 240
+     or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 234
      or (p_expires_at is not null and p_expires_at <= now())
      or p_metadata is null or jsonb_typeof(p_metadata) <> 'object'
      or octet_length(p_metadata::text) > 16384 then
@@ -329,7 +329,11 @@ begin
     'lot_type', p_lot_type, 'source_reference', p_source_reference,
     'expires_at', p_expires_at
   );
+  if octet_length(v_metadata::text) > 16384 then
+    raise exception 'Credit grant metadata is too large' using errcode = '22023';
+  end if;
 
+  perform public.expire_credit_lots_for_user(p_user_id);
   insert into public.credit_wallets(user_id) values (p_user_id)
   on conflict (user_id) do nothing;
   select * into v_wallet from public.credit_wallets
@@ -799,3 +803,92 @@ comment on function public.allocate_credit_hold_lots(uuid,uuid) is
   'Atomically allocates a quote-backed hold from unexpired lots in earliest-expiry-first order.';
 comment on function public.resolve_credit_hold_lots(uuid,uuid,text,text) is
   'Captures or releases exact lot allocations; expired allocations are forfeited on release, never resurrected.';
+
+
+-- Read-only snapshot reports only currently spendable credits. Expired
+-- available amounts remain in storage until the expiry sweep, but are never
+-- presented as spendable and are removed atomically before any new reservation.
+create or replace function public.get_credit_wallet_snapshot(
+  p_user_id uuid,
+  p_history_limit integer default 50
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_wallet public.credit_wallets%rowtype;
+  v_holds jsonb;
+  v_ledger jsonb;
+  v_lots jsonb;
+  v_allocations jsonb;
+  v_spendable bigint;
+begin
+  if p_user_id is null or p_history_limit is null
+     or p_history_limit not between 1 and 100 then
+    raise exception 'Invalid credit wallet snapshot request'
+      using errcode = '22023';
+  end if;
+  select * into v_wallet from public.credit_wallets where user_id = p_user_id;
+
+  select coalesce(sum(case when expires_at is null or expires_at > now()
+                           then available_credits else 0 end), 0)
+    into v_spendable
+    from public.credit_lots where user_id = p_user_id;
+
+  select coalesce(jsonb_agg(to_jsonb(h) order by h.created_at desc), '[]'::jsonb)
+    into v_holds
+    from (
+      select id, job_id, amount, status, created_at
+        from public.credit_holds where user_id = p_user_id and status = 'held'
+       order by created_at desc limit 20
+    ) h;
+
+  select coalesce(jsonb_agg(to_jsonb(l) order by l.created_at desc, l.id desc), '[]'::jsonb)
+    into v_ledger
+    from (
+      select id, operation_type, operation_key,
+             delta_available, delta_reserved,
+             balance_available_after, balance_reserved_after, created_at
+        from public.credit_ledger where user_id = p_user_id
+       order by created_at desc, id desc limit p_history_limit
+    ) l;
+
+  select coalesce(jsonb_agg(to_jsonb(lot) order by lot.expires_at asc nulls last,
+                            lot.created_at, lot.id), '[]'::jsonb)
+    into v_lots
+    from (
+      select id, lot_type, granted_credits,
+             case when expires_at is not null and expires_at <= now()
+                  then 0 else available_credits end as available_credits,
+             reserved_credits, expires_at, created_at
+        from public.credit_lots where user_id = p_user_id
+       order by expires_at asc nulls last, created_at, id limit 100
+    ) lot;
+
+  select coalesce(jsonb_agg(to_jsonb(a) order by a.created_at, a.id), '[]'::jsonb)
+    into v_allocations
+    from (
+      select id, hold_id, lot_id, amount, status, created_at
+        from public.credit_hold_allocations
+       where user_id = p_user_id and status = 'held'
+       order by created_at, id limit 100
+    ) a;
+
+  return jsonb_build_object(
+    'user_id', p_user_id,
+    'currency_unit', 'credit',
+    'available_credits', v_spendable,
+    'reserved_credits', coalesce(v_wallet.reserved_credits, 0),
+    'holds', v_holds, 'ledger', v_ledger,
+    'lots', v_lots, 'allocations', v_allocations
+  );
+end;
+$$;
+
+revoke all on function public.get_credit_wallet_snapshot(uuid, integer)
+  from public, anon, authenticated;
+grant execute on function public.get_credit_wallet_snapshot(uuid, integer)
+  to service_role;
+
