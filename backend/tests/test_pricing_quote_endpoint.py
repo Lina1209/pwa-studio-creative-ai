@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.schemas import PricingQuoteRequest
 from app.services.auth import StudioUser
 from app.services.pricing_service import verify_pricing_quote
+from app.services.generation_jobs import PersistedPricingQuote
 
 
 USER_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -58,10 +59,20 @@ def test_quote_endpoint_returns_signed_owner_and_scene_bound_preview(monkeypatch
         main,
         "settings",
         Settings(
+            supabase_url="https://example.supabase.co",
+            supabase_service_role_key="sb_secret_test_key",
             pricing_quote_signing_secret=SECRET,
             pricing_catalog_json=json.dumps(catalog),
         ),
     )
+    stored = {}
+    def persist(**kwargs):
+        key = kwargs["idempotency_key"]
+        if key not in stored:
+            stored[key] = kwargs["quote_snapshot"]
+            return PersistedPricingQuote(stored[key], True, False)
+        return PersistedPricingQuote(stored[key], False, False)
+    monkeypatch.setattr(main, "store_pricing_quote", persist)
     response = Response()
     snapshot = main.create_pricing_quote(
         PricingQuoteRequest(
@@ -95,3 +106,63 @@ def test_quote_endpoint_returns_signed_owner_and_scene_bound_preview(monkeypatch
         studio_scene_id=SCENE_ID,
     )
     assert verified.amount == 24
+
+    # A second call with the same key and same request returns the byte-for-byte
+    # original signed quote, rather than issuing a fresh quote ID or expiry.
+    second = main.create_pricing_quote(
+        PricingQuoteRequest(
+            job_type="image_generation",
+            provider="provider-a",
+            model="model-a",
+            studio_scene_id=SCENE_ID,
+            request_snapshot={"prompt": "a safe test scene"},
+            quantity=2,
+        ),
+        Response(),
+        "pricing-endpoint-key-002",
+        StudioUser(str(USER_ID), None, "creator"),
+    )
+    assert second == snapshot
+
+
+def test_quote_endpoint_rejects_expired_persisted_idempotency_key(monkeypatch):
+    catalog = {
+        "version": "test-catalog-v1",
+        "rules": [{
+            "job_type": "image_generation",
+            "provider": "provider-a",
+            "model": "model-a",
+            "credits_per_unit": 12,
+            "unit_label": "image",
+            "min_quantity": 1,
+            "max_quantity": 2,
+        }],
+    }
+    monkeypatch.setattr(
+        main,
+        "settings",
+        Settings(
+            supabase_url="https://example.supabase.co",
+            supabase_service_role_key="sb_secret_test_key",
+            pricing_quote_signing_secret=SECRET,
+            pricing_catalog_json=json.dumps(catalog),
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "store_pricing_quote",
+        lambda **kwargs: PersistedPricingQuote(kwargs["quote_snapshot"], False, True),
+    )
+    with pytest.raises(HTTPException) as error:
+        main.create_pricing_quote(
+            PricingQuoteRequest(
+                job_type="image_generation",
+                provider="provider-a",
+                model="model-a",
+                request_snapshot={"prompt": "expired quote"},
+            ),
+            Response(),
+            "pricing-endpoint-key-expired",
+            StudioUser(str(USER_ID), None, "creator"),
+        )
+    assert error.value.status_code == 409
