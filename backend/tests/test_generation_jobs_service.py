@@ -419,5 +419,4 @@ def test_create_credited_generation_job_remains_disabled_by_default(monkeypatch)
             request_hash="c" * 64,
             request_snapshot={},
             quote_snapshot={},
-            credit_amount=1,
         )
