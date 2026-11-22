@@ -290,7 +290,7 @@ def test_finance_profile_exposes_only_callers_own_capabilities(monkeypatch):
 def test_finance_profile_returns_inactive_without_grants(monkeypatch):
     import app.main as main_module
 
-    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(ACTOR, set(), f"user:{OTHER}") if False else None)
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: None)
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
     try:
         response = client.get("/api/finance/me")
