@@ -268,8 +268,16 @@ def verify_pricing_quote(
         raise PricingError("Pricing quote quantity is invalid.")
     if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= 1_000_000_000_000:
         raise PricingError("Pricing quote amount is invalid.")
-    if snapshot.get("credit_unit") != "credit" or snapshot.get("maximum_authorized_charge") != amount:
+    maximum_charge = snapshot.get("maximum_authorized_charge")
+    if (
+        snapshot.get("credit_unit") != "credit"
+        or isinstance(maximum_charge, bool)
+        or not isinstance(maximum_charge, int)
+        or maximum_charge != amount
+    ):
         raise PricingError("Pricing quote authorization limit is inconsistent.")
+    if quantity > 10000:
+        raise PricingError("Pricing quote quantity is invalid.")
     if (quoted_user, quote_job_type, quote_provider, quote_model, quote_hash) != (
         user_id, job_type, provider, model, request_hash
     ):
