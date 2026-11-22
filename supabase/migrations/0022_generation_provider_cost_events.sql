@@ -63,9 +63,8 @@ create index if not exists generation_provider_cost_events_job_created_idx
 
 alter table public.generation_provider_cost_events enable row level security;
 revoke all on public.generation_provider_cost_events from anon, authenticated;
-grant select, insert on public.generation_provider_cost_events to service_role;
-revoke update, delete, truncate on public.generation_provider_cost_events from service_role;
-grant usage, select on sequence public.generation_provider_cost_events_id_seq to service_role;
+grant select on public.generation_provider_cost_events to service_role;
+revoke insert, update, delete, truncate on public.generation_provider_cost_events from service_role;
 
 create or replace function public.reject_generation_provider_cost_event_mutation()
 returns trigger
