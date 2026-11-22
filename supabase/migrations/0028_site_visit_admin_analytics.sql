@@ -58,11 +58,11 @@ create or replace function public.get_site_visit_admin_stats()
 returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
   select public.get_site_visit_stats() || jsonb_build_object(
     'daily_series', coalesce((
-      select jsonb_agg(jsonb_build_object('date', days.visit_date, 'page_views', coalesce(d.page_views, 0),
+      select jsonb_agg(jsonb_build_object('date', days.visit_date::date, 'page_views', coalesce(d.page_views, 0),
                                           'unique_visitors', coalesce(d.unique_visitors, 0)) order by days.visit_date)
       from generate_series((now() at time zone 'UTC')::date - 29,
                            (now() at time zone 'UTC')::date, interval '1 day') as days(visit_date)
-      left join public.site_visit_daily d on d.visit_date = days.visit_date
+      left join public.site_visit_daily d on d.visit_date = days.visit_date::date
     ), '[]'::jsonb),
     'top_routes', coalesce((
       select jsonb_agg(jsonb_build_object('route_group', routes.route_group, 'page_views', routes.page_views)
