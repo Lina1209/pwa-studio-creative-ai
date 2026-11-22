@@ -2447,6 +2447,7 @@ do $ai_request_admission_test$
 declare
   v_user uuid := gen_random_uuid();
   v_other_user uuid := gen_random_uuid();
+  v_global_user uuid := gen_random_uuid();
   v_first uuid := gen_random_uuid();
   v_second uuid := gen_random_uuid();
   v_third uuid := gen_random_uuid();
@@ -2485,7 +2486,7 @@ begin
   end if;
 
   v_result := public.reserve_ai_request(
-    v_user, gen_random_uuid(), 'chat', 2, 1, 1
+    v_global_user, gen_random_uuid(), 'chat', 2, 1, 1
   );
   if v_result->>'admitted' <> 'false'
      or v_result->>'reason' <> 'global_concurrency_limited' then
