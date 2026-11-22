@@ -4,6 +4,7 @@ The caller owns the AsyncClient lifecycle. This adapter is server-only and must
 never be constructed with browser credentials or exposed to an API response.
 """
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
@@ -35,6 +36,15 @@ class ProviderOperationJournal:
     state: str
     provider_request_id: str | None
     created: bool
+
+
+@dataclass(frozen=True)
+class ProviderCostEventResult:
+    event_id: int
+    created: bool
+    cumulative_known_cost_usd: Decimal
+    budget_limit_usd: Decimal | None
+    budget_exceeded: bool | None
 
 
 @dataclass(frozen=True)
@@ -371,6 +381,91 @@ class SupabaseGenerationJobRepository:
         except (KeyError, TypeError, ValueError) as exc:
             raise WorkerRepositoryError(
                 "Credited completion returned incomplete or invalid metadata."
+            ) from exc
+
+    async def record_provider_cost(
+        self,
+        *,
+        job_id: UUID,
+        user_id: UUID,
+        operation_key: str,
+        provider: str,
+        model: str,
+        provider_usage_id: str | None,
+        cost_usd: Decimal | None,
+        cost_source: str,
+        input_units: int | None = None,
+        output_units: int | None = None,
+        total_units: int | None = None,
+        unit_kind: str = "unknown",
+        metadata: dict[str, Any] | None = None,
+    ) -> ProviderCostEventResult:
+        """Append provider billing evidence; this never changes customer credits.
+
+        All identity and cost arguments must come from trusted server-side job
+        and provider adapter data, never directly from browser request fields.
+        """
+        if not isinstance(job_id, UUID) or not isinstance(user_id, UUID):
+            raise WorkerRepositoryError("Provider cost event identity is invalid.", retryable=False)
+        if not isinstance(operation_key, str) or not 8 <= len(operation_key) <= 200:
+            raise WorkerRepositoryError("Provider cost operation key is invalid.", retryable=False)
+        if cost_source not in {"reported", "estimated", "unknown"}:
+            raise WorkerRepositoryError("Provider cost source is invalid.", retryable=False)
+        if (cost_source == "unknown") != (cost_usd is None):
+            raise WorkerRepositoryError("Provider cost amount and source are inconsistent.", retryable=False)
+        if cost_usd is not None:
+            if not isinstance(cost_usd, Decimal) or not cost_usd.is_finite() or cost_usd < 0 or cost_usd > Decimal("1000000000"):
+                raise WorkerRepositoryError("Provider cost amount is invalid.", retryable=False)
+        for value in (input_units, output_units, total_units):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+                raise WorkerRepositoryError("Provider usage units are invalid.", retryable=False)
+        if not isinstance(metadata, dict):
+            metadata = {} if metadata is None else metadata
+        if not isinstance(metadata, dict):
+            raise WorkerRepositoryError("Provider cost metadata must be an object.", retryable=False)
+
+        data = await self._rpc(
+            "record_generation_provider_cost",
+            {
+                "p_job_id": str(job_id),
+                "p_user_id": str(user_id),
+                "p_operation_key": operation_key,
+                "p_provider": provider,
+                "p_model": model,
+                "p_provider_usage_id": provider_usage_id,
+                "p_cost_usd": str(cost_usd) if cost_usd is not None else None,
+                "p_cost_source": cost_source,
+                "p_input_units": input_units,
+                "p_output_units": output_units,
+                "p_total_units": total_units,
+                "p_unit_kind": unit_kind,
+                "p_metadata": metadata,
+            },
+        )
+        if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+            raise WorkerRepositoryError("Provider cost event returned an invalid response.")
+        row = data[0]
+        try:
+            event_id = row["event_id"]
+            created = row["created"]
+            known_cost = Decimal(str(row["cumulative_known_cost_usd"]))
+            budget_raw = row.get("budget_limit_usd")
+            budget = Decimal(str(budget_raw)) if budget_raw is not None else None
+            exceeded = row.get("budget_exceeded")
+            if isinstance(event_id, bool) or not isinstance(event_id, int) or event_id < 1:
+                raise ValueError("event id")
+            if not isinstance(created, bool):
+                raise ValueError("created")
+            if not known_cost.is_finite() or known_cost < 0:
+                raise ValueError("known cost")
+            if budget is not None and (not budget.is_finite() or budget < 0):
+                raise ValueError("budget")
+            if exceeded is not None and not isinstance(exceeded, bool):
+                raise ValueError("budget exceeded")
+            return ProviderCostEventResult(event_id, created, known_cost, budget, exceeded)
+        except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+            raise WorkerRepositoryError(
+                "Provider cost event returned incomplete or invalid metadata."
             ) from exc
 
     async def complete(self, job_id: UUID, worker_id: str, result_path: str) -> bool:
