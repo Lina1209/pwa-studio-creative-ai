@@ -1101,7 +1101,10 @@ def create_movie_storyboard(payload: MovieStoryboardRequest, user: StudioUser = 
     """Create a structured shot-by-shot storyboard from reviewed director scenes."""
     check_content(payload.title)
     for scene in payload.scenes:
-        for value in (scene.title, scene.location, scene.action, scene.visual_description, scene.lighting):
+        for value in (
+            scene.title, scene.location, scene.action, scene.visual_description,
+            scene.lighting, scene.transition, *scene.camera_shots,
+        ):
             check_content(value)
         for character in scene.characters:
             check_content(character)
