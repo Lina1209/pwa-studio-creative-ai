@@ -31,6 +31,7 @@ begin
      or (p_request_type = 'billing_refund' and p_currency_code = 'CRD')
      or p_scope_key is null or length(p_scope_key) not between 1 and 200
      or p_scope_key <> btrim(p_scope_key)
+     or p_scope_key <> ('user:' || p_target_user_id::text)
      or p_reason is null or length(p_reason) not between 1 and 500
      or p_reason <> btrim(p_reason)
      or p_idempotency_key is null then
