@@ -233,3 +233,79 @@ async def test_repository_classifies_connection_loss_as_retryable_without_leakin
     assert caught.value.error_code == "database_connection_error"
     assert caught.value.retryable is True
     assert "private host" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_complete_credited_parses_atomic_capture_result_and_uses_service_rpc():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["payload"] = json.loads(request.read())
+        return httpx.Response(200, json=[{
+            "completed": True,
+            "replayed": False,
+            "available_credits": 30,
+            "reserved_credits": 0,
+        }])
+
+    job_id = UUID("22222222-2222-4222-8222-222222222222")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        result = await repository.complete_credited(
+            job_id, "worker-a",
+            "11111111-1111-4111-8111-111111111111/generated/result.png",
+        )
+
+    assert result.completed is True
+    assert result.replayed is False
+    assert result.available_credits == 30
+    assert result.reserved_credits == 0
+    assert seen["url"].endswith("/rpc/complete_credited_generation_job")
+    assert seen["payload"]["p_job_id"] == str(job_id)
+    assert seen["payload"]["p_worker_id"] == "worker-a"
+
+
+@pytest.mark.asyncio
+async def test_complete_credited_accepts_lease_lost_result_without_balance_mutation():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=[{
+                "completed": False,
+                "replayed": False,
+                "available_credits": None,
+                "reserved_credits": None,
+            }])
+        )
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        result = await repository.complete_credited(
+            UUID("22222222-2222-4222-8222-222222222222"),
+            "stale-worker",
+            "11111111-1111-4111-8111-111111111111/generated/result.png",
+        )
+
+    assert result.completed is False
+    assert result.available_credits is None
+    assert result.reserved_credits is None
+
+
+@pytest.mark.asyncio
+async def test_complete_credited_rejects_malformed_rpc_result():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=[{
+                "completed": True,
+                "replayed": False,
+                "available_credits": -1,
+                "reserved_credits": 0,
+            }])
+        )
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError):
+            await repository.complete_credited(
+                UUID("22222222-2222-4222-8222-222222222222"),
+                "worker-a",
+                "11111111-1111-4111-8111-111111111111/generated/result.png",
+            )
