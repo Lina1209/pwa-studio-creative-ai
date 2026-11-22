@@ -71,19 +71,19 @@ begin
     select l.user_id,
            coalesce(sum(l.available_credits), 0)::bigint as available,
            coalesce(sum(l.reserved_credits), 0)::bigint as reserved
-      from public.credit_lots l join bounded_users b using (user_id)
+      from public.credit_lots l join page_users b using (user_id)
      group by l.user_id
   ),
   holds as (
     select h.user_id,
            coalesce(sum(h.amount) filter (where h.status = 'held'), 0)::bigint as held
-      from public.credit_holds h join bounded_users b using (user_id)
+      from public.credit_holds h join page_users b using (user_id)
      group by h.user_id
   ),
   allocations as (
     select a.user_id,
            coalesce(sum(a.amount) filter (where a.status = 'held'), 0)::bigint as held
-      from public.credit_hold_allocations a join bounded_users b using (user_id)
+      from public.credit_hold_allocations a join page_users b using (user_id)
      group by a.user_id
   ),
   hold_allocation_mismatches as (
@@ -97,7 +97,7 @@ begin
                and coalesce(a.held_amount, 0) <> 0
            ))::bigint as mismatch_count
       from public.credit_holds h
-      join bounded_users b using (user_id)
+      join page_users b using (user_id)
       left join (
         select user_id, hold_id, sum(amount)::bigint as held_amount
           from public.credit_hold_allocations
@@ -112,7 +112,7 @@ begin
              where l.reserved_credits <> coalesce(a.held_amount, 0)
            ))::bigint as mismatch_count
       from public.credit_lots l
-      join bounded_users b using (user_id)
+      join page_users b using (user_id)
       left join (
         select user_id, lot_id, sum(amount)::bigint as held_amount
           from public.credit_hold_allocations
@@ -124,7 +124,7 @@ begin
   latest_ledger as (
     select distinct on (e.user_id)
            e.user_id, e.balance_available_after, e.balance_reserved_after
-      from public.credit_ledger e join bounded_users b using (user_id)
+      from public.credit_ledger e join page_users b using (user_id)
      order by e.user_id, e.id desc
   ),
   combined as (
