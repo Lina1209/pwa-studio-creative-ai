@@ -26,11 +26,12 @@ DIGEST = calculate_sha256(IMAGE)
 class FakeRepository:
     def __init__(
         self, *, heartbeat=True, complete=True, journal_created=True,
-        journal_unknown=True, journal_failed=True,
+        journal_unknown=True, journal_failed=True, journal_state=None,
     ):
         self.heartbeat_result = heartbeat
         self.complete_result = complete
         self.journal_created = journal_created
+        self.journal_state = journal_state or ("submitting" if journal_created else "unknown")
         self.journal_unknown_result = journal_unknown
         self.journal_failed_result = journal_failed
         self.calls = []
@@ -41,7 +42,7 @@ class FakeRepository:
 
     async def begin_provider_operation(self, *args):
         self.calls.append(("journal_begin", args))
-        return SimpleNamespace(created=self.journal_created, state="submitting" if self.journal_created else "unknown")
+        return SimpleNamespace(created=self.journal_created, state=self.journal_state)
 
     async def mark_provider_operation_accepted(self, *args):
         self.calls.append(("journal_accepted", args))
@@ -320,6 +321,54 @@ async def test_recovered_result_preserves_lookup_provider_request_id_in_journal(
     assert result.outcome == "succeeded"
     accepted = next(call for call in repo.calls if call[0] == "journal_accepted")
     assert accepted[1][-1] == "provider-request-123"
+
+
+@pytest.mark.asyncio
+async def test_result_received_recovery_does_not_downgrade_journal_state():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class RecoverableProvider(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            return ImageGenerationLookup(
+                "succeeded",
+                result=ImageGenerationResult(
+                    IMAGE, "image/png", "fake", "fake-v1",
+                    provider_request_id="provider-request-456",
+                ),
+                provider_request_id="provider-request-456",
+            )
+
+    repo = FakeRepository(journal_created=False, journal_state="result_received")
+    result = await make_worker(repo, RecoverableProvider()).process(make_job())
+
+    assert result.outcome == "succeeded"
+    assert not any(call[0] == "journal_accepted" for call in repo.calls)
+    assert any(call[0] == "journal_result" for call in repo.calls)
+    assert any(call[0] == "complete" for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_result_received_recovery_never_resubmits_if_provider_reports_not_found():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class ExpiredLookupProvider(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            return ImageGenerationLookup("not_found")
+
+        async def generate(self, request, *, idempotency_key):
+            raise AssertionError("A result_received operation must never be resubmitted")
+
+    repo = FakeRepository(journal_created=False, journal_state="result_received")
+    result = await make_worker(repo, ExpiredLookupProvider()).process(make_job())
+
+    assert result.outcome == "retry_scheduled"
+    assert result.error_code == "provider_result_recovery_pending"
+    assert not any(call[0] == "journal_unknown" for call in repo.calls)
+    assert any(call[0] == "retry" for call in repo.calls)
 
 
 @pytest.mark.asyncio
