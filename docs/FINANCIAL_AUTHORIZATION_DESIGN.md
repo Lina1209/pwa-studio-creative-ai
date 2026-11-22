@@ -131,6 +131,8 @@ Every permission decision and workflow transition should capture:
 
 Do not log access tokens, service-role keys, card data, raw payment credentials, full webhook secrets, prompts, or unrelated user content. Read endpoints must use bounded queries, least-privilege fields, private/no-store caching, and audit access to sensitive records.
 
+The detailed case-by-case automation checklist is maintained in [Financial authorization security test matrix](./FINANCIAL_AUTHORIZATION_TEST_MATRIX.md).
+
 ## 9. Required security tests
 
 - Creator and unauthenticated requests cannot read privileged finance data or mutate finance state.
