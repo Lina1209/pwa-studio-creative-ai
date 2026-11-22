@@ -34,6 +34,9 @@ begin
   if not exists (select 1 from pg_constraint where conrelid='public.studio_scenes'::regclass and conname='studio_scenes_id_project_user_key') then
     alter table public.studio_scenes add constraint studio_scenes_id_project_user_key unique (id, project_id, user_id);
   end if;
+  if not exists (select 1 from pg_constraint where conrelid='public.studio_scenes'::regclass and conname='studio_scenes_id_user_key') then
+    alter table public.studio_scenes add constraint studio_scenes_id_user_key unique (id, user_id);
+  end if;
   if not exists (select 1 from pg_constraint where conrelid='public.generation_jobs'::regclass and conname='generation_jobs_id_user_key') then
     alter table public.generation_jobs add constraint generation_jobs_id_user_key unique (id, user_id);
   end if;
