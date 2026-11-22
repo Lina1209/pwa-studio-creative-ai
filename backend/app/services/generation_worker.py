@@ -156,11 +156,18 @@ class GenerationWorker:
                     ),
                     lost,
                 )
+                actual_digest = calculate_sha256(result.image_bytes)
+                if (
+                    uploaded.expected_sha256_hex != actual_digest
+                    or uploaded.metadata.size_bytes != len(result.image_bytes)
+                    or uploaded.metadata.content_type != result.mime_type
+                ):
+                    raise GenerationResultStorageError("uploaded_object_content_mismatch")
                 verified = validate_generation_result_object(
                     owner_id=job.user_id,
                     expected_bucket=uploaded.expected_bucket,
                     expected_object_path=uploaded.expected_object_path,
-                    expected_sha256_hex=uploaded.expected_sha256_hex,
+                    expected_sha256_hex=actual_digest,
                     metadata=uploaded.metadata,
                 )
                 if not await self.repository.complete(
@@ -171,6 +178,8 @@ class GenerationWorker:
             finally:
                 heartbeat.cancel()
                 await asyncio.gather(heartbeat, return_exceptions=True)
+        except GenerationResultStorageError as exc:
+            return await self._terminal_failure(job, exc.error_code)
         except ImageGenerationError as exc:
             if exc.error_code == "worker_lease_lost":
                 return WorkerResult("lease_lost", exc.error_code)
