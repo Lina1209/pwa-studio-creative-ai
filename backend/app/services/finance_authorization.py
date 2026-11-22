@@ -4,7 +4,7 @@ This module is intentionally not wired to public mutation endpoints. Callers mus
 obtain grants from a trusted server-side registry; never accept grants from a
 browser request or infer them from the owner role.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 
@@ -37,6 +37,8 @@ class FinanceGrant:
     permissions: frozenset[str]
     active: bool
     scope_ids: frozenset[str] = frozenset()
+    permission_scopes: dict[str, frozenset[str]] = field(default_factory=dict)
+    global_permissions: frozenset[str] = frozenset()
 
 
 def require_finance_permission(
@@ -53,8 +55,12 @@ def require_finance_permission(
         raise FinanceAuthorizationDenied("No active finance assignment.")
     if permission not in grant.permissions:
         raise FinanceAuthorizationDenied("Required finance permission is not granted.")
-    if target_scope is not None and target_scope not in grant.scope_ids:
-        raise FinanceAuthorizationDenied("Finance assignment does not cover this scope.")
+    if target_scope is not None:
+        if permission in grant.global_permissions:
+            return
+        allowed_scopes = grant.permission_scopes.get(permission, grant.scope_ids)
+        if target_scope not in allowed_scopes:
+            raise FinanceAuthorizationDenied("Finance assignment does not cover this scope.")
 
 
 def require_independent_approval(*, requester_id: UUID, approver_id: UUID) -> None:
