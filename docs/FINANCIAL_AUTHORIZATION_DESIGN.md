@@ -1,17 +1,18 @@
 # Financial authorization and approval model
 
-**Status:** design proposal only — no roles, permissions, operators, endpoints, RPCs, policies, or production settings are created or activated by this document.  
-**Scope:** internal credit compensation and future cash-refund administration. This document does not authorize either operation.
+**Status:** partially implemented in the review branch; not deployed or activated in production.  
+**Scope:** delegated role assignment, credit-compensation proposals, cash-refund proposals, approval/rejection, cancellation, queue visibility, and append-only request history. This implementation does not execute either financial operation.
 
 ## 1. Current verified baseline
 
 - Backend identity is derived from a verified Supabase Auth access token. The immutable JWT `sub` UUID is the identity key; email is display/contact data only.
 - `OWNER_USER_IDS` is a server-side UUID allowlist. Empty or malformed configuration grants no owner role.
-- The current backend role vocabulary is only `admin` and `creator`. Narrow `require_permission(...)` dependencies now protect admin analytics and provider-cost reports; the owner capability set is read-only and rejects unknown/write permissions. `require_admin` remains for owner identity/status endpoints only.
-- Existing admin endpoints are read-only operational reporting (site analytics and provider-cost reporting). There is no delegated finance role registry, approval workflow, compensation mutation endpoint, or payment-provider refund workflow. The current static owner read-capability allowlist is a transitional least-privilege boundary, not delegated role management.
-- Supabase service-role credentials remain server-only. Browser clients and ordinary authenticated users must never receive finance mutation privileges.
+- Authentication still exposes the core product roles `admin` and `creator`; delegated finance roles are resolved separately from the private finance registry.
+- The owner capability set includes the narrowly scoped `admin.finance.roles.manage` permission for role administration. Finance operator, approver, and auditor permissions are derived from active, expiring, explicitly scoped registry assignments.
+- The review branch contains the request/approval/cancellation workflow and scoped queue/timeline APIs. There is no credit-ledger execution endpoint or payment-provider refund workflow.
+- Supabase service-role credentials remain server-only. Browser clients and ordinary authenticated users never receive direct finance-table or service-role privileges.
 
-The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for future credit or cash mutations.\n\n### Registry implementation checkpoint\n\nThe branch now contains a private finance role registry, append-only grant/revocation events, server-only RPCs, an owner-gated management API, and integration tests for RLS, grants, revocations, self-assignment rejection, duplicate assignments, and service-role-only execution. A follow-up migration requires every new assignment to have an explicit scope and finite expiry. These migrations have only been added to the review branch; they have not been applied to production. Finance roles are not yet assigned to real users, and these role-management endpoints do not enable credit compensation or cash refunds.\n
+The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for delegated financial actions. The current implementation checks the exact delegated permission and target scope on every request.\n\n### Registry implementation checkpoint\n\nThe branch contains private role assignments, append-only grant/revocation events, server-only RPCs, owner-gated management API and UI, and integration tests for RLS, grants, revocations, self-assignment rejection, duplicate assignments, and service-role-only execution. New assignments require an explicit scope and finite expiry. These migrations have only been added to the review branch; they have not been applied to production. No real finance roles are assigned yet.\n
 
 ### Registry schema checkpoint (migration 0037)
 
@@ -24,7 +25,7 @@ These RPCs are trusted backend primitives, not a complete authorization boundary
 
 ### Current implementation checkpoint
 
-The backend contains `finance_authorization.py` for fail-closed permission and separation-of-duties checks, plus `finance_registry.py` for server-only role resolution and management. `POST /api/admin/finance/roles`, `GET /api/admin/finance/roles/{target_user_id}`, and `POST /api/admin/finance/roles/{assignment_id}/revoke` are protected by the explicit owner capability. Registry grants and revocations are append-only and audited in the database. These controls do not yet authorize or implement credit compensation, cash refunds, or payment-provider execution. No real finance roles have been assigned.
+The backend contains `finance_authorization.py` for fail-closed permission and separation-of-duties checks, plus `finance_registry.py` for server-only role resolution and management. `POST /api/admin/finance/roles`, `GET /api/admin/finance/roles/{target_user_id}`, and `POST /api/admin/finance/roles/{assignment_id}/revoke` are protected by the explicit owner capability. The owner technical console now includes a role grant/list/revoke interface. Registry grants and revocations are append-only and audited in the database. Finance proposal and approval routes are implemented, but approved requests cannot yet execute credit or cash movements. No real finance roles have been assigned.
 
 
 ## 2. Proposed role separation
@@ -63,7 +64,7 @@ Use stable, explicit permission identifiers rather than scattered role-name chec
 - `finance.reconciliation.read`
 - `finance.policy.manage` (high-risk; owner-controlled, separately audited)
 
-Permissions are checked server-side on every request and again inside the transaction/RPC that performs a mutation. The current implementation only exposes a small static read-only owner capability set; it does not implement the proposed operator/approver assignments. Hiding a button or trusting a frontend role is not authorization.
+Permissions are checked server-side on every request and again inside the transaction/RPC that performs a mutation. The static owner capability set is separate from delegated finance permissions. Active operator, approver, and auditor assignments are resolved server-side, and each action is checked against the matching permission and exact target scope. Hiding a button or trusting a frontend role is not authorization.
 
 ## 4. Suggested permission matrix (subject to explicit approval)
 
@@ -84,13 +85,15 @@ This matrix is a proposal, not a grant of permissions. No person receives a role
 
 ## 5. Identity and assignment model
 
-Preferred future design: a private server-managed authorization registry keyed by immutable Supabase Auth UUID, not email.
+Implemented design: a private server-managed authorization registry keyed by immutable Supabase Auth UUID, not email.
 
-Potential records (names are conceptual and not implemented):
-- `finance_principals`: principal UUID, active/suspended state, created/updated timestamps, assigning actor.
-- `finance_role_assignments`: principal UUID, role code, scope, valid-from/to, assigning actor, reason/ticket.
-- `finance_permission_overrides`: optional narrowly scoped permission, expiry, reason, approving actor; avoid unless role grants prove insufficient.
-- `finance_authorization_audit`: append-only record of grant, revoke, suspension, expiry, and policy changes.
+Current records:
+- `finance_role_assignments`: principal UUID, role code, explicit scope, validity window, assigning actor and reason.
+- `finance_role_revocations`: append-only revocation fact; original grant rows are not edited.
+- `finance_authorization_events`: append-only grant/revoke audit history.
+- `finance_operation_requests` and `finance_operation_request_events`: proposal state and immutable request lifecycle events.
+
+Permission overrides and global assignments are not exposed by the current workflow.
 
 Requirements:
 1. Assignments are created only by a separately authorized owner workflow, never by user self-service.
@@ -164,7 +167,7 @@ The detailed case-by-case automation checklist is maintained in [Financial autho
 - A service-role-only RPC cannot be invoked by `anon` or `authenticated`.
 - Reconciliation catches deliberate wallet/lot/ledger/payment drift.
 
-## 10. Decisions required before implementation
+## 10. Decisions required before production activation
 
 1. Confirm whether finance operators and approvers will exist at launch, or whether all finance workflows remain disabled until later.
 2. Select the assignment owner(s) and a secure operator onboarding/offboarding process.
@@ -177,14 +180,14 @@ The detailed case-by-case automation checklist is maintained in [Financial autho
 
 ## 11. Activation boundary
 
-This file is documentation only. It creates no database migration, table, RPC, API endpoint, role assignment, permission grant, scheduler, refund integration, or production configuration. Existing owner UUID configuration remains a prerequisite for owner access, but configuring it does not automatically grant finance permissions. Implementation must proceed in small reviewed steps after the decisions above are approved.
+Migrations 0037–0045, the role registry, proposal/approval/cancellation APIs, scoped queue and event timeline, owner role-management UI, and delegated finance workspace exist in the review branch. They have not been applied or deployed to production. No real finance roles are assigned. Production owner UUID configuration does not automatically grant finance permissions. Before production activation, the migrations must be reviewed and applied through the approved deployment process, separate operator and approver accounts must receive scoped roles, and operational/legal policies must be approved. No credit ledger mutation, cash refund, payment-provider integration, or execution endpoint is enabled.
 
 
 ### Finance operation request lifecycle checkpoint
 
 Migrations 0042 and 0043 add private request storage and server-only transactional RPCs for credit-compensation and billing-refund proposals. A request is created in `pending`, then may be approved, rejected, or cancelled by its requester while pending. Approval/rejection by the requester is rejected; decisions lock the row and allow only one transition from pending. Each transition writes an append-only event. The requester/idempotency-key pair is unique; exact retries return the original request, while changed payloads using the same key are rejected.
 
-Important boundary: this is a request and decision ledger only. It does not grant credits, modify wallet balances, initiate refunds, or execute payment-provider operations. Backend endpoints and delegated-role checks must be added and tested before any user-facing finance request workflow is enabled. The new migrations are in the review branch only and have not been applied to production.
+Important boundary: this is a request and decision ledger only. It does not grant credits, modify wallet balances, initiate refunds, or execute payment-provider operations. Backend endpoints and the delegated-role workspace now exist in the review branch, but the migrations have not been applied to production and no real finance roles have been assigned.
 
 
 ### Backend API checkpoint
@@ -194,7 +197,7 @@ The review branch now includes authenticated API routes:
 - `POST /api/finance/requests/{request_id}/decision` — reads the request from the server registry, checks the matching approver permission for its stored scope, and rejects self-approval.
 - `POST /api/finance/requests/{request_id}/cancel` — only the original requester can cancel a pending request, with a matching scoped cancel permission.
 
-The verified JWT subject supplies the actor identity; client-supplied actor IDs are not accepted. All endpoints use private no-store responses. They return proposal/decision state only; there is no execution endpoint, credit balance mutation, or payment-provider call.
+The verified JWT subject supplies the actor identity; client-supplied actor IDs are not accepted. All endpoints use private no-store responses. Queue and event reads are bounded and scoped by the active role registry. The endpoints return proposal/decision state only; there is no execution endpoint, credit balance mutation, or payment-provider call.
 
 
 ### Scope boundary
