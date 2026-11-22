@@ -10,6 +10,7 @@ from app.services.generation_result_storage import (
     StoredObjectMetadata,
     calculate_sha256,
 )
+from app.services.worker_repository_errors import WorkerRepositoryError
 from app.services.generation_worker import (
     ClaimedImageJob,
     GenerationWorker,
@@ -93,6 +94,30 @@ class FakeRepository:
             budget_limit_usd=None, budget_exceeded=None,
         )
 
+
+
+@pytest.mark.asyncio
+async def test_worker_retries_ambiguous_completion_response_and_accepts_database_replay():
+    class LostFirstCompletionResponseRepository(FakeRepository):
+        def __init__(self):
+            super().__init__(completion_replayed=True)
+            self.completion_attempts = 0
+
+        async def complete_credited(self, *args):
+            self.completion_attempts += 1
+            if self.completion_attempts == 1:
+                # Simulate Postgres committing capture + succeeded, while the
+                # HTTP response is lost before the worker receives it.
+                raise WorkerRepositoryError("database_connection_error", retryable=True)
+            return await super().complete_credited(*args)
+
+    repo = LostFirstCompletionResponseRepository()
+    result = await make_worker(repo).process(make_job())
+
+    assert result.outcome == "succeeded"
+    assert repo.completion_attempts == 2
+    assert len([call for call in repo.calls if call[0] == "complete"]) == 1
+    assert not any(call[0] == "retry" for call in repo.calls)
 
 
 @pytest.mark.asyncio
