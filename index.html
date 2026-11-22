@@ -355,6 +355,17 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <article><span>Автопереключение</span><strong id="adminAiFallbackStatus">—</strong><small>Без скрытых платных переходов</small></article>
           </div>
           <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>Поддержка</th><th>Ключ настроен</th><th>Режим тарифа</th></tr></thead><tbody id="adminAiProviderRows"></tbody></table></div>
+          <div class="admin-module" aria-labelledby="adminAiCostBudgetHeading">
+            <div class="panel-heading"><div><h3 id="adminAiCostBudgetHeading">Денежный стоп-кран AI · USD</h3><p>Атомарные резервы перед каждым запросом. Неизвестная стоимость блокирует резерв до проверки администратором.</p></div><button class="secondary-button" id="refreshAdminAiCostBudget" type="button">Обновить лимиты</button></div>
+            <p class="helper-text" id="adminAiCostBudgetStatus" role="status" aria-live="polite">Состояние денежного контроля загружается только для администратора.</p>
+            <div class="owner-metrics">
+              <article><span>Общий лимит в сутки</span><strong id="adminAiGlobalBudget">—</strong><small>USD · все провайдеры</small></article>
+              <article><span>Уже зарезервировано</span><strong id="adminAiOutstandingBudget">—</strong><small>USD · активные и неизвестные</small></article>
+              <article><span>Остаток общего лимита</span><strong id="adminAiRemainingBudget">—</strong><small>USD · оценка + резервы</small></article>
+            </div>
+            <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Дневной предел USD</th><th>Израсходовано по оценке</th><th>Резерв</th><th>Остаток</th><th>Неизвестные</th><th>Состояние</th></tr></thead><tbody id="adminAiCostBudgetRows"></tbody></table></div>
+            <p class="owner-privacy-note" id="adminAiCostBudgetNote">Оценки рассчитаны по консервативным пиковым тарифам; фактический счёт проверяется в кабинете провайдера.</p>
+          </div>
           <div class="admin-module" aria-labelledby="adminAiUsageHeading">
             <div class="panel-heading"><div><h3 id="adminAiUsageHeading">Использование AI · токены и оценка расходов</h3><p>Данные из серверного журнала ai_usage. Не содержит промптов, ответов и идентификаторов пользователей.</p></div></div>
             <div class="finance-queue-controls">
