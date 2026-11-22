@@ -83,6 +83,7 @@ create table public.studio_media (
 \ir ../migrations/0015_generation_job_terminal_failure.sql
 \ir ../migrations/0016_harden_generation_job_idempotency.sql
 \ir ../migrations/0017_generation_provider_operation_journal.sql
+\ir ../migrations/0018_credit_ledger_schema.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -950,4 +951,88 @@ end;
 $provider_journal_test$;
 
 
-select 'generation jobs, movie scenes and provider journal integration checks passed' as result;
+
+
+-- Credit ledger schema: owner isolation, positive constraints and append-only history.
+do $credit_ledger_schema_test$
+declare
+  v_hold_id uuid;
+  v_wallet_id uuid;
+begin
+  insert into public.credit_wallets(user_id, available_credits, reserved_credits)
+  values
+    ('11111111-1111-4111-8111-111111111111', 100, 0),
+    ('22222222-2222-4222-8222-222222222222', 50, 0);
+
+  select id into v_wallet_id from public.credit_wallets
+   where user_id = '11111111-1111-4111-8111-111111111111';
+  if v_wallet_id is null then raise exception 'Wallet was not created'; end if;
+
+  insert into public.credit_holds(
+    user_id, job_id, amount, quote_snapshot, operation_key
+  ) values (
+    '11111111-1111-4111-8111-111111111111',
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    10, '{"price_version":"test-v1","approved_maximum":10}'::jsonb,
+    'test-reserve-operation-001'
+  ) returning id into v_hold_id;
+
+  insert into public.credit_ledger(
+    user_id, hold_id, operation_type, operation_key,
+    delta_available, delta_reserved,
+    balance_available_after, balance_reserved_after, metadata
+  ) values (
+    '11111111-1111-4111-8111-111111111111', v_hold_id,
+    'reserve', 'test-ledger-reserve-001',
+    -10, 10, 90, 10, '{"test_fixture":true}'::jsonb
+  );
+
+  begin
+    update public.credit_ledger
+       set metadata = '{"tampered":true}'::jsonb
+     where operation_key = 'test-ledger-reserve-001';
+    raise exception 'Ledger UPDATE was accepted';
+  exception when sqlstate '55000' then null;
+  end;
+
+  begin
+    delete from public.credit_ledger
+     where operation_key = 'test-ledger-reserve-001';
+    raise exception 'Ledger DELETE was accepted';
+  exception when sqlstate '55000' then null;
+  end;
+
+  begin
+    insert into public.credit_holds(
+      user_id, job_id, amount, quote_snapshot, operation_key
+    ) values (
+      '22222222-2222-4222-8222-222222222222',
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      5, '{}'::jsonb, 'cross-owner-hold-001'
+    );
+    raise exception 'Cross-owner credit hold was accepted';
+  exception when foreign_key_violation then null;
+  end;
+
+  if has_table_privilege('authenticated', 'public.credit_wallets', 'INSERT')
+     or has_table_privilege('authenticated', 'public.credit_wallets', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.credit_wallets', 'DELETE')
+     or has_table_privilege('authenticated', 'public.credit_holds', 'INSERT')
+     or has_table_privilege('authenticated', 'public.credit_holds', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.credit_holds', 'DELETE')
+     or has_table_privilege('authenticated', 'public.credit_ledger', 'INSERT')
+     or has_table_privilege('authenticated', 'public.credit_ledger', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.credit_ledger', 'DELETE') then
+    raise exception 'Authenticated role unexpectedly has credit mutation privileges';
+  end if;
+
+  if not has_table_privilege('authenticated', 'public.credit_wallets', 'SELECT')
+     or not has_table_privilege('authenticated', 'public.credit_holds', 'SELECT')
+     or not has_table_privilege('authenticated', 'public.credit_ledger', 'SELECT') then
+    raise exception 'Authenticated role is missing read access governed by RLS';
+  end if;
+end;
+$credit_ledger_schema_test$;
+
+
+select 'generation jobs, movie scenes, provider journal and credit ledger schema checks passed' as result;
