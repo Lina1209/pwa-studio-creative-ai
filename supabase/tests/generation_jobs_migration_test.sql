@@ -3215,11 +3215,18 @@ begin
     (v_user_three, 'grant', 'grant:reconcile-page-three', 1, 0, 1, 0, '{"test_case":"reconciliation-pagination"}'::jsonb)
   on conflict do nothing;
 
-  select count(*)::integer, coalesce(bool_and(page.has_more), false), max(page.user_id)
-    into v_page_count, v_has_more, v_cursor
+  select count(*)::integer, coalesce(bool_and(page.has_more), false)
+    into v_page_count, v_has_more
     from public.audit_credit_wallet_reconciliation_page(
       null, 'ffffffff-ffff-4fff-8fff-000000000000', 2
     ) page;
+
+  select page.user_id into v_cursor
+    from public.audit_credit_wallet_reconciliation_page(
+      null, 'ffffffff-ffff-4fff-8fff-000000000000', 2
+    ) page
+   order by page.user_id desc
+   limit 1;
 
   if v_page_count <> 2 or not v_has_more
      or v_cursor <> v_user_two then
