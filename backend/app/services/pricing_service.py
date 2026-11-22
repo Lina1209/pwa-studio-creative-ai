@@ -47,13 +47,13 @@ class PricingRule:
         ):
             raise PricingError("Pricing rule quantity bounds are invalid.")
         if (
-            self.max_provider_cost_usd_per_unit is not None
+            self.max_provider_cost_usd_per_unit_per_unit is not None
             and (
-                not isinstance(self.max_provider_cost_usd, Decimal)
-                or not self.max_provider_cost_usd.is_finite()
-                or self.max_provider_cost_usd <= 0
-                or self.max_provider_cost_usd.as_tuple().exponent < -10
-                or self.max_provider_cost_usd > Decimal("9999999999.9999999999")
+                not isinstance(self.max_provider_cost_usd_per_unit, Decimal)
+                or not self.max_provider_cost_usd_per_unit.is_finite()
+                or self.max_provider_cost_usd_per_unit <= 0
+                or self.max_provider_cost_usd_per_unit.as_tuple().exponent < -10
+                or self.max_provider_cost_usd_per_unit > Decimal("9999999999.9999999999")
             )
         ):
             raise PricingError("Pricing rule per-unit provider cost ceiling must be a positive finite USD decimal.")
@@ -117,7 +117,7 @@ class VerifiedPricingQuote:
             "credit_unit": "credit",
             "amount": self.amount,
             "maximum_authorized_charge": self.amount,
-            "maximum_provider_cost_usd": format(self.max_provider_cost_usd, "f"),
+            "maximum_provider_cost_usd": format(self.max_provider_cost_usd_per_unit, "f"),
             "provider_cost_currency": "USD",
             "price_version": self.price_version,
             "issued_at": self.issued_at.isoformat(),
@@ -208,8 +208,15 @@ def issue_pricing_quote(
     if not rule.min_quantity <= quantity <= rule.max_quantity:
         raise PricingError("Requested quantity is outside the approved pricing bounds.")
     amount = rule.credits_per_unit * quantity
-    if rule.max_provider_cost_usd is None:
+    if rule.max_provider_cost_usd_per_unit is None:
         raise PricingError("Approved pricing rule has no provider cost ceiling; generation is disabled.")
+    provider_cost_ceiling = rule.max_provider_cost_usd_per_unit * quantity
+    if (
+        not provider_cost_ceiling.is_finite()
+        or provider_cost_ceiling <= 0
+        or provider_cost_ceiling > Decimal("9999999999.9999999999")
+    ):
+        raise PricingError("Calculated provider cost ceiling exceeds the supported USD limit.")
     if amount > 1_000_000_000_000:
         raise PricingError("Calculated quote exceeds the supported credit limit.")
 
@@ -223,7 +230,7 @@ def issue_pricing_quote(
         quote_id=quote_id, user_id=user_id, job_type=job_type,
         provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
         project_id=project_id, studio_scene_id=studio_scene_id, quantity=quantity, unit_label=rule.unit_label, amount=amount,
-        max_provider_cost_usd=rule.max_provider_cost_usd,
+        max_provider_cost_usd=provider_cost_ceiling,
         price_version=catalog.version, issued_at=issued_at, expires_at=expires_at,
     )
     return VerifiedPricingQuote(
@@ -231,7 +238,7 @@ def issue_pricing_quote(
         provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
         project_id=project_id, studio_scene_id=studio_scene_id,
         quantity=quantity, unit_label=rule.unit_label, amount=amount,
-        max_provider_cost_usd=rule.max_provider_cost_usd,
+        max_provider_cost_usd=rule.max_provider_cost_usd_per_unit,
         price_version=catalog.version, issued_at=issued_at,
         expires_at=expires_at, signature=_sign(payload, secret),
     )
