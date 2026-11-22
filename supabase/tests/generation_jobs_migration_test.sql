@@ -2238,10 +2238,19 @@ begin
   end if;
 
   -- Known usage settles the reserve and actual spend replaces estimated exposure.
-  perform public.record_generation_provider_cost(
-    v_job_a, '11111111-1111-4111-8111-111111111111',
+  -- Insert immutable known-cost evidence dated in the prior UTC day.
+  -- The ledger trigger still settles the reservation; this also lets the test
+  -- prove that old spend rolls out while outstanding reserves remain active.
+  insert into public.generation_provider_cost_events(
+    user_id, job_id, operation_key, provider, model, provider_usage_id,
+    cost_usd, cost_source, input_units, output_units, total_units, unit_kind,
+    metadata, budget_limit_usd, cumulative_known_cost_usd, budget_exceeded, created_at
+  ) values (
+    '11111111-1111-4111-8111-111111111111', v_job_a,
     'global-budget-known-operation-001', 'global-budget-provider', 'global-budget-model',
-    'global-budget-usage-known-001', 0.04, 'reported', 10, 10, 20, 'token', '{}'::jsonb
+    'global-budget-usage-known-001', 0.04, 'reported', 10, 10, 20, 'token',
+    '{}'::jsonb, 0.10, 0.04, false,
+    (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC') - interval '1 second'
   );
   select status into v_status
     from public.generation_provider_cost_reservations where job_id = v_job_a;
@@ -2292,10 +2301,6 @@ begin
 
   -- A new UTC day resets daily spend, but outstanding reservations from the
   -- previous day still count against the concurrent exposure ceiling.
-  update public.generation_provider_cost_events
-     set created_at = (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC')
-                      - interval '1 second'
-   where job_id = v_job_a;
   update public.generation_provider_cost_reservations
      set created_at = now() - interval '1 day'
    where job_id in (v_job_b, v_job_unknown);
