@@ -64,9 +64,7 @@ begin
     v_expires_at := now() + make_interval(secs => v_policy.expires_in_seconds::double precision);
   end if;
   v_idempotency_key := 'entitlement:' || v_policy.policy_code || ':v'
-    || v_policy.policy_version::text || ':' || encode(
-      digest(convert_to(p_event_key, 'UTF8'), 'sha256'), 'hex'
-    );
+    || v_policy.policy_version::text || ':' || md5(p_event_key);
 
   return query
     select g.available_credits, g.reserved_credits, g.replayed
@@ -76,7 +74,7 @@ begin
         p_metadata || jsonb_build_object(
           'policy_code', v_policy.policy_code,
           'policy_version', v_policy.policy_version,
-          'event_key_hash', encode(digest(convert_to(p_event_key, 'UTF8'), 'sha256'), 'hex')
+          'event_key_hash', md5(p_event_key)
         )
       ) g;
 end;
