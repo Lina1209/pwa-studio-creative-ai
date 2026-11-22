@@ -2878,6 +2878,7 @@ declare
   v_expired bigint;
   v_rejected boolean;
   v_lot_id uuid;
+  v_expiry timestamptz;
 begin
   insert into auth.users(id) values (v_user), (v_other)
   on conflict (id) do nothing;
@@ -3061,9 +3062,10 @@ begin
     raise exception 'Expired reserved credits were not recorded as forfeited';
   end if;
 
+  v_expiry := now() + interval '1 second';
   select * into v_grant from public.grant_user_credit_lot(
     v_user, 7, 'free', 'expired-free-cycle', 'grant-expired-free-001',
-    now() + interval '1 second', '{"test_case":"available-expiry"}'::jsonb
+    v_expiry, '{"test_case":"available-expiry"}'::jsonb
   );
   update public.credit_lots
      set created_at = now() - interval '10 seconds',
@@ -3072,6 +3074,19 @@ begin
   v_expired := public.expire_credit_lots_for_user(v_user);
   if v_expired <> 7 then
     raise exception 'Expiry sweep did not expire the exact available lot amount';
+  end if;
+
+  -- A delayed retry of the original grant must replay safely after expiry,
+  -- without restoring the expired credits or creating a second lot.
+  select * into v_replay from public.grant_user_credit_lot(
+    v_user, 7, 'free', 'expired-free-cycle', 'grant-expired-free-001',
+    v_expiry, '{"test_case":"available-expiry"}'::jsonb
+  );
+  if not v_replay.replayed or v_replay.available_credits <> 25
+     or v_replay.reserved_credits <> 0
+     or (select count(*) from public.credit_lots
+          where user_id = v_user and idempotency_key = 'grant-expired-free-001') <> 1 then
+    raise exception 'Expired grant replay duplicated or restored credits';
   end if;
 
   select available_credits, reserved_credits into v_available, v_reserved
