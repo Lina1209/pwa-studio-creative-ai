@@ -120,14 +120,16 @@ def require_admin(user: StudioUser = Depends(get_current_user)) -> StudioUser:
     return user
 
 
-# Explicit owner capabilities are deliberately read-only. Ownership alone never
-# grants payment, refund, credit mutation, pricing, user-role, or policy writes.
+# Explicit owner capabilities are allowlisted. Financial role assignment is a
+# separately named owner-only control; ownership does not grant payment, refund,
+# credit mutation, pricing, or financial policy write permissions.
 OWNER_READ_PERMISSIONS = frozenset({
     "admin.analytics.read",
     "admin.finance.costs.read",
     "admin.finance.wallets.read",
     "admin.security.audit.read",
     "admin.platform.overview.read",
+    "admin.finance.roles.manage",
 })
 
 
