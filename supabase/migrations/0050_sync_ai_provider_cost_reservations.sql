@@ -218,7 +218,7 @@ declare
   v_row public.ai_provider_cost_reservations%rowtype;
 begin
   if p_request_id is null
-     or p_resolution not in ('confirm_no_charge', 'record_estimated_cost')
+     or p_resolution is null or p_resolution not in ('confirm_no_charge', 'record_estimated_cost')
      or p_note is null or length(btrim(p_note)) not between 8 and 1000
      or (p_resolution = 'confirm_no_charge' and p_actual_estimated_cost_usd is not null)
      or (p_resolution = 'record_estimated_cost' and
