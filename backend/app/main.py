@@ -411,6 +411,7 @@ def admin_ai_provider_status(
             "api_key_configured": bool(settings.gemini_api_key),
             "pricing_mode": "google_free_tier_eligible",
             "free_tier_eligible": True,
+            "project_free_tier_verified": False,
             "billing_tier_verifiable": False,
         },
     ]
