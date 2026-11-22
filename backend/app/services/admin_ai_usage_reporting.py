@@ -168,7 +168,7 @@ def _aggregate(rows: list[dict[str, Any]], date_from: date, date_to: date) -> di
         ],
         "actual_billed_cost_usd": None,
         "billing_reconciliation": "not_available",
-        "cost_disclaimer": "LiteLLM cost is an estimate. Actual provider charges and Free Tier eligibility are not available from request telemetry and must be reconciled in the provider billing console.",
+        "cost_disclaimer": "Costs are conservative server-side peak-price estimates based on token counts, not provider invoices. Actual charges and Free Tier eligibility must be reconciled in the provider billing console.",
         "truncated": False,
     }
 
