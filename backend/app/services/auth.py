@@ -123,7 +123,7 @@ def require_admin(user: StudioUser = Depends(get_current_user)) -> StudioUser:
 # Explicit owner capabilities are allowlisted. Financial role assignment is a
 # separately named owner-only control; ownership does not grant payment, refund,
 # credit mutation, pricing, or financial policy write permissions.
-OWNER_READ_PERMISSIONS = frozenset({
+OWNER_CAPABILITIES = frozenset({
     "admin.analytics.read",
     "admin.finance.costs.read",
     "admin.finance.wallets.read",
@@ -135,11 +135,11 @@ OWNER_READ_PERMISSIONS = frozenset({
 
 def require_permission(permission: str):
     """Create a fail-closed dependency for one narrowly scoped capability."""
-    if permission not in OWNER_READ_PERMISSIONS:
-        raise ValueError("Unknown or non-owner-read permission.")
+    if permission not in OWNER_CAPABILITIES:
+        raise ValueError("Unknown or non-allowlisted owner capability.")
 
     def permission_dependency(user: StudioUser = Depends(get_current_user)) -> StudioUser:
-        if user.role != "admin" or permission not in OWNER_READ_PERMISSIONS:
+        if user.role != "admin" or permission not in OWNER_CAPABILITIES:
             _record_denied_admin_access(user, permission)
             raise HTTPException(status_code=403, detail="This operation is not permitted.")
         return user
