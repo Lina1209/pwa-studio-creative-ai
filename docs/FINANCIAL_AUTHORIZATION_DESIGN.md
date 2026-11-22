@@ -11,7 +11,7 @@
 - Existing admin endpoints are read-only operational reporting (site analytics and provider-cost reporting). There is no delegated finance role registry, approval workflow, compensation mutation endpoint, or payment-provider refund workflow. The current static owner read-capability allowlist is a transitional least-privilege boundary, not delegated role management.
 - Supabase service-role credentials remain server-only. Browser clients and ordinary authenticated users must never receive finance mutation privileges.
 
-The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for future credit or cash mutations.
+The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for future credit or cash mutations.\n\n### Current implementation checkpoint\n\nThe backend now contains `finance_authorization.py` with fail-closed policy primitives for explicit permission grants, active assignment checks, exact scope checks, mandatory requester/approver separation, and three-identity separation for high-risk execution. Automated unit tests cover these rules. These primitives are not yet connected to a persistent assignment registry, public endpoints, credit ledger mutations, or payment-provider workflows. No finance roles or permissions have been assigned to real users. The grant object must be populated only by a future trusted server-side registry, never from request data.\n
 
 ## 2. Proposed role separation
 
