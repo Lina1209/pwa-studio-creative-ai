@@ -1501,6 +1501,35 @@ const movieHistoryStyle = document.createElement("style");
       });
       actions.append(directorButton,directorStatus);
     }
+    if(stage.key==="story"){
+      const storyboardButton=document.createElement("button"); storyboardButton.type="button"; storyboardButton.className="secondary-button";
+      storyboardButton.textContent="🎞 Создать покадровую раскадровку";
+      const storyboardStatus=document.createElement("p"); storyboardStatus.className="movie-stage-feedback";
+      storyboardStatus.setAttribute("role","status"); storyboardStatus.setAttribute("aria-live","polite");
+      storyboardStatus.style.cssText="display:block;flex-basis:100%;margin:4px 0;";
+      storyboardButton.addEventListener("click",async()=>{
+        if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите, чтобы создавать раскадровки с AI.");return;}
+        let sceneData;
+        try{sceneData=JSON.parse(inputs.storyboard.value);}
+        catch(_){storyboardStatus.textContent="Сначала запустите AI-режиссёра и получите структурированный список сцен.";return;}
+        if(!Array.isArray(sceneData?.scenes)||!sceneData.scenes.length){storyboardStatus.textContent="Сначала запустите AI-режиссёра: нужны готовые сцены.";return;}
+        const userId=authSession.user.id; storyboardButton.disabled=true; storyboardButton.textContent="🎞 Рисуем план кадров…";
+        storyboardStatus.textContent="Создаём последовательность кадров и описания для будущей генерации изображений.";
+        try{
+          const result=await apiRequest("/api/movie/storyboard",{method:"POST",body:JSON.stringify({
+            title:project.name||"Новый фильм",scenes:sceneData.scenes,
+            frame:project.frame||"16:9",visual_style:project.visualStyle||"Кинематографичный реализм",language:"Русский"
+          })});
+          if(authSession?.user?.id!==userId)return;
+          inputs.storyboard.value=JSON.stringify({scenes:sceneData.scenes.map((scene,index)=>({
+            ...scene,frames:result.scenes[index].frames
+          }))},null,2);
+          storyboardStatus.textContent="✓ Подготовлена покадровая раскадровка: "+result.scenes.reduce((n,scene)=>n+scene.frames.length,0)+" кадров в "+result.scenes.length+" сценах. Проверьте и сохраните черновик.";
+        }catch(error){if(authSession?.user?.id===userId)storyboardStatus.textContent="Не удалось создать раскадровку: "+error.message;}
+        finally{storyboardButton.disabled=false;storyboardButton.textContent="🎞 Создать покадровую раскадровку";}
+      });
+      actions.append(storyboardButton,storyboardStatus);
+    }
     const draftStatus=document.createElement("p"); draftStatus.className="movie-stage-feedback"; draftStatus.setAttribute("role","status"); draftStatus.setAttribute("aria-live","polite"); draftStatus.style.cssText="display:block;flex-basis:100%;margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,.12);font-size:14px;";
     let draftStatusTimer=null;
     draft.addEventListener("click",()=>{
