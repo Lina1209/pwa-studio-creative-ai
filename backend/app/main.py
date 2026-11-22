@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from datetime import date
 import json
 from uuid import UUID, uuid4
@@ -12,6 +13,12 @@ from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
+from app.services.ai_admission import (
+    AIAdmissionRejected,
+    AIAdmissionUnavailable,
+    reserve_ai_request,
+    finish_ai_request,
+)
 from app.services.admin_financial_reporting import (
     ProviderCostReportError,
     ProviderCostReportNotConfiguredError,
@@ -29,6 +36,7 @@ from app.services.generation_jobs import (
 )
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.app_name,
@@ -317,6 +325,44 @@ def admin_provider_cost_report(
     return report
 
 
+def _run_admitted_ai(operation: str, user_id: str, call):
+    try:
+        reservation = reserve_ai_request(
+            settings, user_id=UUID(user_id), endpoint=operation
+        )
+    except AIAdmissionRejected as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Достигнут временный лимит AI-запросов. Попробуйте немного позже.",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+    except AIAdmissionUnavailable as exc:
+        # Fail closed: do not make a billable provider call when the shared
+        # admission store cannot prove that this account is within its limits.
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка доступности AI временно недоступна. Попробуйте позже.",
+            headers={"Retry-After": "10"},
+        ) from exc
+
+    completed = False
+    try:
+        result = _run_ai(operation, call)
+        completed = True
+        return result
+    finally:
+        try:
+            finish_ai_request(settings, reservation, completed=completed)
+        except AIAdmissionUnavailable:
+            # Reservations expire from the active-concurrency window after
+            # five minutes; never log user content or provider credentials.
+            logger.warning(
+                "AI admission reservation finalization failed: endpoint=%s outcome=%s",
+                operation,
+                "completed" if completed else "released",
+            )
+
+
 def _run_ai(operation: str, call):
     try:
         return call()
@@ -347,7 +393,7 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
         "doxxing, harassment or malware. Respect consent for real people’s likenesses and voices. "
         "When a request is unsafe, briefly explain the boundary and offer a safe creative alternative."
     )
-    result = _run_ai("chat", lambda: ask_ai(settings, [
+    result = _run_admitted_ai("chat", user.user_id, lambda: ask_ai(settings, [
         {"role": "system", "content": system},
         {"role": "user", "content": payload.message},
     ]))
@@ -373,7 +419,7 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         f"Visual style: {payload.style or 'Choose a fitting style'}\n"
         f"User idea: {payload.idea}"
     )
-    result = _run_ai("prompts", lambda: ask_ai(settings, [
+    result = _run_admitted_ai("prompts", user.user_id, lambda: ask_ai(settings, [
         {"role": "system", "content": system},
         {"role": "user", "content": request},
     ]))
