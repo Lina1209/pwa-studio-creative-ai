@@ -38,6 +38,9 @@ def test_ai_usage_aggregate_separates_provider_estimates_from_real_billing():
     assert report["actual_billed_cost_usd"] is None
     assert report["billing_reconciliation"] == "not_available"
     assert len(report["by_provider_model"]) == 2
+    assert report["today_utc"] == date.today().isoformat()
+    assert {row["provider"] for row in report["today_by_provider"]} == {"deepseek", "gemini"}
+    assert report["today_by_provider"][0]["requests"] == 1
 
 
 def test_ai_usage_row_rejects_negative_tokens_and_naive_timestamps():
