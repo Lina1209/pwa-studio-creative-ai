@@ -13,6 +13,11 @@ class SiteAnalyticsUnavailable(RuntimeError):
     pass
 
 
+class SiteAnalyticsRateLimited(RuntimeError):
+    """The anonymous visitor token exceeded its short-window event budget."""
+    pass
+
+
 _ROUTE_GROUPS = {
     "home", "create", "movie", "editor", "prompts", "library", "account",
     "voice", "scenes", "assistant", "guide", "rules", "settings", "other",
@@ -56,12 +61,15 @@ def _rpc(settings: Settings, name: str, payload: dict) -> dict:
 def record_visit(settings: Settings, *, event_id: UUID, visitor_token: str, route_group: str) -> dict:
     if route_group not in _ROUTE_GROUPS:
         route_group = "other"
-    return _rpc(settings, "record_site_visit", {
+    result = _rpc(settings, "record_site_visit", {
         "p_event_id": str(event_id),
         "p_visit_date": datetime.now(timezone.utc).date().isoformat(),
         "p_visitor_token_hash": visitor_token_hash(visitor_token),
         "p_route_group": route_group,
     })
+    if result.get("rate_limited") is True:
+        raise SiteAnalyticsRateLimited("Visitor analytics rate limit exceeded.")
+    return result
 
 
 def get_visit_stats(settings: Settings) -> dict:
