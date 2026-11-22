@@ -326,3 +326,11 @@ jobs:
               10, 5, 15, 'token', '{}'::jsonb
             );")"
           wait "$FIRST_PID"
+          FIRST_RESULT="$(grep -E '^[0-9]+:t' "$FIRST_OUTPUT" | head -n 1)"
+          test -n "$FIRST_RESULT"
+          EXPECTED_SECOND="$(printf '%s' "$FIRST_RESULT" | sed 's/:t/:f/')"
+          test "$SECOND_OUTPUT" = "$EXPECTED_SECOND"
+          EVENT_COUNT="$("${DB[@]}" -c "select count(*) from public.generation_provider_cost_events where job_id = '$JOB_ID';")"
+          test "$EVENT_COUNT" = "1"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
