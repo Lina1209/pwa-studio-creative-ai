@@ -231,7 +231,7 @@ jobs:
 
           FIRST_OUTPUT="$(mktemp)"
           "${DB[@]}" -c "begin;
-            select event_id::text || ':' || created::text
+            select event_id::text || ':' || case when created then 't' else 'f' end
               from public.record_generation_provider_cost(
                 '$JOB_ID', '11111111-1111-4111-8111-111111111111',
                 'provider-cost-race-op-001', 'cost-race-provider', 'cost-race-model',
@@ -243,7 +243,7 @@ jobs:
           FIRST_PID=$!
           trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
           sleep 1
-          SECOND_OUTPUT="$("${DB[@]}" -c "select event_id::text || ':' || created::text
+          SECOND_OUTPUT="$("${DB[@]}" -c "select event_id::text || ':' || case when created then 't' else 'f' end
             from public.record_generation_provider_cost(
               '$JOB_ID', '11111111-1111-4111-8111-111111111111',
               'provider-cost-race-op-001', 'cost-race-provider', 'cost-race-model',
