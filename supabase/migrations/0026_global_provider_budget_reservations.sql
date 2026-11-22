@@ -207,7 +207,6 @@ declare
   v_daily_spent numeric(20,10);
   v_outstanding numeric(20,10);
   v_existing public.generation_provider_cost_reservations%rowtype;
-  v_utc_day_start timestamptz;
 begin
   if p_job_id is null or p_worker_id is null
      or length(btrim(p_worker_id)) not between 1 and 120 then
@@ -250,23 +249,16 @@ begin
 
   -- Historical unknown evidence without a matching durable reservation is
   -- unquantified exposure. Do not let any new billable operation pass it.
+  -- Unknown events with a reservation are counted in outstanding exposure.
+  -- An orphan unknown event has no defensible USD ceiling, so it blocks all
+  -- admissions until a privileged operator repairs the evidence.
   if exists (
     select 1
       from public.generation_provider_cost_events e
       left join public.generation_provider_cost_reservations r on r.job_id = e.job_id
-     where e.cost_source = 'unknown'
-       and (r.job_id is null or r.status in ('reserved', 'unknown'))
+     where e.cost_source = 'unknown' and r.job_id is null
   ) then
-    -- Existing unknown reservations are already represented in the exposure
-    -- total below; only orphaned unknown evidence is globally unquantified.
-    if exists (
-      select 1
-        from public.generation_provider_cost_events e
-        left join public.generation_provider_cost_reservations r on r.job_id = e.job_id
-       where e.cost_source = 'unknown' and r.job_id is null
-    ) then
-      return false;
-    end if;
+    return false;
   end if;
 
   select coalesce(sum(e.cost_usd), 0)
