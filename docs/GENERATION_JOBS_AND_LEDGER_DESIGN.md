@@ -405,3 +405,10 @@ The endpoint uses the shared AI admission/rate-limit path and usage telemetry. P
 The authenticated `POST /api/movie/storyboard` endpoint converts the user's reviewed, ordered director scenes into a bounded set of shot records. Every frame includes duration, shot type, camera angle and movement, composition, subject focus, a self-contained future image-generation prompt, and continuity notes. Input scenes and returned scene numbers must match exactly; frame numbers must be contiguous; each scene and frame collection is schema-validated and capped.
 
 The endpoint runs through shared AI admission and usage accounting, applies content checks to supplied scene text, and returns a generic error for malformed model output. The Mini Movie Studio button only runs after structured director scenes exist and stores the returned frames in the editable storyboard draft. These prompts are preparation for a later image provider integration; this feature itself does not generate or store images.
+
+
+### Character continuity bible
+
+The shot-by-shot storyboard response also includes a canonical `characters` collection, ordered by first appearance. Each reference stores a concise appearance description, wardrobe, signature visual details and a reusable reference-image prompt. Every shot carries an explicit character-name list. The API verifies that the bible contains exactly the distinct characters supplied by the director scenes, in first-appearance order, and that each shot references only characters present in its source scene. A model cannot silently invent a new character or attach an unrelated character to a scene.
+
+The UI preserves this character bible alongside the editable scene/frame draft. It is the continuity source for a future image provider adapter and reference-image workflow; it does not itself create a portrait, train a character model, or guarantee identity consistency from an image model. Those guarantees depend on a provider that supports reference images or image-to-image conditioning and on an explicit user-approved reference asset.
