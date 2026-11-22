@@ -152,6 +152,10 @@ class GenerationWorker:
                 journal = await self.repository.begin_provider_operation(
                     job.job_id, self.worker_id, job.provider, provider_idempotency_key
                 )
+                # A journal RPC may finish after heartbeat has already lost the
+                # lease. Never start or recover provider work from a stale claim.
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_after_journal_begin")
                 if journal.state == "provider_failed":
                     # A previous worker may have persisted provider-confirmed
                     # failure and crashed before failing the job row. Never
@@ -232,15 +236,21 @@ class GenerationWorker:
                             job, "provider_operation_quarantined"
                         )
 
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_before_result_journal")
                 if result.provider_request_id and journal.state != "result_received":
                     if not await self.repository.mark_provider_operation_accepted(
                         job.job_id, self.worker_id, result.provider_request_id
                     ):
                         return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                    if lost.is_set():
+                        return WorkerResult("lease_lost", "lease_lost_after_provider_acceptance")
                 if not await self.repository.mark_provider_operation_result_received(
                     job.job_id, self.worker_id, result.provider_request_id
                 ):
                     return WorkerResult("lease_lost", "provider_result_journal_rejected")
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_after_result_journal")
 
                 if result.provider.strip().lower() != job.provider.strip().lower():
                     raise ImageGenerationError("provider_result_mismatch", retryable=False)
@@ -270,6 +280,8 @@ class GenerationWorker:
                     expected_sha256_hex=actual_digest,
                     metadata=uploaded.metadata,
                 )
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_before_completion")
                 if not await self.repository.complete(
                     job.job_id, self.worker_id, verified.object_path
                 ):
