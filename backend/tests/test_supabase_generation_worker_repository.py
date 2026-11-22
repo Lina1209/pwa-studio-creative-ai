@@ -137,3 +137,56 @@ async def test_owner_job_inventory_rejects_invalid_row_and_page_exhaustion():
         repository = SupabaseGenerationJobRepository(settings(), client)
         with pytest.raises(WorkerRepositoryError):
             await repository.list_owner_job_inventory(owner, page_size=1, max_pages=1)
+
+
+
+@pytest.mark.asyncio
+async def test_provider_journal_begin_and_result_transition_use_service_role_rpc():
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, str(request.url), request.read()))
+        if request.url.path.endswith("/rpc/begin_generation_provider_operation"):
+            return httpx.Response(200, json=[{
+                "operation_id": "33333333-3333-4333-8333-333333333333",
+                "operation_state": "submitting",
+                "provider_request_id": None,
+                "created": True,
+            }])
+        return httpx.Response(200, json=True)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        operation = await repository.begin_provider_operation(
+            UUID("22222222-2222-4222-8222-222222222222"),
+            "worker-a", "fake", "22222222-2222-4222-8222-222222222222",
+        )
+        assert operation.created is True
+        assert operation.state == "submitting"
+        assert await repository.mark_provider_operation_result_received(
+            UUID("22222222-2222-4222-8222-222222222222"), "worker-a"
+        )
+
+    assert len(seen) == 2
+    assert seen[0][1].endswith("/rpc/begin_generation_provider_operation")
+    assert seen[1][1].endswith("/rpc/mark_generation_provider_operation_result_received")
+    assert b"p_provider_request_id" in seen[1][2]
+
+
+@pytest.mark.asyncio
+async def test_provider_journal_read_parses_existing_state_and_rejects_duplicates():
+    def handler(request):
+        return httpx.Response(200, json=[{
+            "id": "33333333-3333-4333-8333-333333333333",
+            "state": "unknown",
+            "provider_request_id": None,
+        }])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        operation = await repository.get_provider_operation(
+            UUID("22222222-2222-4222-8222-222222222222")
+        )
+    assert operation is not None
+    assert operation.state == "unknown"
+    assert operation.created is False
