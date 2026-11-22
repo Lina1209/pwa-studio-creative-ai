@@ -360,14 +360,14 @@ begin
   ),
   hold_allocation_mismatches as (
     select h.user_id,
-           count(*) filter (
+           (count(*) filter (
              where h.status = 'held'
                and coalesce(a.held_amount, 0) <> h.amount
-           )::bigint
-           + count(*) filter (
+           ))::bigint
+           + (count(*) filter (
              where h.status <> 'held'
                and coalesce(a.held_amount, 0) <> 0
-           )::bigint as mismatch_count
+           ))::bigint as mismatch_count
       from public.credit_holds h
       join bounded_users b using (user_id)
       left join (
@@ -380,9 +380,9 @@ begin
   ),
   lot_allocation_mismatches as (
     select l.user_id,
-           count(*) filter (
+           (count(*) filter (
              where l.reserved_credits <> coalesce(a.held_amount, 0)
-           )::bigint as mismatch_count
+           ))::bigint as mismatch_count
       from public.credit_lots l
       join bounded_users b using (user_id)
       left join (
