@@ -96,7 +96,7 @@ def test_quote_cannot_be_issued_without_an_approved_provider_cost_ceiling():
         (PricingRule("image_generation", "provider-a", "model-a", 7, "image"),),
     )
     with pytest.raises(PricingError, match="no provider cost ceiling"):
-        make_quote(catalog=catalog)
+        make_quote(catalog=catalog, quantity=1)
 
 
 def test_provider_cost_ceiling_must_be_positive_finite_decimal():
@@ -189,6 +189,8 @@ def test_server_catalog_loads_decimal_string_cost_ceiling():
             "model": "model-a",
             "credits_per_unit": 9,
             "unit_label": "image",
+            "min_quantity": 1,
+            "max_quantity": 4,
             "max_provider_cost_usd_per_unit": "0.012500",
         }],
     }))
