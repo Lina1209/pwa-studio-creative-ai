@@ -228,6 +228,8 @@ async def test_owner_inventory_paginates_and_returns_only_relative_names():
 
     def handler(request):
         requests.append(request)
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
         payload = request.read()
         import json
         body = json.loads(payload)
@@ -252,6 +254,8 @@ async def test_owner_inventory_paginates_and_returns_only_relative_names():
 @pytest.mark.asyncio
 async def test_owner_inventory_fails_closed_when_page_limit_is_reached():
     def handler(request):
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
         return httpx.Response(200, json=[{
             "name": "one.png",
             "created_at": "2026-11-01T00:00:00+00:00",
