@@ -1717,6 +1717,44 @@ begin
     raise exception 'Cumulative provider cost ceiling was not detected';
   end if;
 
+  -- Crossing the internal ceiling must never erase or reject a real provider
+  -- charge: preserve the actual evidence and flag the overrun for operators.
+  if not exists (
+    select 1 from public.generation_provider_cost_events
+     where job_id = '12121212-1212-4121-8121-121212121212'
+       and operation_key = 'provider-call-attempt-002'
+       and cost_usd = 0.03
+       and cost_source = 'estimated'
+       and cumulative_known_cost_usd = 0.06
+       and budget_limit_usd = 0.05
+       and budget_exceeded is true
+  ) then
+    raise exception 'Over-budget provider charge was not retained as actual cost evidence';
+  end if;
+
+  -- A provider usage ID is globally unique per provider. A second operation
+  -- key must not duplicate or silently reclassify the same billing record.
+  v_rejected := false;
+  begin
+    perform public.record_generation_provider_cost(
+      '12121212-1212-4121-8121-121212121212',
+      '11111111-1111-4111-8111-111111111111',
+      'provider-call-attempt-duplicate-usage',
+      'cost-test-provider', 'cost-test-model', 'provider-usage-001',
+      0.03, 'reported', 100, 20, 120, 'token',
+      '{"billing_reference":"synthetic-test-001"}'::jsonb
+    );
+  exception when unique_violation then v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Duplicate provider usage ID was accepted under another operation key';
+  end if;
+  if (select count(*) from public.generation_provider_cost_events
+       where provider = 'cost-test-provider'
+         and provider_usage_id = 'provider-usage-001') <> 1 then
+    raise exception 'Duplicate provider usage ID created more than one cost event';
+  end if;
+
   select * into v_unknown from public.record_generation_provider_cost(
     '12121212-1212-4121-8121-121212121212',
     '11111111-1111-4111-8111-111111111111',
