@@ -413,11 +413,104 @@ const movieHistoryStyle = document.createElement("style");
         + "; максимальная одновременная экспозиция: " + money(data.max_outstanding_reserved_usd) + ".";
       const note = $("#adminAiCostBudgetNote");
       if (note) note.textContent = data.note || "Оценка стоимости не является фактическим счётом провайдера.";
+      const unknown = $("#adminAiUnknownReservation");
+      if (unknown) {
+        unknown.replaceChildren();
+        const empty = document.createElement("option"); empty.value = ""; empty.textContent = "Нет доступных неизвестных резервов"; unknown.append(empty);
+        (data.unknown_reservations || []).forEach(item => {
+          const option = document.createElement("option"); option.value = item.request_id;
+          option.textContent = item.provider + " · " + item.model + " · " + money(item.reserved_cost_usd) + " · " + item.created_at;
+          unknown.append(option);
+        });
+      }
+      if ($("#adminAiGlobalDailyLimit")) $("#adminAiGlobalDailyLimit").value = data.global_daily_budget_usd;
+      if ($("#adminAiGlobalOutstandingLimit")) $("#adminAiGlobalOutstandingLimit").value = data.max_outstanding_reserved_usd;
+      if ($("#adminAiGlobalEnabled")) $("#adminAiGlobalEnabled").checked = Boolean(data.enabled);
+      const selectedProvider = (data.providers || []).find(item => item.provider === $("#adminAiBudgetProvider")?.value) || (data.providers || [])[0];
+      if (selectedProvider) {
+        $("#adminAiBudgetProvider").value = selectedProvider.provider;
+        $("#adminAiProviderDailyLimit").value = selectedProvider.daily_budget_usd;
+        $("#adminAiProviderEnabled").checked = Boolean(selectedProvider.enabled);
+      }
     } catch (error) {
       status.textContent = "Не удалось загрузить денежные лимиты AI: " + error.message;
     }
   };
   $("#refreshAdminAiCostBudget")?.addEventListener("click", loadAdminAiCostBudget);
+
+  const adminAiBudgetControlStatus = $("#adminAiBudgetControlStatus");
+  const saveAdminAiGlobalBudget = async () => {
+    if (!adminUiAuthorized || !window.confirm("Сохранить новые глобальные USD-лимиты AI? Новые значения начнут действовать сразу после записи.")) return;
+    adminAiBudgetControlStatus.textContent = "Сохраняем глобальные лимиты…";
+    try {
+      await apiRequest("/api/admin/ai/budget/global", {
+        method: "PUT", body: JSON.stringify({
+          enabled: $("#adminAiGlobalEnabled").checked,
+          daily_budget_usd: $("#adminAiGlobalDailyLimit").value,
+          max_outstanding_usd: $("#adminAiGlobalOutstandingLimit").value
+        })
+      });
+      adminAiBudgetControlStatus.textContent = "Глобальные лимиты обновлены. Журнал аудита содержит запрос изменения.";
+      await loadAdminAiCostBudget();
+    } catch (error) { adminAiBudgetControlStatus.textContent = "Не удалось изменить лимиты: " + error.message; }
+  };
+  $("#saveAdminAiGlobalBudget")?.addEventListener("click", saveAdminAiGlobalBudget);
+
+  $("#saveAdminAiProviderBudget")?.addEventListener("click", async () => {
+    if (!adminUiAuthorized || !window.confirm("Сохранить дневной лимит и состояние выбранного AI-провайдера?")) return;
+    adminAiBudgetControlStatus.textContent = "Сохраняем лимит провайдера…";
+    try {
+      await apiRequest("/api/admin/ai/budget/provider", {
+        method: "PUT", body: JSON.stringify({
+          provider: $("#adminAiBudgetProvider").value,
+          enabled: $("#adminAiProviderEnabled").checked,
+          daily_budget_usd: $("#adminAiProviderDailyLimit").value
+        })
+      });
+      adminAiBudgetControlStatus.textContent = "Лимит провайдера обновлён.";
+      await loadAdminAiCostBudget();
+    } catch (error) { adminAiBudgetControlStatus.textContent = "Не удалось изменить лимит: " + error.message; }
+  });
+
+  $("#adminAiBudgetProvider")?.addEventListener("change", () => {
+    const current = ($("#adminAiCostBudgetRows")?.dataset || {});
+    const label = $("#adminAiBudgetProvider").value;
+    const row = [...($("#adminAiCostBudgetRows")?.querySelectorAll("tr") || [])].find(item => item.children[0]?.textContent === label);
+    if (!row) return;
+    $("#adminAiProviderDailyLimit").value = row.children[1].textContent.replace("$", "");
+    $("#adminAiProviderEnabled").checked = row.children[6].textContent !== "Отключён";
+  });
+
+  $("#resolveAdminAiReservation")?.addEventListener("click", async () => {
+    if (!adminUiAuthorized) return;
+    const requestId = $("#adminAiUnknownReservation").value;
+    const resolution = $("#adminAiReservationResolution").value;
+    const note = $("#adminAiReservationNote").value.trim();
+    if (!requestId || note.length < 8) {
+      adminAiBudgetControlStatus.textContent = "Выберите неизвестный резерв и укажите причину не короче 8 символов.";
+      return;
+    }
+    const cost = $("#adminAiReservationCost").value;
+    if (resolution === "record_estimated_cost" && (cost === "" || !Number.isFinite(Number(cost)) || Number(cost) < 0)) {
+      adminAiBudgetControlStatus.textContent = "Укажите неотрицательную оценку расхода в USD.";
+      return;
+    }
+    if (!window.confirm("Подтвердить решение по неизвестному резерву? Оно изменит финансовый журнал и не может быть отменено автоматически.")) return;
+    adminAiBudgetControlStatus.textContent = "Проверяем и разрешаем резерв…";
+    try {
+      await apiRequest("/api/admin/ai/budget/reservations/resolve", {
+        method: "POST", body: JSON.stringify({
+          request_id: requestId, resolution,
+          actual_estimated_cost_usd: resolution === "record_estimated_cost" ? cost : null,
+          note
+        })
+      });
+      $("#adminAiReservationNote").value = "";
+      $("#adminAiReservationCost").value = "";
+      adminAiBudgetControlStatus.textContent = "Резерв обработан. Обновляем финансовые показатели…";
+      await loadAdminAiCostBudget();
+    } catch (error) { adminAiBudgetControlStatus.textContent = "Не удалось обработать резерв: " + error.message; }
+  });
 
   const setAdminAiUsageDefaultDates = () => {
     const to = new Date(), from = new Date(to);
