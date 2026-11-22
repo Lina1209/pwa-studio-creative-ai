@@ -62,6 +62,9 @@ app.add_middleware(
 async def apply_security_headers(request, call_next):
     """Apply defensive browser headers to API and health responses."""
     response = await call_next(request)
+    if request.url.path.startswith(settings.api_prefix + "/"):
+        response.headers.setdefault("Cache-Control", "private, no-store")
+        response.headers.setdefault("Pragma", "no-cache")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
