@@ -115,6 +115,25 @@ class CreditLedgerEntryResponse(BaseModel):
     created_at: datetime
 
 
+class CreditLotResponse(BaseModel):
+    id: UUID
+    lot_type: Literal["free", "subscription", "purchased", "bonus", "adjustment", "legacy"]
+    granted_credits: int = Field(ge=1)
+    available_credits: int = Field(ge=0)
+    reserved_credits: int = Field(ge=0)
+    expires_at: datetime | None = None
+    created_at: datetime
+
+
+class CreditHoldAllocationResponse(BaseModel):
+    id: UUID
+    hold_id: UUID
+    lot_id: UUID
+    amount: int = Field(ge=1)
+    status: Literal["held"]
+    created_at: datetime
+
+
 class CreditWalletResponse(BaseModel):
     user_id: UUID
     currency_unit: Literal["credit"] = "credit"
@@ -123,3 +142,5 @@ class CreditWalletResponse(BaseModel):
     total_credits: int = Field(ge=0)
     holds: list[CreditHoldResponse]
     ledger: list[CreditLedgerEntryResponse]
+    lots: list[CreditLotResponse]
+    allocations: list[CreditHoldAllocationResponse]
