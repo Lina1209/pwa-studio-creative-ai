@@ -64,7 +64,7 @@ def test_quote_uses_server_catalog_and_calculates_integer_amount():
     assert quote.price_version == "approved-test-v3"
     assert quote.snapshot()["maximum_authorized_charge"] == 21
     assert quote.snapshot()["credit_unit"] == "credit"
-    assert quote.snapshot()["maximum_provider_cost_usd"] == "0.075"
+    assert quote.snapshot()["maximum_provider_cost_usd"] == "0.225"
     assert quote.snapshot()["provider_cost_currency"] == "USD"
     verified = verify(quote.snapshot())
     assert verified.quote_id == quote.quote_id
@@ -103,7 +103,7 @@ def test_provider_cost_ceiling_must_be_positive_finite_decimal():
     for invalid in (Decimal("0"), Decimal("-0.01"), Decimal("NaN"), Decimal("Infinity")):
         with pytest.raises(PricingError, match="positive finite USD decimal"):
             PricingRule("image_generation", "provider-a", "model-a", 7, "image",
-                        max_provider_cost_usd=invalid)
+                        max_provider_cost_usd_per_unit=invalid)
 
 
 def test_quote_tampering_is_detected_even_when_amount_and_limit_are_changed():
@@ -189,11 +189,11 @@ def test_server_catalog_loads_decimal_string_cost_ceiling():
             "model": "model-a",
             "credits_per_unit": 9,
             "unit_label": "image",
-            "max_provider_cost_usd": "0.012500",
+            "max_provider_cost_usd_per_unit": "0.012500",
         }],
     }))
     quote = make_quote(catalog=catalog)
-    assert quote.snapshot()["maximum_provider_cost_usd"] == "0.012500"
+    assert quote.snapshot()["maximum_provider_cost_usd"] == "0.037500"
 
 
 def test_server_catalog_rejects_non_string_provider_cost_ceiling():
@@ -206,7 +206,7 @@ def test_server_catalog_rejects_non_string_provider_cost_ceiling():
                 "model": "model-a",
                 "credits_per_unit": 9,
                 "unit_label": "image",
-                "max_provider_cost_usd": 0.0125,
+                "max_provider_cost_usd_per_unit": 0.0125,
             }],
         }))
 
