@@ -488,6 +488,35 @@ const movieHistoryStyle = document.createElement("style");
         } else {
           actions.textContent = row.decision_reason || "—";
         }
+        const timelineButton = document.createElement("button");
+        timelineButton.type = "button"; timelineButton.className = "secondary-button"; timelineButton.textContent = "История";
+        timelineButton.addEventListener("click", async () => {
+          const existing = tr.nextElementSibling;
+          if (existing?.classList.contains("finance-event-row")) { existing.remove(); return; }
+          timelineButton.disabled = true;
+          try {
+            const history = await apiRequest("/api/finance/requests/" + encodeURIComponent(row.request_id) + "/events");
+            const detailRow = document.createElement("tr"); detailRow.className = "finance-event-row";
+            const detailCell = document.createElement("td"); detailCell.colSpan = 8;
+            const list = document.createElement("ol");
+            (history.events || []).forEach(event => {
+              const item = document.createElement("li");
+              const label = ({ "request.created":"Заявка создана", "request.approved":"Заявка подтверждена", "request.rejected":"Заявка отклонена", "request.cancelled":"Заявка отменена" })[event.event_type] || event.event_type;
+              item.textContent = new Date(event.occurred_at).toLocaleString("ru-RU") + " · " + label + " · " + event.actor_id + " · " + event.reason;
+              list.appendChild(item);
+            });
+            if (!list.children.length) {
+              const empty = document.createElement("span"); empty.textContent = "История пока пуста."; detailCell.appendChild(empty);
+            } else detailCell.appendChild(list);
+            detailRow.appendChild(detailCell); tr.after(detailRow);
+          } catch (error) {
+            const detailRow = document.createElement("tr"); detailRow.className = "finance-event-row";
+            const detailCell = document.createElement("td"); detailCell.colSpan = 8;
+            detailCell.textContent = "Не удалось загрузить историю: " + error.message;
+            detailRow.appendChild(detailCell); tr.after(detailRow);
+          } finally { timelineButton.disabled = false; }
+        });
+        actions.appendChild(timelineButton);
         tr.appendChild(actions); body.appendChild(tr);
       });
       financeQueueCursor = data.next_cursor || null;
