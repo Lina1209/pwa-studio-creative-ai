@@ -228,3 +228,82 @@ async def verify_owner_succeeded_results(
         integrity_failures=tuple(sorted(failures)),
         deferred_checks=tuple(sorted(deferred)),
     )
+
+@dataclass(frozen=True)
+class GenerationJobRecoveryReport:
+    owner_id: UUID
+    scanned_jobs: int
+    active_leases: tuple[str, ...]
+    expired_leases_reclaimable: tuple[str, ...]
+    expired_leases_exhausted: tuple[str, ...]
+    queued_jobs: tuple[str, ...]
+    retry_wait_ready: tuple[str, ...]
+    retry_wait_delayed: tuple[str, ...]
+    integrity_warnings: tuple[tuple[str, str], ...]
+
+
+def plan_generation_job_recovery(
+    *,
+    owner_id: UUID,
+    jobs: list[GenerationJobInventoryRow],
+    now: datetime | None = None,
+) -> GenerationJobRecoveryReport:
+    """Classify worker leases and retry eligibility without changing DB state.
+
+    The database claim RPC remains the sole authority that actually reclaims
+    expired leases or terminally fails exhausted jobs.
+    """
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("Recovery scan time must be timezone-aware.")
+    current = current.astimezone(timezone.utc)
+    active: list[str] = []
+    reclaimable: list[str] = []
+    exhausted: list[str] = []
+    queued: list[str] = []
+    retry_ready: list[str] = []
+    retry_delayed: list[str] = []
+    warnings: list[tuple[str, str]] = []
+    seen: set[UUID] = set()
+
+    for job in jobs:
+        if job.job_id in seen:
+            raise GenerationStorageRecoveryError("duplicate_job_inventory_row")
+        seen.add(job.job_id)
+        job_id = str(job.job_id)
+        if job.status == "running":
+            lease_end = _parse_timestamp(job.lease_expires_at)
+            if lease_end is None:
+                warnings.append((job_id, "running_job_missing_valid_lease_expiry"))
+            elif lease_end > current:
+                active.append(job_id)
+            elif job.attempt_count >= job.max_attempts:
+                exhausted.append(job_id)
+            else:
+                reclaimable.append(job_id)
+        elif job.status == "queued":
+            queued.append(job_id)
+        elif job.status == "retry_wait":
+            available = _parse_timestamp(job.available_at)
+            if available is None:
+                warnings.append((job_id, "retry_wait_job_missing_valid_available_at"))
+            elif available <= current:
+                retry_ready.append(job_id)
+            else:
+                retry_delayed.append(job_id)
+        elif job.status not in {
+            "succeeded", "failed", "cancel_requested", "cancelled", "expired"
+        }:
+            warnings.append((job_id, "unknown_job_status"))
+
+    return GenerationJobRecoveryReport(
+        owner_id=owner_id,
+        scanned_jobs=len(jobs),
+        active_leases=tuple(sorted(active)),
+        expired_leases_reclaimable=tuple(sorted(reclaimable)),
+        expired_leases_exhausted=tuple(sorted(exhausted)),
+        queued_jobs=tuple(sorted(queued)),
+        retry_wait_ready=tuple(sorted(retry_ready)),
+        retry_wait_delayed=tuple(sorted(retry_delayed)),
+        integrity_warnings=tuple(sorted(warnings)),
+    )
