@@ -223,6 +223,80 @@ async def test_boolean_size_metadata_is_rejected_as_invalid():
 
 
 @pytest.mark.asyncio
+async def test_existing_result_verification_checks_private_metadata_and_hashes_bytes():
+    def handler(request):
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        verified = await storage.verify_existing_image(
+            owner_id=OWNER, job_id=JOB, object_path=f"{OWNER}/generated/{JOB}.png"
+        )
+    assert verified.is_private is True
+    assert verified.content_type == "image/png"
+    assert verified.size_bytes == len(PNG)
+    assert verified.sha256_hex == calculate_sha256(PNG)
+
+
+@pytest.mark.asyncio
+async def test_existing_result_verification_rejects_foreign_or_mismatched_path_before_io():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: (_ for _ in ()).throw(AssertionError("No request expected"))
+    )) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(GenerationResultStorageError):
+            await storage.verify_existing_image(
+                owner_id=OWNER, job_id=JOB,
+                object_path=f"{UUID(int=9)}/generated/{JOB}.png",
+            )
+        with pytest.raises(GenerationResultStorageError):
+            await storage.verify_existing_image(
+                owner_id=OWNER, job_id=JOB,
+                object_path=f"{OWNER}/generated/{UUID(int=8)}.png",
+            )
+
+
+@pytest.mark.asyncio
+async def test_existing_result_verification_rejects_corrupt_size_and_public_bucket():
+    mode = {"public": False, "size": len(PNG)}
+
+    def handler(request):
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": mode["public"]})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": mode["size"], "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        mode["size"] = len(PNG) + 1
+        with pytest.raises(GenerationResultStorageError):
+            await storage.verify_existing_image(
+                owner_id=OWNER, job_id=JOB, object_path=f"{OWNER}/generated/{JOB}.png"
+            )
+        mode["public"] = True
+        mode["size"] = len(PNG)
+        with pytest.raises(GenerationResultStorageError):
+            await storage.verify_existing_image(
+                owner_id=OWNER, job_id=JOB, object_path=f"{OWNER}/generated/{JOB}.png"
+            )
+
+
+@pytest.mark.asyncio
 async def test_owner_inventory_paginates_and_returns_only_relative_names():
     requests = []
 
