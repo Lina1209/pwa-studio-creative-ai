@@ -204,6 +204,9 @@ async def test_worker_generates_verifies_upload_then_completes():
     result = await make_worker(repo).process(make_job())
     assert result.outcome == "succeeded"
     assert repo.calls[-1][0] == "complete"
+    completion = repo.calls[-1][1]
+    assert completion[2] == f"{OWNER}/generated/{JOB_ID}.png"
+    assert completion[3] == calculate_sha256(IMAGE)
 
 
 @pytest.mark.asyncio
