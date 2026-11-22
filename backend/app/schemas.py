@@ -195,11 +195,10 @@ class FinanceOperationRequestCreate(BaseModel):
     target_user_id: UUID
     amount: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
     currency_code: str = Field(pattern=r"^[A-Z]{3}$")
-    scope_key: str = Field(min_length=1, max_length=200)
     reason: str = Field(min_length=1, max_length=500)
     idempotency_key: UUID
 
-    @field_validator("scope_key", "reason")
+    @field_validator("reason")
     @classmethod
     def reject_untrimmed_finance_text(cls, value: str) -> str:
         if value.strip() != value:
