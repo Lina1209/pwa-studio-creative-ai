@@ -117,18 +117,22 @@ def test_movie_director_requires_authentication(monkeypatch):
 def test_movie_storyboard_returns_scene_matched_ordered_frames(monkeypatch):
     import app.main as main
     frames = [
-        {"frame_number":1,"duration_seconds":4,"shot_type":"Общий план","camera_angle":"На уровне глаз",
+        {"frame_number":1,"duration_seconds":4,"characters":["Аня"],"shot_type":"Общий план","camera_angle":"На уровне глаз",
          "camera_movement":"Медленный наезд","composition":"Героиня слева, маяк на горизонте.",
          "subject_focus":"Девочка на берегу","visual_prompt":"Кинематографичный широкий кадр девочки на берегу у маяка, мягкий рассветный свет.",
          "continuity_notes":"Красный шарф героини остаётся неизменным."},
-        {"frame_number":2,"duration_seconds":3,"shot_type":"Крупный план","camera_angle":"Три четверти",
+        {"frame_number":2,"duration_seconds":3,"characters":["Аня"],"shot_type":"Крупный план","camera_angle":"Три четверти",
          "camera_movement":"Статичная камера","composition":"Лицо героини в центре кадра.",
          "subject_focus":"Взгляд героини","visual_prompt":"Крупный кинематографичный портрет девочки с красным шарфом на фоне моря.",
          "continuity_notes":"Сохранить красный шарф и направление взгляда."}
     ]
     result_scenes=[{"scene_number":1,"frames":frames}]
+    character_bible=[{"name":"Аня","appearance":"Подросток с тёмными волосами и выразительными глазами",
+                      "wardrobe":"Красный шерстяной шарф и тёмное пальто",
+                      "signature_details":"Красный шарф с узлом сбоку",
+                      "reference_prompt":"Один и тот же персонаж: тёмные волосы, красный шарф, тёмное пальто."}]
     calls=[]; usage=[]
-    monkeypatch.setattr(main,"_run_admitted_ai",lambda operation,user_id,call: calls.append(operation) or SimpleNamespace(text=json.dumps({"scenes":result_scenes},ensure_ascii=False),actual_model="storyboard-test"))
+    monkeypatch.setattr(main,"_run_admitted_ai",lambda operation,user_id,call: calls.append(operation) or SimpleNamespace(text=json.dumps({"characters":character_bible,"scenes":result_scenes},ensure_ascii=False),actual_model="storyboard-test"))
     monkeypatch.setattr(main,"record_ai_usage",lambda *a,**k: usage.append(k))
     c=_client()
     scene={"scene_number":1,"title":"У маяка","location":"Берег моря","time_of_day":"Рассвет",
@@ -139,6 +143,8 @@ def test_movie_storyboard_returns_scene_matched_ordered_frames(monkeypatch):
         response=c.post("/api/movie/storyboard",json={"title":"Маяк","scenes":[scene],"frame":"16:9"})
         assert response.status_code==200
         assert len(response.json()["scenes"][0]["frames"])==2
+        assert response.json()["characters"][0]["name"]=="Аня"
+        assert response.json()["scenes"][0]["frames"][0]["characters"]==["Аня"]
         assert calls==["movie_storyboard"]
         assert usage[0]["endpoint"]=="movie_storyboard"
     finally:
@@ -147,10 +153,10 @@ def test_movie_storyboard_returns_scene_matched_ordered_frames(monkeypatch):
 
 def test_movie_storyboard_rejects_frame_sequence_or_scene_mismatch(monkeypatch):
     import app.main as main
-    frame={"frame_number":2,"duration_seconds":4,"shot_type":"Общий","camera_angle":"Спереди",
+    frame={"frame_number":2,"duration_seconds":4,"characters":[],"shot_type":"Общий","camera_angle":"Спереди",
            "camera_movement":"Статика","composition":"Центр","subject_focus":"Героиня",
            "visual_prompt":"Героиня у моря в мягком свете.","continuity_notes":"Красный шарф."}
-    monkeypatch.setattr(main,"_run_admitted_ai",lambda *a,**k: SimpleNamespace(text=json.dumps({"scenes":[{"scene_number":1,"frames":[frame]}]}),actual_model="test"))
+    monkeypatch.setattr(main,"_run_admitted_ai",lambda *a,**k: SimpleNamespace(text=json.dumps({"characters":[],"scenes":[{"scene_number":1,"frames":[frame]}]}),actual_model="test"))
     monkeypatch.setattr(main,"record_ai_usage",lambda *a,**k: None)
     c=_client()
     scene={"scene_number":1,"title":"Сцена","location":"Берег","time_of_day":"День",
@@ -172,3 +178,25 @@ def test_movie_storyboard_requires_authentication(monkeypatch):
            "camera_shots":["Общий"],"lighting":"Свет","transition":"Склейка"}
     response=c.post("/api/movie/storyboard",json={"title":"Фильм","scenes":[scene]})
     assert response.status_code==401
+
+
+def test_movie_storyboard_rejects_hallucinated_character_reference(monkeypatch):
+    import app.main as main
+    frame={"frame_number":1,"duration_seconds":4,"characters":["Чужой персонаж"],
+           "shot_type":"Общий","camera_angle":"Спереди","camera_movement":"Статика",
+           "composition":"Центр","subject_focus":"Персонаж",
+           "visual_prompt":"Персонаж стоит у маяка.","continuity_notes":"Сохранить костюм."}
+    character={"name":"Чужой персонаж","appearance":"Неизвестный герой","wardrobe":"Пальто",
+               "signature_details":"Шляпа","reference_prompt":"Портрет неизвестного героя."}
+    payload={"characters":[character],"scenes":[{"scene_number":1,"frames":[frame]}]}
+    monkeypatch.setattr(main,"_run_admitted_ai",lambda *a,**k: SimpleNamespace(text=json.dumps(payload,ensure_ascii=False),actual_model="test"))
+    monkeypatch.setattr(main,"record_ai_usage",lambda *a,**k: None)
+    c=_client()
+    scene={"scene_number":1,"title":"Сцена","location":"Берег","time_of_day":"День",
+           "estimated_seconds":10,"characters":["Аня"],"action":"Аня смотрит вдаль",
+           "visual_description":"Аня у моря","camera_shots":["Общий"],"lighting":"Мягкий свет","transition":"Склейка"}
+    try:
+        response=c.post("/api/movie/storyboard",json={"title":"Фильм","scenes":[scene]})
+        assert response.status_code==502
+    finally:
+        app.dependency_overrides.clear()
