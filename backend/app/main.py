@@ -53,6 +53,10 @@ from app.services.finance_operation_requests import (
     list_finance_operation_requests,
     read_finance_operation_request_events,
 )
+from app.services.admin_credit_ledger import (
+    AdminCreditLedgerUnavailable,
+    list_admin_credit_ledger,
+)
 from app.services.credit_wallet_service import (
     CreditWalletNotConfigured,
     CreditWalletUnavailable,
@@ -461,6 +465,54 @@ def admin_user_wallet_summary(
         "active_holds_count": len(snapshot.holds),
         "lot_count": snapshot.lot_count,
         "allocation_count": snapshot.allocation_count,
+    }
+
+
+@app.get(f"{settings.api_prefix}/admin/financial/ledger/{'{target_user_id}'}")
+def admin_user_credit_ledger(
+    target_user_id: UUID,
+    response: Response,
+    before_created_at: datetime | None = None,
+    before_id: int | None = None,
+    limit: int = 50,
+    user: StudioUser = Depends(require_permission("admin.finance.wallets.read")),
+):
+    """Read a bounded page of one user's credit-unit ledger; every read is audited."""
+    if not 1 <= limit <= 100:
+        raise HTTPException(status_code=422, detail="Ledger page limit must be between 1 and 100.")
+    if (before_created_at is None) != (before_id is None):
+        raise HTTPException(status_code=422, detail="Ledger cursor requires timestamp and entry ID.")
+    if before_created_at is not None and before_created_at.tzinfo is None:
+        raise HTTPException(status_code=422, detail="Ledger cursor timestamp must include a timezone.")
+    try:
+        entries = list_admin_credit_ledger(
+            settings, user_id=target_user_id,
+            before_created_at=before_created_at, before_id=before_id, limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid ledger query.") from exc
+    except AdminCreditLedgerUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Credit ledger is temporarily unavailable.") from exc
+    try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id),
+            action="admin.user.view", outcome="allowed",
+            resource_type="credit_ledger", resource_id=target_user_id,
+            reason="Viewed user credit ledger page",
+        )
+    except AdminAuditUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Financial access audit is temporarily unavailable.") from exc
+    next_cursor = None
+    if len(entries) == limit:
+        last = entries[-1]
+        next_cursor = {"before_created_at": last["created_at"], "before_id": last["entry_id"]}
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "user_id": str(target_user_id),
+        "unit": "credit",
+        "entries": entries,
+        "next_cursor": next_cursor,
+        "accounting_note": "Credit units only; this is not a cash, payment, revenue, or profit report.",
     }
 
 
