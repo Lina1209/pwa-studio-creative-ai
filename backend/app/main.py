@@ -401,6 +401,47 @@ def admin_provider_cost_report(
 
 
 
+@app.get(f"{settings.api_prefix}/admin/financial/wallets/{target_user_id}")
+def admin_user_wallet_summary(
+    target_user_id: UUID,
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.finance.wallets.read")),
+):
+    """Read a minimal user wallet summary; the access itself is audited."""
+    try:
+        snapshot = get_credit_wallet_snapshot(
+            settings, user_id=target_user_id, history_limit=1
+        )
+    except CreditWalletNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Credit wallet reporting is not configured.") from exc
+    except CreditWalletUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Credit wallet reporting is temporarily unavailable.") from exc
+    try:
+        record_admin_audit_event(
+            settings,
+            actor_user_id=UUID(user.user_id),
+            action="admin.user.view",
+            outcome="allowed",
+            resource_type="credit_wallet",
+            resource_id=target_user_id,
+            reason="Viewed user credit wallet summary",
+        )
+    except AdminAuditUnavailable as exc:
+        # Do not disclose financial data if the access cannot be audited.
+        raise HTTPException(status_code=503, detail="Financial access audit is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "user_id": str(snapshot.user_id),
+        "currency_unit": "credit",
+        "available_credits": snapshot.available_credits,
+        "reserved_credits": snapshot.reserved_credits,
+        "total_credits": snapshot.available_credits + snapshot.reserved_credits,
+        "active_holds_count": len(snapshot.holds),
+        "lot_count": snapshot.lot_count,
+        "allocation_count": snapshot.allocation_count,
+    }
+
+
 @app.get(f"{settings.api_prefix}/admin/audit-events")
 def admin_audit_events(
     response: Response,
