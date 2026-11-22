@@ -585,7 +585,9 @@ const movieHistoryStyle = document.createElement("style");
         let localProjects;
         try {
           const stored = JSON.parse(localStorage.getItem(projectKey) || "[]");
-          localProjects = Array.isArray(stored) ? stored.filter(project => project && typeof project === "object" && project.id) : [];
+          localProjects = Array.isArray(stored)
+            ? stored.filter(project => project && typeof project === "object" && project.id && !deletedIds.includes(project.id))
+            : [];
         } catch { localProjects = []; }
         const rows = localProjects.map(project => movieToCloudRow(project, userId));
         // Persist UUID normalization only to the account-specific local key captured above.
