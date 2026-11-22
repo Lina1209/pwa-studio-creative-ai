@@ -22,8 +22,8 @@ class FinanceRoleConflict(RuntimeError):
 
 ROLE_PERMISSIONS = {
     "finance_operator": frozenset({
-        "credit.compensation.read", "credit.compensation.request",
-        "billing.refund.read", "billing.refund.request",
+        "credit.compensation.read", "credit.compensation.request", "credit.compensation.cancel",
+        "billing.refund.read", "billing.refund.request", "billing.refund.cancel",
     }),
     "finance_approver": frozenset({
         "credit.compensation.read", "credit.compensation.approve",
