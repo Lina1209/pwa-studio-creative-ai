@@ -3281,7 +3281,7 @@ begin
   end if;
 
   select count(*) into v_count
-    from public.read_admin_audit_events(null, 10)
+    from public.read_admin_audit_events(null, null, 10)
    where id = v_event and actor_user_id = v_actor
      and action = 'admin.access' and outcome = 'allowed';
   if v_count <> 1 then
@@ -3314,7 +3314,7 @@ begin
   end;
 
   begin
-    perform * from public.read_admin_audit_events(null, 201);
+    perform * from public.read_admin_audit_events(null, null, 201);
     raise exception 'unbounded audit page was accepted';
   exception when sqlstate '22023' then
     null;
