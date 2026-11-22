@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
@@ -130,3 +131,57 @@ def test_finance_request_cannot_target_the_requester_account(monkeypatch):
             idempotency_key=IDEMPOTENCY,
         )
     assert called == []
+
+
+
+def test_list_finance_requests_uses_server_rpc_and_validates_scope_and_cursor(monkeypatch):
+    calls = []
+    requested_at = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+    row = {
+        "request_id": str(REQUEST), "requester_id": str(ACTOR),
+        "request_type": "credit_compensation", "target_user_id": str(TARGET),
+        "amount": "12", "currency_code": "CRD",
+        "scope_key": f"user:{TARGET}", "reason": "Review",
+        "status": "pending", "requested_at": requested_at.isoformat(),
+        "decided_by": None, "decided_at": None, "decision_reason": None,
+        "cancelled_at": None,
+    }
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or [row])
+    result = service.list_finance_operation_requests(
+        SETTINGS, credit_scope_keys=[f"user:{TARGET}"], billing_scope_keys=[],
+        status="pending", before=requested_at, before_id=REQUEST, limit=50,
+    )
+    assert result[0]["request_id"] == REQUEST
+    assert result[0]["amount"] == Decimal("12")
+    name, payload = calls[0]
+    assert name == "list_finance_operation_requests"
+    assert payload["p_credit_scope_keys"] == [f"user:{TARGET}"]
+    assert payload["p_billing_scope_keys"] == []
+    assert payload["p_before_id"] == str(REQUEST)
+    assert payload["p_limit"] == 50
+
+
+def test_list_finance_requests_rejects_malformed_scope_before_rpc(monkeypatch):
+    called = []
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
+    with pytest.raises(ValueError):
+        service.list_finance_operation_requests(
+            SETTINGS, credit_scope_keys=["user:not-a-uuid"], billing_scope_keys=[],
+            status=None, before=None, before_id=None, limit=50,
+        )
+    assert called == []
+
+
+def test_list_finance_requests_rejects_malformed_rpc_rows(monkeypatch):
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: [{
+        "request_id": str(REQUEST), "requester_id": str(ACTOR),
+        "request_type": "credit_compensation", "target_user_id": str(TARGET),
+        "amount": "1.5", "currency_code": "CRD",
+        "scope_key": f"user:{TARGET}", "reason": "Bad fraction",
+        "status": "pending", "requested_at": "2026-11-23T12:00:00Z",
+    }])
+    with pytest.raises(service.FinanceRequestUnavailable):
+        service.list_finance_operation_requests(
+            SETTINGS, credit_scope_keys=[f"user:{TARGET}"], billing_scope_keys=[],
+            status=None, before=None, before_id=None, limit=50,
+        )
