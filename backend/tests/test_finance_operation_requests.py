@@ -19,7 +19,7 @@ def test_create_request_uses_verified_actor_and_idempotent_server_rpc(monkeypatc
     monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or str(REQUEST))
     result = service.create_finance_operation_request(
         SETTINGS, requester_id=ACTOR, request_type="credit_compensation",
-        target_user_id=TARGET, amount=Decimal("12.5000"), currency_code="KZT",
+        target_user_id=TARGET, amount=Decimal("12"), currency_code="CRD",
         scope_key="tenant-a", reason="Approved support case",
         idempotency_key=IDEMPOTENCY,
     )
@@ -28,7 +28,7 @@ def test_create_request_uses_verified_actor_and_idempotent_server_rpc(monkeypatc
     assert name == "create_finance_operation_request"
     assert payload["p_requester_id"] == str(ACTOR)
     assert payload["p_target_user_id"] == str(TARGET)
-    assert payload["p_amount"] == "12.5000"
+    assert payload["p_amount"] == "12"
     assert payload["p_idempotency_key"] == str(IDEMPOTENCY)
 
 
@@ -51,7 +51,7 @@ def test_create_request_rejects_untrusted_or_noncanonical_fields(monkeypatch):
     monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
     for values in [
         {"request_type": "owner"},
-        {"currency_code": "usd"},
+        {"currency_code": "crd"},
         {"scope_key": " tenant-a"},
         {"reason": " "},
     ]:
@@ -99,3 +99,21 @@ def test_invalid_decisions_and_mismatched_rpc_ids_fail_closed(monkeypatch):
             SETTINGS, request_id=REQUEST, actor_id=TARGET,
             decision="reject", reason="Decision",
         )
+
+def test_credit_compensation_requires_whole_credits_and_cash_refund_requires_currency(monkeypatch):
+    called = []
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True) or str(REQUEST))
+    invalid = [
+        ("credit_compensation", Decimal("1.5"), "CRD"),
+        ("credit_compensation", Decimal("1"), "KZT"),
+        ("billing_refund", Decimal("1"), "CRD"),
+    ]
+    for request_type, amount, currency in invalid:
+        with pytest.raises(ValueError):
+            service.create_finance_operation_request(
+                SETTINGS, requester_id=ACTOR, request_type=request_type,
+                target_user_id=TARGET, amount=amount, currency_code=currency,
+                scope_key="user:" + str(TARGET), reason="Unit mismatch",
+                idempotency_key=IDEMPOTENCY,
+            )
+    assert called == []
