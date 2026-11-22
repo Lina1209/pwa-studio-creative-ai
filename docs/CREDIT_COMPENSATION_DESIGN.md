@@ -55,9 +55,9 @@ The database function must not invent an expiry, extend an expired lot, or silen
 
 ## 5. Authorization boundary
 
-Current schema evidence establishes service-role-only access to financial mutation RPCs, but does not establish a complete, verified application-level administrator/finance-operator role model or a two-person approval mechanism.
+The backend now assigns the owner administrator role only when the verified Supabase JWT `sub` UUID matches the server-only `OWNER_USER_IDS` allowlist. The verified email claim is display/contact data only and cannot grant admin access. A missing or malformed UUID allowlist fails closed. This is an owner allowlist, not a delegated finance-operator permission system; no scoped finance permissions or two-person approval mechanism exists yet.
 
-Therefore, do not expose a compensation RPC to `authenticated`, `anon`, or the browser. Do not treat a caller-supplied `actor_user_id` as proof of authorization. Before implementing the mutation, establish a trusted backend authorization check backed by a server-controlled role/permission source, log the verified actor, and define who may approve and who may execute an adjustment. The broad Supabase service-role credential must remain server-side.
+Therefore, do not expose a compensation RPC to `authenticated`, `anon`, or the browser. Do not treat a caller-supplied `actor_user_id` as proof of authorization. Any future compensation endpoint must use the trusted backend identity returned by `require_admin`, persist that verified actor in an immutable audit event, and add a dedicated financial permission/approval policy before enabling execution. The broad Supabase service-role credential must remain server-side. The owner UUID must be explicitly verified in Supabase Authentication → Users and configured in the backend host; no email-based fallback is allowed.
 
 ## 6. Cash-refund workflow — separate future project
 
