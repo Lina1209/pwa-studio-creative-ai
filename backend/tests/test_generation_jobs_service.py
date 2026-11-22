@@ -499,3 +499,27 @@ def test_store_pricing_quote_rejects_invalid_rpc_shape(monkeypatch):
             studio_scene_id=None,
             quote_snapshot={"quote_id": str(JOB_ID), "expires_at": "2026-11-22T00:00:00+00:00"},
         )
+
+
+def test_store_pricing_quote_maps_database_idempotency_conflict(monkeypatch):
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(FakeResponse([], status_code=400), []),
+    )
+    with pytest.raises(generation_jobs.GenerationPricingQuoteConflictError):
+        generation_jobs.store_pricing_quote(
+            configured_settings(),
+            user_id=USER_ID,
+            idempotency_key="persisted-quote-key-003",
+            request_hash="a" * 64,
+            job_type="image_generation",
+            provider="provider-test",
+            model="model-test",
+            project_id=None,
+            studio_scene_id=None,
+            quote_snapshot={
+                "quote_id": str(JOB_ID),
+                "expires_at": "2026-11-22T00:00:00+00:00",
+            },
+        )
