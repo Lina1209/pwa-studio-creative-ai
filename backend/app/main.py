@@ -485,7 +485,7 @@ def admin_audit_events(
     return {"events": events, "limit": limit, "next_cursor": next_cursor}
 
 
-@app.get(f"{settings.api_prefix}/admin/finance/roles/{target_user_id}")
+@app.get(f"{settings.api_prefix}/admin/finance/roles/{{target_user_id}}")
 def admin_list_finance_roles(
     target_user_id: UUID,
     response: Response,
@@ -545,7 +545,7 @@ def admin_grant_finance_role(
     return {"assignment_id": str(assignment_id), "status": "granted"}
 
 
-@app.post(f"{settings.api_prefix}/admin/finance/roles/{assignment_id}/revoke")
+@app.post(f"{settings.api_prefix}/admin/finance/roles/{{assignment_id}}/revoke")
 def admin_revoke_finance_role(
     assignment_id: UUID,
     payload: FinanceRoleRevocationRequest,
