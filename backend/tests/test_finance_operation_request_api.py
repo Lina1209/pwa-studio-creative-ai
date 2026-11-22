@@ -36,6 +36,12 @@ def test_create_finance_request_uses_verified_actor_and_exact_permission_scope(m
         ACTOR, {"credit.compensation.request"}, f"user:{OTHER}"
     ))
     monkeypatch.setattr(main_module, "create_finance_operation_request", lambda *a, **k: captured.update(k) or REQUEST)
+    monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
+        "request_id": REQUEST, "requester_id": ACTOR,
+        "request_type": "credit_compensation", "target_user_id": OTHER,
+        "amount": Decimal("12.5000"), "currency_code": "KZT",
+        "scope_key": f"user:{OTHER}", "status": "pending",
+    })
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
     try:
         response = client.post("/api/finance/requests", json={
