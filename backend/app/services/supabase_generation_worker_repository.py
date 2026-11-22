@@ -26,6 +26,7 @@ class GenerationJobInventoryRow:
     max_attempts: int = 3
     available_at: str | None = None
     last_error_code: str | None = None
+    result_sha256: str | None = None
 
 
 
@@ -211,7 +212,7 @@ class SupabaseGenerationJobRepository:
                 response = await self._client.get(
                     f"{self._base_url}/rest/v1/generation_jobs",
                     params={
-                        "select": "id,status,result_storage_path,updated_at,lease_expires_at,attempt_count,max_attempts,available_at,last_error_code",
+                        "select": "id,status,result_storage_path,result_sha256,updated_at,lease_expires_at,attempt_count,max_attempts,available_at,last_error_code",
                         "user_id": f"eq.{owner_id}",
                         "order": "id.asc",
                         "limit": str(page_size),
@@ -234,6 +235,7 @@ class SupabaseGenerationJobRepository:
                     status = row["status"]
                     updated_at = row["updated_at"]
                     result_path = row.get("result_storage_path")
+                    result_sha256 = row.get("result_sha256")
                     if status not in {
                         "queued", "running", "retry_wait", "succeeded",
                         "failed", "cancel_requested", "cancelled", "expired",
@@ -243,6 +245,11 @@ class SupabaseGenerationJobRepository:
                         raise ValueError("updated_at")
                     if result_path is not None and not isinstance(result_path, str):
                         raise ValueError("result_storage_path")
+                    if result_sha256 is not None and (
+                        not isinstance(result_sha256, str) or len(result_sha256) != 64
+                        or any(char not in "0123456789abcdef" for char in result_sha256)
+                    ):
+                        raise ValueError("result_sha256")
                     lease_expires_at = row.get("lease_expires_at")
                     available_at = row.get("available_at")
                     last_error_code = row.get("last_error_code")
@@ -261,7 +268,8 @@ class SupabaseGenerationJobRepository:
                         raise ValueError("attempt_counters")
                     rows_out.append(GenerationJobInventoryRow(
                         job_id, status, result_path, updated_at, lease_expires_at,
-                        attempt_count, max_attempts, available_at, last_error_code
+                        attempt_count, max_attempts, available_at, last_error_code,
+                        result_sha256
                     ))
                 except (KeyError, TypeError, ValueError) as exc:
                     raise WorkerRepositoryError(
