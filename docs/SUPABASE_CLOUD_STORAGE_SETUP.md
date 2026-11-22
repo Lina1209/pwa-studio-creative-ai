@@ -16,7 +16,7 @@ This is a read-only diagnostic. It reports:
 - which of the expected table names exist;
 - exact columns in the project, character, scene, and media tables;
 - whether the two private storage buckets already exist;
-- whether the `public.is_admin()` helper exists.
+- whether the optional `public.is_admin()` helper exists for a future moderation layer (the current storage migration does not depend on it or create it).
 
 Keep the results available. They determine the safe mapping for cloud synchronization.
 
