@@ -92,7 +92,7 @@ begin
   end if;
 
   if new.status is distinct from old.status and not (
-    (old.status = 'created' and new.status in ('pending', 'cancelled', 'failed'))
+    (old.status = 'created' and new.status in ('pending', 'succeeded', 'cancelled', 'failed'))
     or (old.status = 'pending' and new.status in ('succeeded', 'failed', 'cancelled'))
     or (old.status = 'succeeded' and new.status in ('partially_refunded', 'refunded'))
     or (old.status = 'partially_refunded' and new.status = 'refunded')
