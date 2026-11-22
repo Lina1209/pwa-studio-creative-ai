@@ -40,6 +40,24 @@ Before enabling the admin console or public paid generation: MFA and recovery ar
 A successful CI run is not a penetration test. No claim of being impossible to hack or fully secure is appropriate.
 
 
+
+### Backend and technical-console integration
+
+The backend now exposes `GET /api/admin/audit-events`, protected by
+`admin.security.audit.read`, with a bounded page size of 1–200 and private,
+no-store responses. The service-role key remains server-side and is used only
+to call the two audit RPCs. The technical/financial console renders the returned
+safe fields and does not accept direct browser writes to the journal.
+
+Successful journal views are recorded as `admin.access`. Failed permission
+checks for a verified signed-in user are recorded as
+`admin.permission.denied`; if the audit store is unavailable, the access
+denial remains enforced and a generic server warning is emitted. The journal
+currently does not yet capture every successful administrative read endpoint
+or all future state-changing operations. Each such operation must be wired to
+the audit service before it is enabled. No payment, tariff, credit, or role
+mutation has been enabled by this integration.
+
 ## Append-only administrative audit journal (migration 0035)
 
 Migration `0035_admin_audit_journal.sql` adds a dedicated `admin_audit_events` table.
