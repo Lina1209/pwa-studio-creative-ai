@@ -95,7 +95,16 @@ def create_pricing_quote(
         catalog = load_pricing_catalog(settings.pricing_catalog_json)
         if not catalog.rules:
             raise PricingError("No approved production prices are configured.")
-        request_hash = canonical_request_hash(payload.request_snapshot)
+        normalized_request_snapshot = dict(payload.request_snapshot)
+        supplied_quantity = normalized_request_snapshot.get("quantity", payload.quantity)
+        if (
+            isinstance(supplied_quantity, bool)
+            or not isinstance(supplied_quantity, int)
+            or supplied_quantity != payload.quantity
+        ):
+            raise HTTPException(status_code=422, detail="Generation quantity does not match the request snapshot.")
+        normalized_request_snapshot["quantity"] = payload.quantity
+        request_hash = canonical_request_hash(normalized_request_snapshot)
         owner_id = UUID(user.user_id)
         quote = issue_pricing_quote(
             secret=settings.pricing_quote_signing_secret,
