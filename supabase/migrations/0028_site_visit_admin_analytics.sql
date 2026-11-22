@@ -42,22 +42,32 @@ begin
     raise exception 'invalid visit event';
   end if;
 
+  -- Serialize requests for the same daily token. This makes event replay
+  -- idempotent without charging the token bucket, even under concurrent retries.
+  perform pg_advisory_xact_lock(hashtextextended(p_visitor_token_hash, 0));
+
+  if exists (select 1 from public.site_visit_events where event_id = p_event_id) then
+    return public.get_site_visit_stats();
+  end if;
+
+  insert into public.site_visit_rate_limits(visitor_token_hash, window_start, request_count)
+  values (p_visitor_token_hash, date_trunc('minute', now()), 1)
+  on conflict (visitor_token_hash, window_start) do update
+    set request_count = public.site_visit_rate_limits.request_count + 1
+  returning request_count into v_rate_count;
+
+  if v_rate_count > 20 then
+    -- Do not persist rejected event IDs: attackers must not be able to grow
+    -- the event-deduplication table by sending unlimited blocked requests.
+    return jsonb_build_object('rate_limited', true, 'retry_after_seconds', 60);
+  end if;
+
   insert into public.site_visit_events(event_id, visit_date, visitor_token_hash, route_group)
   values (p_event_id, p_visit_date, p_visitor_token_hash, p_route_group)
   on conflict (event_id) do nothing;
   get diagnostics v_inserted = row_count;
 
   if v_inserted = 1 then
-    insert into public.site_visit_rate_limits(visitor_token_hash, window_start, request_count)
-    values (p_visitor_token_hash, date_trunc('minute', now()), 1)
-    on conflict (visitor_token_hash, window_start) do update
-      set request_count = public.site_visit_rate_limits.request_count + 1
-    returning request_count into v_rate_count;
-
-    if v_rate_count > 20 then
-      return jsonb_build_object('rate_limited', true, 'retry_after_seconds', 60);
-    end if;
-
     delete from public.site_visit_events where created_at < now() - interval '7 days';
     delete from public.site_visit_daily_visitors where created_at < now() - interval '2 days';
     delete from public.site_visit_rate_limits where window_start < now() - interval '2 days';
