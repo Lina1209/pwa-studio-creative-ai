@@ -26,6 +26,8 @@ create table public.finance_operation_requests (
     or (status in ('approved', 'rejected') and decided_by is not null and decided_at is not null and decision_reason is not null and cancelled_at is null)
     or (status = 'cancelled' and decided_by is null and decided_at is null and decision_reason is null and cancelled_at is not null)
   ),
+  constraint finance_operation_request_scope_matches_target
+    check (scope_key = 'user:' || target_user_id::text),
   unique (requester_id, idempotency_key)
 );
 
