@@ -47,7 +47,7 @@ class PricingRule:
         ):
             raise PricingError("Pricing rule quantity bounds are invalid.")
         if (
-            self.max_provider_cost_usd_per_unit_per_unit is not None
+            self.max_provider_cost_usd_per_unit is not None
             and (
                 not isinstance(self.max_provider_cost_usd_per_unit, Decimal)
                 or not self.max_provider_cost_usd_per_unit.is_finite()
@@ -117,7 +117,7 @@ class VerifiedPricingQuote:
             "credit_unit": "credit",
             "amount": self.amount,
             "maximum_authorized_charge": self.amount,
-            "maximum_provider_cost_usd": format(self.max_provider_cost_usd_per_unit, "f"),
+            "maximum_provider_cost_usd": format(self.max_provider_cost_usd, "f"),
             "provider_cost_currency": "USD",
             "price_version": self.price_version,
             "issued_at": self.issued_at.isoformat(),
@@ -238,7 +238,7 @@ def issue_pricing_quote(
         provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
         project_id=project_id, studio_scene_id=studio_scene_id,
         quantity=quantity, unit_label=rule.unit_label, amount=amount,
-        max_provider_cost_usd=rule.max_provider_cost_usd_per_unit,
+        max_provider_cost_usd=provider_cost_ceiling,
         price_version=catalog.version, issued_at=issued_at,
         expires_at=expires_at, signature=_sign(payload, secret),
     )
