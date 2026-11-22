@@ -30,8 +30,8 @@ def obj(job_id, created=OLD, ext="png"):
     )
 
 
-def job(job_id, status, result_path=None, updated=OLD):
-    return GenerationJobInventoryRow(job_id, status, result_path, updated)
+def job(job_id, status, result_path=None, updated=OLD, result_sha256=None):
+    return GenerationJobInventoryRow(job_id, status, result_path, updated, result_sha256=result_sha256)
 
 
 def test_successful_result_is_preserved_only_when_exact_path_matches():
@@ -39,7 +39,7 @@ def test_successful_result_is_preserved_only_when_exact_path_matches():
     report = plan_generation_storage_recovery(
         owner_id=OWNER,
         objects=[obj(JOB_OK)],
-        jobs=[job(JOB_OK, "succeeded", path)],
+        jobs=[job(JOB_OK, "succeeded", path, result_sha256="a" * 64)],
         now=NOW,
     )
     assert report.referenced_objects == (path,)
@@ -137,7 +137,7 @@ async def test_verify_owner_succeeded_results_reports_missing_path_and_verifies_
         async def list_owner_job_inventory(self, owner_id):
             assert owner_id == OWNER
             return [
-                job(JOB_OK, "succeeded", valid_path),
+                job(JOB_OK, "succeeded", valid_path, result_sha256="a" * 64),
                 job(JOB_FAILED, "succeeded", None),
             ]
 
@@ -146,7 +146,7 @@ async def test_verify_owner_succeeded_results_reports_missing_path_and_verifies_
             assert owner_id == OWNER
             assert job_id == JOB_OK
             assert object_path == valid_path
-            return object()
+            return type("Stored", (), {"sha256_hex": "a" * 64})()
 
     report = await verify_owner_succeeded_results(
         owner_id=OWNER, storage=Storage(), repository=Repository()
@@ -181,3 +181,31 @@ async def test_verify_owner_succeeded_results_defers_transient_storage_errors():
 
     assert report.integrity_failures == ()
     assert report.deferred_checks == ((str(JOB_OK), "storage_request_timeout"),)
+
+
+@pytest.mark.asyncio
+async def test_verify_owner_succeeded_results_rejects_missing_or_mismatched_database_digest():
+    from app.services.generation_storage_recovery import verify_owner_succeeded_results
+
+    path = f"{OWNER}/generated/{JOB_OK}.png"
+
+    class Repository:
+        async def list_owner_job_inventory(self, owner_id):
+            return [
+                job(JOB_OK, "succeeded", path),
+                job(JOB_FAILED, "succeeded", path, result_sha256="b" * 64),
+            ]
+
+    class Storage:
+        async def verify_existing_image(self, **kwargs):
+            return type("Stored", (), {"sha256_hex": "a" * 64})()
+
+    report = await verify_owner_succeeded_results(
+        owner_id=OWNER, storage=Storage(), repository=Repository()
+    )
+
+    assert report.verified_results == ()
+    assert report.integrity_failures == (
+        (str(JOB_FAILED), "stored_result_sha256_mismatch"),
+        (str(JOB_OK), "succeeded_job_missing_result_sha256"),
+    )
