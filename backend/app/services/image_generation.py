@@ -53,6 +53,17 @@ class ImageGenerationRequest:
             raise ValueError("Seed must be an unsigned 32-bit integer.")
 
 
+def _detect_image_mime(payload: bytes) -> str | None:
+    """Identify supported formats from file signatures, not provider claims."""
+    if payload.startswith(bytes.fromhex("89504e470d0a1a0a")):
+        return "image/png"
+    if payload.startswith(bytes.fromhex("ffd8ff")):
+        return "image/jpeg"
+    if len(payload) >= 12 and payload[:4] == b"RIFF" and payload[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 @dataclass(frozen=True)
 class ImageGenerationResult:
     image_bytes: bytes
@@ -66,8 +77,11 @@ class ImageGenerationResult:
             raise ValueError("Provider returned an empty or invalid image payload.")
         if len(self.image_bytes) > MAX_IMAGE_BYTES:
             raise ValueError("Provider image exceeds the 20 MiB safety limit.")
+        detected_mime = _detect_image_mime(self.image_bytes)
         if self.mime_type not in ALLOWED_IMAGE_MIME_TYPES:
             raise ValueError("Provider returned an unsupported image MIME type.")
+        if detected_mime != self.mime_type:
+            raise ValueError("Image bytes do not match the declared MIME type.")
         if not self.provider or len(self.provider) > 100:
             raise ValueError("Provider identifier is invalid.")
         if not self.model or len(self.model) > 200:
