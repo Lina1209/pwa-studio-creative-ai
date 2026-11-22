@@ -347,7 +347,10 @@ const movieHistoryStyle = document.createElement("style");
     if (more) more.disabled = true;
     try {
       const query = new URLSearchParams({limit:"50"});
-      if (adminAuditCursor) query.set("before", adminAuditCursor);
+      if (adminAuditCursor) {
+        query.set("before", adminAuditCursor.before);
+        query.set("before_id", adminAuditCursor.before_id);
+      }
       const data = await apiRequest("/api/admin/audit-events?" + query.toString());
       if (!adminUiAuthorized) return;
       const rows = Array.isArray(data.events) ? data.events : [];
@@ -360,7 +363,7 @@ const movieHistoryStyle = document.createElement("style");
         });
         body.appendChild(tr);
       });
-      adminAuditCursor = data.next_before || null;
+      adminAuditCursor = data.next_cursor || null;
       if (status) status.textContent = rows.length ? "Показаны последние события аудита. Секреты и содержимое пользовательских запросов не записываются." : "В журнале пока нет событий.";
       if (more) more.hidden = !adminAuditCursor;
     } catch (error) {
