@@ -218,3 +218,20 @@ Added `supabase_generation_worker_repository.py`, a service-role-only PostgREST 
 Tests use fake provider/storage adapters and HTTPX MockTransport. They cover success, permanent and retryable provider failures, provider/model mismatch, public object rejection, checksum mismatch, rejected completion, lease loss/cancellation, empty queue, malformed claim response and service-key handling.
 
 **Deployment boundary:** this is an execution coordinator and database RPC adapter, not yet a continuously running worker process. There is no production provider, real Storage SDK adapter, polling loop, outbox dispatcher, worker deployment or enabled feature flag. We are deliberately not choosing Redis versus Postgres polling in code without recording and reviewing that architecture decision. The worker readiness flag and generation submission remain disabled.
+
+
+## 13. Controlled worker polling runtime (tested, not deployed)
+
+Added `generation_worker_runtime.py`:
+
+- polls the database claim RPC using the configured worker identity and lease duration;
+- processes one claimed job at a time per runtime instance, avoiding unbounded local task creation;
+- uses bounded idle polling with exponential idle backoff and a separate bounded error backoff;
+- logs safe job outcome metadata, not prompts, credentials or provider response bodies;
+- supports graceful stop: stop claiming new work and let the active job finish with its heartbeat;
+- leaves abrupt process termination to database lease expiry/reclaim logic;
+- never fabricates a completion or retry transition after an unhandled runtime exception.
+
+Added disabled-by-default settings for runtime enablement and bounded polling/error intervals, plus unit tests for disabled mode, claims, errors, stop requests and configuration validation.
+
+**Not yet production-ready:** no composition root constructs the real provider and private Storage adapters; no deployed worker process, health supervision, external shutdown hook, distributed concurrency setting, queue-depth monitoring, or reconciliation/cleanup for orphaned uploads exists. The runtime is sequential per process; multiple processes rely on the database's `SKIP LOCKED` claim RPC. Keep `generation_worker_runtime_enabled=false`, `generation_job_worker_ready=false`, and `generation_jobs_enabled=false` until the missing adapters and deployment controls pass integration testing.
