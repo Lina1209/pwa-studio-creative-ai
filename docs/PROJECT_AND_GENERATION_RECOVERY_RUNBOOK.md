@@ -77,3 +77,15 @@ Orphan candidate — только кандидат для последующег
 - Автоматическое восстановление после очистки браузерного хранилища.
 
 До завершения этих пунктов нельзя обещать production-grade disaster recovery. Текущие SQL и backend механизмы подготовлены и проверяются в изолированном CI; они не включают live generation.
+
+
+## IndexedDB recovery mirror and manual project backups
+
+The browser now loads `movie-storage.js` before the application and uses an account-scoped IndexedDB vault as an additional durable mirror for Mini Movie Studio projects and deletion tombstones.
+
+- The synchronous `localStorage` path remains the compatibility cache and immediate fallback; IndexedDB writes are asynchronous and do not replace the cloud source of truth.
+- Records are keyed by the current Supabase user UUID (or the separate guest scope). On startup and account changes, recovery reads only that scope and merges by project ID, keeping the newer `updatedAt`/ `createdAt` value.
+- If IndexedDB is unavailable, blocked, or quota-limited, the app keeps the localStorage path and surfaces a degraded-mode message. It does not delete either copy.
+- The Mini Movie Studio now offers JSON export/import. Backups contain project content and metadata only, never session tokens, API keys, or provider secrets. Account backups are bound to the originating user UUID; guest backups are separate. Import validates the format/size and merges by stable project ID without silently replacing a newer local version.
+- Import currently does not restore cloud deletion tombstones, and this is not a full multi-device conflict-resolution protocol. A manual export should still be kept outside the browser; browser storage can be cleared or the device can be lost.
+- This is an IndexedDB recovery mirror, not an immutable off-device backup. Cloud sync remains dependent on Supabase availability and RLS. No production deployment or live browser/device validation is implied by these code changes.
