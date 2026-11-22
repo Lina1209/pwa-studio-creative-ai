@@ -29,6 +29,17 @@
 
 Текущий semaphore работает только внутри одного процесса. Он не является общей очередью между несколькими Render instances/workers и не переживает перезапуск. Это временная защита от перегрузки существующих AI chat/prompt endpoints, а не замена Redis/Celery и не очередь видеогенерации.
 
+
+### Scene-bound generation API (prepared, fail-closed)
+
+- Added migration `0012_create_scene_generation_job_rpc.sql`: one database transaction creates a scene-owned job and its outbox event. It validates scene ownership, request shape/size, and idempotency replay consistency.
+- Added backend service `create_scene_generation_job` and authenticated endpoint `POST /api/scenes/{scene_id}/image-jobs`.
+- The endpoint derives the owner from the verified Supabase access token; it never accepts a client-supplied user ID, provider, or model.
+- The request validates prompt length, dimensions (multiples of 64), optional negative prompt, and seed. A canonical SHA-256 request hash binds the idempotency key to the scene, provider/model selection, and request.
+- Submission is fail-closed. It returns HTTP 503 unless generation jobs are enabled, the durable worker is explicitly marked ready, and an image provider/model have been selected server-side. All readiness flags default to false/unset. No queued work is created while those prerequisites are absent.
+- Added API tests for worker-not-ready, no-provider-selected, and invalid dimensions. Added PostgreSQL integration coverage for scene ownership, idempotency, and outbox atomicity.
+- This is an API contract and guarded submission path, not a working image generator. The frontend is not yet wired to it; no worker, provider adapter, storage upload, webhook, or credit ledger is active.
+
 ## 2. Текущая функциональная реальность
 
 В репозитории пока нет подключённого полноценного видеогенератора, монтажного timeline engine, FFmpeg pipeline, durable job queue, provider webhooks, S3/CDN asset pipeline или пользовательского биллинга с hold/capture/refund.
