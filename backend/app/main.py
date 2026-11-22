@@ -18,7 +18,7 @@ from app.services.admin_financial_reporting import (
     get_provider_cost_report,
 )
 from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
-from app.services.site_analytics import SiteAnalyticsUnavailable, record_visit, get_visit_stats, get_admin_visit_stats
+from app.services.site_analytics import SiteAnalyticsUnavailable, SiteAnalyticsRateLimited, record_visit, get_admin_visit_stats
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
@@ -55,17 +55,9 @@ def analytics_record_visit(payload: SiteVisitRequest, response: Response):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Invalid analytics event.") from exc
-    except SiteAnalyticsUnavailable as exc:
-        raise HTTPException(status_code=503, detail="Visit counter is temporarily unavailable.") from exc
-    response.headers["Cache-Control"] = "no-store"
-    return stats
-
-
-@app.get(f"{settings.api_prefix}/analytics/stats")
-def analytics_public_stats(response: Response):
-    """Return aggregate counters only; never expose visitor-level records."""
-    try:
-        stats = get_visit_stats(settings)
+    except SiteAnalyticsRateLimited as exc:
+        raise HTTPException(status_code=429, detail="Visit counter limit reached. Please try again later.",
+                            headers={"Retry-After": "60"}) from exc
     except SiteAnalyticsUnavailable as exc:
         raise HTTPException(status_code=503, detail="Visit counter is temporarily unavailable.") from exc
     response.headers["Cache-Control"] = "no-store"
