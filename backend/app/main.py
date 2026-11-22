@@ -94,6 +94,8 @@ def create_pricing_quote(
             model=payload.model,
             request_hash=request_hash,
             idempotency_key=idempotency_key,
+            project_id=payload.project_id,
+            studio_scene_id=payload.studio_scene_id,
             quantity=payload.quantity,
         )
     except PricingError as exc:
