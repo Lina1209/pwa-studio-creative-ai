@@ -44,6 +44,7 @@ create table if not exists public.credit_holds (
   updated_at timestamptz not null default now(),
   captured_at timestamptz,
   released_at timestamptz,
+  constraint credit_holds_id_user_id_key unique (id, user_id),
   constraint credit_holds_one_per_job unique (job_id),
   constraint credit_holds_operation_unique unique (user_id, operation_key),
   constraint credit_holds_job_owner_fkey
