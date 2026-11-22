@@ -1089,6 +1089,14 @@ begin
   end;
   if not v_rejected then raise exception 'Mismatched grant replay was accepted'; end if;
 
+  -- Earlier worker lifecycle tests may have terminalized this fixture job.
+  -- Restore an eligible state before testing the standalone reservation RPC.
+  update public.generation_jobs
+     set status = 'queued', completed_at = null, last_error_code = null,
+         lease_owner = null, lease_expires_at = null, heartbeat_at = null,
+         updated_at = now()
+   where id = v_job_id;
+
   select * into v_hold from public.reserve_job_credits(
     '22222222-2222-4222-8222-222222222222', v_job_id, 20,
     'integration-test-reserve-001',
