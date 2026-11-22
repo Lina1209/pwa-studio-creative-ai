@@ -31,7 +31,7 @@ class PricingRule:
     def __post_init__(self) -> None:
         if not self.job_type or not self.provider or not self.model:
             raise PricingError("Pricing rule identity fields are required.")
-        if isinstance(self.credits_per_unit, bool) or self.credits_per_unit <= 0:
+        if isinstance(self.credits_per_unit, bool) or not isinstance(self.credits_per_unit, int) or self.credits_per_unit <= 0:
             raise PricingError("Pricing rule credit rate must be a positive integer.")
         if not self.unit_label or len(self.unit_label) > 40:
             raise PricingError("Pricing rule unit label is invalid.")
