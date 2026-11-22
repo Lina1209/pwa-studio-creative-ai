@@ -80,3 +80,10 @@ all admin endpoints emit events or that the admin UI exposes the journal. Those
 application integrations remain a separate step. A database owner/superuser can still
 alter schema or disable triggers, so production-grade tamper evidence additionally
 requires restricted database ownership, protected backups, and external log export.
+
+
+### Delegated finance workspace
+
+The owner technical console now includes a scoped finance-role assignment form. It calls the existing owner-only `/api/admin/finance/roles` grant, list, and revoke routes. The owner must supply the operator/approver account UUID, a target-user scope UUID, a reason, and a future expiry. Self-assignment remains prohibited. The separate finance workspace is shown only after `GET /api/finance/me` confirms active delegated permissions; it contains a bounded queue, proposal form, independent approve/reject controls, requester cancellation, and on-demand append-only event history.
+
+The finance queue and event timeline remain read-only with respect to balances and payment providers. An approved proposal is not an executed credit compensation or cash refund. Role assignment is active only if the backend and Supabase migrations are deployed and the finance role registry is configured; this repository work alone does not apply migrations or configure production accounts.
