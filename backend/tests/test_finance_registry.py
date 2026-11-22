@@ -68,7 +68,8 @@ def test_role_grant_calls_only_server_registry_rpc(monkeypatch):
     settings = Settings(supabase_url="https://example.test", supabase_service_role_key="x")
     result = registry.grant_finance_role(
         settings, principal_id=TARGET, role_code="finance_approver",
-        scope_key="tenant-a", valid_until=None, granted_by=ACTOR, reason="Approved assignment",
+        scope_key="tenant-a", valid_until=datetime.now(timezone.utc) + timedelta(days=30),
+        granted_by=ACTOR, reason="Approved assignment",
     )
     assert result == ASSIGNMENT
     assert payloads[0][0] == "grant_finance_role"
