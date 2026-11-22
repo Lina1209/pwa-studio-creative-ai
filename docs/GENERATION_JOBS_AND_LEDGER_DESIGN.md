@@ -137,3 +137,16 @@ The generic `create_generation_job_with_outbox` RPC now validates the allowed jo
 The isolated PostgreSQL integration test applies migration 0016 and checks first creation, exact replay, single outbox event, mismatched replay rejection, short-key rejection and malformed-hash rejection. This hardens job creation only. It does **not** guarantee exactly-once provider execution: a worker can lose its lease after the provider accepted a request, and a later worker may retry. The selected provider adapter must pass a stable provider idempotency token derived from the durable job ID when the provider supports it; otherwise the system must explicitly model ambiguous provider outcomes and reconcile/poll before issuing another billable request.
 
 No credit wallet, hold, capture, release or ledger is introduced by this migration. There is no agreed credit price or billing policy yet, so no financial mutation is enabled. The future wallet hold and ledger must be created in the same transaction as job creation, with unique operation keys and row locking, after pricing and refund policy are approved.
+
+## 18. Recovery after provider result receipt
+
+The provider-operation journal's `result_received` state is a durable checkpoint, not a copy of the generated image bytes. If a worker crashes after recording this checkpoint but before the private Storage upload and job completion, a replacement worker must retrieve the complete image payload through the provider's lookup-by-idempotency-key operation. A provider request ID alone is insufficient.
+
+For a journal already in `result_received`:
+- a successful lookup may resume validation, private upload and job completion;
+- pending, unknown, unavailable or not-found lookup results schedule bounded retry without changing the journal state;
+- the worker must never submit a new generation for that job, even if the provider reports not-found;
+- the provider adapter must retain/retrieve the original result for the full application recovery horizon, or a future durable result-staging mechanism must be implemented before production use.
+
+The current worker contract expects lookup success to return the complete `ImageGenerationResult` including image bytes. No real provider adapter has been registered or tested, so this recovery guarantee remains conditional on the chosen provider's documented lookup consistency, result availability and retention behavior. The worker runtime remains disabled by default.
+
