@@ -176,3 +176,38 @@ async def test_worker_reports_lost_lease_when_completion_is_rejected():
     repo = FakeRepository(complete=False)
     result = await make_worker(repo).process(make_job())
     assert result.outcome == "lease_lost"
+
+
+@pytest.mark.asyncio
+async def test_worker_stops_provider_when_lease_is_lost():
+    class SlowProvider(FakeProvider):
+        async def generate(self, request):
+            await asyncio.sleep(0.2)
+            return await super().generate(request)
+
+    repo = FakeRepository(heartbeat=False)
+    result = await make_worker(repo, SlowProvider()).process(make_job())
+    assert result.outcome == "lease_lost"
+    assert any(call[0] == "heartbeat" for call in repo.calls)
+    assert not any(call[0] in {"complete", "retry", "fail"} for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_storage_checksum_not_bound_to_generated_bytes():
+    class WrongChecksumStorage(FakeStorage):
+        async def upload_image(self, *, owner_id, job_id, image_bytes, mime_type):
+            uploaded = await super().upload_image(
+                owner_id=owner_id, job_id=job_id, image_bytes=image_bytes, mime_type=mime_type
+            )
+            return UploadedImageObject(
+                metadata=uploaded.metadata,
+                expected_bucket=uploaded.expected_bucket,
+                expected_object_path=uploaded.expected_object_path,
+                expected_sha256_hex="0" * 64,
+            )
+
+    repo = FakeRepository()
+    result = await make_worker(repo, storage=WrongChecksumStorage()).process(make_job())
+    assert result.outcome == "failed"
+    assert repo.calls[0][0] == "fail"
+    assert not any(call[0] == "complete" for call in repo.calls)
