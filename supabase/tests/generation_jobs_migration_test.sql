@@ -2532,6 +2532,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0038_finance_role_registry_rpcs.sql
 \ir ../migrations/0039_finance_role_self_assignment_guard.sql
 \ir ../migrations/0040_finance_role_duplicate_grant_guard.sql
+\ir ../migrations/0041_require_scoped_expiring_finance_roles.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3562,6 +3563,34 @@ begin
   end;
   if not v_rejected then
     raise exception 'Self-assignment of finance role was accepted';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.grant_finance_role(
+      '22222222-2222-4222-8222-222222222222',
+      'finance_operator', null, now() + interval '1 day',
+      '11111111-1111-4111-8111-111111111111', 'missing scope fixture'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Unscoped finance role assignment was accepted';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.grant_finance_role(
+      '22222222-2222-4222-8222-222222222222',
+      'finance_operator', 'test-scope', null,
+      '11111111-1111-4111-8111-111111111111', 'missing expiry fixture'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Non-expiring finance role assignment was accepted';
   end if;
 end;
 $finance_role_registry_rpc_test$;
