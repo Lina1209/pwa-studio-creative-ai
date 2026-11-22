@@ -391,3 +391,10 @@ The authenticated API now exposes `POST /api/movie/script` for the first AI-assi
 The Mini Movie Studio's first workflow stage adds an explicit AI action. It fills the screenplay and storyboard editors but does not silently mark the stage complete or persist generated text; the creator reviews the result and chooses the existing draft-save or stage-complete action. This is AI-assisted pre-production, not video rendering. It does not enqueue a generation job, reserve credits, or claim to render/export a film.
 
 Backend API tests cover successful structured output, malformed AI output, request bounds, unknown fields and authentication.
+
+
+## AI director scene breakdown
+
+Mini Movie Studio now has an authenticated `POST /api/movie/director` workflow that converts the user's reviewed screenplay into a bounded, ordered scene collection. Each scene carries a stable sequence number, title, location, time of day, estimated duration, characters, action, visual description, camera-shot list, lighting, and transition. Pydantic validates every scene, rejects unknown fields, enforces contiguous scene numbering, and caps aggregate duration relative to the requested runtime.
+
+The endpoint uses the shared AI admission/rate-limit path and usage telemetry. Provider credentials remain server-side; malformed or inconsistent model output returns a generic 502 without leaking provider output. The Mini Movie Studio UI places the returned structured scene JSON into the existing editable storyboard field. It remains a draft until the user reviews and saves it. This is pre-production planning only; it does not generate images, video, audio, or a rendered film.
