@@ -55,6 +55,10 @@ Not yet implemented:
 
 Before public AI launch, extend admission to plan-based monthly credit/usage entitlements with atomic ledger reservations and reconciliation, and add edge/CDN request limits and bot filtering as a second layer. The current per-minute gate is not a subscription quota or a billing ledger. Do not treat frontend quotas as security controls.
 
+## Browser response headers
+
+The FastAPI app applies nosniff, frame denial, no-referrer, a restrictive permissions policy and same-origin resource policy to responses. HSTS is added only when APP_ENV=production; TLS termination and correct proxy configuration must still be verified at the hosting edge. These headers are defense-in-depth and do not replace a frontend Content Security Policy.
+
 ## Validation status
 
 The PostgreSQL integration workflow run #1017 completed successfully for commit `7acd42740ab44597b4608d0f4c834c397aac0ab8`. It included the site analytics SQL test and the existing migration/concurrency checks.
