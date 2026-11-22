@@ -413,7 +413,7 @@ const movieHistoryStyle = document.createElement("style");
       });
       const disclaimer = $("#adminAiUsageDisclaimer");
       if (disclaimer) disclaimer.textContent = data.cost_disclaimer || "Оценка стоимости не является фактическим списанием.";
-      const budgetLabels = { unconfigured: "лимит не настроен", within_limit: "ниже порога", warning: "внимание: достигнуто 80% лимита", threshold_reached: "порог достигнут", unknown_costs: "есть запросы с неизвестной стоимостью" };
+      const budgetLabels = { unconfigured: "лимит не настроен", within_limit: "ниже порога", warning: "внимание: достигнуто 80% лимита", threshold_reached: "порог достигнут", unknown_costs: "есть запросы с неизвестной стоимостью", outside_report_period: "сегодня вне выбранного периода" };
       const budgetSummary = (data.daily_budget_status || []).map(item =>
         item.provider + ": " + (budgetLabels[item.status] || item.status)
         + (item.utilization_percent === null ? "" : " (" + item.utilization_percent + "%)")
