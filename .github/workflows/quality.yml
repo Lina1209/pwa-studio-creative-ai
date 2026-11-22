@@ -23,7 +23,12 @@ jobs:
           node --check app.js
           node --check audio-lab.js
           node --check sw.js
+      - name: Install backend test dependencies
+        run: pip install -r backend/requirements-dev.txt
       - name: Check Python syntax
         run: python -m compileall -q backend/app
+      - name: Run backend unit tests
+        working-directory: backend
+        run: pytest -q
       - name: Validate PWA manifest JSON
         run: python -m json.tool manifest.webmanifest > /dev/null
