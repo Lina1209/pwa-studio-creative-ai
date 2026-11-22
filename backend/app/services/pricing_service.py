@@ -29,13 +29,20 @@ class PricingRule:
     max_quantity: int = 1
 
     def __post_init__(self) -> None:
-        if not self.job_type or not self.provider or not self.model:
+        if not all(isinstance(value, str) and value and value.strip() == value
+                   for value in (self.job_type, self.provider, self.model)):
             raise PricingError("Pricing rule identity fields are required.")
+        if len(self.job_type) > 64 or len(self.provider) > 100 or len(self.model) > 200:
+            raise PricingError("Pricing rule identity field exceeds its supported length.")
         if isinstance(self.credits_per_unit, bool) or not isinstance(self.credits_per_unit, int) or self.credits_per_unit <= 0:
             raise PricingError("Pricing rule credit rate must be a positive integer.")
-        if not self.unit_label or len(self.unit_label) > 40:
+        if not isinstance(self.unit_label, str) or not self.unit_label or len(self.unit_label) > 40:
             raise PricingError("Pricing rule unit label is invalid.")
-        if not 1 <= self.min_quantity <= self.max_quantity <= 10000:
+        if (
+            isinstance(self.min_quantity, bool) or not isinstance(self.min_quantity, int)
+            or isinstance(self.max_quantity, bool) or not isinstance(self.max_quantity, int)
+            or not 1 <= self.min_quantity <= self.max_quantity <= 10000
+        ):
             raise PricingError("Pricing rule quantity bounds are invalid.")
 
 
@@ -45,8 +52,10 @@ class PricingCatalog:
     rules: tuple[PricingRule, ...]
 
     def __post_init__(self) -> None:
-        if not self.version or len(self.version) > 80:
+        if not isinstance(self.version, str) or not self.version or len(self.version) > 80:
             raise PricingError("Pricing catalog version is invalid.")
+        if not isinstance(self.rules, tuple) or any(not isinstance(rule, PricingRule) for rule in self.rules):
+            raise PricingError("Pricing catalog rules must be an immutable tuple of pricing rules.")
         identities = [(r.job_type, r.provider, r.model) for r in self.rules]
         if len(identities) != len(set(identities)):
             raise PricingError("Pricing catalog contains duplicate rules.")
@@ -199,7 +208,17 @@ def verify_pricing_quote(
 ) -> VerifiedPricingQuote:
     if not secret or len(secret.encode("utf-8")) < 32:
         raise PricingError("Pricing quote signing secret is not configured securely.")
-    if not isinstance(snapshot, dict) or snapshot.get("schema") != "pwa-studio-pricing-quote-v1":
+    allowed_fields = {
+        "schema", "quote_id", "user_id", "job_type", "provider", "model",
+        "request_hash", "idempotency_key", "quantity", "unit_label",
+        "credit_unit", "amount", "maximum_authorized_charge", "price_version",
+        "issued_at", "expires_at", "signature",
+    }
+    if (
+        not isinstance(snapshot, dict)
+        or snapshot.get("schema") != "pwa-studio-pricing-quote-v1"
+        or set(snapshot) != allowed_fields
+    ):
         raise PricingError("Pricing quote format is invalid.")
     try:
         quote_id = UUID(snapshot["quote_id"])
