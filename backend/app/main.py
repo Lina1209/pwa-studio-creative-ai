@@ -590,6 +590,28 @@ def _finance_target_scope(target_user_id: UUID) -> str:
     return f"user:{target_user_id}"
 
 
+@app.get(f"{settings.api_prefix}/finance/me")
+def finance_current_access(response: Response, user: StudioUser = Depends(get_current_user)):
+    """Return the caller's own delegated finance capabilities without exposing scope identifiers."""
+    try:
+        grant = resolve_finance_grant(settings, principal_id=UUID(user.user_id))
+    except FinanceRegistryNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance authorization is not configured.") from exc
+    except FinanceRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance authorization is temporarily unavailable.") from exc
+    if grant is None or not grant.active or grant.principal_id != UUID(user.user_id):
+        response.headers["Cache-Control"] = "private, no-store"
+        return {"active": False, "permissions": [], "scope_count": 0}
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "active": True,
+        "permissions": sorted(grant.permissions),
+        "scope_count": len(grant.scope_ids),
+        "can_read_credit_requests": bool(grant.permission_scopes.get("credit.compensation.read")),
+        "can_read_refund_requests": bool(grant.permission_scopes.get("billing.refund.read")),
+    }
+
+
 def _finance_request_read_scopes(user: StudioUser) -> tuple[list[str], list[str]]:
     try:
         actor_id = UUID(user.user_id)
