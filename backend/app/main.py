@@ -401,7 +401,7 @@ def admin_provider_cost_report(
 
 
 
-@app.get(f"{settings.api_prefix}/admin/financial/wallets/{target_user_id}")
+@app.get(f"{settings.api_prefix}/admin/financial/wallets/{{target_user_id}}")
 def admin_user_wallet_summary(
     target_user_id: UUID,
     response: Response,
