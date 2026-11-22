@@ -180,6 +180,9 @@ $$;
 set request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
 set role authenticated;
 select current_user, session_user, auth.uid() as request_user, (select rolbypassrls from pg_roles where rolname = current_user) as bypass_rls, (select relrowsecurity from pg_class where oid = 'public.generation_jobs'::regclass) as rls_enabled;
+select policyname, roles, qual from pg_policies where schemaname = 'public' and tablename = 'generation_jobs';
+select auth.uid() as request_user, user_id, auth.uid() = user_id as policy_match from public.generation_jobs;
+select count(*) as visible_rows_outside_do from public.generation_jobs;
 do $$
 declare visible_count integer;
 begin
