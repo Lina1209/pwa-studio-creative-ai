@@ -19,11 +19,12 @@ declare
   v_id uuid;
 begin
   if p_requester_id is null or p_target_user_id is null
+     or p_request_type is null or p_currency_code is null
      or p_request_type not in ('credit_compensation', 'billing_refund')
      or p_amount is null or p_amount <= 0
      or p_currency_code !~ '^[A-Z]{3}$'
-     or p_scope_key is null or length(p_scope_key) not between 1 and 200
-     or p_reason is null or length(p_reason) not between 1 and 500
+     or p_scope_key is null or length(p_scope_key) not between 1 and 200 or p_scope_key <> btrim(p_scope_key)
+     or p_reason is null or length(p_reason) not between 1 and 500 or p_reason <> btrim(p_reason)
      or p_idempotency_key is null then
     raise exception 'invalid finance operation request' using errcode = '22023';
   end if;
@@ -71,7 +72,7 @@ declare
   v_new_status text;
 begin
   if p_request_id is null or p_actor_id is null
-     or p_decision not in ('approve', 'reject')
+     or p_decision is null or p_decision not in ('approve', 'reject')
      or p_reason is null or length(p_reason) not between 1 and 500 then
     raise exception 'invalid finance request decision' using errcode = '22023';
   end if;
@@ -116,7 +117,7 @@ declare
   v_request public.finance_operation_requests%rowtype;
 begin
   if p_request_id is null or p_actor_id is null
-     or p_reason is null or length(p_reason) not between 1 and 500 then
+     or p_reason is null or length(p_reason) not between 1 and 500 or p_reason <> btrim(p_reason) then
     raise exception 'invalid finance request cancellation' using errcode = '22023';
   end if;
   select * into v_request from public.finance_operation_requests
