@@ -8,9 +8,10 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
+from app.services.finance_authorization import FinanceAuthorizationDenied, require_finance_permission
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
 from app.services.ai_admission import (
@@ -38,6 +39,17 @@ from app.services.finance_registry import (
     grant_finance_role,
     list_active_finance_roles,
     revoke_finance_role,
+    resolve_finance_grant,
+)
+from app.services.finance_operation_requests import (
+    FinanceRequestConflict,
+    FinanceRequestNotConfigured,
+    FinanceRequestNotFound,
+    FinanceRequestUnavailable,
+    cancel_finance_operation_request,
+    create_finance_operation_request,
+    decide_finance_operation_request,
+    read_finance_operation_request,
 )
 from app.services.credit_wallet_service import (
     CreditWalletNotConfigured,
@@ -570,6 +582,125 @@ def admin_revoke_finance_role(
     response.headers["Cache-Control"] = "private, no-store"
     return {"revocation_id": str(revocation_id), "status": "revoked"}
 
+
+
+def _require_finance_action(user: StudioUser, *, request_type: str, action: str, scope_key: str) -> None:
+    prefix = "credit.compensation" if request_type == "credit_compensation" else "billing.refund"
+    try:
+        grant = resolve_finance_grant(settings, principal_id=UUID(user.user_id))
+        require_finance_permission(
+            grant, actor_id=UUID(user.user_id),
+            permission=f"{prefix}.{action}", target_scope=scope_key,
+        )
+    except FinanceAuthorizationDenied as exc:
+        raise HTTPException(status_code=403, detail="This finance operation is not permitted.") from exc
+    except FinanceRegistryNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance authorization is not configured.") from exc
+    except FinanceRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance authorization is temporarily unavailable.") from exc
+
+
+@app.post(f"{settings.api_prefix}/finance/requests", status_code=201)
+def finance_request_create(
+    payload: FinanceOperationRequestCreate,
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Create an idempotent finance proposal; this never moves money or credits."""
+    _require_finance_action(
+        user, request_type=payload.request_type, action="request",
+        scope_key=payload.scope_key,
+    )
+    try:
+        request_id = create_finance_operation_request(
+            settings, requester_id=UUID(user.user_id),
+            request_type=payload.request_type, target_user_id=payload.target_user_id,
+            amount=payload.amount, currency_code=payload.currency_code,
+            scope_key=payload.scope_key, reason=payload.reason,
+            idempotency_key=payload.idempotency_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Finance request is invalid.") from exc
+    except FinanceRequestNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"request_id": str(request_id), "status": "pending", "execution_enabled": False}
+
+
+@app.post(f"{settings.api_prefix}/finance/requests/{{request_id}}/decision")
+def finance_request_decide(
+    request_id: UUID,
+    payload: FinanceOperationDecisionRequest,
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Approve or reject a pending request after checking the exact delegated scope."""
+    try:
+        item = read_finance_operation_request(settings, request_id=request_id)
+    except FinanceRequestNotFound as exc:
+        raise HTTPException(status_code=404, detail="Finance request was not found.") from exc
+    except FinanceRequestNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    _require_finance_action(
+        user, request_type=item["request_type"], action="approve",
+        scope_key=item["scope_key"],
+    )
+    try:
+        decide_finance_operation_request(
+            settings, request_id=request_id, actor_id=UUID(user.user_id),
+            decision=payload.decision, reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Finance decision is invalid.") from exc
+    except FinanceRequestConflict as exc:
+        raise HTTPException(status_code=409, detail="Finance request is no longer pending.") from exc
+    except FinanceRequestNotFound as exc:
+        raise HTTPException(status_code=404, detail="Finance request was not found.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"request_id": str(request_id), "status": "approved" if payload.decision == "approve" else "rejected"}
+
+
+@app.post(f"{settings.api_prefix}/finance/requests/{{request_id}}/cancel")
+def finance_request_cancel(
+    request_id: UUID,
+    payload: FinanceOperationCancelRequest,
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Allow only the original requester to cancel their still-pending proposal."""
+    try:
+        item = read_finance_operation_request(settings, request_id=request_id)
+    except FinanceRequestNotFound as exc:
+        raise HTTPException(status_code=404, detail="Finance request was not found.") from exc
+    except FinanceRequestNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    if item["requester_id"] != UUID(user.user_id):
+        raise HTTPException(status_code=404, detail="Finance request was not found.")
+    _require_finance_action(
+        user, request_type=item["request_type"], action="cancel",
+        scope_key=item["scope_key"],
+    )
+    try:
+        cancel_finance_operation_request(
+            settings, request_id=request_id, actor_id=UUID(user.user_id),
+            reason=payload.reason,
+        )
+    except FinanceRequestConflict as exc:
+        raise HTTPException(status_code=409, detail="Finance request is no longer pending.") from exc
+    except FinanceRequestNotFound as exc:
+        raise HTTPException(status_code=404, detail="Finance request was not found.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"request_id": str(request_id), "status": "cancelled"}
 
 
 def _run_admitted_ai(operation: str, user_id: str, call):
