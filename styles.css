@@ -222,3 +222,20 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
   padding-left: 24px;
 }
 .finance-event-row li { margin: 6px 0; overflow-wrap: anywhere; }
+
+.finance-queue-controls input {
+  min-width: 0;
+  flex: 1 1 240px;
+  border: 1px solid var(--border, rgba(255,255,255,.14));
+  border-radius: 12px;
+  padding: 11px 12px;
+  color: inherit;
+  background: var(--surface, rgba(255,255,255,.04));
+  font: inherit;
+}
+.finance-role-lookup { margin-top: 22px; }
+.finance-role-lookup > label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
