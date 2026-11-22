@@ -49,6 +49,8 @@ no-store responses. The service-role key remains server-side and is used only
 to call the two audit RPCs. The technical/financial console renders the returned
 safe fields and does not accept direct browser writes to the journal.
 
+Pagination uses a composite `(occurred_at, id)` keyset cursor, so multiple events written in the same database transaction timestamp are not skipped between pages. Both cursor fields are required together.
+
 Successful journal views are recorded as `admin.access`. Failed permission
 checks for a verified signed-in user are recorded as
 `admin.permission.denied`; if the audit store is unavailable, the access
