@@ -39,8 +39,8 @@ class FakeClient:
         if url.endswith("/ai_provider_cost_reservations"):
             if params.get("status") == "in.(reserved,unknown)":
                 return FakeResponse([
-                    {"provider": "deepseek", "status": "reserved", "reserved_cost_usd": "0.10", "actual_estimated_cost_usd": None},
-                    {"provider": "gemini", "status": "unknown", "reserved_cost_usd": "0.20", "actual_estimated_cost_usd": None},
+                    {"request_id": "11111111-1111-4111-8111-111111111111", "provider": "deepseek", "model": "deepseek-chat", "status": "reserved", "reserved_cost_usd": "0.10", "actual_estimated_cost_usd": None, "created_at": "2026-11-23T00:00:00+00:00"},
+                    {"request_id": "22222222-2222-4222-8222-222222222222", "provider": "gemini", "model": "gemini-3.1-flash-lite", "status": "unknown", "reserved_cost_usd": "0.20", "actual_estimated_cost_usd": None, "created_at": "2026-11-23T00:01:00+00:00"},
                 ])
             return FakeResponse([
                 {"provider": "deepseek", "status": "settled", "reserved_cost_usd": "0.02", "actual_estimated_cost_usd": "0.03"},
@@ -64,7 +64,7 @@ def test_admin_budget_report_separates_spend_reservations_and_unknown(monkeypatc
     assert by_provider["deepseek"]["outstanding_reserved_usd"] == "0.1000000000"
     assert by_provider["gemini"]["unknown_reservations"] == 1
     assert by_provider["gemini"]["status"] == "unknown_costs"
-    assert result["actual_billed_cost_usd"] is None
+    assert result["unknown_reservations"][0]["request_id"] == "22222222-2222-4222-8222-222222222222"\n    assert result["unknown_reservations"][0]["provider"] == "gemini"\n    assert result["actual_billed_cost_usd"] is None
 
 
 def test_admin_budget_report_fails_closed_without_service_credentials():
