@@ -167,3 +167,8 @@ The page cap is intentional: worker memory and request volume remain bounded. If
 
 
 Completed-result integrity scans use the same bounded pagination policy as upload verification: 100 entries per page, up to 10 pages, stable created_at ordering. A truncated scan or temporarily missing listing entry is deferred as retryable Storage uncertainty, not reported as corruption. Only after metadata is found are MIME, size, privacy and downloaded bytes checked. The scan remains read-only and never changes a succeeded job or deletes its result.
+
+
+## 21. Worker restart after an ambiguous provider response
+
+If a provider accepted a generation request but the worker lost the response, the worker records the operation as unknown before scheduling retry. A restarted worker reclaims the same durable job, reads the existing provider-operation journal, and performs lookup with the stable job UUID idempotency key. If the provider reports success, the worker reuses that result and continues through result journaling, private Storage verification and job completion. It does not issue a second independent generation request. This behavior is covered by a two-worker-instance recovery test; the test uses fakes and does not establish any real provider's idempotency or lookup guarantees.
