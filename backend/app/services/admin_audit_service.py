@@ -75,16 +75,20 @@ def record_admin_audit_event(
 
 
 def get_admin_audit_events(
-    settings: Settings, *, before: datetime | None = None, limit: int = 100,
+    settings: Settings, *, before: datetime | None = None,
+    before_id: UUID | None = None, limit: int = 100,
 ) -> list[dict[str, Any]]:
     if not 1 <= limit <= 200:
         raise ValueError("Audit page limit must be between 1 and 200.")
+    if (before is None) != (before_id is None):
+        raise ValueError("Both audit cursor timestamp and event ID are required.")
     if before is not None:
         if before.tzinfo is None:
             raise ValueError("Timezone-aware audit cursor is required.")
         before = before.astimezone(timezone.utc)
     result = _rpc(settings, "read_admin_audit_events", {
         "p_before": before.isoformat() if before else None,
+        "p_before_id": str(before_id) if before_id else None,
         "p_limit": limit,
     })
     if not isinstance(result, list) or len(result) > limit:
