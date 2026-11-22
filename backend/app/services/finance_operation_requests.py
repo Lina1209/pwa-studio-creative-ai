@@ -23,6 +23,10 @@ class FinanceRequestConflict(RuntimeError):
     pass
 
 
+class FinanceRequestNotFound(RuntimeError):
+    pass
+
+
 REQUEST_TYPES = frozenset({"credit_compensation", "billing_refund"})
 DECISIONS = frozenset({"approve", "reject"})
 
@@ -44,11 +48,20 @@ def _rpc(settings: Settings, name: str, payload: dict):
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 409:
+                error_code = None
+                try:
+                    error_code = exc.response.json().get("code")
+                except Exception:
+                    pass
+                if exc.response.status_code == 409 or error_code in {"55000", "23505"}:
                     raise FinanceRequestConflict("Finance request conflicts with its current state.") from exc
+                if error_code == "P0002":
+                    raise FinanceRequestNotFound("Finance request was not found.") from exc
+                if error_code == "22023":
+                    raise ValueError("Finance request parameters or transition are invalid.") from exc
                 raise
             return response.json()
-    except (FinanceRequestNotConfigured, FinanceRequestConflict):
+    except (FinanceRequestNotConfigured, FinanceRequestConflict, FinanceRequestNotFound, ValueError):
         raise
     except Exception as exc:
         raise FinanceRequestUnavailable("Finance request storage is temporarily unavailable.") from exc
@@ -140,6 +153,8 @@ def read_finance_operation_request(settings: Settings, *, request_id: UUID) -> d
     if not isinstance(request_id, UUID):
         raise ValueError("Finance request UUID is required.")
     result = _rpc(settings, "read_finance_operation_request", {"p_request_id": str(request_id)})
+    if result == []:
+        raise FinanceRequestNotFound("Finance request was not found.")
     if not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict):
         raise FinanceRequestUnavailable("Finance request lookup returned an invalid result.")
     row = result[0]
