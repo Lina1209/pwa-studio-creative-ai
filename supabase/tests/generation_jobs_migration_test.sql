@@ -92,6 +92,8 @@ create table public.studio_media (
 \ir ../migrations/0024_generation_result_sha256.sql
 \ir ../migrations/0025_provider_cost_budget_admission.sql
 \ir ../migrations/0026_global_provider_budget_reservations.sql
+\ir ../migrations/0027_site_visit_analytics.sql
+\ir ../migrations/0028_site_visit_admin_analytics.sql
 
 -- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
 do $credit_ledger_privileges_test$
