@@ -97,7 +97,7 @@ end;
 $$;
 
 -- The backend-only RPC creates one job and one outbox event atomically.
-do $
+do $$
 declare
   v_first record;
   v_second record;
@@ -160,7 +160,7 @@ begin
     null;
   end;
 end;
-$;
+$$;
 
 -- A job must not reference another user's project.
 do $$
