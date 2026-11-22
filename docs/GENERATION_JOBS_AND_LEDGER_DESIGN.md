@@ -398,3 +398,10 @@ Backend API tests cover successful structured output, malformed AI output, reque
 Mini Movie Studio now has an authenticated `POST /api/movie/director` workflow that converts the user's reviewed screenplay into a bounded, ordered scene collection. Each scene carries a stable sequence number, title, location, time of day, estimated duration, characters, action, visual description, camera-shot list, lighting, and transition. Pydantic validates every scene, rejects unknown fields, enforces contiguous scene numbering, and caps aggregate duration relative to the requested runtime.
 
 The endpoint uses the shared AI admission/rate-limit path and usage telemetry. Provider credentials remain server-side; malformed or inconsistent model output returns a generic 502 without leaking provider output. The Mini Movie Studio UI places the returned structured scene JSON into the existing editable storyboard field. It remains a draft until the user reviews and saves it. This is pre-production planning only; it does not generate images, video, audio, or a rendered film.
+
+
+## AI shot-by-shot storyboard
+
+The authenticated `POST /api/movie/storyboard` endpoint converts the user's reviewed, ordered director scenes into a bounded set of shot records. Every frame includes duration, shot type, camera angle and movement, composition, subject focus, a self-contained future image-generation prompt, and continuity notes. Input scenes and returned scene numbers must match exactly; frame numbers must be contiguous; each scene and frame collection is schema-validated and capped.
+
+The endpoint runs through shared AI admission and usage accounting, applies content checks to supplied scene text, and returns a generic error for malformed model output. The Mini Movie Studio button only runs after structured director scenes exist and stores the returned frames in the editable storyboard draft. These prompts are preparation for a later image provider integration; this feature itself does not generate or store images.
