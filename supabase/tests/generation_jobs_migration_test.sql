@@ -2079,6 +2079,10 @@ declare
   v_unknown_job_id uuid := '14141414-1414-4141-8141-141414141414';
   v_allowed boolean;
 begin
+  -- The replacement global gate is disabled by default; enable bounded test
+  -- policy values explicitly for this isolated fixture.
+  perform public.configure_provider_budget_policy(1.00, 1.00);
+
   insert into public.generation_jobs(
     id, user_id, job_type, provider, model, idempotency_key,
     request_hash, pricing_snapshot
@@ -2153,6 +2157,16 @@ begin
        'public.authorize_generation_provider_operation(uuid,text)', 'EXECUTE') then
     raise exception 'Provider budget admission RPC privileges are not least-privilege';
   end if;
+
+  -- Reconcile the deliberately unknown fixture against a known test invoice so
+  -- the following global-budget scenario starts without leftover exposure.
+  if not public.resolve_generation_provider_reservation(
+       v_unknown_job_id, 'legacy-budget-test-reconcile', 'settle_known_cost', 0.01,
+       'Test invoice confirms the provider operation charge.'
+     ) then
+    raise exception 'Could not reconcile the legacy unknown-cost test fixture';
+  end if;
+  perform public.configure_provider_budget_policy(null, null);
 end;
 $provider_budget_admission_test$;
 
@@ -2208,8 +2222,8 @@ begin
     raise exception 'Disabled global provider budget policy admitted a billable call';
   end if;
 
-  -- Daily limit 0.20 USD and outstanding exposure limit 0.15 USD.
-  if not public.configure_provider_budget_policy(0.20, 0.15) then
+  -- Daily limit 0.30 USD and outstanding exposure limit 0.15 USD.
+  if not public.configure_provider_budget_policy(0.30, 0.15) then
     raise exception 'Operator could not configure the global provider budget policy';
   end if;
 
@@ -2307,16 +2321,16 @@ begin
      set created_at = now() - interval '1 day'
    where job_id in (v_job_b, v_job_unknown);
 
-  if not public.configure_provider_budget_policy(0.19, 0.30) then
+  if not public.configure_provider_budget_policy(0.25, 0.30) then
     raise exception 'Could not configure the daily-limit rejection assertion';
   end if;
   select public.authorize_generation_provider_operation(v_job_next_day, 'global-budget-worker')
     into v_allowed;
   if v_allowed is distinct from false then
-    raise exception 'Admission exceeded the configured daily budget by one cent';
+    raise exception 'Admission exceeded the configured daily budget';
   end if;
 
-  if not public.configure_provider_budget_policy(0.20, 0.30) then
+  if not public.configure_provider_budget_policy(0.26, 0.30) then
     raise exception 'Could not adjust test policy for UTC rollover assertion';
   end if;
   select public.authorize_generation_provider_operation(v_job_next_day, 'global-budget-worker')
