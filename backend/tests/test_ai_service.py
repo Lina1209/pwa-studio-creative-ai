@@ -87,7 +87,7 @@ def test_capacity_limit_returns_retryable_overload(monkeypatch):
         lambda capacity: threading.BoundedSemaphore(0),
     )
     with pytest.raises(ai_service.AIOverloadedError):
-        ai_service.ask_ai(settings(), [{"role": "user", "content": "hello"}])
+        run_ai(settings(), [{"role": "user", "content": "hello"}])
 
 
 def test_empty_provider_response_is_rejected(monkeypatch):
