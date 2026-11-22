@@ -281,3 +281,47 @@ def verify_pricing_quote(
         price_version=price_version, issued_at=issued_at,
         expires_at=expires_at, signature=signature,
     )
+
+
+def load_pricing_catalog(raw_json: str) -> PricingCatalog:
+    """Parse the server-only JSON catalog; an empty rules list fails closed."""
+    if not isinstance(raw_json, str) or len(raw_json.encode("utf-8")) > 65536:
+        raise PricingError("Server pricing catalog is missing or exceeds 64 KiB.")
+    try:
+        payload = json.loads(raw_json)
+    except (TypeError, ValueError) as exc:
+        raise PricingError("Server pricing catalog is not valid JSON.") from exc
+    if not isinstance(payload, dict) or set(payload) != {"version", "rules"}:
+        raise PricingError("Server pricing catalog schema is invalid.")
+    if not isinstance(payload["rules"], list) or len(payload["rules"]) > 500:
+        raise PricingError("Server pricing catalog rules are invalid.")
+    rules = []
+    required = {
+        "job_type", "provider", "model", "credits_per_unit",
+        "unit_label", "min_quantity", "max_quantity",
+    }
+    for item in payload["rules"]:
+        if not isinstance(item, dict) or set(item) - required or not {
+            "job_type", "provider", "model", "credits_per_unit", "unit_label"
+        }.issubset(item):
+            raise PricingError("Server pricing catalog rule schema is invalid.")
+        try:
+            rules.append(PricingRule(
+                job_type=item["job_type"],
+                provider=item["provider"],
+                model=item["model"],
+                credits_per_unit=item["credits_per_unit"],
+                unit_label=item["unit_label"],
+                min_quantity=item.get("min_quantity", 1),
+                max_quantity=item.get("max_quantity", 1),
+            ))
+        except (TypeError, ValueError) as exc:
+            if isinstance(exc, PricingError):
+                raise
+            raise PricingError("Server pricing catalog contains an invalid rule.") from exc
+    try:
+        return PricingCatalog(payload["version"], tuple(rules))
+    except (TypeError, ValueError) as exc:
+        if isinstance(exc, PricingError):
+            raise
+        raise PricingError("Server pricing catalog metadata is invalid.") from exc
