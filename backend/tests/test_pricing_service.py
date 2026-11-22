@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 from uuid import UUID
 
 import pytest
@@ -9,6 +10,7 @@ from app.services.pricing_service import (
     PricingRule,
     canonical_request_hash,
     issue_pricing_quote,
+    load_pricing_catalog,
     verify_pricing_quote,
 )
 
@@ -136,3 +138,37 @@ def test_quote_is_bound_to_exact_project_or_scene_target():
         verify(snapshot)
     with pytest.raises(PricingError, match="both"):
         make_quote(project_id=project_id, studio_scene_id=scene_id)
+
+
+def test_server_catalog_loader_parses_rules_and_fails_closed_on_invalid_schema():
+    catalog = load_pricing_catalog(json.dumps({
+        "version": "server-v1",
+        "rules": [{
+            "job_type": "image_generation",
+            "provider": "provider-a",
+            "model": "model-a",
+            "credits_per_unit": 9,
+            "unit_label": "image",
+            "min_quantity": 1,
+            "max_quantity": 2,
+        }],
+    }))
+    assert catalog.version == "server-v1"
+    assert catalog.find("image_generation", "provider-a", "model-a").credits_per_unit == 9
+    assert load_pricing_catalog('{"version":"unconfigured","rules":[]}').rules == ()
+    with pytest.raises(PricingError, match="schema"):
+        load_pricing_catalog('{"version":"v1","rules":[],"client_price":1}')
+    with pytest.raises(PricingError, match="rule schema"):
+        load_pricing_catalog(json.dumps({
+            "version": "v1",
+            "rules": [{
+                "job_type": "image_generation",
+                "provider": "provider-a",
+                "model": "model-a",
+                "credits_per_unit": 9,
+                "unit_label": "image",
+                "client_amount": 1,
+            }],
+        }))
+    with pytest.raises(PricingError, match="valid JSON"):
+        load_pricing_catalog("{broken")
