@@ -1,6 +1,6 @@
 # PWA Studio — implementation roadmap and status
 
-Last reviewed: 2026-11-21
+Last reviewed: 2026-11-22
 
 For the complete product vision, platform rules, prohibited-content taxonomy, filters, bans, appeals, privacy/security requirements, rights/consent, testing strategy, and phased plan, see [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md).
 
@@ -22,7 +22,7 @@ This document is the working source of truth for the next implementation stages.
 ## Workstreams and acceptance criteria
 
 ### 1. AI Companion persistent history
-**Current state:** migration `0004_assistant_chat_history.sql` was applied to live Supabase. Frontend saves and reloads conversation titles and user/assistant messages. A test conversation survived a browser refresh on 2026-11-21.
+**Current state:** migration `0004_assistant_chat_history.sql` was applied to live Supabase. Frontend saves and reloads conversation titles and user/assistant messages. A test conversation survived a browser refresh on 2026-11-21. Migration `0006_assistant_conversation_updated_at.sql` has been added to keep conversation ordering correct after a rename; it has not been applied to the live database.
 
 Remaining verification: test logout/login and confirm that a second account cannot read or modify the first account's conversations. Existing AI replies continue to work.
 
@@ -131,3 +131,10 @@ Done when: users can chat safely, moderation is enforced server-side, and admin 
 ## Platform rules and moderation
 
 The detailed policy and moderation plan is maintained in [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md), including policy taxonomy, layered filters, enforcement ladder, temporary/permanent bans, appeals, audit logging, and privacy requirements. These capabilities are planned and must be enforced server-side; frontend-only filters or hidden buttons do not count as security.
+
+
+## 10. Durable jobs and credit ledger — design prepared
+
+The design contract is documented in [GENERATION_JOBS_AND_LEDGER_DESIGN.md](./GENERATION_JOBS_AND_LEDGER_DESIGN.md).
+
+Current status: migrations `0009_generation_jobs_and_outbox.sql` and `0010_create_generation_job_rpc.sql` are prepared in the audit branch. Static review confirmed that migration `0005` defines `public.projects(id uuid, owner_id uuid)`, matching the parent relation expected by 0009. Migration 0009 performs a preflight for that table/column shape and requires PostgreSQL 15+ for its column-specific `ON DELETE SET NULL (project_id)` behavior. Migration 0010 adds a trusted backend-only RPC that creates a job and its outbox event in one database transaction, returns the original job on an identical idempotent replay, and rejects reuse of a key for a different request. A disposable PostgreSQL 16 integration harness applies migrations 0005, 0007, 0009 and 0010 and checks cross-user project isolation, authenticated read-only job access, backend-only RPC permissions, idempotent replay, single outbox event creation, and job preservation when a project is deleted. GitHub Actions passed both the PostgreSQL integration job and the existing syntax/backend-test/manifest job on commit `b29d508`. Backend service wrapper `backend/app/services/generation_jobs.py` now calls the trusted RPC and reads jobs with both `id` and authenticated `user_id` filters. `GET /api/jobs/{job_id}` is implemented but disabled by default through `GENERATION_JOBS_ENABLED=false`; the RPC wrapper is not exposed as a client-facing create endpoint yet. Unit tests cover server-key handling, owner filters, response validation, and the feature gate; GitHub Actions passed on commit `587342e`. This validates the tested code against an isolated PostgreSQL 16 fixture and mocked HTTP services; it does not inspect or modify live Supabase. Migrations 0009/0010 have not been applied to Supabase. No public job creation endpoint, outbox dispatcher, Redis/Celery dependency, worker, wallet, holds, ledger, or real billing has been deployed. Next: choose the first provider-backed operation and define its server-side request/pricing contract, then expose job creation safely and implement dispatcher/worker transitions. Credit wallet and ledger RPCs follow only after transaction semantics and pricing assumptions are reviewed. Existing `ai_usage` remains telemetry only and must never be treated as a credit balance.

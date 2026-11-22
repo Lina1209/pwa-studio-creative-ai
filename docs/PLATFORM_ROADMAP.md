@@ -1,6 +1,6 @@
 # PWA Studio — platform roadmap
 
-Updated: 2026-11-21
+Updated: 2026-11-22
 
 ## Product direction
 
@@ -12,18 +12,18 @@ PWA Studio is a multi-user creative platform with a public guest-facing area, pr
 - Supabase Auth sign-in, sign-up and password reset email flow are present in the frontend.
 - A personal-account screen has been added. It displays the signed-in user's profile and links to their creative areas.
 - A separate owner panel is shown only after the backend confirms the account role.
-- Mini Movie Studio supports local project creation, compact project list, per-project edit/copy/delete, bounded version history, and a four-stage guided text workflow. Drafts remain in browser localStorage, namespaced by Supabase user ID; no cloud project CRUD exists yet.
+- Mini Movie Studio supports local project creation, compact project list, per-project edit/copy/delete, bounded version history, and a four-stage guided text workflow. Drafts are local-first and namespaced by Supabase user ID; signed-in projects synchronize directly with `public.projects` through Supabase RLS. Cross-device, conflict, and deletion behavior remain unverified.
 - Rules and safety page has been added to the public interface.
 - Backend AI chat and prompt-generation routes now require a valid Supabase access token.
 - The backend has an initial text safety guard for a limited set of clearly harmful request patterns.
-- A Supabase migration has been added for private storage buckets, per-user storage policies, moderation reports and an admin audit log.
-- PWA shell cache is v12; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback.
+- Migration 0002 defines private Storage buckets and owner-path policies only; it does not create moderation reports or an admin audit log. Migration 0005 defines the private `studio-media` bucket and project table.
+- PWA shell cache is v15; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback, including version-insensitive cache fallback for query-string asset versions.
 
 ## Important gaps — do not describe these as finished
 
-- The live Supabase schema was created earlier through SQL Editor. Compare it with the repository's original 0001_initial_schema.sql before running any older migration. Do not rerun 0001 blindly.
-- The new 0002_storage_and_moderation.sql has been committed but has NOT been run in Supabase. Storage buckets and report/audit tables therefore are not yet confirmed live.
-- No cloud project CRUD API exists yet. Mini Movie Studio drafts and their version history remain device-local and are not synchronized across devices.
+- The live Supabase schema was created through SQL Editor and later migrations. Compare it with the repository's original 0001_initial_schema.sql before running older migrations. Do not rerun 0001 blindly.
+- Migration 0005 has been applied and the `public.projects` table, owner policies, and private `studio-media` bucket were verified. The `studio-exports` bucket from migration 0002 is not confirmed. Migration 0002 does not create moderation reports or audit tables.
+- Mini Movie Studio uses direct Supabase client synchronization rather than a FastAPI project CRUD API. Cross-device persistence, conflict handling, and deletion synchronization are not yet verified.
 - No actual file upload/download UI is connected to Supabase Storage.
 - No real video-generation provider is connected. DeepSeek currently handles text AI only.
 - No photorealistic character training, identity consistency, voice cloning or CGI rendering pipeline is connected.
@@ -140,5 +140,5 @@ The initial regex guard must not be treated as a substitute for the above system
 
 1. Verify the new frontend pages and account flows on GitHub Pages.
 2. Run a syntax/deployment check for the updated FastAPI backend on Render.
-3. In Supabase, review and then run 0002_storage_and_moderation.sql; do not rerun 0001 blindly.
-4. After confirming the live schema and owner role, implement cloud project APIs and media upload.
+3. Inspect whether the private `studio-exports` bucket exists. Apply migration 0002 only if it is missing and after reviewing its policies; do not rerun 0001 blindly.
+4. Verify same-account cross-device project sync, conflict handling, and deletion tombstones; then implement private media upload and download.
