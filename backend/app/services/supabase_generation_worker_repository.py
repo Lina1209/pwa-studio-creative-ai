@@ -79,7 +79,7 @@ class SupabaseGenerationJobRepository:
                     params={
                         "select": "id,status,result_storage_path,updated_at,lease_expires_at,attempt_count,max_attempts,available_at,last_error_code",
                         "user_id": f"eq.{owner_id}",
-                        "order": "updated_at.asc,id.asc",
+                        "order": "id.asc",
                         "limit": str(page_size),
                         "offset": str(page * page_size),
                     },
