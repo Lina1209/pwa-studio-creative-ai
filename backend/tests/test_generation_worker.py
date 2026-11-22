@@ -186,7 +186,7 @@ async def test_worker_stops_provider_when_lease_is_lost():
     class SlowProvider(FakeProvider):
         async def generate(self, request, *, idempotency_key):
             await asyncio.sleep(0.2)
-            return await super().generate(request)
+            return await super().generate(request, idempotency_key=idempotency_key)
 
     repo = FakeRepository(heartbeat=False)
     result = await make_worker(repo, SlowProvider()).process(make_job())
