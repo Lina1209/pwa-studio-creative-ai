@@ -41,7 +41,30 @@ class WorkerRepositoryNotConfiguredError(RuntimeError):
 
 
 class WorkerRepositoryError(RuntimeError):
-    pass
+    """Sanitized database adapter failure with an explicit retry policy."""
+
+    def __init__(self, error_code: str, *, retryable: bool = True):
+        self.error_code = error_code
+        self.retryable = retryable
+        super().__init__(error_code)
+
+
+def _repository_error_code(exc: Exception) -> tuple[str, bool]:
+    """Classify transport and HTTP failures without exposing response bodies."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(exc, httpx.TimeoutException):
+        return "database_request_timeout", True
+    if isinstance(exc, httpx.RequestError):
+        return "database_connection_error", True
+    if isinstance(status, int):
+        if status in {408, 425, 429} or status >= 500:
+            return "database_temporarily_unavailable", True
+        if status in {401, 403}:
+            return "database_credentials_rejected", False
+        if 400 <= status < 500:
+            return "database_request_rejected", False
+    return "database_response_unavailable", True
 
 
 class SupabaseGenerationJobRepository:
@@ -70,10 +93,8 @@ class SupabaseGenerationJobRepository:
             response.raise_for_status()
             return response.json()
         except Exception as exc:
-            status = getattr(getattr(exc, "response", None), "status_code", "unavailable")
-            raise WorkerRepositoryError(
-                f"Generation worker database operation failed (HTTP {status})."
-            ) from exc
+            code, retryable = _repository_error_code(exc)
+            raise WorkerRepositoryError(code, retryable=retryable) from exc
 
 
     async def begin_provider_operation(
@@ -150,10 +171,8 @@ class SupabaseGenerationJobRepository:
             response.raise_for_status()
             rows = response.json()
         except Exception as exc:
-            status = getattr(getattr(exc, "response", None), "status_code", "unavailable")
-            raise WorkerRepositoryError(
-                f"Provider operation journal read failed (HTTP {status})."
-            ) from exc
+            code, retryable = _repository_error_code(exc)
+            raise WorkerRepositoryError(code, retryable=retryable) from exc
         if not isinstance(rows, list) or len(rows) > 1:
             raise WorkerRepositoryError("Provider operation journal read returned an invalid response.")
         if not rows:
@@ -193,10 +212,8 @@ class SupabaseGenerationJobRepository:
                 response.raise_for_status()
                 rows = response.json()
             except Exception as exc:
-                status = getattr(getattr(exc, "response", None), "status_code", "unavailable")
-                raise WorkerRepositoryError(
-                    f"Generation job inventory failed (HTTP {status})."
-                ) from exc
+                code, retryable = _repository_error_code(exc)
+                raise WorkerRepositoryError(code, retryable=retryable) from exc
             if not isinstance(rows, list):
                 raise WorkerRepositoryError("Generation job inventory returned an invalid response.")
             for row in rows:
