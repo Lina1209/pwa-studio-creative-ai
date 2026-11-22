@@ -147,9 +147,72 @@ class GenerationWorker:
             lost = asyncio.Event()
             heartbeat = asyncio.create_task(self._maintain_lease(job.job_id, lost))
             try:
-                result = await self._run_while_leased(
-                    provider.generate(request, idempotency_key=provider_idempotency_key), lost
+                journal = await self.repository.begin_provider_operation(
+                    job.job_id, self.worker_id, job.provider, provider_idempotency_key
                 )
+                if journal.created:
+                    try:
+                        result = await self._run_while_leased(
+                            provider.generate(request, idempotency_key=provider_idempotency_key), lost
+                        )
+                    except ImageGenerationError as exc:
+                        if exc.ambiguous:
+                            await self.repository.mark_provider_operation_unknown(
+                                job.job_id, self.worker_id, exc.error_code
+                            )
+                        raise
+                else:
+                    if getattr(provider, "supports_lookup", False) is not True:
+                        await self.repository.mark_provider_operation_unknown(
+                            job.job_id, self.worker_id, "provider_lookup_not_supported"
+                        )
+                        return await self._schedule_retry(job, "provider_operation_quarantined")
+                    try:
+                        lookup = await self._run_while_leased(
+                            provider.lookup_by_idempotency_key(
+                                idempotency_key=provider_idempotency_key
+                            ),
+                            lost,
+                        )
+                    except Exception:
+                        await self.repository.mark_provider_operation_unknown(
+                            job.job_id, self.worker_id, "provider_lookup_unavailable"
+                        )
+                        return await self._schedule_retry(job, "provider_operation_quarantined")
+
+                    if lookup.status == "succeeded":
+                        result = lookup.result
+                    elif lookup.status == "not_found" and getattr(
+                        provider, "supports_idempotency", False
+                    ) is True:
+                        result = await self._run_while_leased(
+                            provider.generate(request, idempotency_key=provider_idempotency_key), lost
+                        )
+                    elif lookup.status == "failed":
+                        code = lookup.error_code or "provider_operation_failed"
+                        await self.repository.mark_provider_operation_failed(
+                            job.job_id, self.worker_id, code
+                        )
+                        return await self._terminal_failure(job, code)
+                    else:
+                        await self.repository.mark_provider_operation_unknown(
+                            job.job_id, self.worker_id,
+                            lookup.error_code or "provider_operation_pending"
+                        )
+                        return await self._schedule_retry(
+                            job, "provider_operation_quarantined"
+                        )
+
+                if result.provider_request_id:
+                    if not await self.repository.mark_provider_operation_accepted(
+                        job.job_id, self.worker_id, result.provider_request_id
+                    ):
+                        return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                if not await self.repository.mark_provider_operation_result_received(
+                    job.job_id, self.worker_id, result.provider_request_id
+                ):
+                    return WorkerResult("lease_lost", "provider_result_journal_rejected")
+
                 if result.provider.strip().lower() != job.provider.strip().lower():
                     raise ImageGenerationError("provider_result_mismatch", retryable=False)
                 if result.model != job.model:
