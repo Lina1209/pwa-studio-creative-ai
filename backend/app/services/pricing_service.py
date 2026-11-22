@@ -76,6 +76,8 @@ class VerifiedPricingQuote:
     model: str
     request_hash: str
     idempotency_key: str
+    project_id: UUID | None
+    studio_scene_id: UUID | None
     quantity: int
     unit_label: str
     amount: int
@@ -94,6 +96,8 @@ class VerifiedPricingQuote:
             "model": self.model,
             "request_hash": self.request_hash,
             "idempotency_key": self.idempotency_key,
+            "project_id": str(self.project_id) if self.project_id else None,
+            "studio_scene_id": str(self.studio_scene_id) if self.studio_scene_id else None,
             "quantity": self.quantity,
             "unit_label": self.unit_label,
             "credit_unit": "credit",
@@ -123,7 +127,7 @@ def canonical_request_hash(request_snapshot: dict[str, Any]) -> str:
 
 def _quote_payload(
     *, quote_id: UUID, user_id: UUID, job_type: str, provider: str,
-    model: str, request_hash: str, idempotency_key: str, quantity: int, unit_label: str,
+    model: str, request_hash: str, idempotency_key: str, project_id: UUID | None, studio_scene_id: UUID | None, quantity: int, unit_label: str,
     amount: int, price_version: str, issued_at: datetime, expires_at: datetime,
 ) -> dict[str, Any]:
     return {
@@ -135,6 +139,8 @@ def _quote_payload(
         "model": model,
         "request_hash": request_hash,
         "idempotency_key": idempotency_key,
+        "project_id": str(project_id) if project_id else None,
+        "studio_scene_id": str(studio_scene_id) if studio_scene_id else None,
         "quantity": quantity,
         "unit_label": unit_label,
         "credit_unit": "credit",
@@ -157,7 +163,8 @@ def _sign(payload: dict[str, Any], secret: str) -> str:
 def issue_pricing_quote(
     *, secret: str | None, catalog: PricingCatalog, user_id: UUID,
     job_type: str, provider: str, model: str, request_hash: str,
-    idempotency_key: str, quantity: int = 1, ttl_seconds: int = 600,
+    idempotency_key: str, project_id: UUID | None = None,
+    studio_scene_id: UUID | None = None, quantity: int = 1, ttl_seconds: int = 600,
     now: datetime | None = None,
 ) -> VerifiedPricingQuote:
     if not secret or len(secret.encode("utf-8")) < 32:
@@ -168,6 +175,12 @@ def issue_pricing_quote(
         raise PricingError("Canonical request hash must be lowercase SHA-256 hex.")
     if not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 200:
         raise PricingError("Generation idempotency key is invalid.")
+    if project_id is not None and not isinstance(project_id, UUID):
+        raise PricingError("Pricing quote project identity is invalid.")
+    if studio_scene_id is not None and not isinstance(studio_scene_id, UUID):
+        raise PricingError("Pricing quote scene identity is invalid.")
+    if project_id is not None and studio_scene_id is not None:
+        raise PricingError("A pricing quote cannot target both a project and a scene.")
     if isinstance(quantity, bool) or not isinstance(quantity, int):
         raise PricingError("Generation quantity must be an integer.")
     if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or not 30 <= ttl_seconds <= 1800:
@@ -189,7 +202,7 @@ def issue_pricing_quote(
     payload = _quote_payload(
         quote_id=quote_id, user_id=user_id, job_type=job_type,
         provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
-        quantity=quantity, unit_label=rule.unit_label, amount=amount,
+        project_id=project_id, studio_scene_id=studio_scene_id, quantity=quantity, unit_label=rule.unit_label, amount=amount,
         price_version=catalog.version, issued_at=issued_at, expires_at=expires_at,
     )
     return VerifiedPricingQuote(
@@ -204,13 +217,14 @@ def issue_pricing_quote(
 def verify_pricing_quote(
     snapshot: dict[str, Any], *, secret: str | None, user_id: UUID,
     job_type: str, provider: str, model: str, request_hash: str,
-    idempotency_key: str, now: datetime | None = None,
+    idempotency_key: str, project_id: UUID | None = None,
+    studio_scene_id: UUID | None = None, now: datetime | None = None,
 ) -> VerifiedPricingQuote:
     if not secret or len(secret.encode("utf-8")) < 32:
         raise PricingError("Pricing quote signing secret is not configured securely.")
     allowed_fields = {
         "schema", "quote_id", "user_id", "job_type", "provider", "model",
-        "request_hash", "idempotency_key", "quantity", "unit_label",
+        "request_hash", "idempotency_key", "project_id", "studio_scene_id", "quantity", "unit_label",
         "credit_unit", "amount", "maximum_authorized_charge", "price_version",
         "issued_at", "expires_at", "signature",
     }
@@ -233,6 +247,8 @@ def verify_pricing_quote(
         quote_model = snapshot["model"]
         quote_hash = snapshot["request_hash"]
         quote_idempotency_key = snapshot["idempotency_key"]
+        quote_project_id = UUID(snapshot["project_id"]) if snapshot["project_id"] else None
+        quote_scene_id = UUID(snapshot["studio_scene_id"]) if snapshot["studio_scene_id"] else None
         unit_label = snapshot["unit_label"]
         price_version = snapshot["price_version"]
     except (KeyError, TypeError, ValueError) as exc:
@@ -268,7 +284,7 @@ def verify_pricing_quote(
     payload = _quote_payload(
         quote_id=quote_id, user_id=quoted_user, job_type=quote_job_type,
         provider=quote_provider, model=quote_model, request_hash=quote_hash, idempotency_key=quote_idempotency_key,
-        quantity=quantity, unit_label=unit_label, amount=amount,
+        project_id=quote_project_id, studio_scene_id=quote_scene_id, quantity=quantity, unit_label=unit_label, amount=amount,
         price_version=price_version, issued_at=issued_at, expires_at=expires_at,
     )
     expected = _sign(payload, secret)
@@ -277,7 +293,8 @@ def verify_pricing_quote(
     return VerifiedPricingQuote(
         quote_id=quote_id, user_id=quoted_user, job_type=quote_job_type,
         provider=quote_provider, model=quote_model, request_hash=quote_hash,
-        idempotency_key=quote_idempotency_key, quantity=quantity, unit_label=unit_label, amount=amount,
+        idempotency_key=quote_idempotency_key, project_id=quote_project_id, studio_scene_id=quote_scene_id,
+        quantity=quantity, unit_label=unit_label, amount=amount,
         price_version=price_version, issued_at=issued_at,
         expires_at=expires_at, signature=signature,
     )
