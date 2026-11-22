@@ -24,9 +24,10 @@ DIGEST = calculate_sha256(IMAGE)
 
 
 class FakeRepository:
-    def __init__(self, *, heartbeat=True, complete=True):
+    def __init__(self, *, heartbeat=True, complete=True, journal_created=True):
         self.heartbeat_result = heartbeat
         self.complete_result = complete
+        self.journal_created = journal_created
         self.calls = []
 
     async def heartbeat(self, *args):
@@ -35,7 +36,7 @@ class FakeRepository:
 
     async def begin_provider_operation(self, *args):
         self.calls.append(("journal_begin", args))
-        return SimpleNamespace(created=True, state="submitting")
+        return SimpleNamespace(created=self.journal_created, state="submitting" if self.journal_created else "unknown")
 
     async def mark_provider_operation_accepted(self, *args):
         self.calls.append(("journal_accepted", args))
@@ -262,3 +263,67 @@ async def test_worker_fails_closed_for_provider_without_idempotency_support():
     assert result.outcome == "failed"
     assert result.error_code == "provider_idempotency_not_supported"
     assert repo.calls[0][0] == "fail"
+
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_unknown_operation_uses_existing_provider_result_without_resubmitting():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class RecoverableProvider(FakeProvider):
+        supports_lookup = True
+
+        def __init__(self):
+            super().__init__()
+            self.lookup_calls = []
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            self.lookup_calls.append(idempotency_key)
+            return ImageGenerationLookup(
+                "succeeded",
+                result=ImageGenerationResult(IMAGE, "image/png", "fake", "fake-v1"),
+            )
+
+    provider = RecoverableProvider()
+    repo = FakeRepository(journal_created=False)
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "succeeded"
+    assert provider.idempotency_keys == []
+    assert provider.lookup_calls == [str(JOB_ID)]
+    assert repo.calls[-1][0] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_unknown_operation_never_submits_when_lookup_is_pending():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class PendingProvider(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            return ImageGenerationLookup("pending")
+
+        async def generate(self, request, *, idempotency_key):
+            raise AssertionError("Pending operation must never be resubmitted")
+
+    repo = FakeRepository(journal_created=False)
+    result = await make_worker(repo, PendingProvider()).process(make_job())
+
+    assert result.outcome == "retry_scheduled"
+    assert result.error_code == "provider_operation_quarantined"
+    assert repo.calls[-1][0] == "retry"
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_unknown_operation_without_lookup_is_quarantined():
+    class LookupUnsupportedProvider(FakeProvider):
+        async def generate(self, request, *, idempotency_key):
+            raise AssertionError("Ambiguous operation must not be blindly resubmitted")
+
+    repo = FakeRepository(journal_created=False)
+    result = await make_worker(repo, LookupUnsupportedProvider()).process(make_job())
+
+    assert result.outcome == "retry_scheduled"
+    assert result.error_code == "provider_operation_quarantined"
+    assert repo.calls[-1][0] == "retry"
