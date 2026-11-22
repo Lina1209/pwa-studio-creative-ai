@@ -261,6 +261,72 @@ begin
 end;
 $$;
 
+-- Expired leases are rejected, reclaimed within the attempt budget, then terminally failed.
+do $
+declare
+  v_created record;
+  v_claim record;
+  v_job_id uuid;
+  v_status text;
+begin
+  select * into v_created from public.create_scene_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111',
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    'image_generation', 'test-image-provider', 'test-image-model',
+    'lease-expiry-idempotency-1', repeat('f', 64),
+    '{"prompt":"lease expiry test"}'::jsonb, '{}'::jsonb
+  );
+  v_job_id := v_created.job_id;
+
+  select * into v_claim from public.claim_next_generation_job('worker-expiry-a', 30);
+  if v_claim.job_id is distinct from v_job_id or v_claim.attempt_count <> 1 then
+    raise exception 'First worker did not claim the lease-expiry test job';
+  end if;
+
+  update public.generation_jobs
+     set lease_expires_at = now() - interval '1 second'
+   where id = v_job_id;
+
+  if public.heartbeat_generation_job(v_job_id, 'worker-expiry-a', 30) then
+    raise exception 'Heartbeat accepted an expired lease';
+  end if;
+  if public.complete_generation_job(
+    v_job_id, 'worker-expiry-a',
+    '11111111-1111-4111-8111-111111111111/results/expired.png'
+  ) then
+    raise exception 'Completion accepted an expired lease';
+  end if;
+
+  select * into v_claim from public.claim_next_generation_job('worker-expiry-b', 30);
+  if v_claim.job_id is distinct from v_job_id or v_claim.attempt_count <> 2 then
+    raise exception 'An expired lease was not reclaimed as attempt two';
+  end if;
+
+  update public.generation_jobs
+     set lease_expires_at = now() - interval '1 second'
+   where id = v_job_id;
+
+  select * into v_claim from public.claim_next_generation_job('worker-expiry-c', 30);
+  if v_claim.job_id is distinct from v_job_id or v_claim.attempt_count <> 3 then
+    raise exception 'The final permitted attempt was not reclaimed';
+  end if;
+
+  update public.generation_jobs
+     set lease_expires_at = now() - interval '1 second'
+   where id = v_job_id;
+
+  select * into v_claim from public.claim_next_generation_job('worker-expiry-d', 30);
+  if v_claim.job_id is not null then
+    raise exception 'An exhausted expired job was claimed again';
+  end if;
+
+  select status into v_status from public.generation_jobs where id = v_job_id;
+  if v_status <> 'failed' then
+    raise exception 'An exhausted expired lease was not moved to failed';
+  end if;
+end;
+$;
+
 -- Only the trusted backend service role may execute worker lifecycle RPCs.
 do $$
 begin
