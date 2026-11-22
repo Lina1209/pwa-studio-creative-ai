@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from uuid import UUID
 
 import httpx
@@ -7,6 +8,7 @@ import pytest
 from app.core.config import Settings
 from app.services.generation_worker import ClaimedImageJob
 from app.services.supabase_generation_worker_repository import (
+    ProviderCostEventResult,
     SupabaseGenerationJobRepository,
     WorkerRepositoryError,
     WorkerRepositoryNotConfiguredError,
@@ -308,4 +310,97 @@ async def test_complete_credited_rejects_malformed_rpc_result():
                 UUID("22222222-2222-4222-8222-222222222222"),
                 "worker-a",
                 "11111111-1111-4111-8111-111111111111/generated/result.png",
+            )
+
+
+@pytest.mark.asyncio
+async def test_record_provider_cost_event_uses_service_rpc_and_parses_budget_status():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["payload"] = json.loads(request.content)
+        return httpx.Response(200, json=[{
+            "event_id": 17,
+            "created": True,
+            "cumulative_known_cost_usd": "0.1250000000",
+            "budget_limit_usd": "0.1000000000",
+            "budget_exceeded": True,
+        }])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        result = await repository.record_provider_cost(
+            job_id=UUID("22222222-2222-4222-8222-222222222222"),
+            user_id=UUID("11111111-1111-4111-8111-111111111111"),
+            operation_key="provider-call-0001",
+            provider="test-provider",
+            model="test-model",
+            provider_usage_id="usage-123",
+            cost_usd=Decimal("0.125"),
+            cost_source="reported",
+            input_units=100,
+            output_units=25,
+            total_units=125,
+            unit_kind="token",
+            metadata={"billing_reference": "synthetic"},
+        )
+
+    assert isinstance(result, ProviderCostEventResult)
+    assert result.event_id == 17
+    assert result.created is True
+    assert result.cumulative_known_cost_usd == Decimal("0.1250000000")
+    assert result.budget_limit_usd == Decimal("0.1000000000")
+    assert result.budget_exceeded is True
+    assert seen["url"].endswith("/rpc/record_generation_provider_cost")
+    assert seen["payload"]["p_cost_usd"] == "0.125"
+    assert seen["payload"]["p_user_id"] == "11111111-1111-4111-8111-111111111111"
+
+
+@pytest.mark.asyncio
+async def test_record_provider_cost_rejects_inconsistent_or_invalid_cost_before_network():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500))
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        base = {
+            "job_id": UUID("22222222-2222-4222-8222-222222222222"),
+            "user_id": UUID("11111111-1111-4111-8111-111111111111"),
+            "operation_key": "provider-call-0002",
+            "provider": "test-provider",
+            "model": "test-model",
+            "provider_usage_id": None,
+            "cost_usd": Decimal("0.01"),
+            "cost_source": "reported",
+        }
+        with pytest.raises(WorkerRepositoryError):
+            await repository.record_provider_cost(**{**base, "cost_usd": Decimal("-0.01")})
+        with pytest.raises(WorkerRepositoryError):
+            await repository.record_provider_cost(**{**base, "cost_usd": None})
+        with pytest.raises(WorkerRepositoryError):
+            await repository.record_provider_cost(**{**base, "input_units": True})
+
+
+@pytest.mark.asyncio
+async def test_record_provider_cost_rejects_malformed_rpc_result():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[{
+            "event_id": 1,
+            "created": "true",
+            "cumulative_known_cost_usd": "0.01",
+            "budget_limit_usd": None,
+            "budget_exceeded": None,
+        }]))
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError):
+            await repository.record_provider_cost(
+                job_id=UUID("22222222-2222-4222-8222-222222222222"),
+                user_id=UUID("11111111-1111-4111-8111-111111111111"),
+                operation_key="provider-call-0003",
+                provider="test-provider",
+                model="test-model",
+                provider_usage_id=None,
+                cost_usd=Decimal("0.01"),
+                cost_source="estimated",
             )
