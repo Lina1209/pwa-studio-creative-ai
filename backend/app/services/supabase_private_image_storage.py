@@ -197,6 +197,82 @@ class SupabasePrivateImageStorage:
                 return results
         raise SupabaseStorageAdapterError("storage_inventory_page_limit_reached")
 
+    async def verify_existing_image(
+        self, *, owner_id: UUID, job_id: UUID, object_path: str
+    ) -> StoredObjectMetadata:
+        """Re-verify a previously completed result against private Storage.
+
+        The path is derived from the owner/job pair and must match exactly;
+        Storage metadata is read independently and bytes are downloaded with
+        a hard size bound before a fresh SHA-256 is calculated.
+        """
+        allowed_extensions = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
+        prefix = f"{owner_id}/generated/"
+        if not isinstance(object_path, str) or not object_path.startswith(prefix):
+            raise GenerationResultStorageError("stored_object_path_invalid")
+        filename = object_path[len(prefix):]
+        if "/" in filename or filename.count(".") != 1:
+            raise GenerationResultStorageError("stored_object_path_invalid")
+        stem, extension = filename.rsplit(".", 1)
+        expected_mime = allowed_extensions.get(extension)
+        if stem != str(job_id) or expected_mime is None:
+            raise GenerationResultStorageError("stored_object_path_invalid")
+
+        encoded_bucket = quote(self._bucket, safe="")
+        bucket_response = await self._request(
+            "GET", f"{self._base_url}/bucket/{encoded_bucket}"
+        )
+        bucket_info = bucket_response.json()
+        if not isinstance(bucket_info, dict) or bucket_info.get("public") is not False:
+            raise GenerationResultStorageError("object_bucket_must_be_private")
+
+        listing_response = await self._request(
+            "POST",
+            f"{self._base_url}/object/list/{encoded_bucket}",
+            json={"prefix": f"{owner_id}/generated", "limit": 1000, "offset": 0},
+        )
+        listing = listing_response.json()
+        if not isinstance(listing, list):
+            raise SupabaseStorageAdapterError("storage_metadata_invalid")
+        matches = [
+            row for row in listing
+            if isinstance(row, dict) and row.get("name") == filename
+        ]
+        if len(matches) != 1:
+            raise SupabaseStorageAdapterError("storage_object_metadata_missing")
+        metadata = matches[0].get("metadata")
+        if not isinstance(metadata, dict):
+            raise SupabaseStorageAdapterError("storage_object_metadata_invalid")
+        raw_size = metadata.get("size")
+        if isinstance(raw_size, bool):
+            raise SupabaseStorageAdapterError("storage_object_size_invalid")
+        if isinstance(raw_size, int):
+            size_bytes = raw_size
+        elif isinstance(raw_size, str) and raw_size.isdecimal():
+            size_bytes = int(raw_size)
+        else:
+            raise SupabaseStorageAdapterError("storage_object_size_invalid")
+        content_type = metadata.get("mimetype") or metadata.get("contentType")
+        if not 0 < size_bytes <= MAX_IMAGE_BYTES:
+            raise GenerationResultStorageError("object_size_out_of_range")
+        if content_type != expected_mime:
+            raise GenerationResultStorageError("object_mime_not_allowed")
+
+        encoded_path = self._encoded_path(object_path)
+        payload = await self._download_object(
+            f"{self._base_url}/object/authenticated/{encoded_bucket}/{encoded_path}"
+        )
+        if len(payload) != size_bytes:
+            raise GenerationResultStorageError("stored_object_content_mismatch")
+        return StoredObjectMetadata(
+            bucket=self._bucket,
+            object_path=object_path,
+            is_private=True,
+            content_type=content_type,
+            size_bytes=size_bytes,
+            sha256_hex=calculate_sha256(payload),
+        )
+
     async def upload_image(
         self, *, owner_id: UUID, job_id: UUID, image_bytes: bytes, mime_type: str
     ) -> UploadedImageObject:
