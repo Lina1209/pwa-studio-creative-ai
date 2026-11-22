@@ -637,3 +637,53 @@ async def test_lease_loss_during_provider_acceptance_prevents_storage_upload():
     assert result.outcome == "lease_lost"
     assert storage.calls == 0
     assert not any(call[0] in {"journal_result", "complete", "retry", "fail"} for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_restart_recovers_ambiguous_submission_without_duplicate_generation():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class RestartRecoverableProvider(FakeProvider):
+        supports_lookup = True
+
+        def __init__(self):
+            super().__init__(error=ImageGenerationError(
+                "provider_response_lost", retryable=True, ambiguous=True
+            ))
+            self.lookup_calls = []
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            self.lookup_calls.append(idempotency_key)
+            return ImageGenerationLookup(
+                "succeeded",
+                result=ImageGenerationResult(
+                    IMAGE, "image/png", "fake", "fake-v1"
+                ),
+                provider_request_id="recovered-request-789",
+            )
+
+    provider = RestartRecoverableProvider()
+
+    # First worker persists an ambiguous provider outcome and schedules retry.
+    first_repository = FakeRepository()
+    first_result = await make_worker(first_repository, provider).process(make_job())
+
+    assert first_result.outcome == "retry_scheduled"
+    assert first_result.error_code == "provider_response_lost"
+    assert any(call[0] == "journal_unknown" for call in first_repository.calls)
+    assert first_repository.calls[-1][0] == "retry"
+
+    # A new worker process reclaims the same durable job and journal.
+    restarted_repository = FakeRepository(
+        journal_created=False, journal_state="unknown"
+    )
+    second_result = await make_worker(restarted_repository, provider).process(
+        make_job(attempt_count=2)
+    )
+
+    assert second_result.outcome == "succeeded"
+    assert provider.idempotency_keys == [str(JOB_ID)]
+    assert provider.lookup_calls == [str(JOB_ID)]
+    assert not any(call[0] == "generate" for call in restarted_repository.calls)
+    assert any(call[0] == "journal_result" for call in restarted_repository.calls)
+    assert any(call[0] == "complete" for call in restarted_repository.calls)
