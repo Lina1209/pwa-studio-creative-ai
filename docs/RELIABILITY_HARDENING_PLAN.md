@@ -184,3 +184,18 @@ The function:
 - is executable only by `service_role`.
 
 The PostgreSQL integration suite verifies the active-owner requirement, terminal metadata, and rejection of later transitions. This is still a database primitive: no worker runtime, provider adapter, storage uploader, or production migration is deployed. The generation submission feature flag remains disabled.
+
+
+## 11. Generation result storage verification contract (unit-tested, adapter not connected)
+
+Added backend module `generation_result_storage.py` with a strict, provider-neutral validation boundary. Before a worker may mark an image job successful, the future storage adapter must supply authoritative metadata for the uploaded object. The validator checks:
+
+- exact configured bucket and exact object path;
+- owner UUID as the first path segment and rejection of traversal, empty segments, absolute paths, and backslashes;
+- explicit private-bucket confirmation;
+- allowlisted image MIME type and bounded non-zero size;
+- canonical SHA-256 checksum equality with the bytes prepared for upload.
+
+The module returns a small verified-asset value and safe error codes; it does not expose object contents, credentials, or provider messages. Unit tests cover valid metadata and rejected bucket, path, privacy, MIME, size, checksum, and empty-payload cases.
+
+This is a validation contract only. It does not upload to Supabase Storage, independently query bucket privacy, or run a worker. The future adapter must fetch bucket/object metadata from Supabase itself; it must never construct the metadata from client-supplied values.
