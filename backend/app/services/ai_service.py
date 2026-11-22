@@ -1,4 +1,5 @@
 import logging
+import threading
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -8,10 +9,16 @@ from app.core.config import Settings
 
 
 logger = logging.getLogger(__name__)
+_semaphore_lock = threading.Lock()
+_semaphores: dict[int, threading.BoundedSemaphore] = {}
 
 
 class AIConfigurationError(RuntimeError):
     pass
+
+
+class AIOverloadedError(RuntimeError):
+    """Raised when the bounded in-process AI capacity is full."""
 
 
 @dataclass(frozen=True)
@@ -23,6 +30,14 @@ class AIResult:
     cost_usd: Decimal | None
     cost_source: str | None
     actual_model: str
+
+
+def _semaphore_for_capacity(capacity: int) -> threading.BoundedSemaphore:
+    # Settings are immutable for a running process; cache one gate per configured capacity.
+    with _semaphore_lock:
+        if capacity not in _semaphores:
+            _semaphores[capacity] = threading.BoundedSemaphore(capacity)
+        return _semaphores[capacity]
 
 
 def _provider_credentials(settings: Settings) -> tuple[str, str | None]:
@@ -59,50 +74,62 @@ def _response_cost(response) -> Decimal | None:
 
 def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
     model, api_key = _provider_credentials(settings)
-    if settings.ai_provider.lower() != "ollama" and not api_key:
+    provider = settings.ai_provider.strip().lower()
+    if provider != "ollama" and not api_key:
         raise AIConfigurationError(
             f"AI provider '{settings.ai_provider}' is selected, but its API key is not configured."
         )
 
-    completion_options = {
-        "model": model,
-        "messages": messages,
-        "api_key": api_key,
-        "timeout": 90,
-        "max_retries": 1,
-    }
-    if settings.ai_provider.lower() == "ollama":
-        completion_options["api_base"] = settings.ollama_api_base.rstrip("/")
+    gate = _semaphore_for_capacity(settings.ai_max_concurrent_requests)
+    acquired = gate.acquire(timeout=settings.ai_queue_wait_seconds)
+    if not acquired:
+        raise AIOverloadedError("AI capacity is currently full.")
 
     try:
-        response = completion(**completion_options)
-    except Exception as exc:
-        # Log diagnostic metadata only; never log prompts, credentials, or raw provider errors.
-        status_code = getattr(exc, "status_code", None)
-        logger.error(
-            "AI provider request failed: provider=%s model=%s error_type=%s status_code=%s",
-            settings.ai_provider,
-            model,
-            type(exc).__name__,
-            status_code if isinstance(status_code, (int, str)) else "unavailable",
-        )
-        raise
-    content = response.choices[0].message.content
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("The AI provider returned an empty response.")
+        completion_options = {
+            "model": model,
+            "messages": messages,
+            "api_key": api_key,
+            "timeout": settings.ai_request_timeout_seconds,
+            "max_retries": settings.ai_max_retries,
+        }
+        if provider == "ollama":
+            completion_options["api_base"] = settings.ollama_api_base.rstrip("/")
 
-    usage = getattr(response, "usage", None)
-    input_tokens = _usage_value(usage, "prompt_tokens")
-    output_tokens = _usage_value(usage, "completion_tokens")
-    total_tokens = _usage_value(usage, "total_tokens")
-    actual_model = getattr(response, "model", None) or model
-    cost = _response_cost(response)
-    return AIResult(
-        text=content.strip(),
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-        cost_usd=cost,
-        cost_source="litellm_response_cost" if cost is not None else None,
-        actual_model=str(actual_model),
-    )
+        try:
+            response = completion(**completion_options)
+        except Exception as exc:
+            # Log diagnostic metadata only; never log prompts, credentials, or raw provider errors.
+            status_code = getattr(exc, "status_code", None)
+            logger.error(
+                "AI provider request failed: provider=%s model=%s error_type=%s status_code=%s",
+                provider,
+                model,
+                type(exc).__name__,
+                status_code if isinstance(status_code, (int, str)) else "unavailable",
+            )
+            raise
+
+        choices = getattr(response, "choices", None)
+        message = getattr(choices[0], "message", None) if choices else None
+        content = getattr(message, "content", None)
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("The AI provider returned an empty response.")
+
+        usage = getattr(response, "usage", None)
+        input_tokens = _usage_value(usage, "prompt_tokens")
+        output_tokens = _usage_value(usage, "completion_tokens")
+        total_tokens = _usage_value(usage, "total_tokens")
+        actual_model = getattr(response, "model", None) or model
+        cost = _response_cost(response)
+        return AIResult(
+            text=content.strip(),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost_usd=cost,
+            cost_source="litellm_response_cost" if cost is not None else None,
+            actual_model=str(actual_model),
+        )
+    finally:
+        gate.release()
