@@ -185,7 +185,7 @@ end;
 $$;
 
 -- Worker lifecycle: atomic claim, lease ownership, retry, and verified-result completion.
-do $
+do $$
 declare
   v_job_id uuid;
   v_claim record;
@@ -259,10 +259,10 @@ begin
     raise exception 'Completed job did not enter succeeded state';
   end if;
 end;
-$;
+$$;
 
 -- Only the trusted backend service role may execute worker lifecycle RPCs.
-do $
+do $$
 begin
   if has_function_privilege('authenticated',
        'public.claim_next_generation_job(text,integer)', 'EXECUTE')
@@ -285,7 +285,7 @@ begin
     raise exception 'service_role is missing a worker lifecycle RPC grant';
   end if;
 end;
-$;
+$$;
 
 -- Only the trusted backend service role may execute the RPC.
 do $$
