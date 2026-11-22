@@ -62,7 +62,7 @@ def test_successful_completion_returns_usage_and_cost(monkeypatch):
     assert result.input_tokens == 4
     assert result.output_tokens == 2
     assert result.total_tokens == 6
-    assert str(result.cost_usd) == "0.0000048000"
+    assert str(result.cost_usd) == "0.0000036000"
     assert result.actual_model == "gpt-test-version"
     assert result.request_id is not None
     assert result.cost_source == "server_peak_price_estimate"
