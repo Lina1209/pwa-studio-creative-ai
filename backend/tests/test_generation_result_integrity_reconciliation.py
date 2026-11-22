@@ -61,8 +61,8 @@ async def test_result_integrity_scan_separates_verified_corrupt_and_deferred():
     assert report.checked_jobs == 4
     assert report.verified_results == (f"{OWNER}/generated/{GOOD}.png",)
     assert report.integrity_failures == (
-        (str(CORRUPT), "stored_object_content_mismatch"),
         (str(MISSING_PATH), "succeeded_job_missing_result_path"),
+        (str(CORRUPT), "stored_object_content_mismatch"),
     )
     assert report.deferred_checks == ((str(TEMPORARY), "storage_request_timeout"),)
 
