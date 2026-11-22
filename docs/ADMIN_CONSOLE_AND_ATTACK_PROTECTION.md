@@ -98,3 +98,11 @@ The technical/finance center now includes two read-only panels:
 The UI uses text-only DOM rendering for returned values and sends no direct browser writes to financial tables. The provider-cost report is an operational expense view, not a profit-and-loss statement. Revenue, payment fees, refunds, taxes, infrastructure invoices, and net profit must not be inferred from it. The wallet summary is not a transaction ledger and does not expose individual ledger entries.
 
 Both panels are code in the review branch only. They do not establish that the latest frontend/backend has been deployed or that the corresponding permissions and migrations are active in production. No balances, payments, refunds, tariffs, or provider budgets are changed by these panels.
+
+### Paginated credit ledger viewer (migration 0046)
+
+The admin finance panel now provides a separate, read-only, keyset-paginated credit ledger view for a target user. It shows operation type, available/reserved deltas, and resulting balances. The backend requires the existing `admin.finance.wallets.read` capability, bounds each page to 100 rows, validates row identity and numeric fields, and writes a mandatory access audit event before returning the page. If audit persistence fails, the endpoint returns no financial data.
+
+Migration `0046_admin_credit_ledger_read.sql` adds a SECURITY DEFINER read RPC with service-role-only execution and a stable `(created_at, id)` cursor. The client cannot call the RPC directly or mutate ledger rows. The migration integration suite checks RPC privileges and rejects partial cursors; backend tests cover authorization, audit failure, cursor handling, malformed rows, and sanitized upstream failures.
+
+**Accounting boundary:** this journal records internal credit units only. It is not a fiat cashbook, payment processor transaction history, revenue statement, tax report, or profit calculation. No payment/refund processor is connected and no monetary settlement is enabled.
