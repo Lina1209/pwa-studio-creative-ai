@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.finance_authorization import FinanceAuthorizationDenied, require_finance_permission
@@ -1094,6 +1094,68 @@ def direct_movie_scenes(payload: MovieDirectorRequest, user: StudioUser = Depend
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="AI не вернул сцены в ожидаемом формате. Попробуйте повторить запрос.") from exc
     return MovieDirectorResponse(scenes=scenes, provider=settings.ai_provider, model=result.actual_model)
+
+
+@app.post(f"{settings.api_prefix}/movie/storyboard", response_model=MovieStoryboardResponse)
+def create_movie_storyboard(payload: MovieStoryboardRequest, user: StudioUser = Depends(get_current_user)):
+    """Create a structured shot-by-shot storyboard from reviewed director scenes."""
+    check_content(payload.title)
+    for scene in payload.scenes:
+        for value in (scene.title, scene.location, scene.action, scene.visual_description, scene.lighting):
+            check_content(value)
+        for character in scene.characters:
+            check_content(character)
+    system = (
+        "You are a cinematographer and storyboard artist for PWA Studio. "
+        "Create a practical visual storyboard for every supplied scene. Preserve the scene order, "
+        "story beats, named characters, locations, props, and visual continuity. "
+        "Return ONLY a JSON object with exactly one key 'scenes'. Each scene object has scene_number "
+        "and frames. Each frame has exactly: frame_number (starting at 1 within its scene), "
+        "duration_seconds (integer), shot_type, camera_angle, camera_movement, composition, "
+        "subject_focus, visual_prompt, continuity_notes. Create 2-6 meaningful frames per scene, "
+        "not repetitive variations. visual_prompt must be a self-contained image-generation prompt "
+        "describing visible subjects, environment, action, framing, lighting, palette, mood, "
+        "and requested aspect ratio. Do not include text, logos, watermarks, or UI in the image. "
+        "Keep recurring characters visually consistent using concrete appearance descriptors based "
+        "only on the supplied story; do not infer sensitive traits. Make total frame durations per "
+        "scene plausible relative to estimated scene duration. Respect the requested visual style. "
+        "Avoid copyrighted character imitation, sexual exploitation of minors, non-consensual intimate "
+        "imagery, real-world harm instructions, fraud, doxxing and deceptive impersonation. "
+        "Respect consent for real people's likenesses and voices. Do not wrap JSON in markdown."
+    )
+    request = {
+        "title": payload.title,
+        "aspect_ratio": payload.frame,
+        "visual_style": payload.visual_style,
+        "output_language": payload.language,
+        "scenes": [scene.model_dump() for scene in payload.scenes],
+    }
+    result = _run_admitted_ai("movie_storyboard", user.user_id, lambda: ask_ai(settings, [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
+    ]))
+    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="movie_storyboard",
+                    provider=settings.ai_provider, result=result)
+    raw = result.text.strip()
+    if raw.startswith(chr(96) * 3):
+        raw = raw.split(chr(10), 1)[-1]
+        if raw.endswith(chr(96) * 3): raw = raw[:-3].strip()
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict) or set(data) != {"scenes"} or not isinstance(data["scenes"], list):
+            raise ValueError("invalid_storyboard_collection")
+        scenes = [MovieStoryboardScene.model_validate(item) for item in data["scenes"]]
+        expected_numbers = [scene.scene_number for scene in payload.scenes]
+        if [scene.scene_number for scene in scenes] != expected_numbers:
+            raise ValueError("storyboard_scene_mismatch")
+        for scene in scenes:
+            if [frame.frame_number for frame in scene.frames] != list(range(1, len(scene.frames) + 1)):
+                raise ValueError("invalid_frame_sequence")
+        if sum(len(scene.frames) for scene in scenes) > 300:
+            raise ValueError("storyboard_frame_limit")
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="AI не вернул раскадровку в ожидаемом формате. Попробуйте повторить запрос.") from exc
+    return MovieStoryboardResponse(scenes=scenes, provider=settings.ai_provider, model=result.actual_model)
 
 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
