@@ -4,6 +4,36 @@
 
 create extension if not exists pgcrypto;
 
+-- Fail early with an actionable message instead of relying on an opaque FK error.
+do $
+declare
+  server_version integer := current_setting('server_version_num')::integer;
+  projects_table regclass := to_regclass('public.projects');
+  id_type text;
+  owner_type text;
+begin
+  if projects_table is null then
+    raise exception 'Migration 0009 requires public.projects. Apply and verify migration 0005 before continuing.';
+  end if;
+
+  select data_type into id_type
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'projects' and column_name = 'id';
+
+  select data_type into owner_type
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'projects' and column_name = 'owner_id';
+
+  if id_type <> 'uuid' or owner_type <> 'uuid' then
+    raise exception 'Migration 0009 requires public.projects.id and public.projects.owner_id to both be UUID columns.';
+  end if;
+
+  if server_version < 150000 then
+    raise exception 'Migration 0009 requires PostgreSQL 15 or newer because its project foreign key uses column-specific ON DELETE SET NULL. Detected server_version_num=%.', server_version;
+  end if;
+end;
+$;
+
 -- Composite parent key allows the database to enforce that a job's project
 -- belongs to the same user who owns the job.
 do $$
