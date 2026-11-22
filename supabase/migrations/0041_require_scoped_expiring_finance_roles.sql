@@ -3,7 +3,7 @@
 -- non-expiring assignments exist, requiring explicit operator review before rollout.
 alter table public.finance_role_assignments
   add constraint finance_role_assignments_scope_required
-    check (scope_key is not null and length(scope_key) between 1 and 200),
+    check (scope_key is not null and length(scope_key) between 1 and 200 and scope_key = btrim(scope_key)),
   add constraint finance_role_assignments_expiry_required
     check (valid_until is not null and valid_until > valid_from);
 
@@ -30,7 +30,7 @@ begin
        'finance_operator', 'finance_approver', 'finance_executor',
        'support_readonly', 'auditor_readonly'
      )
-     or p_scope_key is null or length(p_scope_key) not between 1 and 200
+     or p_scope_key is null or length(p_scope_key) not between 1 and 200 or p_scope_key <> btrim(p_scope_key)
      or p_valid_until is null or p_valid_until <= now()
      or p_reason is null or length(p_reason) not between 1 and 500 then
     raise exception 'invalid finance role assignment' using errcode = '22023';
