@@ -12,6 +12,7 @@
     ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.publishableKey)
     : null;
   let authSession = null;
+  let adminUiAuthorized = false;
   let activeAssistantConversationId = null;
   let lastAuthUserId = null;
   let authStateEventReceived = false;
@@ -228,7 +229,6 @@ const movieHistoryStyle = document.createElement("style");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
 
 
-  let adminUiAuthorized = false;
   const getApiBase = () => (localStorage.getItem(API_URL_KEY) || DEFAULT_API_BASE).trim().replace(/\/+$/, "");
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
