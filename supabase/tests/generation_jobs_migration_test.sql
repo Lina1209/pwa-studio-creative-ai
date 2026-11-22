@@ -2527,6 +2527,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0033_entitlement_policy_and_wallet_reconciliation.sql
 \ir ../migrations/0034_paginated_wallet_reconciliation.sql
 \ir ../migrations/0035_admin_audit_journal.sql
+\ir ../migrations/0036_admin_audit_keyset_pagination.sql
 
 do $credit_entitlement_policy_test$
 declare
