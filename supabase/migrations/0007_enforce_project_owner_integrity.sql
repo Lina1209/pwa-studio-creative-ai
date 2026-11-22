@@ -11,3 +11,17 @@ end;
 $$;
 
 alter table public.projects alter column owner_id set not null;
+
+do $
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.projects'::regclass
+      and conname = 'projects_owner_id_fkey'
+  ) then
+    alter table public.projects
+      add constraint projects_owner_id_fkey
+      foreign key (owner_id) references auth.users(id) on delete cascade;
+  end if;
+end;
+$;
