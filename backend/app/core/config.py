@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     def validate_ai_provider_model(self):
         allowed_models = {
             "deepseek": {"deepseek-flash", "deepseek-v4-pro"},
-            "gemini": {"gemini-2.5-flash-lite"},
+            "gemini": {"gemini-3.1-flash-lite"},
         }
         if self.ai_model not in allowed_models[self.ai_provider]:
             raise ValueError("AI_MODEL is not allowed for the selected AI_PROVIDER.")
