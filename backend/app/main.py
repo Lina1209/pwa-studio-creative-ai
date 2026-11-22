@@ -402,7 +402,7 @@ def admin_ai_provider_status(
             "label": "Google Gemini",
             "supported": True,
             "selected": selected == "gemini",
-            "model": settings.ai_model if selected == "gemini" else "gemini-2.5-flash-lite",
+            "model": settings.ai_model if selected == "gemini" else "gemini-3.1-flash-lite",
             "api_key_configured": bool(settings.gemini_api_key),
             "pricing_mode": "google_free_tier_eligible",
             "free_tier_eligible": True,
@@ -421,8 +421,8 @@ def admin_ai_provider_status(
         "runtime_provider_switching": False,
         "providers": providers,
         "safety_note": (
-            "Gemini 2.5 Flash-Lite is listed as Free Tier eligible by Google, but actual project "
-            "quota and billing tier cannot be verified by this backend. Google may change quotas. "
+            "Gemini 3.1 Flash-Lite is listed as Free Tier eligible by Google, but actual project "
+            "quota and billing tier cannot be verified by this backend. Google may change quotas, and some projects may not be eligible for the free tier. "
             "Free-tier data may be used to improve Google products. Provider changes require a "
             "controlled backend configuration update and redeployment."
         ),
