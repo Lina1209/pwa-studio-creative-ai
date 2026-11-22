@@ -248,7 +248,7 @@ async def test_owner_inventory_paginates_and_returns_only_relative_names():
         )
     assert len(objects) == 1
     assert objects[0].object_path == f"{OWNER}/generated/one.png"
-    assert len(requests) == 2
+    assert len(requests) == 3  # bucket privacy preflight plus two inventory pages
 
 
 @pytest.mark.asyncio
