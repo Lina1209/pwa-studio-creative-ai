@@ -347,3 +347,19 @@ The table has RLS enabled, no client privileges or policies, and is writable onl
 Unit tests cover these decision boundaries and invalid successful lookup payloads.
 
 **Integration remains incomplete:** the running worker does not yet consult the provider-operation journal or invoke lookup; the Supabase repository adapter does not yet expose journal RPC methods; and no concrete provider implements the lookup contract. The pure policy is not a substitute for that integration. Existing fake providers and worker flow remain unchanged. Keep generation disabled until the next integration stage, provider consistency/retention semantics are documented, and end-to-end tests pass.
+
+
+## 22. Provider journal wired into worker recovery (integration code, not live-validated)
+
+The worker now opens or retrieves the durable provider-operation journal under its active job lease before any external submission. A newly created journal entry permits the first provider call with the stable job UUID idempotency key. A reclaimed job with an existing journal entry must use the provider's read-only lookup contract before it can proceed:
+
+- an existing successful provider result is reused and proceeds through the same private Storage verification path;
+- a pending, unknown, unavailable, or unsupported lookup is quarantined by scheduling a bounded retry; it never triggers a blind new submission;
+- a provider-confirmed failure is persisted and terminally failed;
+- a confirmed not-found lookup may resubmit only with the same key and only when the provider declares native idempotency support.
+
+The worker persists ambiguous submission errors as `unknown`. It also persists `result_received` before Storage upload begins, so a crash between provider completion and upload is visible in the journal. A new service-role RPC performs that transition under the active lease. The Supabase repository adapter now exposes journal creation, lookup, state transitions and read-only row retrieval.
+
+Mocked unit tests were added for journal RPC/read parsing, restart recovery from an existing successful result, pending-operation quarantine, and providers without lookup support. Existing worker tests were adapted to the journal boundary.
+
+**Remaining safety/deployment gates:** there is still no concrete image provider implementation, so provider lookup consistency, idempotency retention and result retrieval are not verified against a real service. The provider must return the original result for a successful lookup; returning only a request ID is insufficient for the current worker. No local test run or confirmed CI result is recorded for this commit series, and migration 0017 has not been applied or tested against a live/staging database. Keep all generation and worker flags disabled. The journal is an at-most-one-operation guard only when the provider's documented idempotency contract is honored; it does not create exactly-once execution or activate credits/billing.
