@@ -337,7 +337,11 @@ declare
   v_retry_claim record;
   v_event_id uuid;
   v_retry_event_id uuid;
+  v_lease_created record;
+  v_lease_claim record;
+  v_lease_event_id uuid;
   v_failed_at timestamptz;
+  v_lease_failed_at timestamptz;
 begin
   -- Isolate the test from earlier fixture events.
   update public.outbox_events
@@ -411,6 +415,51 @@ begin
   select * into v_claim from public.claim_next_outbox_event('outbox-worker-c', 60);
   if v_claim.event_id is not null then
     raise exception 'A dead-lettered outbox event was claimed again';
+  end if;
+
+  select * into v_lease_created from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'test-provider', 'test-model',
+    'outbox-lease-expiry-idempotency-1', repeat('c', 64),
+    '{"prompt":"outbox lease expiry test"}'::jsonb, '{}'::jsonb
+  );
+  select event_id into v_lease_event_id
+    from public.outbox_events where aggregate_id = v_lease_created.job_id;
+  update public.outbox_events
+     set max_delivery_attempts = 2
+   where event_id = v_lease_event_id;
+
+  select * into v_lease_claim
+    from public.claim_next_outbox_event('outbox-lease-worker-a', 60);
+  if v_lease_claim.event_id is distinct from v_lease_event_id
+     or v_lease_claim.delivery_attempts <> 1 then
+    raise exception 'Outbox lease-expiry fixture was not claimed on attempt one';
+  end if;
+  update public.outbox_events
+     set lease_expires_at = now() - interval '1 second'
+   where event_id = v_lease_event_id;
+  if public.mark_outbox_event_published(v_lease_event_id, 'outbox-lease-worker-a') then
+    raise exception 'Expired outbox lease was allowed to acknowledge delivery';
+  end if;
+
+  select * into v_lease_claim
+    from public.claim_next_outbox_event('outbox-lease-worker-b', 60);
+  if v_lease_claim.event_id is distinct from v_lease_event_id
+     or v_lease_claim.delivery_attempts <> 2 then
+    raise exception 'Expired outbox lease was not reclaimed as attempt two';
+  end if;
+  update public.outbox_events
+     set lease_expires_at = now() - interval '1 second'
+   where event_id = v_lease_event_id;
+  select * into v_lease_claim
+    from public.claim_next_outbox_event('outbox-lease-worker-c', 60);
+  if v_lease_claim.event_id is not null then
+    raise exception 'An exhausted expired outbox lease was claimed again';
+  end if;
+  select failed_at into v_lease_failed_at
+    from public.outbox_events where event_id = v_lease_event_id;
+  if v_lease_failed_at is null then
+    raise exception 'An exhausted expired outbox lease was not dead-lettered';
   end if;
 end;
 $outbox_test$;
@@ -549,7 +598,7 @@ $$;
 -- Authenticated users can read only their own jobs, and cannot write jobs/outbox.
 set request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
 set role authenticated;
-select 1 / case when count(*) = 6 then 1 else 0 end as assert_only_own_jobs_visible
+select 1 / case when count(*) = 7 then 1 else 0 end as assert_only_own_jobs_visible
 from public.generation_jobs;
 select 1 / case when not has_table_privilege('authenticated', 'public.generation_jobs', 'INSERT') then 1 else 0 end
   as assert_clients_cannot_insert_jobs;
