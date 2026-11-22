@@ -129,3 +129,11 @@
 8. Отдельно провести юридическую проверку подписок, пакетов, возвратов и сроков действия кредитов.
 
 **Ключевое правило:** Postgres хранит правду о job и деньгах; Redis только доставляет работу. Потеря Redis, перезапуск API или повтор webhook не должны приводить к потере проекта, двойной генерации или двойному списанию.
+
+## 9. Idempotency boundary hardening (migration 0016)
+
+The generic `create_generation_job_with_outbox` RPC now validates the allowed job type, bounded provider/model identifiers, idempotency-key length, a lowercase hexadecimal request hash, and object/size limits for request and pricing snapshots before inserting anything. A replay for the same `(user_id, idempotency_key)` returns the original job and original creation event; a replay with a different request hash, project, job type, provider or model is rejected. If a legacy job is found without its creation outbox event, the RPC repairs that missing event while holding the existing job row lock, rather than creating another job.
+
+The isolated PostgreSQL integration test applies migration 0016 and checks first creation, exact replay, single outbox event, mismatched replay rejection, short-key rejection and malformed-hash rejection. This hardens job creation only. It does **not** guarantee exactly-once provider execution: a worker can lose its lease after the provider accepted a request, and a later worker may retry. The selected provider adapter must pass a stable provider idempotency token derived from the durable job ID when the provider supports it; otherwise the system must explicitly model ambiguous provider outcomes and reconcile/poll before issuing another billable request.
+
+No credit wallet, hold, capture, release or ledger is introduced by this migration. There is no agreed credit price or billing policy yet, so no financial mutation is enabled. The future wallet hold and ledger must be created in the same transaction as job creation, with unique operation keys and row locking, after pricing and refund policy are approved.
