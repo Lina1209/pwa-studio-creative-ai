@@ -2529,6 +2529,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0035_admin_audit_journal.sql
 \ir ../migrations/0036_admin_audit_keyset_pagination.sql
 \ir ../migrations/0037_finance_authorization_registry.sql
+\ir ../migrations/0038_finance_role_registry_rpcs.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3438,3 +3439,101 @@ end;
 $finance_authorization_registry_test$;
 
 select 'finance authorization registry security checks passed' as result;
+
+
+-- Server-only registry RPCs atomically write grant/revoke events and expose only
+-- currently active assignments. Browser roles cannot invoke these functions.
+do $finance_role_registry_rpc_test$
+declare
+  v_assignment uuid;
+  v_revocation uuid;
+  v_active_count integer;
+  v_event_count integer;
+  v_rejected boolean := false;
+begin
+  if not has_function_privilege('service_role',
+       'public.read_active_finance_role_assignments(uuid)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.grant_finance_role(uuid,text,text,timestamp with time zone,uuid,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.revoke_finance_role(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'service_role is missing finance registry RPC access';
+  end if;
+
+  if has_function_privilege('authenticated',
+       'public.read_active_finance_role_assignments(uuid)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.grant_finance_role(uuid,text,text,timestamp with time zone,uuid,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.revoke_finance_role(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'Browser role can invoke privileged finance registry RPC';
+  end if;
+
+  v_assignment := public.grant_finance_role(
+    '22222222-2222-4222-8222-222222222222',
+    'finance_operator', 'test-scope', now() + interval '1 day',
+    '11111111-1111-4111-8111-111111111111',
+    'Disposable registry RPC grant fixture'
+  );
+
+  select count(*) into v_active_count
+    from public.read_active_finance_role_assignments(
+      '22222222-2222-4222-8222-222222222222'
+    )
+   where assignment_id = v_assignment
+     and role_code = 'finance_operator'
+     and scope_key = 'test-scope';
+  if v_active_count <> 1 then
+    raise exception 'New finance assignment was not returned as active';
+  end if;
+
+  select count(*) into v_event_count
+    from public.finance_authorization_events
+   where assignment_id = v_assignment and event_type = 'role.granted';
+  if v_event_count <> 1 then
+    raise exception 'Finance role grant did not atomically create its audit event';
+  end if;
+
+  v_revocation := public.revoke_finance_role(
+    v_assignment,
+    '11111111-1111-4111-8111-111111111111',
+    'Disposable registry RPC revoke fixture'
+  );
+  if v_revocation is null then
+    raise exception 'Finance role revocation did not return an id';
+  end if;
+
+  select count(*) into v_active_count
+    from public.read_active_finance_role_assignments(
+      '22222222-2222-4222-8222-222222222222'
+    )
+   where assignment_id = v_assignment;
+  if v_active_count <> 0 then
+    raise exception 'Revoked finance assignment remained active';
+  end if;
+
+  select count(*) into v_event_count
+    from public.finance_authorization_events
+   where assignment_id = v_assignment
+     and event_type in ('role.granted', 'role.revoked');
+  if v_event_count <> 2 then
+    raise exception 'Grant and revoke lifecycle is missing an audit event';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.grant_finance_role(
+      '22222222-2222-4222-8222-222222222222',
+      'unknown_role', null, null,
+      '11111111-1111-4111-8111-111111111111', 'invalid role fixture'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Unknown finance role was accepted';
+  end if;
+end;
+$finance_role_registry_rpc_test$;
+
+select 'finance role registry RPC checks passed' as result;
