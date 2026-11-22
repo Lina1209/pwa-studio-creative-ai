@@ -2531,6 +2531,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0037_finance_authorization_registry.sql
 \ir ../migrations/0038_finance_role_registry_rpcs.sql
 \ir ../migrations/0039_finance_role_self_assignment_guard.sql
+\ir ../migrations/0040_finance_role_duplicate_grant_guard.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3493,6 +3494,21 @@ begin
    where assignment_id = v_assignment and event_type = 'role.granted';
   if v_event_count <> 1 then
     raise exception 'Finance role grant did not atomically create its audit event';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.grant_finance_role(
+      '22222222-2222-4222-8222-222222222222',
+      'finance_operator', 'test-scope', now() + interval '1 day',
+      '11111111-1111-4111-8111-111111111111',
+      'Duplicate active assignment fixture'
+    );
+  exception when sqlstate '23505' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Duplicate active finance role assignment was accepted';
   end if;
 
   v_revocation := public.revoke_finance_role(
