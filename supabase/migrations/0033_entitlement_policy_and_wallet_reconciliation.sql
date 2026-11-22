@@ -358,6 +358,41 @@ begin
       from public.credit_hold_allocations a join bounded_users b using (user_id)
      group by a.user_id
   ),
+  hold_allocation_mismatches as (
+    select h.user_id,
+           count(*) filter (
+             where h.status = 'held'
+               and coalesce(a.held_amount, 0) <> h.amount
+           )::bigint
+           + count(*) filter (
+             where h.status <> 'held'
+               and coalesce(a.held_amount, 0) <> 0
+           )::bigint as mismatch_count
+      from public.credit_holds h
+      join bounded_users b using (user_id)
+      left join (
+        select user_id, hold_id, sum(amount)::bigint as held_amount
+          from public.credit_hold_allocations
+         where status = 'held'
+         group by user_id, hold_id
+      ) a on a.user_id = h.user_id and a.hold_id = h.id
+     group by h.user_id
+  ),
+  lot_allocation_mismatches as (
+    select l.user_id,
+           count(*) filter (
+             where l.reserved_credits <> coalesce(a.held_amount, 0)
+           )::bigint as mismatch_count
+      from public.credit_lots l
+      join bounded_users b using (user_id)
+      left join (
+        select user_id, lot_id, sum(amount)::bigint as held_amount
+          from public.credit_hold_allocations
+         where status = 'held'
+         group by user_id, lot_id
+      ) a on a.user_id = l.user_id and a.lot_id = l.id
+     group by l.user_id
+  ),
   latest_ledger as (
     select distinct on (e.user_id)
            e.user_id, e.balance_available_after, e.balance_reserved_after
@@ -372,6 +407,8 @@ begin
            coalesce(l.reserved, 0)::bigint as lot_reserved,
            coalesce(h.held, 0)::bigint as held_holds,
            coalesce(a.held, 0)::bigint as held_allocations,
+           coalesce(ham.mismatch_count, 0)::bigint as hold_allocation_mismatches,
+           coalesce(lam.mismatch_count, 0)::bigint as lot_allocation_mismatches,
            e.balance_available_after as ledger_available,
            e.balance_reserved_after as ledger_reserved
       from bounded_users b
@@ -379,6 +416,8 @@ begin
       left join lots l using (user_id)
       left join holds h using (user_id)
       left join allocations a using (user_id)
+      left join hold_allocation_mismatches ham using (user_id)
+      left join lot_allocation_mismatches lam using (user_id)
       left join latest_ledger e using (user_id)
   )
   select c.user_id, c.wallet_available, c.lot_available,
@@ -388,7 +427,9 @@ begin
           and c.wallet_reserved = c.lot_reserved) as wallet_lots_match,
          (c.wallet_reserved = c.held_holds) as holds_match,
          (c.wallet_reserved = c.held_allocations
-          and c.lot_reserved = c.held_allocations) as allocations_match,
+          and c.lot_reserved = c.held_allocations
+          and c.hold_allocation_mismatches = 0
+          and c.lot_allocation_mismatches = 0) as allocations_match,
          (c.ledger_available is not distinct from c.wallet_available
           and c.ledger_reserved is not distinct from c.wallet_reserved) as latest_ledger_matches,
          (c.wallet_available = c.lot_available
@@ -396,6 +437,8 @@ begin
           and c.wallet_reserved = c.held_holds
           and c.wallet_reserved = c.held_allocations
           and c.lot_reserved = c.held_allocations
+          and c.hold_allocation_mismatches = 0
+          and c.lot_allocation_mismatches = 0
           and c.ledger_available is not distinct from c.wallet_available
           and c.ledger_reserved is not distinct from c.wallet_reserved) as healthy
     from combined c
