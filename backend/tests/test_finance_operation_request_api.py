@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -173,6 +174,88 @@ def test_request_schema_rejects_client_actor_fields(monkeypatch):
             "reason": "Forged actor",
             "idempotency_key": str(IDEMPOTENCY),
         })
+        assert response.status_code == 422
+        assert called == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+
+def test_finance_queue_returns_only_delegated_scopes_with_keyset_cursor(monkeypatch):
+    import app.main as main_module
+
+    captured = {}
+    requested_at = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+    rows = [{
+        "request_id": REQUEST, "requester_id": OTHER,
+        "request_type": "credit_compensation", "target_user_id": OTHER,
+        "amount": Decimal("12"), "currency_code": "CRD",
+        "scope_key": f"user:{OTHER}", "reason": "Approved support correction",
+        "status": "pending", "requested_at": requested_at,
+        "decided_by": None, "decided_at": None, "decision_reason": None,
+        "cancelled_at": None,
+    }, {
+        "request_id": UUID("55555555-5555-4555-8555-555555555555"),
+        "requester_id": OTHER, "request_type": "credit_compensation",
+        "target_user_id": OTHER, "amount": Decimal("3"), "currency_code": "CRD",
+        "scope_key": f"user:{OTHER}", "reason": "Second page item",
+        "status": "pending", "requested_at": datetime(2026, 11, 22, tzinfo=timezone.utc),
+        "decided_by": None, "decided_at": None, "decision_reason": None,
+        "cancelled_at": None,
+    }]
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
+        ACTOR, {"credit.compensation.read"}, f"user:{OTHER}"
+    ))
+    monkeypatch.setattr(
+        main_module, "list_finance_operation_requests",
+        lambda *a, **k: captured.update(k) or rows,
+    )
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.get("/api/finance/requests?limit=1&status=pending")
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["items"]) == 1
+        assert body["items"][0]["request_id"] == str(REQUEST)
+        assert body["next_cursor"] == {
+            "before": requested_at.isoformat(),
+            "before_id": str(REQUEST),
+        }
+        assert body["execution_enabled"] is False
+        assert captured["credit_scope_keys"] == [f"user:{OTHER}"]
+        assert captured["billing_scope_keys"] == []
+        assert captured["limit"] == 2
+        assert response.headers["cache-control"] == "private, no-store"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_queue_denies_users_without_read_scope(monkeypatch):
+    import app.main as main_module
+
+    called = []
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(ACTOR, set(), f"user:{OTHER}"))
+    monkeypatch.setattr(main_module, "list_finance_operation_requests", lambda *a, **k: called.append(True))
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.get("/api/finance/requests")
+        assert response.status_code == 403
+        assert called == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_queue_rejects_partial_cursor(monkeypatch):
+    import app.main as main_module
+
+    called = []
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
+        ACTOR, {"credit.compensation.read"}, f"user:{OTHER}"
+    ))
+    monkeypatch.setattr(main_module, "list_finance_operation_requests", lambda *a, **k: called.append(True))
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.get("/api/finance/requests?before=2026-11-23T12:00:00Z")
         assert response.status_code == 422
         assert called == []
     finally:
