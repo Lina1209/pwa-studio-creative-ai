@@ -548,10 +548,14 @@ async def test_lease_loss_during_upload_recovers_same_provider_result_and_storag
         def __init__(self):
             self.persisted = False
             self.calls = 0
+            self.paths = []
+            self.payloads = []
 
         async def upload_image(self, *, owner_id, job_id, image_bytes, mime_type):
             self.calls += 1
             self.persisted = True  # Simulate Storage accepting bytes before response loss.
+            self.paths.append(f"{owner_id}/generated/{job_id}.png")
+            self.payloads.append(image_bytes)
             if self.calls == 1:
                 await asyncio.sleep(0.2)  # Worker cancellation after heartbeat reports lost lease.
             return await super().upload_image(
@@ -576,4 +580,7 @@ async def test_lease_loss_during_upload_recovers_same_provider_result_and_storag
 
     assert second.outcome == "succeeded"
     assert storage.calls == 2
+    assert storage.paths == [f"{OWNER}/generated/{JOB_ID}.png"] * 2
+    assert storage.payloads == [IMAGE, IMAGE]
+    assert not RecoverableProvider().idempotency_keys  # Recovery used lookup, not generation.
     assert any(call[0] == "complete" for call in recovered_repo.calls)
