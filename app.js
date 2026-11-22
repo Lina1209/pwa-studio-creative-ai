@@ -296,6 +296,7 @@ const movieHistoryStyle = document.createElement("style");
       $("#adminUniqueToday").textContent = formatMetric(data.today_unique_visitors);
       $("#adminWeekVisits").textContent = formatMetric(data.last_7_days_page_views);
       $("#adminMonthVisits").textContent = formatMetric(data.last_30_days_page_views);
+      $("#adminRateLimited").textContent = formatMetric(data.rate_limited_requests_last_24h);
       const chart = $("#adminVisitsChart"); chart.replaceChildren();
       const series = data.daily_series || [];
       const max = Math.max(1, ...series.map(row => row.page_views));
