@@ -40,7 +40,7 @@ def test_create_finance_request_uses_verified_actor_and_exact_permission_scope(m
     monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
         "request_id": REQUEST, "requester_id": ACTOR,
         "request_type": "credit_compensation", "target_user_id": OTHER,
-        "amount": Decimal("12.5000"), "currency_code": "CRD",
+        "amount": Decimal("12"), "currency_code": "CRD",
         "scope_key": f"user:{OTHER}", "status": "pending",
     })
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
@@ -258,5 +258,43 @@ def test_finance_queue_rejects_partial_cursor(monkeypatch):
         response = client.get("/api/finance/requests?before=2026-11-23T12:00:00Z")
         assert response.status_code == 422
         assert called == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+
+def test_finance_profile_exposes_only_callers_own_capabilities(monkeypatch):
+    import app.main as main_module
+
+    grant = _grant(ACTOR, {
+        "credit.compensation.read", "credit.compensation.request",
+    }, f"user:{OTHER}")
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: grant)
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.get("/api/finance/me")
+        assert response.status_code == 200
+        assert response.json() == {
+            "active": True,
+            "permissions": ["credit.compensation.read", "credit.compensation.request"],
+            "scope_count": 1,
+            "can_read_credit_requests": True,
+            "can_read_refund_requests": False,
+        }
+        assert response.headers["cache-control"] == "private, no-store"
+        assert str(OTHER) not in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_profile_returns_inactive_without_grants(monkeypatch):
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(ACTOR, set(), f"user:{OTHER}") if False else None)
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.get("/api/finance/me")
+        assert response.status_code == 200
+        assert response.json() == {"active": False, "permissions": [], "scope_count": 0}
     finally:
         app.dependency_overrides.clear()
