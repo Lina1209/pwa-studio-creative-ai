@@ -1451,6 +1451,31 @@ const movieHistoryStyle = document.createElement("style");
     });
     const actions=document.createElement("div"); actions.className="movie-stage-actions";
     const draft=document.createElement("button"); draft.type="button"; draft.className="secondary-button"; draft.textContent="Сохранить черновик";
+    let aiScriptStatus=null;
+    if(stage.key==="story"){
+      const aiGenerate=document.createElement("button"); aiGenerate.type="button"; aiGenerate.className="secondary-button";
+      aiGenerate.textContent="✦ Создать сценарий и раскадровку с AI";
+      aiScriptStatus=document.createElement("p"); aiScriptStatus.className="movie-stage-feedback";
+      aiScriptStatus.setAttribute("role","status"); aiScriptStatus.setAttribute("aria-live","polite");
+      aiScriptStatus.style.cssText="display:block;flex-basis:100%;margin:4px 0;";
+      aiGenerate.addEventListener("click",async()=>{
+        if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите, чтобы создавать сценарии с AI.");return;}
+        if(!project.idea?.trim()){aiScriptStatus.textContent="Сначала заполните идею фильма в основных сведениях.";return;}
+        const userId=authSession.user.id; aiGenerate.disabled=true;
+        aiGenerate.textContent="✦ AI пишет сценарий…"; aiScriptStatus.textContent="Создаём сценарий и покадровую раскадровку. Это может занять некоторое время.";
+        try{
+          const result=await apiRequest("/api/movie/script",{method:"POST",body:JSON.stringify({
+            title:project.name||"Новый фильм",idea:project.idea,genre:project.genre||"Приключения",
+            duration_minutes:Number(project.duration)||5,frame:project.frame||"16:9",language:"Русский"
+          })});
+          if(authSession?.user?.id!==userId)return;
+          inputs.story.value=result.story; inputs.storyboard.value=result.storyboard;
+          aiScriptStatus.textContent="✓ Сценарий и раскадровка готовы ("+result.provider+" · "+result.model+"). Проверьте текст и нажмите «Сохранить черновик».";
+        }catch(error){if(authSession?.user?.id===userId)aiScriptStatus.textContent="Не удалось создать сценарий: "+error.message;}
+        finally{aiGenerate.disabled=false;aiGenerate.textContent="✦ Создать сценарий и раскадровку с AI";}
+      });
+      actions.append(aiGenerate,aiScriptStatus);
+    }
     const draftStatus=document.createElement("p"); draftStatus.className="movie-stage-feedback"; draftStatus.setAttribute("role","status"); draftStatus.setAttribute("aria-live","polite"); draftStatus.style.cssText="display:block;flex-basis:100%;margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,.12);font-size:14px;";
     let draftStatusTimer=null;
     draft.addEventListener("click",()=>{
