@@ -276,3 +276,17 @@ Added a bounded owner-scoped recovery scan:
 **No deletion is implemented.** The scanner produces a report only. It deliberately preserves succeeded assets, live jobs, recent objects, unknown statuses and ambiguous records. A later cleanup operation must require a separately reviewed report, re-check the exact job and object immediately before deletion, enforce a second grace window, and write an audit record. There is no scheduled scanner, no production credentials used, and no live Supabase scan performed.
 
 Tests cover successful result preservation, old missing-job objects, terminal-job orphans, live/recent preservation, mismatched success paths, unknown states, malformed timestamps, duplicate inventory and pagination caps.
+
+## 16. Re-verification of previously stored generation results
+
+The private Storage adapter now exposes a read-only `verify_existing_image` operation for a known owner/job/path tuple. It:
+
+- rejects paths that do not exactly match the owner UUID, job UUID and supported image extension before making a request;
+- independently confirms the configured bucket is still private;
+- retrieves the exact object's Storage metadata and checks its MIME type and bounded size;
+- downloads the object through the authenticated private endpoint with the existing hard byte limit;
+- checks downloaded byte count against Storage metadata and calculates a fresh SHA-256 digest.
+
+This provides a way for a future reconciler to detect missing, inaccessible, oversized or metadata-inconsistent results after a restart. It does not mutate the job, repair a file, delete an object, or automatically re-run generation. The verification listing is deliberately bounded and fails closed when its first page is full, rather than incorrectly treating an object beyond that page as missing.
+
+Unit tests use HTTPX MockTransport and cover a valid private result, cross-owner/job path rejection, size mismatch and public-bucket rejection. No live Supabase request has been made. The adapter method is not yet called by a scheduled reconciler or user-facing API.
