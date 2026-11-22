@@ -62,3 +62,53 @@ def test_movie_script_requires_authentication(monkeypatch):
     c=TestClient(app)
     response=c.post("/api/movie/script",json={"title":"История","idea":"Идея"})
     assert response.status_code == 401
+
+
+def test_movie_director_returns_valid_ordered_scenes(monkeypatch):
+    import app.main as main
+    scenes = [
+        {"scene_number":1,"title":"Пробуждение","location":"Комната","time_of_day":"Утро",
+         "estimated_seconds":30,"characters":["Аня"],"action":"Героиня просыпается.",
+         "visual_description":"Мягкий свет падает на лицо героини.",
+         "camera_shots":["Общий план","Крупный план"],"lighting":"Мягкий утренний свет","transition":"Затемнение"},
+        {"scene_number":2,"title":"Выход","location":"Улица","time_of_day":"Утро",
+         "estimated_seconds":30,"characters":["Аня"],"action":"Аня выходит из дома.",
+         "visual_description":"Героиня закрывает дверь и смотрит вдаль.",
+         "camera_shots":["Средний план"],"lighting":"Естественный дневной свет","transition":"Склейка"}
+    ]
+    calls=[]; usage=[]
+    monkeypatch.setattr(main,"_run_admitted_ai",lambda operation,user_id,call: calls.append(operation) or SimpleNamespace(text=json.dumps({"scenes":scenes},ensure_ascii=False),actual_model="director-test"))
+    monkeypatch.setattr(main,"record_ai_usage",lambda *a,**k: usage.append(k))
+    c=_client()
+    try:
+        response=c.post("/api/movie/director",json={"title":"Путь домой","story":"Аня просыпается и выходит из дома, чтобы начать путешествие.","duration_minutes":2})
+        assert response.status_code==200
+        assert [item["scene_number"] for item in response.json()["scenes"]]==[1,2]
+        assert calls==["movie_director"]
+        assert usage[0]["endpoint"]=="movie_director"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_movie_director_rejects_non_sequential_scene_numbers(monkeypatch):
+    import app.main as main
+    scene={"scene_number":2,"title":"Сцена","location":"Дом","time_of_day":"День",
+           "estimated_seconds":30,"characters":[],"action":"Действие",
+           "visual_description":"Описание","camera_shots":["Общий план"],
+           "lighting":"Мягкий свет","transition":"Склейка"}
+    monkeypatch.setattr(main,"_run_admitted_ai",lambda *a,**k: SimpleNamespace(text=json.dumps({"scenes":[scene]}),actual_model="test"))
+    monkeypatch.setattr(main,"record_ai_usage",lambda *a,**k: None)
+    c=_client()
+    try:
+        response=c.post("/api/movie/director",json={"title":"Фильм","story":"Это достаточно длинный сценарий для проверки структуры сцен."})
+        assert response.status_code==502
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_movie_director_requires_authentication(monkeypatch):
+    import app.services.auth as auth
+    monkeypatch.setattr(auth, "get_settings", lambda: SimpleNamespace(supabase_url="https://auth.example.test"))
+    c=TestClient(app)
+    response=c.post("/api/movie/director",json={"title":"Фильм","story":"Это достаточно длинный сценарий для проверки структуры сцен."})
+    assert response.status_code==401
