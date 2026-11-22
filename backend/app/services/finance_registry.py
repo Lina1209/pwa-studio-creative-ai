@@ -16,6 +16,10 @@ class FinanceRegistryUnavailable(RuntimeError):
     pass
 
 
+class FinanceRoleConflict(RuntimeError):
+    pass
+
+
 ROLE_PERMISSIONS = {
     "finance_operator": frozenset({
         "credit.compensation.read", "credit.compensation.request",
@@ -74,9 +78,14 @@ def _rpc(settings: Settings, name: str, payload: dict):
                 json=payload,
                 headers=_headers(settings),
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 409:
+                    raise FinanceRoleConflict("An active finance role assignment already exists.") from exc
+                raise
             return response.json()
-    except FinanceRegistryNotConfigured:
+    except (FinanceRegistryNotConfigured, FinanceRoleConflict):
         raise
     except Exception as exc:
         raise FinanceRegistryUnavailable("Finance role registry is temporarily unavailable.") from exc
