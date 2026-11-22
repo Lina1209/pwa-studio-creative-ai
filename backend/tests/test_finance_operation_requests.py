@@ -117,3 +117,16 @@ def test_credit_compensation_requires_whole_credits_and_cash_refund_requires_cur
                 idempotency_key=IDEMPOTENCY,
             )
     assert called == []
+
+
+def test_finance_request_cannot_target_the_requester_account(monkeypatch):
+    called = []
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
+    with pytest.raises(ValueError):
+        service.create_finance_operation_request(
+            SETTINGS, requester_id=ACTOR, request_type="credit_compensation",
+            target_user_id=ACTOR, amount=Decimal("1"), currency_code="CRD",
+            scope_key="user:" + str(ACTOR), reason="Self-target attempt",
+            idempotency_key=IDEMPOTENCY,
+        )
+    assert called == []
