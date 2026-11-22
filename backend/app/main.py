@@ -631,8 +631,18 @@ def finance_request_create(
         raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
     except FinanceRequestUnavailable as exc:
         raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    try:
+        current_request = read_finance_operation_request(settings, request_id=request_id)
+    except FinanceRequestNotFound as exc:
+        raise HTTPException(status_code=503, detail="Finance request could not be read after creation.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request state is temporarily unavailable.") from exc
     response.headers["Cache-Control"] = "private, no-store"
-    return {"request_id": str(request_id), "status": "pending", "execution_enabled": False}
+    return {
+        "request_id": str(request_id),
+        "status": current_request["status"],
+        "execution_enabled": False,
+    }
 
 
 @app.post(f"{settings.api_prefix}/finance/requests/{{request_id}}/decision")
