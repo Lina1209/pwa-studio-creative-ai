@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ChatRequest(BaseModel):
@@ -51,8 +53,16 @@ class PricingQuoteRequest(BaseModel):
     job_type: str = Field(min_length=1, max_length=64)
     provider: str = Field(min_length=1, max_length=100)
     model: str = Field(min_length=1, max_length=200)
+    project_id: UUID | None = None
+    studio_scene_id: UUID | None = None
     request_snapshot: dict = Field()
     quantity: int = Field(default=1, ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def allow_only_one_generation_target(self):
+        if self.project_id is not None and self.studio_scene_id is not None:
+            raise ValueError("A pricing quote cannot target both a project and a scene.")
+        return self
 
     @field_validator("job_type", "provider", "model")
     @classmethod
