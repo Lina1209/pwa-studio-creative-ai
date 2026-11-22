@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +9,11 @@ from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
+from app.services.generation_jobs import (
+    GenerationJobsNotConfiguredError,
+    GenerationJobsServiceError,
+    get_generation_job,
+)
 
 settings = get_settings()
 
@@ -51,7 +56,32 @@ def health():
         "ai_capacity": settings.ai_max_concurrent_requests,
         "authentication_configured": bool(settings.supabase_url),
         "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
+        "generation_jobs_enabled": bool(settings.generation_jobs_enabled and settings.supabase_url and settings.supabase_service_role_key),
     }
+
+
+@app.get(f"{settings.api_prefix}/jobs/{job_id}")
+def generation_job_status(
+    job_id: UUID,
+    user: StudioUser = Depends(get_current_user),
+):
+    if not settings.generation_jobs_enabled:
+        raise HTTPException(status_code=503, detail="Generation job status is not enabled yet.")
+    try:
+        job = get_generation_job(
+            settings,
+            user_id=UUID(user.user_id),
+            job_id=job_id,
+        )
+    except GenerationJobsNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except GenerationJobsServiceError as exc:
+        raise HTTPException(status_code=502, detail="Could not load generation job status.") from exc
+
+    if job is None:
+        # Do not reveal whether a job with this id belongs to another account.
+        raise HTTPException(status_code=404, detail="Generation job was not found.")
+    return job
 
 
 @app.get(f"{settings.api_prefix}/auth/me")
