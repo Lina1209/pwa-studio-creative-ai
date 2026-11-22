@@ -115,7 +115,8 @@ begin
     v_job.user_id, v_hold.id, 'capture', 'capture:' || v_hold.operation_key,
     0, -v_hold.amount,
     v_wallet.available_credits, v_wallet.reserved_credits,
-    jsonb_build_object('job_id', p_job_id, 'result_storage_path', p_result_storage_path)
+    jsonb_build_object('job_id', p_job_id, 'result_storage_path', p_result_storage_path,
+                       'result_sha256', p_result_sha256)
   );
 
   update public.generation_jobs
