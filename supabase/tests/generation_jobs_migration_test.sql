@@ -86,12 +86,18 @@ begin
   ) then
     raise exception 'Authenticated role unexpectedly has execute permission on the job creation RPC';
   end if;
+  if not has_function_privilege(
+    'service_role',
+    'public.create_generation_job_with_outbox(uuid,uuid,text,text,text,text,text,jsonb,jsonb)',
+    'EXECUTE'
+  ) then
+    raise exception 'Trusted service_role is missing execute permission on the job creation RPC';
+  end if;
 end;
 $$;
 
 -- The backend-only RPC creates one job and one outbox event atomically.
-set role service_role;
-do $$
+do $
 declare
   v_first record;
   v_second record;
@@ -154,8 +160,7 @@ begin
     null;
   end;
 end;
-$$;
-reset role;
+$;
 
 -- A job must not reference another user's project.
 do $$
@@ -179,39 +184,12 @@ $$;
 -- Authenticated users can read only their own jobs, and cannot write jobs/outbox.
 set request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
 set role authenticated;
-select current_user, session_user, auth.uid() as request_user, (select rolbypassrls from pg_roles where rolname = current_user) as bypass_rls, (select relrowsecurity from pg_class where oid = 'public.generation_jobs'::regclass) as rls_enabled;
-select policyname, roles, qual from pg_policies where schemaname = 'public' and tablename = 'generation_jobs';
-select auth.uid() as request_user, user_id, auth.uid() = user_id as policy_match from public.generation_jobs;
-select count(*) as visible_rows_outside_do from public.generation_jobs;
-do $$
-declare visible_count integer;
-begin
-  select count(*) into visible_count from public.generation_jobs;
-  if visible_count <> 1 then
-    raise exception 'RLS leak or missing own job: expected 1 row, saw %', visible_count;
-  end if;
-
-  begin
-    insert into public.generation_jobs(
-      user_id, job_type, provider, model, idempotency_key, request_hash
-    ) values (
-      auth.uid(), 'ai_processing', 'test-provider', 'test-model',
-      'client-write-key', repeat('d', 64)
-    );
-    raise exception 'Authenticated client unexpectedly inserted a generation job';
-  exception when insufficient_privilege then
-    null;
-  end;
-
-  begin
-    insert into public.outbox_events(aggregate_type, aggregate_id, event_type)
-    values ('generation_job', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'generation_job.created');
-    raise exception 'Authenticated client unexpectedly inserted an outbox event';
-  exception when insufficient_privilege then
-    null;
-  end;
-end;
-$$;
+select 1 / case when count(*) = 1 then 1 else 0 end as assert_only_own_job_visible
+from public.generation_jobs;
+select 1 / case when not has_table_privilege('authenticated', 'public.generation_jobs', 'INSERT') then 1 else 0 end
+  as assert_clients_cannot_insert_jobs;
+select 1 / case when not has_table_privilege('authenticated', 'public.outbox_events', 'INSERT') then 1 else 0 end
+  as assert_clients_cannot_insert_outbox;
 reset role;
 reset request.jwt.claim.sub;
 
