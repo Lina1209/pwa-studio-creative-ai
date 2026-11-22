@@ -349,3 +349,19 @@ If usage persistence fails transiently, the job retries while retaining its prov
 Worker and contract tests now cover reported Decimal usage, explicit unknown usage, missing usage, malformed cost/units, persistence ordering and retry after a temporary database failure.
 
 **Scope remains limited:** no concrete provider currently supplies this contract, and no provider price schedule or real invoice has been configured. The journal therefore remains an integration point, not proof of actual spend. USD provider costs remain separate from customer credit holds and balances; no automatic overrun shutdown, credit conversion, payment or user debit has been enabled.
+
+
+## 34. Administrator provider-cost observability
+
+The read-only endpoint `GET /api/admin/financial/provider-costs?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
+is protected by the existing `require_admin` dependency and reads the append-only
+`generation_provider_cost_events` table with server-side Supabase service credentials.
+The report is UTC-based, limited to 31 calendar days and 5,000 events, and returns
+provider/model, day and opaque job-ID aggregates; it never returns prompts, raw
+provider metadata, usage identifiers, emails, or customer credit balances. It
+distinguishes reported, estimated and unknown cost evidence and counts exceeded,
+within-limit and indeterminate/unconfigured budget states. It is read-only and
+does not change wallets, holds, jobs, prices, or provider events. The endpoint
+must remain unavailable to non-admin users; database credentials are never sent
+to the browser. This is operational cost observability, not invoicing or proof
+that a provider's reported usage is accurate.
