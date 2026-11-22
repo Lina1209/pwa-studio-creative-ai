@@ -23,3 +23,10 @@ def test_hsts_is_added_in_production(monkeypatch):
     monkeypatch.setattr(main.settings, "app_env", "production")
     response = TestClient(main.app).get("/")
     assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+
+
+def test_api_responses_are_never_cached():
+    response = TestClient(main.app).get("/api/health")
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert response.headers["Pragma"] == "no-cache"
