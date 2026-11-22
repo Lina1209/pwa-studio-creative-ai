@@ -300,3 +300,11 @@ Added `verify_owner_succeeded_results`, which loads the bounded owner-scoped job
 - deferred checks caused by retryable Storage transport/service errors.
 
 Only expected Storage validation/adapter exceptions are classified. Unexpected programming errors propagate rather than being silently hidden. Non-succeeded jobs are not altered or retried. This is a report-only service: it does not update job status, recreate missing files, trigger generation, change credits, delete objects, or expose any service credentials. Tests cover success, corrupt data, missing path, temporary failure, and propagation of unexpected errors.
+
+## 18. Read-only worker lease and retry recovery report
+
+The owner-scoped generation-job inventory now also reads `lease_expires_at`, `attempt_count`, `max_attempts`, `available_at` and `last_error_code`, validating bounded counter values and metadata types. Pagination uses stable job-ID ordering so changing `updated_at` values do not reshuffle pages during a scan.
+
+`plan_generation_job_recovery` classifies running jobs with active leases, expired leases that remain retryable, expired leases whose attempts are exhausted, queued jobs, ready/delayed retry-wait jobs, and malformed/unknown states. It is strictly read-only. The existing database `claim_next_generation_job` RPC remains the only authority that atomically reclaims an expired lease using `FOR UPDATE SKIP LOCKED` or marks an exhausted expired job failed. The report does not reset leases, increment attempts, invoke providers, or modify credits. Tests cover each classification and missing lease/schedule metadata.
+
+Important operational distinction: an expired lease is eligible for atomic reclaim, not proof that the old worker has stopped executing. Worker-side cancellation and provider idempotency remain necessary; downstream provider requests must tolerate duplicate delivery after process pauses or network partitions.
