@@ -1,4 +1,5 @@
--- PWA Studio: private object storage foundation.
+-- PWA Studio: private object storage foundation only.
+-- This migration does NOT create moderation reports, bans, appeals, or audit-log tables.
 -- Safe to run after the Supabase project has been created.
 -- Buckets remain PRIVATE. Every object path must start with the authenticated user's UUID.
 
