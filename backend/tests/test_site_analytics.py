@@ -29,7 +29,8 @@ def test_unknown_route_is_normalized(monkeypatch):
 def test_stats_validate_nonnegative_integer_counts(monkeypatch):
     from app.services import site_analytics
     valid = {"total_page_views": 120, "today_page_views": 4, "today_unique_visitors": 3,
-             "last_7_days_page_views": 20, "last_30_days_page_views": 80}
+             "last_7_days_page_views": 20, "last_30_days_page_views": 80,
+            "rate_limited_requests_last_24h": 2, "rate_limited_token_windows_last_24h": 1}
     monkeypatch.setattr(site_analytics, "_rpc", lambda *args: valid)
     assert get_visit_stats(object())["total_page_views"] == 120
     monkeypatch.setattr(site_analytics, "_rpc", lambda *args: {**valid, "total_page_views": True})
