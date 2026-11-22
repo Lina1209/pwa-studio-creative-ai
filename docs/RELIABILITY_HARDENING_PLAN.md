@@ -290,3 +290,13 @@ The private Storage adapter now exposes a read-only `verify_existing_image` oper
 This provides a way for a future reconciler to detect missing, inaccessible, oversized or metadata-inconsistent results after a restart. It does not mutate the job, repair a file, delete an object, or automatically re-run generation. The verification listing is deliberately bounded and fails closed when its first page is full, rather than incorrectly treating an object beyond that page as missing.
 
 Unit tests use HTTPX MockTransport and cover a valid private result, cross-owner/job path rejection, size mismatch and public-bucket rejection. No live Supabase request has been made. The adapter method is not yet called by a scheduled reconciler or user-facing API.
+
+## 17. Read-only reconciliation of succeeded generation jobs
+
+Added `verify_owner_succeeded_results`, which loads the bounded owner-scoped job inventory and re-verifies every succeeded job that declares a result path using the private Storage adapter. The report separates:
+
+- verified result paths;
+- integrity failures, including a succeeded job without a result path or a definitive metadata/content validation failure;
+- deferred checks caused by retryable Storage transport/service errors.
+
+Only expected Storage validation/adapter exceptions are classified. Unexpected programming errors propagate rather than being silently hidden. Non-succeeded jobs are not altered or retried. This is a report-only service: it does not update job status, recreate missing files, trigger generation, change credits, delete objects, or expose any service credentials. Tests cover success, corrupt data, missing path, temporary failure, and propagation of unexpected errors.
