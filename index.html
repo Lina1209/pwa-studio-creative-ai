@@ -346,6 +346,17 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <article class="admin-module"><b>Роли и действия администраторов</b><p>Разрешения, история входов, изменения тарифов, запросы на подтверждение и audit log.</p><small>Управление делегированными ролями — через защищённую форму ниже</small></article>
           <article class="admin-module"><b>Резервные копии и восстановление</b><p>Статус резервирования, контроль целостности, сроки хранения и результаты тестов восстановления.</p><small>Удаление резервных копий запрещено</small></article>
         </div>
+        <section class="panel admin-finance-report-panel" aria-labelledby="adminAiProvidersHeading">
+          <div class="panel-heading"><div><h2 id="adminAiProvidersHeading">AI-провайдеры и бесплатные квоты</h2><p>Без раскрытия ключей. Выбор провайдера задаётся только конфигурацией backend; автоматического fallback нет.</p></div><button class="secondary-button" id="refreshAdminAiProviders" type="button">↻ Обновить</button></div>
+          <p class="helper-text" id="adminAiProviderStatus" role="status" aria-live="polite">Загрузка состояния AI-провайдеров…</p>
+          <div class="owner-metrics">
+            <article><span>Активный провайдер</span><strong id="adminAiSelectedProvider">—</strong><small id="adminAiSelectedModel">Модель —</small></article>
+            <article><span>Ключ на сервере</span><strong id="adminAiKeyStatus">—</strong><small>Значение ключа не отображается</small></article>
+            <article><span>Автопереключение</span><strong id="adminAiFallbackStatus">—</strong><small>Без скрытых платных переходов</small></article>
+          </div>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>Поддержка</th><th>Ключ настроен</th><th>Режим тарифа</th></tr></thead><tbody id="adminAiProviderRows"></tbody></table></div>
+          <p class="owner-privacy-note" id="adminAiProviderSafetyNote">Бесплатные лимиты и состояние биллинга проверяются в кабинете самого провайдера; backend не может гарантировать неизменность внешних квот.</p>
+        </section>
         <section class="panel admin-finance-report-panel" aria-labelledby="adminFinanceReportHeading">
           <div class="panel-heading"><div><h2 id="adminFinanceReportHeading">Финансовая отчётность · только чтение</h2><p>Показываются только подтверждённые расходы провайдеров и сводка кошелька. До подключения платёжного провайдера выручка не рассчитывается.</p></div></div>
           <div class="admin-module-grid">
