@@ -2592,6 +2592,7 @@ declare
   v_user uuid := gen_random_uuid();
   v_empty_user uuid := gen_random_uuid();
   v_snapshot jsonb;
+  v_audit record;
 begin
   insert into auth.users(id) values (v_user), (v_empty_user);
   insert into public.credit_wallets(user_id, available_credits, reserved_credits)
@@ -2613,6 +2614,26 @@ begin
   );
 
   v_snapshot := public.get_credit_wallet_snapshot(v_user, 50);
+  select * into v_audit
+    from public.audit_credit_wallet_reconciliation(v_user, 10);
+  if not found or not v_audit.healthy or not v_audit.wallet_lots_match
+     or not v_audit.latest_ledger_matches then
+    raise exception 'Healthy wallet failed read-only reconciliation';
+  end if;
+
+  update public.credit_lots set available_credits = 124 where user_id = v_user;
+  select * into v_audit
+    from public.audit_credit_wallet_reconciliation(v_user, 10);
+  if not found or v_audit.healthy or v_audit.wallet_lots_match then
+    raise exception 'Reconciliation did not detect lot/wallet drift';
+  end if;
+  update public.credit_lots set available_credits = 125 where user_id = v_user;
+
+  if has_function_privilege('authenticated',
+       'public.audit_credit_wallet_reconciliation(uuid,integer)', 'EXECUTE') then
+    raise exception 'Authenticated role can invoke privileged wallet reconciliation';
+  end if;
+
   if v_snapshot->>'user_id' <> v_user::text
      or v_snapshot->>'currency_unit' <> 'credit'
      or (v_snapshot->>'lot_count')::bigint <> 1
