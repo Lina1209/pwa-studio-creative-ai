@@ -123,7 +123,7 @@ values ('generation_job', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 
 
 -- Scene-bound creation is atomic, owner-scoped, and idempotent.
-do $
+do $$
 declare
   v_first record;
   v_second record;
@@ -181,7 +181,7 @@ begin
   exception when sqlstate '22023' then null;
   end;
 end;
-$;
+$$;
 
 -- Only the trusted backend service role may execute the RPC.
 do $$
