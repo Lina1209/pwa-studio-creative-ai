@@ -64,6 +64,7 @@ def test_reserve_and_finish_use_service_role_and_server_limits(monkeypatch):
     assert reserve_body["p_endpoint"] == "chat"
     assert reserve_body["p_max_per_minute"] == 10
     assert reserve_body["p_max_concurrent"] == 2
+    assert reserve_body["p_max_global_concurrent"] == 16
     assert headers["Authorization"].startswith("Bearer ")
     assert finish_url.endswith("/rpc/finish_ai_request")
     assert finish_body["p_request_id"] == str(reservation.request_id)
@@ -130,3 +131,17 @@ def test_invalid_admission_response_fails_closed(monkeypatch):
         ai_admission.reserve_ai_request(
             make_settings(), user_id=uuid4(), endpoint="chat"
         )
+
+
+def test_global_concurrency_limit_response_is_rejected(monkeypatch):
+    client = FakeClient([
+        FakeResponse({"admitted": False, "reason": "global_concurrency_limited", "retry_after_seconds": 10})
+    ])
+    monkeypatch.setattr(ai_admission.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(ai_admission.AIAdmissionRejected) as error:
+        ai_admission.reserve_ai_request(
+            make_settings(), user_id=uuid4(), endpoint="chat"
+        )
+
+    assert error.value.reason == "global_concurrency_limited"
