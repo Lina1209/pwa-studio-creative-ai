@@ -240,7 +240,7 @@ const movieHistoryStyle = document.createElement("style");
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       adminUiAuthorized = data.role === "admin";
       panel.hidden = !adminUiAuthorized;
-      if (adminUiAuthorized) loadAdminAnalytics();
+      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); }
     } catch {
       if (authSession?.user?.id === userId) { adminUiAuthorized = false; panel.hidden = true; }
     }
@@ -333,6 +333,46 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   $("#refreshSiteAnalytics")?.addEventListener("click", loadAdminAnalytics);
+
+  let adminAuditCursor = null;
+  let adminAuditLoading = false;
+  const loadAdminAuditEvents = async (reset = false) => {
+    const status = $("#adminAuditStatus");
+    const body = $("#adminAuditRows");
+    const more = $("#loadMoreAdminAudit");
+    if (!body || adminAuditLoading || !adminUiAuthorized) return;
+    adminAuditLoading = true;
+    if (reset) { body.replaceChildren(); adminAuditCursor = null; }
+    if (status) status.textContent = "Загружаем защищённый журнал…";
+    if (more) more.disabled = true;
+    try {
+      const query = new URLSearchParams({limit:"50"});
+      if (adminAuditCursor) query.set("before", adminAuditCursor);
+      const data = await apiRequest("/api/admin/audit-events?" + query.toString());
+      if (!adminUiAuthorized) return;
+      const rows = Array.isArray(data.events) ? data.events : [];
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        [row.occurred_at, row.actor_user_id, row.action, row.outcome, row.resource_type, row.reason || "—"].forEach(value => {
+          const td = document.createElement("td");
+          td.textContent = String(value ?? "—");
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+      adminAuditCursor = data.next_before || null;
+      if (status) status.textContent = rows.length ? "Показаны последние события аудита. Секреты и содержимое пользовательских запросов не записываются." : "В журнале пока нет событий.";
+      if (more) more.hidden = !adminAuditCursor;
+    } catch (error) {
+      if (status) status.textContent = "Не удалось загрузить журнал: " + error.message;
+    } finally {
+      adminAuditLoading = false;
+      if (more) more.disabled = false;
+    }
+  };
+  $("#refreshAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(true));
+  $("#loadMoreAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(false));
+
   const labels = {"admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
