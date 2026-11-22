@@ -552,6 +552,7 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#financeRequestType")?.addEventListener("change", updateFinanceRequestForm);
   updateFinanceRequestForm();
+  let financePendingSubmission = null;
   $("#financeRequestCreateForm")?.addEventListener("submit", async event => {
     event.preventDefault();
     const type = $("#financeRequestType").value;
@@ -560,14 +561,19 @@ const movieHistoryStyle = document.createElement("style");
     const button = $("#submitFinanceRequest"); button.disabled = true;
     try {
       const target = $("#financeTargetUserId").value.trim();
-      const payload = {
+      const draft = {
         request_type:type, target_user_id:target,
         amount:$("#financeRequestAmount").value,
         currency_code:$("#financeRequestCurrency").value,
-        reason:$("#financeRequestReason").value.trim(),
-        idempotency_key:crypto.randomUUID()
+        reason:$("#financeRequestReason").value.trim()
       };
+      const fingerprint = JSON.stringify(draft);
+      if (!financePendingSubmission || financePendingSubmission.fingerprint !== fingerprint) {
+        financePendingSubmission = {fingerprint, key:crypto.randomUUID()};
+      }
+      const payload = {...draft, idempotency_key:financePendingSubmission.key};
       await apiRequest("/api/finance/requests", {method:"POST",body:JSON.stringify(payload)});
+      financePendingSubmission = null;
       $("#financeRequestCreateForm").reset(); updateFinanceRequestForm();
       $("#financeQueueStatus").value = "pending";
       loadFinanceQueue(true);
