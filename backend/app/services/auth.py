@@ -21,7 +21,12 @@ class StudioUser:
 
 @lru_cache
 def _jwks_client(url: str) -> PyJWKClient:
-    return PyJWKClient(f"{url.rstrip('/')}/auth/v1/.well-known/jwks.json")
+    return PyJWKClient(
+        f"{url.rstrip('/')}/auth/v1/.well-known/jwks.json",
+        timeout=5,
+        cache_jwk_set=True,
+        lifespan=300,
+    )
 
 
 def _configured_owner_ids(raw_value: str | None) -> set[str]:
@@ -48,6 +53,9 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="A valid sign-in token is required.")
 
     token = credentials.credentials
+    # Bound untrusted bearer input before parsing or making a JWKS network request.
+    if not isinstance(token, str) or not token or len(token) > 8192:
+        raise HTTPException(status_code=401, detail="The sign-in session is invalid or expired.")
     issuer = f"{settings.supabase_url.rstrip('/')}/auth/v1"
     try:
         signing_key = _jwks_client(settings.supabase_url).get_signing_key_from_jwt(token)
