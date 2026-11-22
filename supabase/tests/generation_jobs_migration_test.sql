@@ -238,7 +238,7 @@ reset role;
 reset request.jwt.claim.sub;
 
 -- A job cannot be linked to another user's scene.
-do $
+do $$
 begin
   begin
     update public.generation_jobs
@@ -249,10 +249,10 @@ begin
     null;
   end;
 end;
-$;
+$$;
 
 -- Media cannot claim another user's scene or a mismatched studio project.
-do $
+do $$
 begin
   begin
     insert into public.studio_media(user_id, project_id, scene_id, media_type, storage_path)
@@ -265,7 +265,7 @@ begin
     null;
   end;
 end;
-$;
+$$;
 
 -- Deleting a project must preserve the job while detaching the optional project link.
 delete from public.projects where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -282,7 +282,7 @@ $$;
 
 -- Deleting a scene detaches optional scene references without deleting the saved media or job.
 delete from public.studio_scenes where id = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
-do $
+do $$
 begin
   if not exists (select 1 from public.generation_jobs
                  where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -295,6 +295,6 @@ begin
     raise exception 'Deleting a scene did not preserve media and detach its scene reference';
   end if;
 end;
-$;
+$$;
 
 select 'generation jobs and movie scene migration integration checks passed' as result;
