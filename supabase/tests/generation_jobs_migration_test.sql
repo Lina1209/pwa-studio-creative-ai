@@ -193,6 +193,7 @@ declare
   v_first record;
   v_replay record;
   v_count integer;
+  v_rejected boolean;
 begin
   select * into v_first from public.create_generation_job_with_outbox(
     '11111111-1111-4111-8111-111111111111', null,
@@ -215,10 +216,7 @@ begin
    where aggregate_id = v_first.job_id and event_type = 'generation_job.created';
   if v_count <> 1 then raise exception 'Generic replay created a duplicate outbox event'; end if;
 
-  declare
-    v_rejected boolean;
-  begin
-    v_rejected := false;
+  v_rejected := false;
     begin
       perform public.create_generation_job_with_outbox(
         '11111111-1111-4111-8111-111111111111', null,
