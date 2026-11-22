@@ -12,11 +12,20 @@ from app.services.image_generation import ALLOWED_IMAGE_MIME_TYPES, MAX_IMAGE_BY
 
 
 class GenerationResultStorageError(RuntimeError):
-    """Safe validation failure; message contains no object contents or secrets."""
+    """Permanent result validation failure; contains no object contents or secrets."""
 
     def __init__(self, error_code: str):
         super().__init__(error_code)
         self.error_code = error_code
+
+
+class GenerationStorageAdapterError(RuntimeError):
+    """Typed storage I/O failure with an explicit retry policy."""
+
+    def __init__(self, error_code: str, *, retryable: bool = False):
+        super().__init__(error_code)
+        self.error_code = error_code
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
