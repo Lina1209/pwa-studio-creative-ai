@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     generation_jobs_enabled: bool = False
     # Keep submission disabled until a durable dispatcher and worker are deployed.
     generation_job_worker_ready: bool = False
+    # Runtime remains off until real provider and private storage adapters are deployed.
+    generation_worker_runtime_enabled: bool = False
+    generation_worker_idle_poll_seconds: float = Field(default=3.0, ge=0.25, le=60.0)
+    generation_worker_error_backoff_seconds: float = Field(default=5.0, ge=0.25, le=300.0)
     image_generation_provider: str | None = None
     image_generation_model: str | None = None
     owner_email: str | None = None
