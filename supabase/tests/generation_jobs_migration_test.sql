@@ -85,6 +85,7 @@ create table public.studio_media (
 \ir ../migrations/0017_generation_provider_operation_journal.sql
 \ir ../migrations/0018_credit_ledger_schema.sql
 \ir ../migrations/0019_credit_hold_lifecycle.sql
+\ir ../migrations/0020_atomic_credited_generation.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -1122,6 +1123,11 @@ begin
   end;
   if not v_rejected then raise exception 'Insufficient credit reservation was accepted'; end if;
 
+  update public.generation_jobs
+     set status = 'failed', last_error_code = 'test_terminal_failure',
+         completed_at = now(), updated_at = now()
+   where id = v_job_id;
+
   select * into v_release from public.release_job_credit_hold(
     '22222222-2222-4222-8222-222222222222', v_hold_id, 'test_terminal_failure'
   );
@@ -1182,4 +1188,114 @@ end;
 $credit_lifecycle_rpc_test$;
 
 
-select 'generation jobs, provider journal, credit ledger schema and lifecycle RPC checks passed' as result;
+
+
+-- Atomic paid-generation admission and successful capture.
+do $atomic_credited_generation_test$
+declare
+  v_first record;
+  v_replay record;
+  v_completed record;
+  v_completed_replay record;
+  v_job_id uuid;
+  v_hold_id uuid;
+  v_ledger_count integer;
+  v_rejected boolean := false;
+begin
+  select * into v_first from public.create_credited_generation_job_with_outbox(
+    '22222222-2222-4222-8222-222222222222',
+    null, null, 'image_generation', 'atomic-test-provider', 'atomic-test-model',
+    'atomic-credit-job-0001', repeat('f', 64),
+    '{"prompt":"atomic generation test"}'::jsonb,
+    '{"price_version":"test-v1","approved_maximum":15}'::jsonb,
+    15
+  );
+  v_job_id := v_first.job_id;
+  v_hold_id := v_first.hold_id;
+  if not v_first.created or v_first.replayed or v_job_id is null or v_hold_id is null
+     or v_first.available_credits <> 60 or v_first.reserved_credits <> 15 then
+    raise exception 'Atomic paid-generation admission returned unexpected values';
+  end if;
+
+  select * into v_replay from public.create_credited_generation_job_with_outbox(
+    '22222222-2222-4222-8222-222222222222',
+    null, null, 'image_generation', 'atomic-test-provider', 'atomic-test-model',
+    'atomic-credit-job-0001', repeat('f', 64),
+    '{"prompt":"atomic generation test"}'::jsonb,
+    '{"price_version":"test-v1","approved_maximum":15}'::jsonb,
+    15
+  );
+  if v_replay.job_id <> v_job_id or v_replay.hold_id <> v_hold_id
+     or v_replay.event_id <> v_first.event_id
+     or v_replay.created or not v_replay.replayed
+     or v_replay.available_credits <> 60 or v_replay.reserved_credits <> 15 then
+    raise exception 'Atomic paid-generation replay changed job, hold, event or balances';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.create_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null, null, 'image_generation', 'atomic-test-provider', 'atomic-test-model',
+      'atomic-credit-job-0001', repeat('f', 64),
+      '{"prompt":"atomic generation test"}'::jsonb,
+      '{"price_version":"test-v1","approved_maximum":16}'::jsonb,
+      16
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Atomic job accepted a changed quote on replay'; end if;
+
+  -- Simulate a verified upload and a currently active worker lease.
+  update public.generation_jobs
+     set status = 'running', lease_owner = 'atomic-test-worker',
+         lease_expires_at = now() + interval '120 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id = v_job_id;
+
+  select * into v_completed from public.complete_credited_generation_job(
+    v_job_id, 'atomic-test-worker',
+    '22222222-2222-4222-8222-222222222222/generated/atomic-result.png'
+  );
+  if not v_completed.completed or v_completed.replayed
+     or v_completed.available_credits <> 60 or v_completed.reserved_credits <> 0 then
+    raise exception 'Atomic successful completion/capture returned unexpected balances';
+  end if;
+
+  select * into v_completed_replay from public.complete_credited_generation_job(
+    v_job_id, 'atomic-test-worker',
+    '22222222-2222-4222-8222-222222222222/generated/atomic-result.png'
+  );
+  if not v_completed_replay.completed or not v_completed_replay.replayed
+     or v_completed_replay.available_credits <> 60
+     or v_completed_replay.reserved_credits <> 0 then
+    raise exception 'Repeated successful completion charged credits more than once';
+  end if;
+
+  if not exists (select 1 from public.credit_holds
+                 where id = v_hold_id and status = 'captured' and captured_at is not null) then
+    raise exception 'Atomic completion did not capture the hold';
+  end if;
+  select count(*) into v_ledger_count from public.credit_ledger
+   where hold_id = v_hold_id;
+  if v_ledger_count <> 2 then
+    raise exception 'Expected one reserve and one capture ledger entry; got %', v_ledger_count;
+  end if;
+  if not exists (select 1 from public.generation_jobs
+                 where id = v_job_id and status = 'succeeded'
+                   and result_storage_path = '22222222-2222-4222-8222-222222222222/generated/atomic-result.png'
+                   and lease_owner is null and completed_at is not null) then
+    raise exception 'Atomic completion did not finalize the job consistently';
+  end if;
+
+  if has_function_privilege('authenticated',
+       'public.create_credited_generation_job_with_outbox(uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.complete_credited_generation_job(uuid,text,text)', 'EXECUTE') then
+    raise exception 'Authenticated role unexpectedly has atomic credited generation RPC privileges';
+  end if;
+end;
+$atomic_credited_generation_test$;
+
+
+select 'generation jobs, provider journal, credit ledger, atomic admission and capture checks passed' as result;
