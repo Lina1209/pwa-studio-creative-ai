@@ -530,6 +530,57 @@ async def test_ambiguous_provider_submission_is_journaled_before_retry():
 
 
 @pytest.mark.asyncio
+async def test_ambiguous_provider_acceptance_recovers_with_same_idempotency_key_and_cost():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class EventuallyConsistentProvider(FakeProvider):
+        supports_lookup = True
+
+        def __init__(self):
+            super().__init__()
+            self.lookup_keys = []
+            self.result = ImageGenerationResult(
+                IMAGE, "image/png", "fake", "fake-v1",
+                provider_request_id="provider-request-after-ambiguous-acceptance",
+                usage=ProviderUsage(
+                    cost_usd=Decimal("0.0125"),
+                    cost_source="reported",
+                    provider_usage_id="usage-after-ambiguous-acceptance",
+                ),
+            )
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            self.lookup_keys.append(idempotency_key)
+            # Simulate a provider lookup index that has not caught up yet.
+            return ImageGenerationLookup("not_found")
+
+        async def generate(self, request, *, idempotency_key):
+            # A real adapter must guarantee this same key is deduplicated by
+            # the provider; the worker must never create a fresh operation key.
+            self.idempotency_keys.append(idempotency_key)
+            return self.result
+
+    provider = EventuallyConsistentProvider()
+    repo = FakeRepository(journal_created=False, journal_state="unknown")
+
+    result = await make_worker(repo, provider).process(make_job(attempt_count=2))
+
+    assert result.outcome == "succeeded"
+    assert provider.lookup_keys == [str(JOB_ID)]
+    assert provider.idempotency_keys == [str(JOB_ID)]
+    accepted = next(call for call in repo.calls if call[0] == "journal_accepted")
+    assert accepted[1][-1] == "provider-request-after-ambiguous-acceptance"
+    assert any(call[0] == "journal_result" for call in repo.calls)
+    cost = next(call[1] for call in repo.calls if call[0] == "provider_cost")
+    assert cost["operation_key"] == (
+        f"provider-usage:{JOB_ID}:"
+        "c2c1f3b50a9f0c6f5e4a2d0d0f6e8f0c"
+    ) or cost["provider_usage_id"] == "usage-after-ambiguous-acceptance"
+    assert cost["cost_usd"] == Decimal("0.0125")
+    assert sum(call[0] == "complete" for call in repo.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_transient_storage_failure_schedules_retry_after_provider_result_is_journaled():
     class TemporarilyUnavailableStorage:
         async def upload_image(self, **kwargs):
