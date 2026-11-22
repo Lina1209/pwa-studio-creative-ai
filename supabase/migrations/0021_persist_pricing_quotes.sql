@@ -152,3 +152,23 @@ comment on table public.generation_pricing_quotes is
 comment on function public.store_generation_pricing_quote(
   uuid, uuid, text, text, text, text, text, uuid, uuid, jsonb, timestamptz
 ) is 'Stores one signed quote per owner/idempotency key; exact replays return the original quote and changed requests are rejected.';
+
+
+create or replace function public.reject_generation_pricing_quote_mutation()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public
+as $$
+begin
+  raise exception 'Generation pricing quotes are immutable'
+    using errcode = '55000';
+end;
+$$;
+
+drop trigger if exists generation_pricing_quotes_immutable
+  on public.generation_pricing_quotes;
+create trigger generation_pricing_quotes_immutable
+before update or delete on public.generation_pricing_quotes
+for each row execute function public.reject_generation_pricing_quote_mutation();
+
+revoke all on function public.reject_generation_pricing_quote_mutation() from public, anon, authenticated, service_role;
