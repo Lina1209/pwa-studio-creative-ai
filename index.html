@@ -350,7 +350,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="panel-heading"><div><h2 id="financeRoleAdminHeading">Назначение финансовых полномочий</h2><p>Только владелец с разрешением управления ролями. Самоназначение запрещено; срок действия обязателен.</p></div></div>
           <form id="financeRoleGrantForm" class="finance-request-form">
             <label>ID аккаунта сотрудника<input id="financeRolePrincipalId" type="text" minlength="36" maxlength="36" placeholder="UUID аккаунта оператора / проверяющего" required></label>
-            <label>Роль<select id="financeRoleCode" required><option value="finance_operator">Финансовый оператор</option><option value="finance_approver">Финансовый проверяющий</option><option value="auditor_readonly">Аудитор · только чтение</option><option value="support_readonly">Поддержка · без финансовых полномочий</option><option value="finance_executor">Исполнитель · пока без активного выполнения</option></select></label>
+            <label>Роль<select id="financeRoleCode" required><option value="finance_operator">Финансовый оператор</option><option value="finance_approver">Финансовый проверяющий</option><option value="auditor_readonly">Аудитор · только чтение</option></select></label>
             <label>Область доступа — ID пользователя<input id="financeRoleScopeUserId" type="text" minlength="36" maxlength="36" placeholder="UUID пользователя, по которому разрешены операции" required></label>
             <label>Действует до<input id="financeRoleValidUntil" type="datetime-local" required></label>
             <label class="finance-request-reason">Основание назначения<textarea id="financeRoleReason" minlength="1" maxlength="500" rows="2" required></textarea></label>
