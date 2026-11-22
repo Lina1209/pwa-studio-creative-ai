@@ -3187,3 +3187,68 @@ $expired_grant_replay_assert$;
 select 'source-separated credit lot lifecycle checks passed' as result;
 
 select 'credit wallet snapshot checks passed' as result;
+
+
+-- Verify read-only wallet reconciliation keyset pagination and legacy fail-closed behavior.
+do $wallet_reconciliation_pagination_test$
+declare
+  v_user_one uuid := 'ffffffff-ffff-4fff-8fff-000000000001';
+  v_user_two uuid := 'ffffffff-ffff-4fff-8fff-000000000002';
+  v_user_three uuid := 'ffffffff-ffff-4fff-8fff-000000000003';
+  v_cursor uuid;
+  v_page_count integer;
+  v_has_more boolean;
+  v_rejected boolean := false;
+begin
+  insert into auth.users(id) values
+    (v_user_one), (v_user_two), (v_user_three)
+  on conflict (id) do nothing;
+
+  insert into public.credit_ledger(
+    user_id, operation_type, operation_key,
+    delta_available, delta_reserved,
+    balance_available_after, balance_reserved_after, metadata
+  ) values
+    (v_user_one, 'grant', 'grant:reconcile-page-one', 1, 0, 1, 0, '{"test_case":"reconciliation-pagination"}'::jsonb),
+    (v_user_two, 'grant', 'grant:reconcile-page-two', 1, 0, 1, 0, '{"test_case":"reconciliation-pagination"}'::jsonb),
+    (v_user_three, 'grant', 'grant:reconcile-page-three', 1, 0, 1, 0, '{"test_case":"reconciliation-pagination"}'::jsonb)
+  on conflict do nothing;
+
+  select count(*)::integer, coalesce(bool_and(page.has_more), false), max(page.user_id)
+    into v_page_count, v_has_more, v_cursor
+    from public.audit_credit_wallet_reconciliation_page(
+      null, 'ffffffff-ffff-4fff-8fff-000000000000', 2
+    ) page;
+
+  if v_page_count <> 2 or not v_has_more
+     or v_cursor <> v_user_two then
+    raise exception 'First reconciliation page did not return two ordered rows with has_more=true';
+  end if;
+
+  select count(*)::integer, coalesce(bool_and(page.has_more), true)
+    into v_page_count, v_has_more
+    from public.audit_credit_wallet_reconciliation_page(null, v_cursor, 2) page;
+
+  if v_page_count <> 1 or v_has_more then
+    raise exception 'Second reconciliation page did not return the final row with has_more=false';
+  end if;
+
+  begin
+    perform *
+      from public.audit_credit_wallet_reconciliation(null, 2);
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+
+  if not v_rejected then
+    raise exception 'Legacy reconciliation RPC silently returned a partial result instead of rejecting';
+  end if;
+
+  if has_function_privilege('authenticated',
+       'public.audit_credit_wallet_reconciliation_page(uuid,uuid,integer)', 'EXECUTE') then
+    raise exception 'Authenticated role can invoke privileged paginated reconciliation';
+  end if;
+end;
+$wallet_reconciliation_pagination_test$;
+
+select 'wallet reconciliation pagination checks passed' as result;
