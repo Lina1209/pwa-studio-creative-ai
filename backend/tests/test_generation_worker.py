@@ -33,9 +33,11 @@ class FakeRepository:
     def __init__(
         self, *, heartbeat=True, complete=True, journal_created=True,
         journal_unknown=True, journal_failed=True, journal_state=None,
+        completion_replayed=False,
     ):
         self.heartbeat_result = heartbeat
         self.complete_result = complete
+        self.completion_replayed = completion_replayed
         self.journal_created = journal_created
         self.journal_state = journal_state or ("submitting" if journal_created else "unknown")
         self.journal_unknown_result = journal_unknown
@@ -74,9 +76,14 @@ class FakeRepository:
         self.calls.append(("fail", args))
         return True
 
-    async def complete(self, *args):
+    async def complete_credited(self, *args):
         self.calls.append(("complete", args))
-        return self.complete_result
+        return SimpleNamespace(
+            completed=self.complete_result,
+            replayed=self.completion_replayed,
+            available_credits=90 if self.complete_result else None,
+            reserved_credits=10 if self.complete_result else None,
+        )
 
     async def record_provider_cost(self, **kwargs):
         self.calls.append(("provider_cost", kwargs))
@@ -86,6 +93,17 @@ class FakeRepository:
             budget_limit_usd=None, budget_exceeded=None,
         )
 
+
+
+@pytest.mark.asyncio
+async def test_worker_treats_committed_credited_completion_replay_as_success():
+    repo = FakeRepository(completion_replayed=True)
+    result = await make_worker(repo).process(make_job())
+
+    assert result.outcome == "succeeded"
+    completion = next(call for call in repo.calls if call[0] == "complete")
+    assert completion[1][0] == JOB_ID
+    assert completion[1][2] == f"{OWNER}/generated/{JOB_ID}.png"
 
 
 class FakeProvider:
