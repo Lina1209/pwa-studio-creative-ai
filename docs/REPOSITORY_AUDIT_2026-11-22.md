@@ -152,7 +152,7 @@ Tailwind CDN подключался, хотя в HTML не обнаружено 
 - синтаксис Python;
 - корректность JSON PWA manifest.
 
-Workflow добавлен в ветку аудита. GitHub Actions успешно выполнил проверку JavaScript, Python и PWA manifest на коммитах до `a16f161381`; после последних правок JavaScript и документации нужно дождаться финального запуска на актуальном HEAD.
+Workflow добавлен в ветку аудита. GitHub Actions успешно выполнил проверку JavaScript, Python и PWA manifest на коммитах до `a16f161381`; последний запуск на HEAD `e685a7c275` завершился успешно.
 
 ## Вывод
 
