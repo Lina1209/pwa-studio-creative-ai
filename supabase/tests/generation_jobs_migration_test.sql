@@ -52,6 +52,7 @@ $$;
 \ir ../migrations/0005_cloud_projects_and_storage.sql
 \ir ../migrations/0007_enforce_project_owner_integrity.sql
 \ir ../migrations/0009_generation_jobs_and_outbox.sql
+\ir ../migrations/0010_create_generation_job_rpc.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -73,6 +74,84 @@ insert into public.generation_jobs(
 insert into public.outbox_events(aggregate_type, aggregate_id, event_type, payload)
 values ('generation_job', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         'generation_job.created', '{"test": true}'::jsonb);
+
+
+-- The backend-only RPC creates one job and one outbox event atomically.
+do $
+declare
+  v_first record;
+  v_second record;
+  v_event_count integer;
+begin
+  if has_function_privilege(
+    'authenticated',
+    'public.create_generation_job_with_outbox(uuid,uuid,text,text,text,text,text,jsonb,jsonb)',
+    'EXECUTE'
+  ) then
+    raise exception 'Authenticated role unexpectedly has execute permission on the job creation RPC';
+  end if;
+
+  execute 'set local role service_role';
+  select * into v_first
+  from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111',
+    null,
+    'ai_processing',
+    'test-provider',
+    'test-model',
+    'rpc-idempotency-key-1',
+    repeat('e', 64),
+    '{"prompt":"test"}'::jsonb,
+    '{"version":1}'::jsonb
+  );
+
+  select * into v_second
+  from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111',
+    null,
+    'ai_processing',
+    'test-provider',
+    'test-model',
+    'rpc-idempotency-key-1',
+    repeat('e', 64),
+    '{"prompt":"test"}'::jsonb,
+    '{"version":1}'::jsonb
+  );
+
+  if not v_first.created or v_second.created
+     or v_first.job_id <> v_second.job_id
+     or v_first.event_id is distinct from v_second.event_id then
+    raise exception 'Idempotent replay did not return the original job and event';
+  end if;
+
+  select count(*) into v_event_count
+  from public.outbox_events
+  where aggregate_id = v_first.job_id
+    and event_type = 'generation_job.created';
+  if v_event_count <> 1 then
+    raise exception 'Expected exactly one creation outbox event, found %', v_event_count;
+  end if;
+
+  begin
+    perform *
+    from public.create_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111',
+      null,
+      'ai_processing',
+      'test-provider',
+      'test-model',
+      'rpc-idempotency-key-1',
+      repeat('f', 64),
+      '{"prompt":"different"}'::jsonb,
+      '{"version":1}'::jsonb
+    );
+    raise exception 'Reusing an idempotency key with a different request was accepted';
+  exception when sqlstate '22023' then
+    null;
+  end;
+  execute 'reset role';
+end;
+$;
 
 -- A job must not reference another user's project.
 do $$
