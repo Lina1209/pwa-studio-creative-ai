@@ -585,3 +585,55 @@ async def test_lease_loss_during_upload_recovers_same_provider_result_and_storag
     assert storage.payloads == [IMAGE, IMAGE]
     assert recovery_provider.idempotency_keys == []  # Lookup reused the result; no generation call.
     assert any(call[0] == "complete" for call in recovered_repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_lease_loss_during_journal_begin_prevents_provider_submission():
+    class DelayedJournalRepository(FakeRepository):
+        async def begin_provider_operation(self, *args):
+            await asyncio.sleep(0.04)
+            return await super().begin_provider_operation(*args)
+
+    repo = DelayedJournalRepository(heartbeat=False)
+    provider = FakeProvider()
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "lease_lost"
+    assert provider.idempotency_keys == []
+    assert not any(call[0] in {"journal_result", "complete", "retry", "fail"} for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_lease_loss_during_provider_acceptance_prevents_storage_upload():
+    class AcceptedResultProvider(FakeProvider):
+        async def generate(self, request, *, idempotency_key):
+            self.idempotency_keys = [idempotency_key]
+            return ImageGenerationResult(
+                image_bytes=IMAGE,
+                mime_type="image/png",
+                provider="fake",
+                model="fake-v1",
+                provider_request_id="provider-request-1",
+            )
+
+    class DelayedAcceptanceRepository(FakeRepository):
+        async def mark_provider_operation_accepted(self, *args):
+            await asyncio.sleep(0.04)
+            return await super().mark_provider_operation_accepted(*args)
+
+    class CountingStorage(FakeStorage):
+        def __init__(self):
+            self.calls = 0
+
+        async def upload_image(self, **kwargs):
+            self.calls += 1
+            return await super().upload_image(**kwargs)
+
+    repo = DelayedAcceptanceRepository(heartbeat=False)
+    provider = AcceptedResultProvider()
+    storage = CountingStorage()
+    result = await make_worker(repo, provider, storage).process(make_job())
+
+    assert result.outcome == "lease_lost"
+    assert storage.calls == 0
+    assert not any(call[0] in {"journal_result", "complete", "retry", "fail"} for call in repo.calls)
