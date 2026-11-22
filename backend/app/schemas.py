@@ -59,6 +59,46 @@ class MovieScriptResponse(BaseModel):
     model: str
 
 
+class MovieDirectorRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=120)
+    story: str = Field(min_length=50, max_length=30000)
+    genre: str = Field(default="Приключения", min_length=1, max_length=60)
+    duration_minutes: int = Field(default=5, strict=True, ge=1, le=30)
+    frame: Literal["16:9", "9:16", "1:1"] = "16:9"
+    language: Literal["Русский", "English", "Қазақша"] = "Русский"
+
+    @field_validator("title", "story", "genre")
+    @classmethod
+    def require_trimmed_director_text(cls, value: str) -> str:
+        if value.strip() != value:
+            raise ValueError("Text fields must not contain surrounding whitespace.")
+        return value
+
+
+class MovieDirectorScene(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scene_number: int = Field(ge=1, le=100)
+    title: str = Field(min_length=1, max_length=160)
+    location: str = Field(min_length=1, max_length=240)
+    time_of_day: str = Field(min_length=1, max_length=80)
+    estimated_seconds: int = Field(ge=1, le=1800)
+    characters: list[str] = Field(max_length=20)
+    action: str = Field(min_length=1, max_length=3000)
+    visual_description: str = Field(min_length=1, max_length=3000)
+    camera_shots: list[str] = Field(min_length=1, max_length=8)
+    lighting: str = Field(min_length=1, max_length=500)
+    transition: str = Field(min_length=1, max_length=300)
+
+
+class MovieDirectorResponse(BaseModel):
+    scenes: list[MovieDirectorScene] = Field(min_length=1, max_length=100)
+    provider: str
+    model: str
+
+
 class SceneImageJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
