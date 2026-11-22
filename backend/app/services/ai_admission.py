@@ -44,6 +44,7 @@ def reserve_ai_request(
     if endpoint not in {"chat", "prompts"}:
         raise ValueError("Unsupported AI endpoint.")
     request_id = uuid4()
+    headers = _headers(settings)
     url = f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/reserve_ai_request"
     payload = {
         "p_user_id": str(user_id),
@@ -55,7 +56,7 @@ def reserve_ai_request(
     }
     try:
         with httpx.Client(timeout=5.0) as client:
-            response = client.post(url, json=payload, headers=_headers(settings))
+            response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
     except Exception as exc:
@@ -83,6 +84,7 @@ def finish_ai_request(
     settings: Settings, reservation: AIAdmissionReservation, *, completed: bool
 ) -> None:
     outcome = "completed" if completed else "released"
+    headers = _headers(settings)
     url = f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/finish_ai_request"
     payload = {
         "p_user_id": str(reservation.user_id),
@@ -91,7 +93,7 @@ def finish_ai_request(
     }
     try:
         with httpx.Client(timeout=5.0) as client:
-            response = client.post(url, json=payload, headers=_headers(settings))
+            response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
     except Exception as exc:
