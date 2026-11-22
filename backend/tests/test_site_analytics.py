@@ -41,7 +41,8 @@ def test_stats_validate_nonnegative_integer_counts(monkeypatch):
 def test_admin_stats_validate_daily_series_and_routes(monkeypatch):
     from app.services import site_analytics
     base = {"total_page_views": 120, "today_page_views": 4, "today_unique_visitors": 3,
-            "last_7_days_page_views": 20, "last_30_days_page_views": 80}
+            "last_7_days_page_views": 20, "last_30_days_page_views": 80,
+            "rate_limited_requests_last_24h": 2, "rate_limited_token_windows_last_24h": 1}
     daily = [{"date": f"2026-11-{day:02d}", "page_views": day, "unique_visitors": 1}
              for day in range(1, 31)]
     payload = {**base, "daily_series": daily,
