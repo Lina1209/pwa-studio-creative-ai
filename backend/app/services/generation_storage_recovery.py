@@ -172,3 +172,57 @@ async def scan_owner_generation_storage(
         now=now,
         grace_period=grace_period,
     )
+
+@dataclass(frozen=True)
+class GenerationResultIntegrityReport:
+    owner_id: UUID
+    checked_jobs: int
+    verified_results: tuple[str, ...]
+    integrity_failures: tuple[tuple[str, str], ...]
+    deferred_checks: tuple[tuple[str, str], ...]
+
+
+async def verify_owner_succeeded_results(
+    *,
+    owner_id: UUID,
+    storage: SupabasePrivateImageStorage,
+    repository: SupabaseGenerationJobRepository,
+) -> GenerationResultIntegrityReport:
+    """Re-check every succeeded result for one owner; never changes job state.
+
+    A transport/timeout failure is deferred, not reported as file corruption.
+    Definitive metadata or content validation failures are reported separately.
+    """
+    jobs = await repository.list_owner_job_inventory(owner_id)
+    verified: list[str] = []
+    failures: list[tuple[str, str]] = []
+    deferred: list[tuple[str, str]] = []
+    checked = 0
+
+    for job in jobs:
+        if job.status != "succeeded":
+            continue
+        checked += 1
+        path = job.result_storage_path
+        if not path:
+            failures.append((str(job.job_id), "succeeded_job_missing_result_path"))
+            continue
+        try:
+            await storage.verify_existing_image(
+                owner_id=owner_id, job_id=job.job_id, object_path=path
+            )
+            verified.append(path)
+        except Exception as exc:
+            code = getattr(exc, "error_code", "result_verification_failed")
+            if getattr(exc, "retryable", False):
+                deferred.append((str(job.job_id), code))
+            else:
+                failures.append((str(job.job_id), code))
+
+    return GenerationResultIntegrityReport(
+        owner_id=owner_id,
+        checked_jobs=checked,
+        verified_results=tuple(sorted(verified)),
+        integrity_failures=tuple(sorted(failures)),
+        deferred_checks=tuple(sorted(deferred)),
+    )
