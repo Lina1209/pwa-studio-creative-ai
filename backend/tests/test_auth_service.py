@@ -171,12 +171,13 @@ def test_oversized_bearer_token_is_rejected_before_jwks_lookup(monkeypatch):
     assert error.value.status_code == 401
 
 
-def test_owner_read_permissions_do_not_include_financial_mutations():
-    assert "admin.analytics.read" in auth.OWNER_READ_PERMISSIONS
-    assert "admin.finance.costs.read" in auth.OWNER_READ_PERMISSIONS
-    assert "billing.refund.execute" not in auth.OWNER_READ_PERMISSIONS
-    assert "credit.compensation.execute" not in auth.OWNER_READ_PERMISSIONS
-    assert "admin.tariffs.write" not in auth.OWNER_READ_PERMISSIONS
+def test_owner_capabilities_do_not_include_financial_execution_permissions():
+    assert "admin.analytics.read" in auth.OWNER_CAPABILITIES
+    assert "admin.finance.costs.read" in auth.OWNER_CAPABILITIES
+    assert "admin.finance.roles.manage" in auth.OWNER_CAPABILITIES
+    assert "billing.refund.execute" not in auth.OWNER_CAPABILITIES
+    assert "credit.compensation.execute" not in auth.OWNER_CAPABILITIES
+    assert "admin.tariffs.write" not in auth.OWNER_CAPABILITIES
 
 
 def test_unknown_permission_dependency_is_rejected():
