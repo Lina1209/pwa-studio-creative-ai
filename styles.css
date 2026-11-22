@@ -165,3 +165,49 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
 .admin-module p{font-size:13px;line-height:1.55;color:var(--muted);margin:0 0 12px}
 .admin-module small{font-size:11px;color:var(--muted)}
 @media(max-width:650px){.admin-module-grid{grid-template-columns:1fr}.admin-entry-actions{flex-direction:column}.admin-entry-actions button{width:100%}}
+
+
+/* Delegated finance workspace */
+.finance-request-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.finance-request-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--text, inherit);
+  font-size: .9rem;
+}
+.finance-request-form input,
+.finance-request-form select,
+.finance-request-form textarea,
+.finance-queue-controls select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border, rgba(255,255,255,.14));
+  border-radius: 12px;
+  padding: 11px 12px;
+  color: inherit;
+  background: var(--surface, rgba(255,255,255,.04));
+  font: inherit;
+}
+.finance-request-reason,
+.finance-request-form button {
+  grid-column: 1 / -1;
+}
+.finance-queue-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.finance-queue-controls select { min-width: 150px; }
+#financeQueueRows .secondary-button {
+  margin: 2px;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .finance-request-form { grid-template-columns: 1fr; }
+  .finance-queue-controls { width: 100%; flex-wrap: wrap; }
+}
