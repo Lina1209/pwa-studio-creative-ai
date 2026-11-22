@@ -2524,6 +2524,61 @@ select 'distributed AI admission checks passed' as result;
 
 \ir ../migrations/0031_credit_lots_and_allocations.sql
 \ir ../migrations/0032_lot_aware_credit_lifecycle.sql
+\ir ../migrations/0033_entitlement_policy_and_wallet_reconciliation.sql
+
+do $credit_entitlement_policy_test$
+declare
+  v_user uuid := gen_random_uuid();
+  v_first record;
+  v_replay record;
+  v_after_revision record;
+  v_lot_count integer;
+begin
+  insert into auth.users(id) values (v_user);
+  insert into public.credit_entitlement_policies(
+    policy_code, policy_version, lot_type, amount, expires_in_seconds, enabled
+  ) values ('test_free_cycle', 1, 'free', null, 3600, false);
+
+  begin
+    perform * from public.grant_user_credit_entitlement(
+      v_user, 'test_free_cycle', 'event-key-0001', 'test-source-0001', '{}'::jsonb
+    );
+    raise exception 'Disabled/unconfigured entitlement policy unexpectedly granted credits';
+  exception when sqlstate '55000' then
+    null;
+  end;
+
+  update public.credit_entitlement_policies
+     set amount = 12, enabled = true
+   where policy_code = 'test_free_cycle' and policy_version = 1;
+
+  select * into v_first from public.grant_user_credit_entitlement(
+    v_user, 'test_free_cycle', 'event-key-0001', 'test-source-0001', '{"reason":"test"}'::jsonb
+  );
+  select * into v_replay from public.grant_user_credit_entitlement(
+    v_user, 'test_free_cycle', 'event-key-0001', 'test-source-0001', '{"reason":"test"}'::jsonb
+  );
+  if v_first.replayed or not v_replay.replayed or v_first.available_credits <> 12
+     or v_replay.available_credits <> 12 then
+    raise exception 'Entitlement grant replay was not idempotent';
+  end if;
+
+  insert into public.credit_entitlement_policies(
+    policy_code, policy_version, lot_type, amount, expires_in_seconds, enabled
+  ) values ('test_free_cycle', 2, 'free', 99, 3600, true);
+  select * into v_after_revision from public.grant_user_credit_entitlement(
+    v_user, 'test_free_cycle', 'event-key-0001', 'test-source-0001', '{"reason":"test"}'::jsonb
+  );
+  select count(*) into v_lot_count from public.credit_lots where user_id = v_user;
+  if not v_after_revision.replayed or v_after_revision.available_credits <> 12
+     or v_lot_count <> 1 then
+    raise exception 'Policy revision duplicated a previously processed entitlement event';
+  end if;
+end;
+$credit_entitlement_policy_test$;
+
+select 'credit entitlement policy and replay checks passed' as result;
+
 
 do $credit_wallet_snapshot_test$
 declare
