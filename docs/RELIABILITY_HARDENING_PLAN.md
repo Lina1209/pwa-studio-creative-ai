@@ -363,3 +363,19 @@ The worker persists ambiguous submission errors as `unknown`. It also persists `
 Mocked unit tests were added for journal RPC/read parsing, restart recovery from an existing successful result, pending-operation quarantine, and providers without lookup support. Existing worker tests were adapted to the journal boundary.
 
 **Remaining safety/deployment gates:** there is still no concrete image provider implementation, so provider lookup consistency, idempotency retention and result retrieval are not verified against a real service. The provider must return the original result for a successful lookup; returning only a request ID is insufficient for the current worker. No local test run or confirmed CI result is recorded for this commit series, and migration 0017 has not been applied or tested against a live/staging database. Keep all generation and worker flags disabled. The journal is an at-most-one-operation guard only when the provider's documented idempotency contract is honored; it does not create exactly-once execution or activate credits/billing.
+
+
+## 23. PostgreSQL integration coverage for provider-operation journal
+
+The disposable PostgreSQL 16 migration suite now applies migration 0017 and verifies the provider journal against a real PostgreSQL engine in CI. Coverage includes:
+
+- first creation and idempotent replay returning the same operation row;
+- rejection of a mismatched provider identity and rejection of the client job-creation key where the immutable provider key is required;
+- rejection of transitions from a different worker and after lease expiry;
+- ambiguous `unknown` → accepted → `result_received` progression;
+- rejection of a conflicting provider request ID and rejection of a stale transition that would overwrite `result_received`;
+- authenticated-role denial for journal table access and all journal RPCs, plus service-role grants.
+
+The CI workflow also starts two concurrent PostgreSQL sessions against the same active job and calls `begin_generation_provider_operation` from both. The expected result is exactly one inserted journal row, one `created=true` response, and one idempotent `created=false` response. This specifically exercises the row lock and unique constraint together rather than relying only on sequential unit tests.
+
+**Validation status:** these checks are committed to the workflow but are not considered passed until the corresponding GitHub Actions run completes successfully. No production Supabase migration was applied. 
