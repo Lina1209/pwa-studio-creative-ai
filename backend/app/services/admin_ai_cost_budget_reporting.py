@@ -74,7 +74,7 @@ def get_admin_ai_cost_budget_report(settings: Settings) -> dict:
             )
             active_rows = _fetch_rows(
                 client, base + "/ai_provider_cost_reservations", headers,
-                {"select": "provider,status,reserved_cost_usd,actual_estimated_cost_usd", "status": "in.(reserved,unknown)"},
+                {"select": "request_id,provider,model,status,reserved_cost_usd,actual_estimated_cost_usd,created_at", "status": "in.(reserved,unknown)"},
             )
             settled_rows = _fetch_rows(
                 client, base + "/ai_provider_cost_reservations", headers,
@@ -139,7 +139,7 @@ def get_admin_ai_cost_budget_report(settings: Settings) -> dict:
         "global_remaining_usd": _money(max(Decimal("0"), global_budget - global_committed)),
         "max_outstanding_reserved_usd": _money(outstanding_cap),
         "providers": providers,
-        "actual_billed_cost_usd": None,
+        "unknown_reservations": [\n            {"request_id": row["request_id"], "provider": row["provider"], "model": row["model"],\n             "reserved_cost_usd": _money(_decimal(row["reserved_cost_usd"])), "created_at": row["created_at"]}\n            for row in active_rows if row.get("status") == "unknown"\n        ],\n        "actual_billed_cost_usd": None,
         "billing_reconciliation": "not_available",
         "note": "Atomic admission uses conservative server-side peak paid-tier token estimates. Unknown outcomes keep their full reserve locked. This is not invoice-level billing reconciliation.",
     }
