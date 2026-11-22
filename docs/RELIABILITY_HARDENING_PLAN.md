@@ -379,3 +379,27 @@ The disposable PostgreSQL 16 migration suite now applies migration 0017 and veri
 The CI workflow also starts two concurrent PostgreSQL sessions against the same active job and calls `begin_generation_provider_operation` from both. The expected result is exactly one inserted journal row, one `created=true` response, and one idempotent `created=false` response. This specifically exercises the row lock and unique constraint together rather than relying only on sequential unit tests.
 
 **Validation status:** these checks are committed to the workflow but are not considered passed until the corresponding GitHub Actions run completes successfully. No production Supabase migration was applied. 
+
+
+## 8. Recovery hardening update — 23.11.2026
+
+### Implemented in the audit branch
+
+- Mini Movie Studio cloud sync now retries transient upsert/delete failures with bounded exponential backoff (1 second to 5 minutes).
+- Cloud project loading has its own bounded retry schedule (2 seconds to 5 minutes), so a temporary Supabase outage does not permanently suppress the initial load for the current session.
+- Browser `online` and tab `visibilitychange` events trigger a fresh sync attempt. Every retry remains pinned to the user UUID captured when it was scheduled; account-specific project keys and deletion tombstones remain isolated.
+- Generation result SHA-256 is persisted alongside the storage path. Completion replay must match both; storage integrity scans compare the current object digest against the trusted database digest.
+- Added `docs/PROJECT_AND_GENERATION_RECOVERY_RUNBOOK.md` with the fault matrix, safe recovery sequence and explicit production limitations.
+
+### Verified
+
+- GitHub Actions CI #780 and #781 passed on commit `d672c10756139ee0f05e7d065fa1d87a61bdc741` before the latest frontend retry update.
+- The frontend retry update is covered by the repository's JavaScript syntax check in the next CI run; it has not yet been live-tested against Supabase or on mobile browsers.
+- PostgreSQL migration integration passed for migration 0024, including SHA-256 persistence and replay-mismatch rejection.
+
+### Still not a production guarantee
+
+- Project storage remains localStorage-first. IndexedDB, user-controlled backup export/import, and full multi-device conflict resolution are not yet implemented.
+- There is no deployed outbox dispatcher, Redis worker queue, scheduled reconciler, or real provider adapter.
+- No live Supabase outage simulation, two-account browser test, or device-loss recovery test has been performed.
+- No production migration or deployment was run.
