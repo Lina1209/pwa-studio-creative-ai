@@ -5,7 +5,7 @@ from uuid import UUID
 import httpx
 
 from app.core.config import Settings
-from app.services.pricing_service import VerifiedPricingQuote
+from app.services.pricing_service import PricingError, verify_pricing_quote
 
 
 class GenerationJobsNotConfiguredError(RuntimeError):
@@ -244,28 +244,29 @@ def create_credited_generation_job(
     idempotency_key: str,
     request_hash: str,
     request_snapshot: dict[str, Any],
-    quote: VerifiedPricingQuote,
+    quote_snapshot: dict[str, Any],
 ) -> CreditedGenerationJobCreateResult:
-    """Admit a job using a server-issued, owner/request-bound verified quote."""
+    """Verify a signed server quote before atomically admitting a credited job."""
     if not settings.generation_jobs_enabled:
         raise GenerationJobsNotConfiguredError(
             "Generation jobs are not enabled on this server."
         )
-    if not isinstance(quote, VerifiedPricingQuote):
-        raise GenerationJobsServiceError("A verified server pricing quote is required.")
-    if (
-        quote.user_id != user_id
-        or quote.job_type != job_type
-        or quote.provider != provider
-        or quote.model != model
-        or quote.request_hash != request_hash
-        or quote.expires_at.timestamp() <= __import__("time").time()
-    ):
-        raise GenerationJobsServiceError("The pricing quote does not match this generation request.")
     if not isinstance(request_snapshot, dict):
         raise GenerationJobsServiceError("Generation request snapshot must be an object.")
-    quote_snapshot = quote.snapshot()
+    try:
+        quote = verify_pricing_quote(
+            quote_snapshot,
+            secret=settings.pricing_quote_signing_secret,
+            user_id=user_id,
+            job_type=job_type,
+            provider=provider,
+            model=model,
+            request_hash=request_hash,
+        )
+    except PricingError as exc:
+        raise GenerationJobsServiceError("The server pricing quote is invalid or expired.") from exc
     credit_amount = quote.amount
+    quote_snapshot = quote.snapshot()
 
     headers = _headers(settings)
     payload = {
