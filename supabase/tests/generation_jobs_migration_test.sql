@@ -2322,6 +2322,47 @@ begin
     raise exception 'Outstanding prior-day reservations disappeared at UTC rollover';
   end if;
 
+  -- Operator reconciliation is explicit and idempotent: a verified no-charge
+  -- result releases only its own reserve; a known charge appends ledger evidence.
+  if not public.resolve_generation_provider_reservation(
+       v_job_unknown, 'global-no-charge-001', 'release_no_charge', null,
+       'Provider invoice confirms no charge.'
+     ) then
+    raise exception 'Operator could not release a verified no-charge reservation';
+  end if;
+  select status into v_status
+    from public.generation_provider_cost_reservations
+   where job_id = v_job_unknown;
+  if v_status <> 'released' then
+    raise exception 'Verified no-charge reconciliation did not release the reserve';
+  end if;
+
+  if not public.resolve_generation_provider_reservation(
+       v_job_next_day, 'global-known-reconcile-001', 'settle_known_cost', 0.02,
+       'Provider billing record confirms this operation cost.'
+     ) then
+    raise exception 'Operator could not settle a verified provider charge';
+  end if;
+  select status into v_status
+    from public.generation_provider_cost_reservations
+   where job_id = v_job_next_day;
+  if v_status <> 'settled' then
+    raise exception 'Known-cost reconciliation did not settle the reserve';
+  end if;
+  if not public.resolve_generation_provider_reservation(
+       v_job_next_day, 'global-known-reconcile-001', 'settle_known_cost', 0.02,
+       'Provider billing record confirms this operation cost.'
+     ) then
+    raise exception 'Exact operator reconciliation replay was not idempotent';
+  end if;
+  select count(*) into v_count
+    from public.generation_provider_cost_events
+   where job_id = v_job_next_day
+     and operation_key = 'provider-reconciliation:global-known-reconcile-001';
+  if v_count <> 1 then
+    raise exception 'Operator reconciliation replay duplicated provider cost evidence';
+  end if;
+
   if has_function_privilege('authenticated',
        'public.configure_provider_budget_policy(numeric,numeric)', 'EXECUTE')
      or not has_function_privilege('service_role',
