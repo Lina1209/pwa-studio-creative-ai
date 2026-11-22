@@ -80,8 +80,13 @@ jobs:
           # The preceding migration suite intentionally leaves an idempotency fixture queued.
           # Isolate this race test so both workers compete for exactly one eligible row.
           "${DB[@]}" -c "update public.generation_jobs
-            set status = 'failed', completed_at = now(), updated_at = now()
-            where id <> '$JOB_ID' and status in ('queued', 'retry_wait');"
+            set status = 'failed', lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, completed_at = now(), updated_at = now()
+            where id <> '$JOB_ID'
+              and (
+                status in ('queued', 'retry_wait')
+                or (status = 'running' and lease_expires_at <= now())
+              );"
 
           FIRST_OUTPUT="$(mktemp)"
           "${DB[@]}" -c "begin;
@@ -122,8 +127,13 @@ jobs:
           );")"
           test -n "$JOB_ID"
           "${DB[@]}" -c "update public.generation_jobs
-            set status = 'failed', completed_at = now(), updated_at = now()
-            where id <> '$JOB_ID' and status in ('queued', 'retry_wait');"
+            set status = 'failed', lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, completed_at = now(), updated_at = now()
+            where id <> '$JOB_ID'
+              and (
+                status in ('queued', 'retry_wait')
+                or (status = 'running' and lease_expires_at <= now())
+              );"
           CLAIMED="$("${DB[@]}" -c "select job_id from public.claim_next_generation_job('journal-race-worker', 120);")"
           test "$CLAIMED" = "$JOB_ID"
 
