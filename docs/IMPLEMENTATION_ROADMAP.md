@@ -1,6 +1,6 @@
 # PWA Studio — implementation roadmap and status
 
-Last reviewed: 2026-11-21
+Last reviewed: 2026-11-22
 
 For the complete product vision, platform rules, prohibited-content taxonomy, filters, bans, appeals, privacy/security requirements, rights/consent, testing strategy, and phased plan, see [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md).
 
@@ -22,7 +22,7 @@ This document is the working source of truth for the next implementation stages.
 ## Workstreams and acceptance criteria
 
 ### 1. AI Companion persistent history
-**Current state:** migration `0004_assistant_chat_history.sql` was applied to live Supabase. Frontend saves and reloads conversation titles and user/assistant messages. A test conversation survived a browser refresh on 2026-11-21.
+**Current state:** migration `0004_assistant_chat_history.sql` was applied to live Supabase. Frontend saves and reloads conversation titles and user/assistant messages. A test conversation survived a browser refresh on 2026-11-21. Migration `0006_assistant_conversation_updated_at.sql` has been added to keep conversation ordering correct after a rename; it has not been applied to the live database.
 
 Remaining verification: test logout/login and confirm that a second account cannot read or modify the first account's conversations. Existing AI replies continue to work.
 
