@@ -44,20 +44,30 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ## AI configuration
 
-Set `AI_PROVIDER`, `AI_MODEL` and the matching provider secret in the host's environment settings. Supported initial providers: `openai`, `deepseek`, `anthropic` and `ollama`. Never expose provider keys in frontend code or health responses.
+Set `AI_PROVIDER`, `AI_MODEL` and the matching server-side secret. Only DeepSeek (default) and Google Gemini are supported. Automatic fallback is disabled. Never expose provider keys in frontend code or health responses.
 
-## AI usage metering (no credit deductions)
+## AI usage metering and atomic USD admission
 
-Successful `/api/chat` and `/api/prompts` calls now attempt to record token usage and provider-reported cost in the private `public.ai_usage` table. Prompt and response text are never stored. Cost remains NULL when LiteLLM/provider metadata does not supply a reliable value; no price is guessed. Telemetry is best-effort and does not block an AI response.
+Synchronous `/api/chat`, `/api/prompts`, and Mini Movie Studio AI endpoints record token counts and a conservative server-side cost estimate in the private `public.ai_usage` table. Prompt and response text are never stored. When provider token usage is missing, the cost remains unknown.
+
+Every synchronous AI call first reserves a worst-case USD amount in PostgreSQL. The global and per-provider daily limits are serialized in one transaction across backend replicas. The reservation estimate uses UTF-8 input bytes as a conservative input-token ceiling, the configured maximum output tokens, current server-maintained peak paid-tier prices, and a 25% safety margin. After a response, it settles from provider-reported token counts. If the request times out or usage is missing, the full reservation stays locked for operator reconciliation; it is never automatically released.
+
+Initial limits seeded by `supabase/migrations/0050_sync_ai_provider_cost_reservations.sql`:
+- DeepSeek: $1.00 per UTC day.
+- Gemini: $1.00 per UTC day.
+- Combined daily budget: $2.00.
+- Maximum outstanding reservations: $0.50.
+
+The owner-only `GET /api/admin/ai/budget` endpoint and admin panel show settled estimates, outstanding reserves, unknown outcomes and remaining limits. This is not invoice-level billing reconciliation or a guaranteed provider billing cap. Keep separate spending limits in the DeepSeek/Google consoles. Price assumptions must be updated when provider pricing changes. The estimator uses paid-tier rates even when a model is listed as Free Tier eligible; project eligibility is never assumed.
 
 Before enabling this in production:
 
-1. Review and manually apply `supabase/migrations/0003_ai_usage_metering.sql` in the intended Supabase project.
+1. Review and manually apply migrations `0003_ai_usage_metering.sql` and `0050_sync_ai_provider_cost_reservations.sql` in the intended Supabase project, after checking the current migration history.
 2. In Render, set `SUPABASE_SERVICE_ROLE_KEY` as a secret environment variable alongside `SUPABASE_URL`. Use the server-side service-role key from Supabase; never place it in frontend files, GitHub, or a client request.
-3. After deployment, check `GET /api/health`. The boolean `usage_telemetry_configured` should be `true`; it does not expose credentials or prove a database write has succeeded.
-4. Make one authenticated chat or prompt request, then inspect the new row in Supabase Table Editor. Verify user, endpoint, model, token counts and cost fields.
+3. If the cost tables or RPCs are unavailable, synchronous AI requests fail closed before contacting a provider. Verify the owner-only budget panel after applying the migration.
+4. Reconcile actual invoices in provider consoles. Unknown reservations require an audited operator resolution; do not infer no-charge from a timeout or generic provider error.
 
-This phase only measures usage. It does not create wallets, deduct credits, charge users, or change plans. Rows are accessible only to the server-side service role because RLS is enabled and no client policies are granted.
+The reservation ledger is separate from customer credits. It does not charge users, deduct credits, create revenue, or change subscription plans. RLS is enabled and no client policies are granted.
 
 
 ### Administrator authorization boundary
