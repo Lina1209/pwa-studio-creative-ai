@@ -326,6 +326,7 @@ begin
      or p_lot_type not in ('free', 'subscription', 'purchased', 'bonus', 'adjustment')
      or p_source_reference is null or length(p_source_reference) not between 8 and 240
      or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 234
+     or (p_lot_type in ('free', 'subscription') and p_expires_at is null)
      or (p_expires_at is not null and p_expires_at <= now())
      or p_metadata is null or jsonb_typeof(p_metadata) <> 'object'
      or octet_length(p_metadata::text) > 16384 then
