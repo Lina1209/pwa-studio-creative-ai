@@ -197,3 +197,29 @@ def test_create_request_rejects_scope_for_another_user_before_rpc(monkeypatch):
             idempotency_key=IDEMPOTENCY,
         )
     assert called == []
+
+
+def test_read_finance_request_events_validates_append_only_timeline(monkeypatch):
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: [{
+        "event_id": str(REQUEST), "actor_id": str(ACTOR),
+        "event_type": "request.created", "previous_status": None,
+        "new_status": "pending", "reason": "Opened for review",
+        "occurred_at": datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc).isoformat(),
+    }])
+    events = service.read_finance_operation_request_events(SETTINGS, request_id=REQUEST)
+    assert len(events) == 1
+    assert events[0]["event_id"] == REQUEST
+    assert events[0]["new_status"] == "pending"
+
+
+def test_read_finance_request_events_rejects_invalid_transition(monkeypatch):
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: [{
+        "event_id": str(REQUEST), "actor_id": str(ACTOR),
+        "event_type": "request.created", "previous_status": "rejected",
+        "new_status": "pending", "reason": "Invalid history",
+        "occurred_at": "2026-11-23T12:00:00Z",
+    }])
+    with pytest.raises(service.FinanceRequestUnavailable):
+        service.read_finance_operation_request_events(SETTINGS, request_id=REQUEST)
