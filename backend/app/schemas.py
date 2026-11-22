@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from uuid import UUID
 from datetime import datetime
 from typing import Literal
@@ -183,4 +184,51 @@ class FinanceRoleRevocationRequest(BaseModel):
     def reject_untrimmed_reason(cls, value: str) -> str:
         if value.strip() != value or not value:
             raise ValueError("Reason must be trimmed and non-empty.")
+        return value
+
+
+
+class FinanceOperationRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_type: Literal["credit_compensation", "billing_refund"]
+    target_user_id: UUID
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
+    currency_code: str = Field(pattern=r"^[A-Z]{3}$")
+    scope_key: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=500)
+    idempotency_key: UUID
+
+    @field_validator("scope_key", "reason")
+    @classmethod
+    def reject_untrimmed_finance_text(cls, value: str) -> str:
+        if value.strip() != value:
+            raise ValueError("Value must not contain surrounding whitespace.")
+        return value
+
+
+class FinanceOperationDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def reject_untrimmed_decision_reason(cls, value: str) -> str:
+        if value.strip() != value:
+            raise ValueError("Reason must not contain surrounding whitespace.")
+        return value
+
+
+class FinanceOperationCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def reject_untrimmed_cancel_reason(cls, value: str) -> str:
+        if value.strip() != value:
+            raise ValueError("Reason must not contain surrounding whitespace.")
         return value
