@@ -3269,6 +3269,8 @@ do $$
 declare
   v_actor uuid := '11111111-1111-4111-8111-111111111111';
   v_event uuid;
+  v_event_second uuid;
+  v_cursor record;
   v_count integer;
   v_mutation_blocked boolean := false;
 begin
@@ -3279,6 +3281,10 @@ begin
   if v_event is null then
     raise exception 'audit insert did not return an event id';
   end if;
+  v_event_second := public.record_admin_audit_event(
+    v_actor, 'admin.access', 'allowed', 'platform', null, gen_random_uuid(),
+    'Second pagination fixture with same transaction timestamp'
+  );
 
   select count(*) into v_count
     from public.read_admin_audit_events(null, null, 10)
@@ -3286,6 +3292,18 @@ begin
      and action = 'admin.access' and outcome = 'allowed';
   if v_count <> 1 then
     raise exception 'audit event could not be read through the bounded RPC';
+  end if;
+
+  select occurred_at, id into v_cursor
+    from public.admin_audit_events
+   where id in (v_event, v_event_second)
+   order by occurred_at desc, id desc
+   limit 1;
+  select count(*) into v_count
+    from public.read_admin_audit_events(v_cursor.occurred_at, v_cursor.id, 10)
+   where id in (v_event, v_event_second);
+  if v_count <> 1 then
+    raise exception 'composite audit cursor skipped or duplicated same-timestamp events';
   end if;
 
   begin
