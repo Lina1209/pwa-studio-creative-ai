@@ -215,34 +215,41 @@ begin
    where aggregate_id = v_first.job_id and event_type = 'generation_job.created';
   if v_count <> 1 then raise exception 'Generic replay created a duplicate outbox event'; end if;
 
+  declare
+    v_rejected boolean;
   begin
-    perform public.create_generation_job_with_outbox(
-      '11111111-1111-4111-8111-111111111111', null,
-      'image_generation', 'generic-provider', 'generic-model',
-      'generic-idempotency-001', repeat('b', 64), '{}'::jsonb, '{}'::jsonb
-    );
-    raise exception 'Mismatched generic idempotency replay was accepted';
-  exception when sqlstate '22023' then null;
-  end;
+    v_rejected := false;
+    begin
+      perform public.create_generation_job_with_outbox(
+        '11111111-1111-4111-8111-111111111111', null,
+        'image_generation', 'generic-provider', 'generic-model',
+        'generic-idempotency-001', repeat('b', 64), '{}'::jsonb, '{}'::jsonb
+      );
+    exception when sqlstate '22023' then v_rejected := true;
+    end;
+    if not v_rejected then raise exception 'Mismatched generic idempotency replay was accepted'; end if;
 
-  begin
-    perform public.create_generation_job_with_outbox(
-      '11111111-1111-4111-8111-111111111111', null,
-      'image_generation', 'generic-provider', 'generic-model',
-      'short', repeat('c', 64), '{}'::jsonb, '{}'::jsonb
-    );
-    raise exception 'Short idempotency key was accepted';
-  exception when sqlstate '22023' then null;
-  end;
+    v_rejected := false;
+    begin
+      perform public.create_generation_job_with_outbox(
+        '11111111-1111-4111-8111-111111111111', null,
+        'image_generation', 'generic-provider', 'generic-model',
+        'short', repeat('c', 64), '{}'::jsonb, '{}'::jsonb
+      );
+    exception when sqlstate '22023' then v_rejected := true;
+    end;
+    if not v_rejected then raise exception 'Short idempotency key was accepted'; end if;
 
-  begin
-    perform public.create_generation_job_with_outbox(
-      '11111111-1111-4111-8111-111111111111', null,
-      'image_generation', 'generic-provider', 'generic-model',
-      'generic-invalid-hash-001', 'not-a-valid-hash', '{}'::jsonb, '{}'::jsonb
-    );
-    raise exception 'Malformed request hash was accepted';
-  exception when sqlstate '22023' then null;
+    v_rejected := false;
+    begin
+      perform public.create_generation_job_with_outbox(
+        '11111111-1111-4111-8111-111111111111', null,
+        'image_generation', 'generic-provider', 'generic-model',
+        'generic-invalid-hash-001', 'not-a-valid-hash', '{}'::jsonb, '{}'::jsonb
+      );
+    exception when sqlstate '22023' then v_rejected := true;
+    end;
+    if not v_rejected then raise exception 'Malformed request hash was accepted'; end if;
   end;
 end;
 $generic_idempotency$;
