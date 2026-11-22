@@ -28,7 +28,7 @@ class PricingRule:
     unit_label: str
     min_quantity: int = 1
     max_quantity: int = 1
-    max_provider_cost_usd: Decimal | None = None
+    max_provider_cost_usd_per_unit: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not all(isinstance(value, str) and value and value.strip() == value
@@ -47,7 +47,7 @@ class PricingRule:
         ):
             raise PricingError("Pricing rule quantity bounds are invalid.")
         if (
-            self.max_provider_cost_usd is not None
+            self.max_provider_cost_usd_per_unit is not None
             and (
                 not isinstance(self.max_provider_cost_usd, Decimal)
                 or not self.max_provider_cost_usd.is_finite()
@@ -56,7 +56,7 @@ class PricingRule:
                 or self.max_provider_cost_usd > Decimal("9999999999.9999999999")
             )
         ):
-            raise PricingError("Pricing rule provider cost ceiling must be a positive finite USD decimal.")
+            raise PricingError("Pricing rule per-unit provider cost ceiling must be a positive finite USD decimal.")
 
 
 @dataclass(frozen=True)
@@ -383,7 +383,7 @@ def load_pricing_catalog(raw_json: str) -> PricingCatalog:
     rules = []
     required = {
         "job_type", "provider", "model", "credits_per_unit",
-        "unit_label", "min_quantity", "max_quantity", "max_provider_cost_usd",
+        "unit_label", "min_quantity", "max_quantity", "max_provider_cost_usd_per_unit",
     }
     for item in payload["rules"]:
         if not isinstance(item, dict) or set(item) - required or not {
@@ -391,7 +391,7 @@ def load_pricing_catalog(raw_json: str) -> PricingCatalog:
         }.issubset(item):
             raise PricingError("Server pricing catalog rule schema is invalid.")
         try:
-            raw_cost_ceiling = item.get("max_provider_cost_usd")
+            raw_cost_ceiling = item.get("max_provider_cost_usd_per_unit")
             if raw_cost_ceiling is not None and not isinstance(raw_cost_ceiling, str):
                 raise PricingError("Server pricing catalog provider cost ceiling must be a decimal string.")
             rules.append(PricingRule(
@@ -402,7 +402,7 @@ def load_pricing_catalog(raw_json: str) -> PricingCatalog:
                 unit_label=item["unit_label"],
                 min_quantity=item.get("min_quantity", 1),
                 max_quantity=item.get("max_quantity", 1),
-                max_provider_cost_usd=Decimal(raw_cost_ceiling) if raw_cost_ceiling is not None else None,
+                max_provider_cost_usd_per_unit=Decimal(raw_cost_ceiling) if raw_cost_ceiling is not None else None,
             ))
         except (TypeError, ValueError) as exc:
             if isinstance(exc, PricingError):
