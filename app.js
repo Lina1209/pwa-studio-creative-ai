@@ -811,7 +811,7 @@ const movieHistoryStyle = document.createElement("style");
     const ownerId = authSession?.user?.id || null;
     if (!backup || backup.format !== "PWA Studio movie workspace backup" || backup.schemaVersion !== 1 || !Array.isArray(backup.projects) || backup.projects.length > 2000) throw new Error("Формат резервной копии не распознан или превышает допустимый объём.");
     if (backup.scope !== (ownerId ? "account" : "guest") || (ownerId && backup.ownerId !== ownerId) || (!ownerId && backup.ownerId !== null)) throw new Error("Эта копия создана для другого аккаунта или другого режима. Переключитесь на исходный аккаунт.");
-    const valid = backup.projects.filter(project => project && typeof project === "object" && typeof project.id === "string" && project.id.length <= 128 && typeof project.name === "string" && project.name.length <= 300 && typeof (project.updatedAt || project.createdAt) === "string");
+    const valid = backup.projects.filter(project => project && typeof project === "object" && typeof project.id === "string" && project.id.length <= 128 && typeof project.name === "string" && project.name.length <= 300 && typeof (project.updatedAt || project.createdAt) === "string" && Number.isFinite(Date.parse(project.updatedAt || project.createdAt)));
     if (valid.length !== backup.projects.length) throw new Error("В копии есть проекты с некорректными идентификаторами или датами. Импорт отменён.");
     const merged = new Map(movieRead().map(project => [project.id, project]));
     valid.forEach(project => {
