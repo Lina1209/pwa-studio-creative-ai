@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
-from app.services.auth import StudioUser, get_current_user, require_admin
+from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
 from app.services.ai_admission import (
@@ -336,7 +336,7 @@ def admin_me(user: StudioUser = Depends(require_admin)):
 @app.get(f"{settings.api_prefix}/admin/analytics/site-visits")
 def admin_site_visit_stats(
     response: Response,
-    user: StudioUser = Depends(require_admin),
+    user: StudioUser = Depends(require_permission("admin.analytics.read")),
 ):
     """Owner-only aggregate analytics endpoint."""
     try:
@@ -352,7 +352,7 @@ def admin_provider_cost_report(
     date_from: date,
     date_to: date,
     response: Response,
-    user: StudioUser = Depends(require_admin),
+    user: StudioUser = Depends(require_permission("admin.finance.costs.read")),
 ):
     """Read-only operational cost report; never exposes raw usage metadata."""
     try:
