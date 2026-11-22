@@ -365,6 +365,31 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             </div>
             <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Дневной предел USD</th><th>Израсходовано по оценке</th><th>Резерв</th><th>Остаток</th><th>Неизвестные</th><th>Состояние</th></tr></thead><tbody id="adminAiCostBudgetRows"></tbody></table></div>
             <p class="owner-privacy-note" id="adminAiCostBudgetNote">Оценки рассчитаны по консервативным пиковым тарифам; фактический счёт проверяется в кабинете провайдера.</p>
+            <div class="admin-module" aria-labelledby="adminAiBudgetControlsHeading">
+              <h4 id="adminAiBudgetControlsHeading">Управление денежными лимитами</h4>
+              <div class="finance-queue-controls">
+                <label>Общий лимит в сутки, USD<input id="adminAiGlobalDailyLimit" type="number" min="0.000001" max="1000000000" step="0.01" value="2" required></label>
+                <label>Максимум активных резервов, USD<input id="adminAiGlobalOutstandingLimit" type="number" min="0.000001" max="1000000000" step="0.01" value="0.5" required></label>
+                <label><input id="adminAiGlobalEnabled" type="checkbox" checked> Глобальный стоп-кран включён</label>
+                <button class="secondary-button" id="saveAdminAiGlobalBudget" type="button">Сохранить общий лимит</button>
+              </div>
+              <div class="finance-queue-controls">
+                <label>Провайдер<select id="adminAiBudgetProvider"><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option></select></label>
+                <label>Дневной лимит, USD<input id="adminAiProviderDailyLimit" type="number" min="0.000001" max="1000000000" step="0.01" value="1" required></label>
+                <label><input id="adminAiProviderEnabled" type="checkbox" checked> Провайдер разрешён</label>
+                <button class="secondary-button" id="saveAdminAiProviderBudget" type="button">Сохранить лимит провайдера</button>
+              </div>
+              <h4>Проверка неизвестных резервов</h4>
+              <p class="helper-text">Резерв нельзя освободить автоматически. Укажите решение и обязательное объяснение; действие попадёт в журнал аудита.</p>
+              <div class="finance-queue-controls">
+                <label>Неизвестный резерв<select id="adminAiUnknownReservation"><option value="">Нет доступных неизвестных резервов</option></select></label>
+                <label>Решение<select id="adminAiReservationResolution"><option value="confirm_no_charge">Подтверждено: списания не было</option><option value="record_estimated_cost">Зафиксировать оценку расхода</option></select></label>
+                <label>Оценка USD (для второго решения)<input id="adminAiReservationCost" type="number" min="0" max="1000000000" step="0.000001"></label>
+                <label>Причина<textarea id="adminAiReservationNote" minlength="8" maxlength="1000" rows="2" required></textarea></label>
+                <button class="secondary-button" id="resolveAdminAiReservation" type="button">Подтвердить решение</button>
+              </div>
+              <p class="helper-text" id="adminAiBudgetControlStatus" role="status" aria-live="polite"></p>
+            </div>
           </div>
           <div class="admin-module" aria-labelledby="adminAiUsageHeading">
             <div class="panel-heading"><div><h3 id="adminAiUsageHeading">Использование AI · токены и оценка расходов</h3><p>Данные из серверного журнала ai_usage. Не содержит промптов, ответов и идентификаторов пользователей.</p></div></div>
