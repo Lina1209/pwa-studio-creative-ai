@@ -2533,6 +2533,8 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0039_finance_role_self_assignment_guard.sql
 \ir ../migrations/0040_finance_role_duplicate_grant_guard.sql
 \ir ../migrations/0041_require_scoped_expiring_finance_roles.sql
+\ir ../migrations/0042_finance_operation_request_storage.sql
+\ir ../migrations/0043_finance_operation_request_rpcs.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3596,3 +3598,145 @@ end;
 $finance_role_registry_rpc_test$;
 
 select 'finance role registry RPC checks passed' as result;
+
+-- Finance request state transitions are transactional, idempotent, and non-executable.
+do $finance_operation_request_test$
+declare
+  v_request uuid;
+  v_replay uuid;
+  v_cancel_request uuid;
+  v_event_count integer;
+  v_status text;
+  v_rejected boolean := false;
+begin
+  if has_table_privilege('anon', 'public.finance_operation_requests', 'SELECT')
+     or has_table_privilege('authenticated', 'public.finance_operation_requests', 'SELECT')
+     or has_table_privilege('service_role', 'public.finance_operation_requests', 'SELECT')
+     or has_table_privilege('authenticated', 'public.finance_operation_request_events', 'INSERT')
+     or has_function_privilege('authenticated',
+       'public.create_finance_operation_request(uuid,text,uuid,numeric,text,text,text,uuid)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.decide_finance_operation_request(uuid,uuid,text,text)', 'EXECUTE') then
+    raise exception 'Finance request storage or RPCs expose excessive privileges';
+  end if;
+
+  v_request := public.create_finance_operation_request(
+    '11111111-1111-4111-8111-111111111111',
+    'credit_compensation',
+    '22222222-2222-4222-8222-222222222222',
+    12.5000, 'KZT', 'test-scope', 'Compensation review fixture',
+    'aaaaaaaa-1111-4111-8111-111111111111'
+  );
+  v_replay := public.create_finance_operation_request(
+    '11111111-1111-4111-8111-111111111111',
+    'credit_compensation',
+    '22222222-2222-4222-8222-222222222222',
+    12.5000, 'KZT', 'test-scope', 'Compensation review fixture',
+    'aaaaaaaa-1111-4111-8111-111111111111'
+  );
+  if v_request <> v_replay then
+    raise exception 'Idempotent request replay returned a different request id';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.create_finance_operation_request(
+      '11111111-1111-4111-8111-111111111111',
+      'credit_compensation',
+      '22222222-2222-4222-8222-222222222222',
+      99.0000, 'KZT', 'test-scope', 'Changed payload',
+      'aaaaaaaa-1111-4111-8111-111111111111'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Changed request payload reused an idempotency key';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.decide_finance_operation_request(
+      v_request, '11111111-1111-4111-8111-111111111111',
+      'approve', 'Self approval fixture'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Requester approved their own finance request';
+  end if;
+
+  perform public.decide_finance_operation_request(
+    v_request, '22222222-2222-4222-8222-222222222222',
+    'approve', 'Independent approval fixture'
+  );
+  select status into v_status from public.finance_operation_requests where id = v_request;
+  if v_status <> 'approved' then
+    raise exception 'Finance request was not approved';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.decide_finance_operation_request(
+      v_request, '22222222-2222-4222-8222-222222222222',
+      'approve', 'Repeated approval fixture'
+    );
+  exception when sqlstate '55000' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'A finance request was decided more than once';
+  end if;
+
+  v_cancel_request := public.create_finance_operation_request(
+    '22222222-2222-4222-8222-222222222222',
+    'billing_refund',
+    '11111111-1111-4111-8111-111111111111',
+    4.0000, 'USD', 'test-scope', 'Cancellation review fixture',
+    'bbbbbbbb-2222-4222-8222-222222222222'
+  );
+  v_rejected := false;
+  begin
+    perform public.cancel_finance_operation_request(
+      v_cancel_request, '11111111-1111-4111-8111-111111111111',
+      'Wrong actor cancellation'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Non-requester cancelled a finance request';
+  end if;
+
+  perform public.cancel_finance_operation_request(
+    v_cancel_request, '22222222-2222-4222-8222-222222222222',
+    'Requester cancellation fixture'
+  );
+  select status into v_status from public.finance_operation_requests where id = v_cancel_request;
+  if v_status <> 'cancelled' then
+    raise exception 'Pending finance request was not cancelled';
+  end if;
+
+  select count(*) into v_event_count
+    from public.finance_operation_request_events
+   where request_id = v_request;
+  if v_event_count <> 2 then
+    raise exception 'Finance request audit stream has unexpected event count';
+  end if;
+
+  v_rejected := false;
+  begin
+    delete from public.finance_operation_request_events
+     where request_id = v_request;
+  exception when sqlstate '55000' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Finance operation request event history was mutable';
+  end if;
+end;
+$finance_operation_request_test$;
+
+select 'finance operation request lifecycle checks passed' as result;
+
