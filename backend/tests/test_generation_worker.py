@@ -574,13 +574,14 @@ async def test_lease_loss_during_upload_recovers_same_provider_result_and_storag
     recovered_repo = FakeRepository(
         journal_created=False, journal_state="result_received"
     )
+    recovery_provider = RecoverableProvider()
     second = await make_worker(
-        recovered_repo, RecoverableProvider(), storage
+        recovered_repo, recovery_provider, storage
     ).process(make_job(attempt_count=2))
 
     assert second.outcome == "succeeded"
     assert storage.calls == 2
     assert storage.paths == [f"{OWNER}/generated/{JOB_ID}.png"] * 2
     assert storage.payloads == [IMAGE, IMAGE]
-    assert not RecoverableProvider().idempotency_keys  # Recovery used lookup, not generation.
+    assert recovery_provider.idempotency_keys == []  # Lookup reused the result; no generation call.
     assert any(call[0] == "complete" for call in recovered_repo.calls)
