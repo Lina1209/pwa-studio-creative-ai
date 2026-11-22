@@ -2415,6 +2415,14 @@ begin
     raise exception 'Operator reconciliation replay duplicated provider cost evidence';
   end if;
 
+  -- The B fixture was admitted but deliberately never submitted to a provider.
+  if not public.resolve_generation_provider_reservation(
+       v_job_b, 'global-budget-b-cleanup-001', 'release_no_charge', null,
+       'Integration fixture was never submitted to a provider.'
+     ) then
+    raise exception 'Could not release the never-submitted integration fixture';
+  end if;
+
   if has_function_privilege('authenticated',
        'public.configure_provider_budget_policy(numeric,numeric)', 'EXECUTE')
      or not has_function_privilege('service_role',
