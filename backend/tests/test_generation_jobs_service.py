@@ -211,3 +211,60 @@ def test_rpc_invalid_response_is_rejected(monkeypatch):
             idempotency_key="invalid-response-key",
             request_hash="c" * 64,
         )
+
+
+def test_create_scene_generation_job_uses_scene_rpc_and_never_maps_studio_project_to_cloud_project(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(
+            FakeResponse([{
+                "job_id": str(JOB_ID),
+                "event_id": str(EVENT_ID),
+                "created": True,
+            }]),
+            calls,
+        ),
+    )
+
+    scene_id = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+    result = generation_jobs.create_scene_generation_job(
+        configured_settings(),
+        user_id=USER_ID,
+        studio_scene_id=scene_id,
+        job_type="image_generation",
+        provider="provider-neutral",
+        model="not-configured",
+        idempotency_key="scene-idempotency-key-1",
+        request_hash="f" * 64,
+        request_snapshot={"prompt": "test scene prompt"},
+    )
+
+    assert result.job_id == JOB_ID
+    assert result.created is True
+    method, url, payload, headers = calls[0]
+    assert method == "POST"
+    assert url.endswith("/rpc/create_scene_generation_job_with_outbox")
+    assert payload["p_user_id"] == str(USER_ID)
+    assert payload["p_studio_scene_id"] == str(scene_id)
+    assert "p_project_id" not in payload
+    assert headers["apikey"] == "sb_secret_test_key"
+
+
+def test_scene_job_creation_is_disabled_without_server_flag(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("Supabase must not be called while jobs are disabled")
+
+    monkeypatch.setattr(generation_jobs.httpx, "Client", unexpected_client)
+    with pytest.raises(generation_jobs.GenerationJobsNotConfiguredError):
+        generation_jobs.create_scene_generation_job(
+            Settings(),
+            user_id=USER_ID,
+            studio_scene_id=UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+            job_type="image_generation",
+            provider="provider-neutral",
+            model="not-configured",
+            idempotency_key="scene-idempotency-key-2",
+            request_hash="a" * 64,
+        )
