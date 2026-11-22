@@ -48,6 +48,22 @@ from app.services.generation_jobs import (
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
+def _audit_admin_read(user: StudioUser, *, resource_type: str, reason: str) -> None:
+    """Best-effort audit for successful read-only owner operations."""
+    try:
+        record_admin_audit_event(
+            settings,
+            actor_user_id=UUID(user.user_id),
+            action="admin.access",
+            outcome="allowed",
+            resource_type=resource_type,
+            reason=reason,
+        )
+    except (AdminAuditUnavailable, ValueError):
+        # Read-only access remains available; missing audit writes are visible in server logs.
+        logger.warning("Successful admin read could not be persisted to the audit journal.")
+
 app = FastAPI(
     title=settings.app_name,
     description="Private API for PWA Studio — Creative AI.",
@@ -335,6 +351,7 @@ def auth_me(user: StudioUser = Depends(get_current_user)):
 
 @app.get(f"{settings.api_prefix}/admin/me")
 def admin_me(user: StudioUser = Depends(require_admin)):
+    _audit_admin_read(user, resource_type="platform", reason="Viewed administrator identity and access status")
     return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
 
 
@@ -348,6 +365,7 @@ def admin_site_visit_stats(
         stats = get_admin_visit_stats(settings)
     except SiteAnalyticsUnavailable as exc:
         raise HTTPException(status_code=503, detail="Visit analytics is not configured.") from exc
+    _audit_admin_read(user, resource_type="platform", reason="Viewed aggregate site analytics")
     response.headers["Cache-Control"] = "private, no-store"
     return stats
 
@@ -377,6 +395,7 @@ def admin_provider_cost_report(
         raise HTTPException(
             status_code=502, detail="Provider cost report is temporarily unavailable."
         ) from exc
+    _audit_admin_read(user, resource_type="platform", reason="Viewed provider cost report")
     response.headers["Cache-Control"] = "private, no-store"
     return report
 
