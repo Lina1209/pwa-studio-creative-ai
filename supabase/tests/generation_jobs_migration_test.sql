@@ -2530,6 +2530,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0036_admin_audit_keyset_pagination.sql
 \ir ../migrations/0037_finance_authorization_registry.sql
 \ir ../migrations/0038_finance_role_registry_rpcs.sql
+\ir ../migrations/0039_finance_role_self_assignment_guard.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3532,6 +3533,19 @@ begin
   end;
   if not v_rejected then
     raise exception 'Unknown finance role was accepted';
+  end if;
+  v_rejected := false;
+  begin
+    perform public.grant_finance_role(
+      '11111111-1111-4111-8111-111111111111',
+      'finance_operator', null, null,
+      '11111111-1111-4111-8111-111111111111', 'self grant must fail'
+    );
+  exception when sqlstate '22023' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Self-assignment of finance role was accepted';
   end if;
 end;
 $finance_role_registry_rpc_test$;
