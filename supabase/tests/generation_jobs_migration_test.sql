@@ -197,6 +197,10 @@ begin
     from public.generation_jobs
    where idempotency_key = 'scene-job-idempotency-1';
 
+  update public.generation_jobs
+     set status = 'failed', completed_at = now(), updated_at = now()
+   where id <> v_job_id and status in ('queued', 'retry_wait');
+
   select * into v_claim
     from public.claim_next_generation_job('worker-alpha', 120);
   if v_claim.job_id is distinct from v_job_id or v_claim.attempt_count <> 1 then
