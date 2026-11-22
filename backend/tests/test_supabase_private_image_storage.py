@@ -64,6 +64,52 @@ async def test_upload_verifies_private_bucket_object_metadata_and_downloaded_byt
 
 
 @pytest.mark.asyncio
+async def test_transient_verification_failure_preserves_uploaded_object_for_retry():
+    calls = []
+    bucket_reads = 0
+
+    def handler(request):
+        nonlocal bucket_reads
+        calls.append((request.method, request.url.path))
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            if sum(1 for method, path in calls
+                   if method == "POST" and "/object/studio-media/" in path) == 1:
+                return httpx.Response(200, json={"Key": "uploaded"})
+            return httpx.Response(409, json={"message": "already exists"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            bucket_reads += 1
+            if bucket_reads == 1:
+                return httpx.Response(503, json={"message": "temporarily unavailable"})
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        if request.method == "DELETE":
+            raise AssertionError("Transient verification failure must not delete the object")
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(SupabaseStorageAdapterError) as exc_info:
+            await storage.upload_image(
+                owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+            )
+        assert exc_info.value.retryable is True
+
+        uploaded = await storage.upload_image(
+            owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+        )
+
+    assert uploaded.metadata.sha256_hex == calculate_sha256(PNG)
+    assert bucket_reads == 2
+    assert not any(method == "DELETE" for method, _ in calls)
+
+
+@pytest.mark.asyncio
 async def test_retry_after_ambiguous_upload_verifies_existing_object_without_overwrite():
     calls = []
 
