@@ -152,6 +152,13 @@ class GenerationWorker:
                 journal = await self.repository.begin_provider_operation(
                     job.job_id, self.worker_id, job.provider, provider_idempotency_key
                 )
+                if journal.state == "provider_failed":
+                    # A previous worker may have persisted provider-confirmed
+                    # failure and crashed before failing the job row. Never
+                    # reinterpret that terminal journal state as absence.
+                    return await self._terminal_failure(
+                        job, "provider_operation_failed"
+                    )
                 if journal.created:
                     try:
                         result = await self._run_while_leased(
