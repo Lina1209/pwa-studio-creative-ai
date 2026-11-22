@@ -380,11 +380,13 @@ const movieHistoryStyle = document.createElement("style");
   };
   const clearAssistantMessages = () => { if (assistantMessages) assistantMessages.replaceChildren(); };
   const loadAssistantMessages = async conversationId => {
-    if (!supabaseClient || !authSession?.user || !conversationId) return;
+    const userId = authSession?.user?.id;
+    if (!supabaseClient || !userId || !conversationId) return;
     const { data, error } = await supabaseClient.from("assistant_messages")
       .select("id,role,content,created_at").eq("conversation_id", conversationId)
-      .eq("user_id", authSession.user.id).order("created_at", { ascending: true });
+      .eq("user_id", userId).order("created_at", { ascending: true });
     if (error) throw error;
+    if (authSession?.user?.id !== userId) return;
     clearAssistantMessages();
     (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
     activeAssistantConversationId = conversationId;
@@ -397,12 +399,14 @@ const movieHistoryStyle = document.createElement("style");
       clearAssistantMessages(); activeAssistantConversationId = null; return;
     }
     if (assistantHistoryBusy) return;
+    const userId = authSession.user.id;
     assistantHistoryBusy = true; setAssistantStatus("Загружаем ваши диалоги…");
     try {
       const { data, error } = await supabaseClient.from("assistant_conversations")
-        .select("id,title,updated_at").eq("user_id", authSession.user.id)
+        .select("id,title,updated_at").eq("user_id", userId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
+      if (authSession?.user?.id !== userId) return;
       assistantHistoryList.replaceChildren();
       (data || []).forEach(conversation => {
         const row = document.createElement("div"); row.className = "assistant-history-row";
@@ -433,7 +437,10 @@ const movieHistoryStyle = document.createElement("style");
       setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
     } catch (error) {
       setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
-    } finally { assistantHistoryBusy = false; }
+    } finally {
+      assistantHistoryBusy = false;
+      if (authSession?.user?.id && authSession.user.id !== userId) setTimeout(renderAssistantHistory, 0);
+    }
   };
   const startAssistantConversation = async () => {
     if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
@@ -452,6 +459,7 @@ const movieHistoryStyle = document.createElement("style");
     event.preventDefault();
     const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
+    const requestUserId = authSession.user.id;
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     try {
       if (!activeAssistantConversationId) await startAssistantConversation();
@@ -466,6 +474,10 @@ const movieHistoryStyle = document.createElement("style");
           .update({ title: value.slice(0, 72) }).eq("id", activeAssistantConversationId);
       }
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
+      if (authSession?.user?.id !== requestUserId) {
+        setAssistantStatus("Сеанс аккаунта изменился. Ответ не был сохранён в другом аккаунте.");
+        return;
+      }
       const { error: assistantSaveError } = await supabaseClient.from("assistant_messages")
         .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
