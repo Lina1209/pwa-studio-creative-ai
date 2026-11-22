@@ -73,6 +73,10 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           </div>
           <div class="hero-art" aria-hidden="true"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="art-core"><span>✦</span></div><div class="art-chip chip-top">AI <b>CREATIVE</b></div><div class="art-chip chip-bottom">IDEA <b>→</b> VIDEO</div><div class="art-stars">✧　·　✦<br>　·　✧　·</div></div>
         </div>
+        <div class="site-counter-card" aria-live="polite">
+          <div><span class="site-counter-label">✦ НАША ТВОРЧЕСКАЯ ВСЕЛЕННАЯ</span><strong id="siteTotalVisits" data-total-visits>—</strong><span>Посещений за всё время</span></div>
+          <div class="site-counter-today"><strong id="siteTodayVisits" data-today-visits>—</strong><span>Сегодня</span></div>
+        </div>
         <div class="section-heading"><div><div class="eyebrow">БЫСТРЫЙ СТАРТ</div><h2>Выберите способ создания</h2></div><span class="muted">Начните с того, что уже есть</span></div>
         <div class="quick-grid">
           <button class="quick-card" data-go="create"><span class="quick-icon purple">✧</span><b>Из идеи</b><small>Опишите тему — соберём основу ролика</small><span class="card-arrow">↗</span></button>
@@ -349,10 +353,14 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
     .auth-form .primary-button{width:100%;justify-content:center;margin-top:12px}.auth-link{color:#c7a9ff;padding:10px;font-size:13px}
     .auth-feedback{min-height:24px;margin:12px 0 0!important;font-size:13px}.profile{cursor:default}
     @media(max-width:480px){.auth-card{padding:23px 19px}.auth-card h1{font-size:24px}.backend-pill{display:none}.auth-top-button{padding:7px 8px;font-size:11px}}
+  .site-counter-card{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:22px 0;padding:17px 20px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(120deg,rgba(135,105,220,.12),rgba(90,160,190,.07));color:var(--text)}
+  .site-counter-card>div{display:grid;gap:3px}.site-counter-label{font-size:9px;letter-spacing:1.5px;color:var(--muted)}.site-counter-card strong{font-size:26px;line-height:1.2}.site-counter-card span:not(.site-counter-label){font-size:11px;color:var(--muted)}.site-counter-today{min-width:90px;text-align:right}
+  @media(max-width:480px){.site-counter-card{padding:13px 15px}.site-counter-card strong{font-size:22px}}
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./supabase-config.js"></script>
+  <script src="./analytics.js" defer></script>
   <script src="./movie-storage.js?v=20261123-1"></script>
   <script src="./app.js?v=20261123-1" defer></script>
   <script src="./audio-lab.js?v=20261121-1" defer></script>
