@@ -155,7 +155,7 @@ def issue_pricing_quote(
         raise PricingError("Pricing quote signing secret is not configured securely.")
     if not isinstance(user_id, UUID):
         raise PricingError("Authenticated user identity is required.")
-    if len(request_hash) != 64 or any(c not in "0123456789abcdef" for c in request_hash):
+    if not isinstance(request_hash, str) or len(request_hash) != 64 or any(c not in "0123456789abcdef" for c in request_hash):
         raise PricingError("Canonical request hash must be lowercase SHA-256 hex.")
     if not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 200:
         raise PricingError("Generation idempotency key is invalid.")
@@ -179,7 +179,7 @@ def issue_pricing_quote(
     quote_id = uuid4()
     payload = _quote_payload(
         quote_id=quote_id, user_id=user_id, job_type=job_type,
-        provider=provider, model=model, request_hash=request_hash,
+        provider=provider, model=model, request_hash=request_hash, idempotency_key=idempotency_key,
         quantity=quantity, unit_label=rule.unit_label, amount=amount,
         price_version=catalog.version, issued_at=issued_at, expires_at=expires_at,
     )
@@ -248,7 +248,7 @@ def verify_pricing_quote(
 
     payload = _quote_payload(
         quote_id=quote_id, user_id=quoted_user, job_type=quote_job_type,
-        provider=quote_provider, model=quote_model, request_hash=quote_hash,
+        provider=quote_provider, model=quote_model, request_hash=quote_hash, idempotency_key=quote_idempotency_key,
         quantity=quantity, unit_label=unit_label, amount=amount,
         price_version=price_version, issued_at=issued_at, expires_at=expires_at,
     )
