@@ -48,6 +48,4 @@
     });
   }
   send();
-  fetch(apiBase + "/api/analytics/stats", { credentials: "omit" })
-    .then(r => r.ok ? r.json() : null).then(updateCounter).catch(() => {});
 })();
