@@ -72,8 +72,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ## Счётчик посещений
 
 - Главная показывает накопительное число просмотров **за всё время** и просмотры за сегодня.
-- Backend endpoints: `POST /api/analytics/visit`, `GET /api/analytics/stats`; owner-only aggregate report: `GET /api/admin/analytics/site-visits`.
-- Migration `0027_site_visit_analytics.sql` создаёт privacy-minimizing aggregate counters. Счётчик начинает работу только после ручного применения миграции и развёртывания backend/frontend. См. [docs/SITE_VISIT_COUNTER.md](docs/SITE_VISIT_COUNTER.md).
+- Backend endpoints: `POST /api/analytics/visit`; owner-only aggregate report: `GET /api/admin/analytics/site-visits`. Публичный endpoint чтения статистики отключён.
+- Migrations `0027_site_visit_analytics.sql` и `0028_site_visit_admin_analytics.sql` создают privacy-minimizing aggregate counters, owner dashboard и token rate limits (20 новых событий/минуту). CI включает SQL integration test. Счётчик начинает работу только после ручного применения миграций и развёртывания backend/frontend. См. [docs/SITE_VISIT_COUNTER.md](docs/SITE_VISIT_COUNTER.md).
 
 ## Международные платежи, аналитика и безопасность провайдеров
 
