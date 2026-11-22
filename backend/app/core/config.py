@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     # Server-only key; never expose to frontend or API responses.
     supabase_service_role_key: str | None = None
+    # Keep job endpoints disabled until migrations 0009/0010 and the worker path are reviewed.
+    generation_jobs_enabled: bool = False
     owner_email: str | None = None
 
     model_config = SettingsConfigDict(
