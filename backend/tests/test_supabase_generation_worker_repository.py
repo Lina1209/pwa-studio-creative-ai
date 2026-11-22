@@ -101,6 +101,7 @@ async def test_owner_job_inventory_is_filtered_and_parsed():
             "id": "22222222-2222-4222-8222-222222222222",
             "status": "succeeded",
             "result_storage_path": "11111111-1111-4111-8111-111111111111/generated/22222222-2222-4222-8222-222222222222.png",
+            "result_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "updated_at": "2026-11-20T10:00:00+00:00",
         }])
 
@@ -112,6 +113,8 @@ async def test_owner_job_inventory_is_filtered_and_parsed():
     assert len(rows) == 1
     assert rows[0].job_id == UUID("22222222-2222-4222-8222-222222222222")
     assert rows[0].status == "succeeded"
+    assert rows[0].result_sha256 == "a" * 64
+    assert "result_sha256" in seen["url"]
     assert "user_id=eq." + str(owner) in seen["url"]
     assert seen["headers"]["apikey"] == "sb_secret_test"
 
