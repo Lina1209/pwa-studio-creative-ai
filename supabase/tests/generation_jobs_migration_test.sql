@@ -1123,6 +1123,15 @@ begin
   end;
   if not v_rejected then raise exception 'Insufficient credit reservation was accepted'; end if;
 
+  v_rejected := false;
+  begin
+    perform public.release_job_credit_hold(
+      '22222222-2222-4222-8222-222222222222', v_hold_id, 'premature_release'
+    );
+  exception when sqlstate '55000' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Credit hold was released before job became terminal'; end if;
+
   update public.generation_jobs
      set status = 'failed', last_error_code = 'test_terminal_failure',
          completed_at = now(), updated_at = now()
@@ -1230,6 +1239,30 @@ begin
      or v_replay.created or not v_replay.replayed
      or v_replay.available_credits <> 60 or v_replay.reserved_credits <> 15 then
     raise exception 'Atomic paid-generation replay changed job, hold, event or balances';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.create_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null, null, 'image_generation', 'atomic-test-provider', 'atomic-test-model',
+      'atomic-insufficient-credit-0001', repeat('e', 64),
+      '{"prompt":"must roll back"}'::jsonb,
+      '{"price_version":"test-v1","approved_maximum":1000}'::jsonb,
+      1000
+    );
+  exception when sqlstate 'P0001' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Atomic job admission accepted insufficient credits'; end if;
+  if exists (select 1 from public.generation_jobs
+             where user_id = '22222222-2222-4222-8222-222222222222'
+               and idempotency_key = 'atomic-insufficient-credit-0001')
+     or exists (select 1 from public.outbox_events e
+                join public.generation_jobs j on j.id = e.aggregate_id
+                where j.idempotency_key = 'atomic-insufficient-credit-0001')
+     or exists (select 1 from public.credit_holds
+                where operation_key = 'atomic-insufficient-credit-0001') then
+    raise exception 'Failed atomic admission left a partial job, event or hold';
   end if;
 
   v_rejected := false;
