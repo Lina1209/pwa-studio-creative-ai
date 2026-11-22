@@ -2483,7 +2483,7 @@ begin
 
   v_result := public.reserve_ai_request(v_other_user, v_other_request, 'chat', 2, 1);
   if v_result->>'admitted' <> 'true' then
-    raise exception 'one user's rate limit incorrectly affected another user';
+    raise exception 'one user''s rate limit incorrectly affected another user';
   end if;
 
   v_result := public.reserve_ai_request(
