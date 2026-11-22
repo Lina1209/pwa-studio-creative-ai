@@ -265,6 +265,8 @@ def create_credited_generation_job(
             model=model,
             request_hash=request_hash,
             idempotency_key=idempotency_key,
+            project_id=project_id,
+            studio_scene_id=studio_scene_id,
         )
     except PricingError as exc:
         raise GenerationJobsServiceError("The server pricing quote is invalid or expired.") from exc
