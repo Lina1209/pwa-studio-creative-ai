@@ -301,6 +301,28 @@ async def test_reclaimed_unknown_operation_uses_existing_provider_result_without
 
 
 @pytest.mark.asyncio
+async def test_recovered_result_preserves_lookup_provider_request_id_in_journal():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class RecoverableProvider(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            return ImageGenerationLookup(
+                "succeeded",
+                result=ImageGenerationResult(IMAGE, "image/png", "fake", "fake-v1"),
+                provider_request_id="provider-request-123",
+            )
+
+    repo = FakeRepository(journal_created=False)
+    result = await make_worker(repo, RecoverableProvider()).process(make_job())
+
+    assert result.outcome == "succeeded"
+    accepted = next(call for call in repo.calls if call[0] == "journal_accepted")
+    assert accepted[1][-1] == "provider-request-123"
+
+
+@pytest.mark.asyncio
 async def test_reclaimed_unknown_operation_never_submits_when_lookup_is_pending():
     from app.services.image_generation import ImageGenerationLookup
 
