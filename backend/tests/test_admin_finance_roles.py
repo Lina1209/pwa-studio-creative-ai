@@ -85,3 +85,23 @@ def test_finance_role_revoke_uses_verified_actor(monkeypatch):
         assert captured["assignment_id"] == UUID(ASSIGNMENT)
     finally:
         app.dependency_overrides.clear()
+
+
+
+def test_finance_role_grant_duplicate_returns_conflict(monkeypatch):
+    import app.main as main_module
+    from app.services.finance_registry import FinanceRoleConflict
+
+    monkeypatch.setattr(
+        main_module, "grant_finance_role",
+        lambda *a, **k: (_ for _ in ()).throw(FinanceRoleConflict("duplicate")),
+    )
+    client = _client_for(StudioUser(user_id=ACTOR, email=None, role="admin"))
+    try:
+        response = client.post("/api/admin/finance/roles", json={
+            "principal_id": TARGET, "role_code": "finance_operator",
+            "reason": "Duplicate assignment",
+        })
+        assert response.status_code == 409
+    finally:
+        app.dependency_overrides.clear()
