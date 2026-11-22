@@ -21,7 +21,7 @@ def test_create_request_uses_verified_actor_and_idempotent_server_rpc(monkeypatc
     result = service.create_finance_operation_request(
         SETTINGS, requester_id=ACTOR, request_type="credit_compensation",
         target_user_id=TARGET, amount=Decimal("12"), currency_code="CRD",
-        scope_key="tenant-a", reason="Approved support case",
+        scope_key=f"user:{TARGET}", reason="Approved support case",
         idempotency_key=IDEMPOTENCY,
     )
     assert result == REQUEST
@@ -185,3 +185,15 @@ def test_list_finance_requests_rejects_malformed_rpc_rows(monkeypatch):
             SETTINGS, credit_scope_keys=[f"user:{TARGET}"], billing_scope_keys=[],
             status=None, before=None, before_id=None, limit=50,
         )
+
+def test_create_request_rejects_scope_for_another_user_before_rpc(monkeypatch):
+    called = []
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
+    with pytest.raises(ValueError):
+        service.create_finance_operation_request(
+            SETTINGS, requester_id=ACTOR, request_type="credit_compensation",
+            target_user_id=TARGET, amount=Decimal("1"), currency_code="CRD",
+            scope_key=f"user:{ACTOR}", reason="Mismatched scope",
+            idempotency_key=IDEMPOTENCY,
+        )
+    assert called == []
