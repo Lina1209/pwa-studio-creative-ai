@@ -189,6 +189,14 @@ class GenerationWorker:
                         supports_idempotency=getattr(provider, "supports_idempotency", False) is True,
                         supports_lookup=getattr(provider, "supports_lookup", False) is True,
                     )
+                    if journal.state == "result_received" and decision.action != "use_existing_result":
+                        # The journal proves a result was already observed. Never
+                        # resubmit or downgrade that checkpoint based on a later
+                        # negative, failed, pending or inconclusive lookup.
+                        return await self._schedule_retry(
+                            job, "provider_result_recovery_pending"
+                        )
+
                     if decision.action == "use_existing_result":
                         # Some provider lookup APIs return the asset separately
                         # from its request ID. Preserve that ID for the durable journal.
@@ -207,14 +215,6 @@ class GenerationWorker:
                             return WorkerResult("lease_lost", "provider_journal_transition_rejected")
                         return await self._terminal_failure(job, code)
                     else:
-                        # Once a result has been observed, a later negative or
-                        # inconclusive lookup must never trigger a new submission.
-                        # Keep the durable result_received state intact and retry
-                        # reconciliation until the provider can return that asset.
-                        if journal.state == "result_received":
-                            return await self._schedule_retry(
-                                job, "provider_result_recovery_pending"
-                            )
                         if not await self.repository.mark_provider_operation_unknown(
                             job.job_id, self.worker_id,
                             decision.error_code or "provider_operation_status_unknown"
