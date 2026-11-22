@@ -522,3 +522,58 @@ async def test_reclaimed_provider_failed_journal_fails_job_without_lookup_or_res
     assert result.error_code == "provider_operation_failed"
     assert any(call[0] == "fail" for call in repo.calls)
     assert not any(call[0] in {"journal_unknown", "journal_accepted", "journal_result"} for call in repo.calls)
+
+
+
+@pytest.mark.asyncio
+async def test_lease_loss_during_upload_recovers_same_provider_result_and_storage_object():
+    from app.services.image_generation import ImageGenerationLookup
+
+    class RecoverableProvider(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            assert idempotency_key == str(JOB_ID)
+            return ImageGenerationLookup(
+                "succeeded",
+                result=ImageGenerationResult(
+                    image_bytes=IMAGE,
+                    mime_type="image/png",
+                    provider="fake",
+                    model="fake-v1",
+                ),
+            )
+
+    class PersistThenPauseStorage(FakeStorage):
+        def __init__(self):
+            self.persisted = False
+            self.calls = 0
+
+        async def upload_image(self, *, owner_id, job_id, image_bytes, mime_type):
+            self.calls += 1
+            self.persisted = True  # Simulate Storage accepting bytes before response loss.
+            if self.calls == 1:
+                await asyncio.sleep(0.2)  # Worker cancellation after heartbeat reports lost lease.
+            return await super().upload_image(
+                owner_id=owner_id, job_id=job_id, image_bytes=image_bytes, mime_type=mime_type
+            )
+
+    storage = PersistThenPauseStorage()
+    first_repo = FakeRepository(heartbeat=False)
+    first = await make_worker(first_repo, storage=storage).process(make_job())
+
+    assert first.outcome == "lease_lost"
+    assert storage.persisted is True
+    assert not any(call[0] == "complete" for call in first_repo.calls)
+    assert not any(call[0] in {"retry", "fail"} for call in first_repo.calls)
+
+    recovered_repo = FakeRepository(
+        journal_created=False, journal_state="result_received"
+    )
+    second = await make_worker(
+        recovered_repo, RecoverableProvider(), storage
+    ).process(make_job(attempt_count=2))
+
+    assert second.outcome == "succeeded"
+    assert storage.calls == 2
+    assert any(call[0] == "complete" for call in recovered_repo.calls)
