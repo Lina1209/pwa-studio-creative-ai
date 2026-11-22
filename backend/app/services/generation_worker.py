@@ -7,7 +7,7 @@ adapters and deployment controls exist.
 """
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from app.services.generation_result_storage import (
     calculate_sha256,
     validate_generation_result_object,
 )
+from app.services.provider_operation_recovery import decide_provider_recovery
 from app.services.image_generation import (
     ImageGenerationError,
     ImageGenerationProvider,
@@ -183,16 +184,23 @@ class GenerationWorker:
                             return WorkerResult("lease_lost", "provider_journal_transition_rejected")
                         return await self._schedule_retry(job, "provider_operation_quarantined")
 
-                    if lookup.status == "succeeded":
+                    decision = decide_provider_recovery(
+                        lookup,
+                        supports_idempotency=getattr(provider, "supports_idempotency", False) is True,
+                        supports_lookup=getattr(provider, "supports_lookup", False) is True,
+                    )
+                    if decision.action == "use_existing_result":
+                        # Some provider lookup APIs return the asset separately
+                        # from its request ID. Preserve that ID for the durable journal.
                         result = lookup.result
-                    elif lookup.status == "not_found" and getattr(
-                        provider, "supports_idempotency", False
-                    ) is True:
+                        if result.provider_request_id is None and lookup.provider_request_id:
+                            result = replace(result, provider_request_id=lookup.provider_request_id)
+                    elif decision.action == "resubmit_same_key":
                         result = await self._run_while_leased(
                             provider.generate(request, idempotency_key=provider_idempotency_key), lost
                         )
-                    elif lookup.status == "failed":
-                        code = lookup.error_code or "provider_operation_failed"
+                    elif decision.action == "fail":
+                        code = decision.error_code or "provider_operation_failed"
                         if not await self.repository.mark_provider_operation_failed(
                             job.job_id, self.worker_id, code
                         ):
@@ -201,7 +209,7 @@ class GenerationWorker:
                     else:
                         if not await self.repository.mark_provider_operation_unknown(
                             job.job_id, self.worker_id,
-                            lookup.error_code or "provider_operation_pending"
+                            decision.error_code or "provider_operation_status_unknown"
                         ):
                             return WorkerResult("lease_lost", "provider_journal_transition_rejected")
                         return await self._schedule_retry(
