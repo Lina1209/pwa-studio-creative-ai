@@ -87,3 +87,14 @@ requires restricted database ownership, protected backups, and external log expo
 The owner technical console now includes a scoped finance-role assignment form. It calls the existing owner-only `/api/admin/finance/roles` grant, list, and revoke routes. The owner must supply the operator/approver account UUID, a target-user scope UUID, a reason, and a future expiry. Self-assignment remains prohibited. The separate finance workspace is shown only after `GET /api/finance/me` confirms active delegated permissions; it contains a bounded queue, proposal form, independent approve/reject controls, requester cancellation, and on-demand append-only event history.
 
 The finance queue and event timeline remain read-only with respect to balances and payment providers. An approved proposal is not an executed credit compensation or cash refund. Role assignment is active only if the backend and Supabase migrations are deployed and the finance role registry is configured; this repository work alone does not apply migrations or configure production accounts.
+
+### Read-only finance reporting panels (review branch)
+
+The technical/finance center now includes two read-only panels:
+
+- **Provider costs:** owner endpoint `GET /api/admin/financial/provider-costs`, date range limited to 31 days, aggregates by provider/model and day, and distinguishes reported, estimated, and unknown cost evidence. Unknown costs are not added to the known-cost total.
+- **User wallet summary:** owner endpoint `GET /api/admin/financial/wallets/{target_user_id}`, returns only available/reserved/total credits and aggregate hold/lot/allocation counts. The target UUID is supplied for lookup; access requires the separate `admin.finance.wallets.read` capability and is recorded in the append-only admin audit journal. If audit storage is unavailable, the endpoint fails closed.
+
+The UI uses text-only DOM rendering for returned values and sends no direct browser writes to financial tables. The provider-cost report is an operational expense view, not a profit-and-loss statement. Revenue, payment fees, refunds, taxes, infrastructure invoices, and net profit must not be inferred from it. The wallet summary is not a transaction ledger and does not expose individual ledger entries.
+
+Both panels are code in the review branch only. They do not establish that the latest frontend/backend has been deployed or that the corresponding permissions and migrations are active in production. No balances, payments, refunds, tariffs, or provider budgets are changed by these panels.
