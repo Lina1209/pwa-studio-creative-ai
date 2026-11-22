@@ -346,6 +346,38 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <article class="admin-module"><b>Роли и действия администраторов</b><p>Разрешения, история входов, изменения тарифов, запросы на подтверждение и audit log.</p><small>Управление делегированными ролями — через защищённую форму ниже</small></article>
           <article class="admin-module"><b>Резервные копии и восстановление</b><p>Статус резервирования, контроль целостности, сроки хранения и результаты тестов восстановления.</p><small>Удаление резервных копий запрещено</small></article>
         </div>
+        <section class="panel admin-finance-report-panel" aria-labelledby="adminFinanceReportHeading">
+          <div class="panel-heading"><div><h2 id="adminFinanceReportHeading">Финансовая отчётность · только чтение</h2><p>Показываются только подтверждённые расходы провайдеров и сводка кошелька. До подключения платёжного провайдера выручка не рассчитывается.</p></div></div>
+          <div class="finance-report-grid">
+            <article class="admin-module">
+              <b>Расходы AI-провайдеров</b>
+              <div class="finance-queue-controls">
+                <label>С даты<input id="adminCostDateFrom" type="date"></label>
+                <label>По дату<input id="adminCostDateTo" type="date"></label>
+                <button class="secondary-button" id="loadAdminProviderCosts" type="button">Загрузить отчёт</button>
+              </div>
+              <p class="helper-text" id="adminProviderCostStatus" role="status">Отчёт загружается только по запросу.</p>
+              <div class="owner-metrics">
+                <article><span>Известные расходы</span><strong id="adminKnownProviderCost">—</strong><small>USD · без неизвестных сумм</small></article>
+                <article><span>События</span><strong id="adminProviderCostEvents">—</strong><small>Записи журнала себестоимости</small></article>
+                <article><span>Неизвестная стоимость</span><strong id="adminUnknownProviderCosts">—</strong><small>Требует сверки</small></article>
+              </div>
+              <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>События</th><th>Известные расходы USD</th><th>Неизвестные</th></tr></thead><tbody id="adminProviderCostRows"></tbody></table></div>
+            </article>
+            <article class="admin-module">
+              <b>Сводка кошелька пользователя</b>
+              <label for="adminWalletUserId">UUID аккаунта</label>
+              <div class="finance-queue-controls"><input id="adminWalletUserId" type="text" minlength="36" maxlength="36" placeholder="UUID пользователя" autocomplete="off"><button class="secondary-button" id="loadAdminWallet" type="button">Проверить</button></div>
+              <p class="helper-text" id="adminWalletStatus" role="status">Доступ предоставляется только при отдельном серверном разрешении; просмотр журналируется.</p>
+              <div class="owner-metrics">
+                <article><span>Доступно</span><strong id="adminWalletAvailable">—</strong><small>Кредиты</small></article>
+                <article><span>В резерве</span><strong id="adminWalletReserved">—</strong><small>Кредиты</small></article>
+                <article><span>Всего</span><strong id="adminWalletTotal">—</strong><small>Доступно + резерв</small></article>
+              </div>
+              <p class="helper-text" id="adminWalletDetails">Количество активных резервов и партий появится после проверки.</p>
+            </article>
+          </div>
+        </section>
         <section class="panel finance-role-admin-panel" id="financeRoleAdminPanel" aria-labelledby="financeRoleAdminHeading">
           <div class="panel-heading"><div><h2 id="financeRoleAdminHeading">Назначение финансовых полномочий</h2><p>Только владелец с разрешением управления ролями. Самоназначение запрещено; срок действия обязателен.</p></div></div>
           <form id="financeRoleGrantForm" class="finance-request-form">
