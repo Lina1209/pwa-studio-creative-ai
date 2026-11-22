@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.finance_authorization import FinanceAuthorizationDenied, require_finance_permission
@@ -1050,6 +1050,51 @@ def generate_movie_script(payload: MovieScriptRequest, user: StudioUser = Depend
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="AI не вернул сценарий в ожидаемом формате. Попробуйте повторить запрос.") from exc
     return MovieScriptResponse(story=story.strip(), storyboard=storyboard.strip(), provider=settings.ai_provider, model=result.actual_model)
+
+@app.post(f"{settings.api_prefix}/movie/director", response_model=MovieDirectorResponse)
+def direct_movie_scenes(payload: MovieDirectorRequest, user: StudioUser = Depends(get_current_user)):
+    """Turn an approved screenplay into structured, editable production scenes."""
+    check_content(payload.title)
+    check_content(payload.story)
+    system = (
+        "You are the film director and production planner for PWA Studio. "
+        "Break the supplied screenplay into a coherent sequence of shootable scenes. "
+        "Preserve its plot, characters, and ending; do not invent unrelated subplots. "
+        "Return ONLY a JSON object with one key 'scenes', an array of objects with exactly these keys: "
+        "scene_number (integer starting at 1), title, location, time_of_day, estimated_seconds (integer), "
+        "characters (array of strings), action, visual_description, camera_shots (array of 1-8 concise shots), "
+        "lighting, transition. Make each scene visually specific and maintain character/location continuity. "
+        "The total estimated_seconds should approximately match the requested film duration. "
+        "Respect the requested aspect ratio. Avoid copyrighted character imitation, sexual exploitation of minors, "
+        "non-consensual intimate imagery, real-world harm instructions, fraud, doxxing and deceptive impersonation. "
+        "Respect consent for real people's likenesses and voices. Do not wrap JSON in markdown."
+    )
+    request = {"title": payload.title, "screenplay": payload.story, "genre": payload.genre,
+               "target_duration_minutes": payload.duration_minutes, "frame_format": payload.frame,
+               "output_language": payload.language}
+    result = _run_admitted_ai("movie_director", user.user_id, lambda: ask_ai(settings, [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
+    ]))
+    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="movie_director",
+                    provider=settings.ai_provider, result=result)
+    raw = result.text.strip()
+    if raw.startswith(chr(96) * 3):
+        raw = raw.split(chr(10), 1)[-1]
+        if raw.endswith(chr(96) * 3): raw = raw[:-3].strip()
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict) or set(data) != {"scenes"} or not isinstance(data["scenes"], list):
+            raise ValueError("invalid_scene_collection")
+        scenes = [MovieDirectorScene.model_validate(item) for item in data["scenes"]]
+        if not scenes or [scene.scene_number for scene in scenes] != list(range(1, len(scenes) + 1)):
+            raise ValueError("invalid_scene_sequence")
+        if sum(scene.estimated_seconds for scene in scenes) > payload.duration_minutes * 60 * 1.5:
+            raise ValueError("scene_duration_exceeds_target")
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="AI не вернул сцены в ожидаемом формате. Попробуйте повторить запрос.") from exc
+    return MovieDirectorResponse(scenes=scenes, provider=settings.ai_provider, model=result.actual_model)
+
 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
 def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
