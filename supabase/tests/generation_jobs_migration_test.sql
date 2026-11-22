@@ -3070,7 +3070,8 @@ begin
   -- Move the test lot past its deadline explicitly. The expiry RPC uses
   -- transaction-stable now(), and this entire DO block is one transaction.
   update public.credit_lots
-     set expires_at = now() - interval '1 second'
+     set created_at = now() - interval '10 seconds',
+         expires_at = now() - interval '1 second'
    where user_id = v_user and idempotency_key = 'grant-expired-free-001';
   v_expired := public.expire_credit_lots_for_user(v_user);
   if v_expired <> 7 then
