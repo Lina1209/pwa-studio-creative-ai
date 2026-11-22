@@ -195,3 +195,8 @@ The review branch now includes authenticated API routes:
 - `POST /api/finance/requests/{request_id}/cancel` — only the original requester can cancel a pending request, with a matching scoped cancel permission.
 
 The verified JWT subject supplies the actor identity; client-supplied actor IDs are not accepted. All endpoints use private no-store responses. They return proposal/decision state only; there is no execution endpoint, credit balance mutation, or payment-provider call.
+
+
+### Scope boundary
+
+The current finance request API derives scope on the server as `user:<target UUID>`; the client cannot choose or widen it. Each delegated finance permission must explicitly cover that exact target-user scope. Decision and cancellation routes re-check the scope stored in the request against its target user. Organization/tenant-wide finance scopes are intentionally not enabled until a trusted membership-to-scope mapping exists.
