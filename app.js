@@ -13,6 +13,8 @@
     : null;
   let authSession = null;
   let adminUiAuthorized = false;
+  let financeUiAuthorized = false;
+  let financeAccess = null;
   let activeAssistantConversationId = null;
   let lastAuthUserId = null;
   let authStateEventReceived = false;
@@ -233,7 +235,12 @@ const movieHistoryStyle = document.createElement("style");
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
     const userId = authSession?.user?.id;
-    if (!userId || !panel) { if (panel) panel.hidden = true; return; }
+    if (!userId || !panel) {
+      if (panel) panel.hidden = true;
+      financeUiAuthorized = false; financeAccess = null;
+      const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
+      return;
+    }
     try {
       const data = await apiRequest("/api/auth/me");
       if (authSession?.user?.id !== userId) return;
@@ -241,8 +248,13 @@ const movieHistoryStyle = document.createElement("style");
       adminUiAuthorized = data.role === "admin";
       panel.hidden = !adminUiAuthorized;
       if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); }
+      loadFinanceAccess();
     } catch {
-      if (authSession?.user?.id === userId) { adminUiAuthorized = false; panel.hidden = true; }
+      if (authSession?.user?.id === userId) {
+        adminUiAuthorized = false; panel.hidden = true;
+        financeUiAuthorized = false; financeAccess = null;
+        const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
+      }
     }
   };
   const apiRequest = async (path, options = {}) => {
@@ -283,6 +295,31 @@ const movieHistoryStyle = document.createElement("style");
       clearTimeout(timeoutId);
     }
   };
+
+  const loadFinanceAccess = async () => {
+    const userId = authSession?.user?.id;
+    const panel = $("#financePanel");
+    if (!userId || !panel) { financeUiAuthorized = false; financeAccess = null; if (panel) panel.hidden = true; return; }
+    try {
+      const data = await apiRequest("/api/finance/me");
+      if (authSession?.user?.id !== userId) return;
+      financeAccess = data;
+      financeUiAuthorized = Boolean(data.active && (
+        data.can_read_credit_requests || data.can_read_refund_requests
+        || (data.permissions || []).some(permission => permission.endsWith(".request"))
+      ));
+      panel.hidden = !financeUiAuthorized;
+      if (financeUiAuthorized) {
+        $("#financeAccessStatus").textContent = "Назначено областей доступа: " + Number(data.scope_count || 0) + ". Полномочия проверяются сервером при каждом действии.";
+        loadFinanceQueue(true);
+      }
+    } catch {
+      if (authSession?.user?.id === userId) {
+        financeUiAuthorized = false; financeAccess = null; panel.hidden = true;
+      }
+    }
+  };
+
   if (authSession?.user) setTimeout(loadAccountRole, 0);
   const routeLabels = {home:"Главная",create:"Создание",movie:"Миникиностудия",editor:"Редактор",prompts:"Prompt Studio",library:"Медиатека",account:"Кабинет",voice:"Голос и музыка",scenes:"Сцены",assistant:"AI Companion",guide:"Путеводитель",rules:"Правила",settings:"Настройки",other:"Другие"};
   const formatMetric = value => new Intl.NumberFormat("ru-RU").format(value);
@@ -376,11 +413,141 @@ const movieHistoryStyle = document.createElement("style");
   $("#refreshAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(true));
   $("#loadMoreAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(false));
 
-  const labels = {"admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  let financeQueueCursor = null;
+  let financeQueueLoading = false;
+  const financePermission = (requestType, action) => {
+    const prefix = requestType === "credit_compensation" ? "credit.compensation" : "billing.refund";
+    return Boolean(financeAccess?.permissions?.includes(prefix + "." + action));
+  };
+  const loadFinanceQueue = async (reset = false) => {
+    const body = $("#financeQueueRows");
+    const statusText = $("#financeQueueStatusText");
+    const more = $("#loadMoreFinanceQueue");
+    if (!body || financeQueueLoading || !financeUiAuthorized) return;
+    financeQueueLoading = true;
+    if (reset) { body.replaceChildren(); financeQueueCursor = null; }
+    if (statusText) statusText.textContent = "Загружаем очередь в пределах назначенных полномочий…";
+    if (more) more.disabled = true;
+    try {
+      const query = new URLSearchParams({limit:"50"});
+      const selectedStatus = $("#financeQueueStatus")?.value || "";
+      if (selectedStatus) query.set("status", selectedStatus);
+      if (financeQueueCursor) {
+        query.set("before", financeQueueCursor.before);
+        query.set("before_id", financeQueueCursor.before_id);
+      }
+      const data = await apiRequest("/api/finance/requests?" + query.toString());
+      if (!financeUiAuthorized) return;
+      const rows = Array.isArray(data.items) ? data.items : [];
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        const typeLabel = row.request_type === "credit_compensation" ? "Компенсация кредитов" : "Денежный возврат";
+        const stateLabel = ({pending:"Ожидает",approved:"Подтверждена",rejected:"Отклонена",cancelled:"Отменена"})[row.status] || row.status;
+        const values = [
+          row.requested_at ? new Date(row.requested_at).toLocaleString("ru-RU") : "—",
+          row.requester_id, row.target_user_id, typeLabel,
+          String(row.amount) + " " + row.currency_code, stateLabel, row.reason || "—"
+        ];
+        values.forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value ?? "—"); tr.appendChild(td);
+        });
+        const actions = document.createElement("td");
+        if (row.status === "pending" && row.requester_id === authSession?.user?.id && financePermission(row.request_type, "cancel")) {
+          const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary-button"; cancel.textContent = "Отменить";
+          cancel.addEventListener("click", async () => {
+            const reason = window.prompt("Причина отмены заявки (1–500 символов):");
+            if (!reason || !reason.trim()) return;
+            try {
+              await apiRequest("/api/finance/requests/" + encodeURIComponent(row.request_id) + "/cancel", {
+                method:"POST", body:JSON.stringify({reason:reason.trim()})
+              });
+              loadFinanceQueue(true);
+            } catch (error) { if (statusText) statusText.textContent = "Не удалось отменить заявку: " + error.message; }
+          });
+          actions.appendChild(cancel);
+        } else if (row.status === "pending" && row.requester_id !== authSession?.user?.id && financePermission(row.request_type, "approve")) {
+          ["approve","reject"].forEach(decision => {
+            const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button";
+            button.textContent = decision === "approve" ? "Подтвердить" : "Отклонить";
+            button.addEventListener("click", async () => {
+              const reason = window.prompt("Обоснование решения (1–500 символов):");
+              if (!reason || !reason.trim()) return;
+              try {
+                await apiRequest("/api/finance/requests/" + encodeURIComponent(row.request_id) + "/decision", {
+                  method:"POST", body:JSON.stringify({decision,reason:reason.trim()})
+                });
+                loadFinanceQueue(true);
+              } catch (error) { if (statusText) statusText.textContent = "Решение не сохранено: " + error.message; }
+            });
+            actions.appendChild(button);
+          });
+        } else {
+          actions.textContent = row.decision_reason || "—";
+        }
+        tr.appendChild(actions); body.appendChild(tr);
+      });
+      financeQueueCursor = data.next_cursor || null;
+      if (statusText) statusText.textContent = rows.length
+        ? "Заявки загружены. Все действия проходят повторную серверную проверку."
+        : "В назначенных областях пока нет заявок.";
+      if (more) more.hidden = !financeQueueCursor;
+    } catch (error) {
+      if (statusText) statusText.textContent = "Не удалось загрузить очередь: " + error.message;
+    } finally {
+      financeQueueLoading = false;
+      if (more) more.disabled = false;
+    }
+  };
+  $("#refreshFinanceQueue")?.addEventListener("click", () => loadFinanceQueue(true));
+  $("#loadMoreFinanceQueue")?.addEventListener("click", () => loadFinanceQueue(false));
+  $("#financeQueueStatus")?.addEventListener("change", () => loadFinanceQueue(true));
+
+  const updateFinanceRequestForm = () => {
+    const type = $("#financeRequestType")?.value;
+    const currency = $("#financeRequestCurrency");
+    const amount = $("#financeRequestAmount");
+    if (!currency || !amount) return;
+    if (type === "credit_compensation") {
+      currency.value = "CRD"; currency.disabled = true; amount.min = "1"; amount.step = "1";
+    } else {
+      currency.disabled = false;
+      if (currency.value === "CRD") currency.value = "KZT";
+      amount.min = "0.0001"; amount.step = "0.0001";
+    }
+  };
+  $("#financeRequestType")?.addEventListener("change", updateFinanceRequestForm);
+  updateFinanceRequestForm();
+  $("#financeRequestCreateForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const type = $("#financeRequestType").value;
+    const permission = type === "credit_compensation" ? "credit.compensation.request" : "billing.refund.request";
+    if (!financeAccess?.permissions?.includes(permission)) return;
+    const button = $("#submitFinanceRequest"); button.disabled = true;
+    try {
+      const target = $("#financeTargetUserId").value.trim();
+      const payload = {
+        request_type:type, target_user_id:target,
+        amount:$("#financeRequestAmount").value,
+        currency_code:$("#financeRequestCurrency").value,
+        reason:$("#financeRequestReason").value.trim(),
+        idempotency_key:crypto.randomUUID()
+      };
+      await apiRequest("/api/finance/requests", {method:"POST",body:JSON.stringify(payload)});
+      $("#financeRequestCreateForm").reset(); updateFinanceRequestForm();
+      $("#financeQueueStatus").value = "pending";
+      loadFinanceQueue(true);
+      $("#financeQueueStatusText").textContent = "Заявка отправлена на независимое рассмотрение.";
+    } catch (error) {
+      $("#financeQueueStatusText").textContent = "Заявка не создана: " + error.message;
+    } finally { button.disabled = false; }
+  });
+
+  const labels = {"finance-operations":"Финансовые операции","admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
     if (view.startsWith("admin-") && !adminUiAuthorized) { view = "account"; window.location.hash = "account"; }
+    if (view === "finance-operations" && !financeUiAuthorized) { view = "account"; window.location.hash = "account"; }
     $$(".view").forEach(el => el.classList.toggle("active", el.id === "view-" + view));
     $$(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
     $("#crumbCurrent").textContent = labels[view];
