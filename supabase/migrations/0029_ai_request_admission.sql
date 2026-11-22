@@ -33,7 +33,8 @@ create or replace function public.reserve_ai_request(
   p_request_id uuid,
   p_endpoint text,
   p_max_per_minute integer default 10,
-  p_max_concurrent integer default 2
+  p_max_concurrent integer default 2,
+  p_max_global_concurrent integer default 16
 )
 returns jsonb
 language plpgsql
@@ -44,17 +45,20 @@ declare
   v_window timestamptz := date_trunc('minute', now());
   v_count integer;
   v_active integer;
+  v_global_active integer;
   v_existing public.ai_request_admission_reservations%rowtype;
 begin
   if p_user_id is null or p_request_id is null
      or p_endpoint is null or p_endpoint not in ('chat', 'prompts')
      or p_max_per_minute not between 1 and 120
-     or p_max_concurrent not between 1 and 16 then
+     or p_max_concurrent not between 1 and 16
+     or p_max_global_concurrent not between 1 and 128 then
     raise exception 'Invalid AI admission request';
   end if;
 
-  -- Serialize admission decisions for this account across API replicas.
+  -- Serialize per-user and global admission decisions across API replicas.
   perform pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
+  perform pg_advisory_xact_lock(918273645);
 
   select * into v_existing
     from public.ai_request_admission_reservations
@@ -98,6 +102,18 @@ begin
   if v_active >= p_max_concurrent then
     return jsonb_build_object(
       'admitted', false, 'reason', 'concurrency_limited',
+      'retry_after_seconds', 10
+    );
+  end if;
+
+  select count(*)::integer into v_global_active
+    from public.ai_request_admission_reservations
+   where state = 'reserved'
+     and reserved_at >= now() - interval '10 minutes';
+
+  if v_global_active >= p_max_global_concurrent then
+    return jsonb_build_object(
+      'admitted', false, 'reason', 'global_concurrency_limited',
       'retry_after_seconds', 10
     );
   end if;
@@ -154,7 +170,7 @@ begin
 end;
 $$;
 
-revoke all on function public.reserve_ai_request(uuid, uuid, text, integer, integer)
+revoke all on function public.reserve_ai_request(uuid, uuid, text, integer, integer, integer)
   from public, anon, authenticated;
 revoke all on function public.finish_ai_request(uuid, uuid, text)
   from public, anon, authenticated;
