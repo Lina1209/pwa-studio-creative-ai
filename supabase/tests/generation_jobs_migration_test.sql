@@ -80,6 +80,7 @@ create table public.studio_media (
 \ir ../migrations/0012_create_scene_generation_job_rpc.sql
 \ir ../migrations/0013_generation_job_worker_lifecycle.sql
 \ir ../migrations/0014_outbox_delivery_lifecycle.sql
+\ir ../migrations/0015_generation_job_terminal_failure.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -474,7 +475,9 @@ begin
      or has_function_privilege('authenticated',
        'public.retry_generation_job(uuid,text,text,integer)', 'EXECUTE')
      or has_function_privilege('authenticated',
-       'public.complete_generation_job(uuid,text,text)', 'EXECUTE') then
+       'public.complete_generation_job(uuid,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.fail_generation_job(uuid,text,text)', 'EXECUTE') then
     raise exception 'Authenticated role unexpectedly has worker RPC execute permission';
   end if;
   if not has_function_privilege('service_role',
@@ -484,7 +487,9 @@ begin
      or not has_function_privilege('service_role',
        'public.retry_generation_job(uuid,text,text,integer)', 'EXECUTE')
      or not has_function_privilege('service_role',
-       'public.complete_generation_job(uuid,text,text)', 'EXECUTE') then
+       'public.complete_generation_job(uuid,text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.fail_generation_job(uuid,text,text)', 'EXECUTE') then
     raise exception 'service_role is missing a worker lifecycle RPC grant';
   end if;
 end;
@@ -606,6 +611,57 @@ select 1 / case when not has_table_privilege('authenticated', 'public.outbox_eve
   as assert_clients_cannot_insert_outbox;
 reset role;
 reset request.jwt.claim.sub;
+
+-- Non-retryable worker errors have an explicit terminal path, guarded by the active lease.
+do $terminal_failure_test$
+declare
+  v_created record;
+  v_claim record;
+  v_job_id uuid;
+  v_status text;
+  v_completed_at timestamptz;
+  v_lease_owner text;
+begin
+  select * into v_created from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'test-provider', 'test-model',
+    'terminal-failure-idempotency-1', repeat('d', 64),
+    '{"prompt":"terminal failure contract"}'::jsonb, '{}'::jsonb
+  );
+  v_job_id := v_created.job_id;
+
+  update public.generation_jobs
+     set status = 'failed', completed_at = now(), updated_at = now()
+   where id <> v_job_id and status in ('queued', 'retry_wait');
+
+  select * into v_claim from public.claim_next_generation_job('worker-terminal-failure', 60);
+  if v_claim.job_id is distinct from v_job_id then
+    raise exception 'Terminal failure fixture was not claimed';
+  end if;
+  if public.fail_generation_job(v_job_id, 'different-worker', 'provider_rejected') then
+    raise exception 'A worker without the active lease failed the job';
+  end if;
+  if not public.fail_generation_job(v_job_id, 'worker-terminal-failure', 'provider_rejected') then
+    raise exception 'The active worker could not mark a permanent failure';
+  end if;
+
+  select status, completed_at, lease_owner
+    into v_status, v_completed_at, v_lease_owner
+    from public.generation_jobs where id = v_job_id;
+  if v_status <> 'failed' or v_completed_at is null or v_lease_owner is not null then
+    raise exception 'Terminal failure did not clear the lease and set completion metadata';
+  end if;
+  if public.heartbeat_generation_job(v_job_id, 'worker-terminal-failure', 60)
+     or public.retry_generation_job(v_job_id, 'worker-terminal-failure', 'retry_after_terminal', 30)
+     or public.complete_generation_job(
+       v_job_id, 'worker-terminal-failure',
+       '11111111-1111-4111-8111-111111111111/results/should-not-exist.png'
+     ) then
+    raise exception 'A terminally failed job accepted another lifecycle transition';
+  end if;
+end;
+$terminal_failure_test$;
+
 
 -- A job cannot be linked to another user's scene.
 do $$
