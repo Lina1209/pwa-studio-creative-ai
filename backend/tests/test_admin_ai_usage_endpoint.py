@@ -73,3 +73,40 @@ def test_admin_ai_usage_report_denies_creator_before_reading_data(monkeypatch):
         assert response.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+def test_admin_ai_usage_report_warns_at_eighty_percent_of_configured_provider_budget(monkeypatch):
+    from decimal import Decimal
+    from app.core.config import Settings
+    import app.main as main_module
+
+    report = {
+        "period": {"from": "2026-11-23", "to": "2026-11-23", "timezone": "UTC"},
+        "totals": {"requests": 1, "input_tokens": 10, "output_tokens": 5,
+                   "total_tokens": 15, "reported_estimated_cost_usd": "0.00085",
+                   "cost_unknown_events": 0, "token_count_unknown_events": 0},
+        "today_by_provider": [{
+            "provider": "deepseek", "requests": 1,
+            "reported_estimated_cost_usd": "0.00085", "cost_unknown_events": 0,
+        }],
+    }
+    monkeypatch.setattr(main_module, "settings", Settings(
+        ai_daily_budget_usd_deepseek=Decimal("0.001"),
+    ))
+    monkeypatch.setattr(main_module, "get_admin_ai_usage_report", lambda *a, **k: report)
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: "audit-id")
+    client = _client(StudioUser(
+        user_id="22222222-2222-4222-8222-222222222222",
+        email="owner@example.com", role="admin",
+    ))
+    try:
+        response = client.get(
+            "/api/admin/ai/usage",
+            params={"date_from": "2026-11-23", "date_to": "2026-11-23"},
+        )
+        assert response.status_code == 200
+        statuses = {item["provider"]: item for item in response.json()["daily_budget_status"]}
+        assert statuses["deepseek"]["status"] == "warning"
+        assert statuses["deepseek"]["utilization_percent"] == 85.0
+        assert statuses["gemini"]["status"] == "unconfigured"
+    finally:
+        app.dependency_overrides.clear()
