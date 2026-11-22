@@ -251,3 +251,19 @@ Important boundaries:
 - The grant RPC is a privileged primitive, not a public promo/payment endpoint. It must only be called by audited server-side grant workflows.
 - The ledger owner foreign key uses RESTRICT so account deletion cannot cascade-delete financial history. Account deletion therefore needs a separately designed retention/anonymization policy.
 - No payment provider, pricing catalog, automatic credit grant, production migration, or billing switch is enabled.
+
+
+## 29. Atomic credited generation boundary (migration 0020)
+
+Migration `0020_atomic_credited_generation.sql` introduces two service-role-only transaction boundaries:
+
+1. `create_credited_generation_job_with_outbox` creates the generation job, creation outbox event, wallet reservation, quote-backed hold, and append-only reserve ledger row in one PostgreSQL transaction. It validates owner-scoped project/scene references, canonical request hash shape, bounded snapshots, positive bounded credit amount, and the immutable quote. A repeated user/idempotency key returns the original job, event and hold only when request, target, provider/model, amount and quote all match. A mismatch or insufficient balance aborts the entire transaction, including job and outbox inserts.
+2. `complete_credited_generation_job` requires the active, unexpired worker lease and an owner-prefixed result path. It locks the job, hold and wallet, then in one transaction moves the hold to captured, decreases reserved balance, appends one capture ledger entry, and marks the job succeeded. A repeated call with the same result path returns the already captured outcome without a second debit; a different path is rejected.
+
+The release RPC is replaced so a held amount can be released only after its job is `failed`, `cancelled`, or `expired`. A running or queued job cannot have its hold released. Release remains a separate terminal-policy operation; retries must retain the hold.
+
+The SQL integration script now includes migration 0020 and exercises atomic admission/replay, quote mismatch, insufficient-credit rollback (no partial job/event/hold), release gating, atomic capture, completion replay, and ledger entry counts.
+
+**Critical trust boundary:** the database cannot prove that a Storage object was actually uploaded, is private, has the expected MIME/size/checksum, or passed the existing storage adapter's byte-for-byte verification. The worker must complete all those checks before calling `complete_credited_generation_job`. The RPC's owner-prefixed path check is defense in depth, not asset verification.
+
+**Still not production-ready:** the existing backend/API is not yet wired to these RPCs; no trusted server-side pricing quote issuer or canonical request-hash pipeline is finalized; no real provider or payment integration is enabled; no durable dispatcher/worker is deployed; the SQL suite has not yet been run in CI or against a disposable PostgreSQL instance. The older `reserve_job_credits` RPC remains a low-level primitive for tests/controlled administration and must not be used as a paid-generation API because it is separate from job/outbox creation.
