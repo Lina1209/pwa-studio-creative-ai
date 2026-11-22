@@ -293,7 +293,7 @@ Migration `0021_persist_pricing_quotes.sql` adds `generation_pricing_quotes` wit
 
 - stores the first signed quote snapshot for the owner/key;
 - locks and returns that exact original snapshot on a matching replay, even if the caller generated a new candidate quote;
-- rejects reuse of the key with a changed request hash, job type, provider, model, project or scene;
+- rejects reuse of the key with a changed request hash, job type, provider, model, quantity, project or scene;
 - reports when the original quote has expired; the API returns HTTP 409 and requires a new idempotency key rather than silently repricing an existing operation;
 - checks that an optional cloud project or studio scene belongs to the authenticated owner before persisting;
 - is not executable by anon/authenticated roles.
