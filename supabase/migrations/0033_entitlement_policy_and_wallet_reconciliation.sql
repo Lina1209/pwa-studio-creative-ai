@@ -63,8 +63,7 @@ begin
   if v_policy.expires_in_seconds is not null then
     v_expires_at := now() + make_interval(secs => v_policy.expires_in_seconds::double precision);
   end if;
-  v_idempotency_key := 'entitlement:' || v_policy.policy_code || ':v'
-    || v_policy.policy_version::text || ':' || md5(p_event_key);
+  v_idempotency_key := 'entitlement:' || v_policy.policy_code || ':' || md5(p_event_key);
 
   return query
     select g.available_credits, g.reserved_credits, g.replayed
