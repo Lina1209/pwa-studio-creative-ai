@@ -34,6 +34,7 @@ from app.services.site_analytics import SiteAnalyticsUnavailable, SiteAnalyticsR
 from app.services.finance_registry import (
     FinanceRegistryNotConfigured,
     FinanceRegistryUnavailable,
+    FinanceRoleConflict,
     grant_finance_role,
     list_active_finance_roles,
     revoke_finance_role,
@@ -537,6 +538,8 @@ def admin_grant_finance_role(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Finance role assignment is invalid.") from exc
+    except FinanceRoleConflict as exc:
+        raise HTTPException(status_code=409, detail="An active assignment for this role and scope already exists.") from exc
     except FinanceRegistryNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Finance role registry is not configured.") from exc
     except FinanceRegistryUnavailable as exc:
