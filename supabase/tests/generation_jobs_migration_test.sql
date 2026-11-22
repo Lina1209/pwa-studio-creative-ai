@@ -3092,19 +3092,6 @@ begin
     raise exception 'Expiry sweep did not expire the exact available lot amount';
   end if;
 
-  -- A delayed retry of the original grant must replay safely after expiry,
-  -- without restoring the expired credits or creating a second lot.
-  select * into v_replay from public.grant_user_credit_lot(
-    v_user, 7, 'free', 'expired-free-cycle', 'grant-expired-free-001',
-    v_expiry, '{"test_case":"available-expiry"}'::jsonb
-  );
-  if not v_replay.replayed or v_replay.available_credits <> 25
-     or v_replay.reserved_credits <> 0
-     or (select count(*) from public.credit_lots
-          where user_id = v_user and idempotency_key = 'grant-expired-free-001') <> 1 then
-    raise exception 'Expired grant replay duplicated or restored credits';
-  end if;
-
   select available_credits, reserved_credits into v_available, v_reserved
     from public.credit_wallets where user_id = v_user;
   if v_available <> 25 or v_reserved <> 0 then
@@ -3144,6 +3131,58 @@ begin
   end if;
 end;
 $credit_lot_lifecycle_test$;
+
+-- Exercise a genuine delayed retry across committed transactions. The lot's
+-- immutable original expiry timestamp is never edited: time advances between
+-- the grant and replay, so the replay validates the real post-expiry contract.
+do $expired_grant_replay_setup$
+declare
+  v_user uuid := '66666666-6666-4666-8666-666666666666';
+begin
+  insert into auth.users(id) values (v_user) on conflict (id) do nothing;
+  perform * from public.grant_user_credit_lot(
+    v_user, 7, 'free', 'delayed-retry-cycle', 'grant-delayed-expiry-001',
+    now() + interval '1 second', '{"test_case":"real-delayed-expiry-replay"}'::jsonb
+  );
+end;
+$expired_grant_replay_setup$;
+
+select pg_sleep(2);
+
+do $expired_grant_replay_assert$
+declare
+  v_user uuid := '66666666-6666-4666-8666-666666666666';
+  v_expiry timestamptz;
+  v_replay record;
+  v_lot_count integer;
+  v_expired_ledger_count integer;
+begin
+  select expires_at into strict v_expiry
+    from public.credit_lots
+   where user_id = v_user and idempotency_key = 'grant-delayed-expiry-001';
+
+  select * into v_replay from public.grant_user_credit_lot(
+    v_user, 7, 'free', 'delayed-retry-cycle', 'grant-delayed-expiry-001',
+    v_expiry, '{"test_case":"real-delayed-expiry-replay"}'::jsonb
+  );
+
+  select count(*) into v_lot_count
+    from public.credit_lots
+   where user_id = v_user and idempotency_key = 'grant-delayed-expiry-001';
+  select count(*) into v_expired_ledger_count
+    from public.credit_ledger
+   where user_id = v_user and operation_key like 'expire:%'
+     and operation_type = 'adjustment' and delta_available = -7;
+
+  if not v_replay.replayed
+     or v_replay.available_credits <> 0
+     or v_replay.reserved_credits <> 0
+     or v_lot_count <> 1
+     or v_expired_ledger_count <> 1 then
+    raise exception 'Delayed grant replay after real expiry restored or duplicated credits';
+  end if;
+end;
+$expired_grant_replay_assert$;
 
 select 'source-separated credit lot lifecycle checks passed' as result;
 
