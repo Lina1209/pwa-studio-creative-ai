@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.content_safety import check_content
@@ -31,6 +31,13 @@ from app.services.admin_financial_reporting import (
 )
 from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
 from app.services.site_analytics import SiteAnalyticsUnavailable, SiteAnalyticsRateLimited, record_visit, get_admin_visit_stats
+from app.services.finance_registry import (
+    FinanceRegistryNotConfigured,
+    FinanceRegistryUnavailable,
+    grant_finance_role,
+    list_active_finance_roles,
+    revoke_finance_role,
+)
 from app.services.credit_wallet_service import (
     CreditWalletNotConfigured,
     CreditWalletUnavailable,
@@ -476,6 +483,89 @@ def admin_audit_events(
         if len(events) == limit else None
     )
     return {"events": events, "limit": limit, "next_cursor": next_cursor}
+
+
+@app.get(f"{settings.api_prefix}/admin/finance/roles/{target_user_id}")
+def admin_list_finance_roles(
+    target_user_id: UUID,
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.finance.roles.manage")),
+):
+    """Read active delegated roles; only the explicit owner role manager may inspect them."""
+    try:
+        assignments = list_active_finance_roles(settings, principal_id=target_user_id)
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action="admin.access",
+            outcome="allowed", resource_type="permission",
+            resource_id=target_user_id, reason="Viewed active finance role assignments",
+        )
+    except FinanceRegistryNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance role registry is not configured.") from exc
+    except FinanceRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance role registry is temporarily unavailable.") from exc
+    except AdminAuditUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance role access audit is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"assignments": [{
+        "assignment_id": str(item.assignment_id),
+        "principal_id": str(item.principal_id),
+        "role_code": item.role_code,
+        "scope_key": item.scope_key,
+        "valid_from": item.valid_from.isoformat(),
+        "valid_until": item.valid_until.isoformat() if item.valid_until else None,
+        "granted_by": str(item.granted_by),
+        "created_at": item.created_at.isoformat(),
+    } for item in assignments]}
+
+
+@app.post(f"{settings.api_prefix}/admin/finance/roles")
+def admin_grant_finance_role(
+    payload: FinanceRoleGrantRequest,
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.finance.roles.manage")),
+):
+    """Grant a scoped delegated role; actor identity comes only from verified JWT."""
+    try:
+        assignment_id = grant_finance_role(
+            settings,
+            principal_id=payload.principal_id,
+            role_code=payload.role_code,
+            scope_key=payload.scope_key,
+            valid_until=payload.valid_until,
+            granted_by=UUID(user.user_id),
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Finance role assignment is invalid.") from exc
+    except FinanceRegistryNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance role registry is not configured.") from exc
+    except FinanceRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance role registry is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"assignment_id": str(assignment_id), "status": "granted"}
+
+
+@app.post(f"{settings.api_prefix}/admin/finance/roles/{assignment_id}/revoke")
+def admin_revoke_finance_role(
+    assignment_id: UUID,
+    payload: FinanceRoleRevocationRequest,
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.finance.roles.manage")),
+):
+    """Append a revocation; the original role assignment remains immutable."""
+    try:
+        revocation_id = revoke_finance_role(
+            settings, assignment_id=assignment_id,
+            revoked_by=UUID(user.user_id), reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Finance role revocation is invalid.") from exc
+    except FinanceRegistryNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance role registry is not configured.") from exc
+    except FinanceRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance role registry is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"revocation_id": str(revocation_id), "status": "revoked"}
 
 
 
