@@ -120,3 +120,36 @@ def test_authentication_fails_closed_when_supabase_is_not_configured(monkeypatch
         auth.get_current_user(None)
 
     assert error.value.status_code == 503
+
+
+def test_matching_email_cannot_grant_admin_to_different_user_uuid(monkeypatch):
+    credentials, _ = configure_verified_token(monkeypatch, {
+        "sub": "22222222-2222-4222-8222-222222222222",
+        "role": "authenticated",
+        "email": "owner@example.test",
+    })
+
+    user = auth.get_current_user(credentials)
+
+    assert user.email == "owner@example.test"
+    assert user.role == "creator"
+
+
+def test_malformed_owner_uuid_configuration_fails_closed(monkeypatch):
+    credentials, _ = configure_verified_token(monkeypatch, {
+        "sub": USER_ID,
+        "role": "authenticated",
+        "email": "owner@example.test",
+    })
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: Settings(
+            supabase_url="https://project.example.supabase.co",
+            owner_user_ids="not-a-uuid,also-not-a-uuid",
+        ),
+    )
+
+    user = auth.get_current_user(credentials)
+
+    assert user.role == "creator"
