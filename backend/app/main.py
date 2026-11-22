@@ -715,6 +715,8 @@ def finance_request_cancel(
             settings, request_id=request_id, actor_id=UUID(user.user_id),
             reason=payload.reason,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Finance cancellation is invalid.") from exc
     except FinanceRequestConflict as exc:
         raise HTTPException(status_code=409, detail="Finance request is no longer pending.") from exc
     except FinanceRequestNotFound as exc:
