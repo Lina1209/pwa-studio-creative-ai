@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.finance_authorization import FinanceAuthorizationDenied, require_finance_permission
@@ -1010,6 +1010,46 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
                     provider=settings.ai_provider, result=result)
     return ChatResponse(reply=result.text, provider=settings.ai_provider, model=result.actual_model)
 
+
+@app.post(f"{settings.api_prefix}/movie/script", response_model=MovieScriptResponse)
+def generate_movie_script(payload: MovieScriptRequest, user: StudioUser = Depends(get_current_user)):
+    """Generate an editable screenplay and shot-by-shot storyboard for Mini Movie Studio."""
+    check_content(payload.title)
+    check_content(payload.idea)
+    system = (
+        "You are the screenwriter and storyboard director of PWA Studio. "
+        "Create an original, coherent, production-ready short-film screenplay and matching storyboard. "
+        "Respect the requested duration and aspect ratio. Divide the film into practical scenes; "
+        "for every scene include a concise slugline, action, visual description and dialogue where useful. "
+        "The storyboard must map one-to-one to screenplay scenes and specify shot size, camera angle, "
+        "camera movement, composition, lighting and transition. Keep visual continuity consistent. "
+        "Avoid copyrighted character imitation, sexual exploitation of minors, non-consensual intimate imagery, "
+        "real-world harm instructions, fraud, doxxing and deceptive impersonation. Respect consent for real "
+        "people and their likenesses and voices. Return ONLY a valid JSON object with exactly two string fields: "
+        "story and storyboard. Do not wrap JSON in markdown."
+    )
+    request = {"title": payload.title, "creative_idea": payload.idea, "genre": payload.genre,
+               "target_duration_minutes": payload.duration_minutes, "frame_format": payload.frame,
+               "output_language": payload.language}
+    result = _run_admitted_ai("movie_script", user.user_id, lambda: ask_ai(settings, [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
+    ]))
+    record_ai_usage(settings, user_id=user.user_id, request_id=uuid4(), endpoint="movie_script",
+                    provider=settings.ai_provider, result=result)
+    raw = result.text.strip()
+    if raw.startswith(chr(96) * 3):
+        raw = raw.split(chr(10), 1)[-1]
+        if raw.endswith(chr(96) * 3): raw = raw[:-3].strip()
+    try:
+        data = json.loads(raw)
+        story = data.get("story") if isinstance(data, dict) else None
+        storyboard = data.get("storyboard") if isinstance(data, dict) else None
+        if not isinstance(story, str) or not story.strip() or len(story) > 30000: raise ValueError("invalid_story")
+        if not isinstance(storyboard, str) or not storyboard.strip() or len(storyboard) > 30000: raise ValueError("invalid_storyboard")
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="AI не вернул сценарий в ожидаемом формате. Попробуйте повторить запрос.") from exc
+    return MovieScriptResponse(story=story.strip(), storyboard=storyboard.strip(), provider=settings.ai_provider, model=result.actual_model)
 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
 def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
