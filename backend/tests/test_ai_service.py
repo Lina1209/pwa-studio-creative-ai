@@ -101,7 +101,7 @@ def test_empty_provider_response_is_rejected(monkeypatch):
         ),
     )
     with pytest.raises(RuntimeError, match="empty response"):
-        ai_service.ask_ai(settings(), [{"role": "user", "content": "hello"}])
+        run_ai(settings(), [{"role": "user", "content": "hello"}])
 
 
 def test_gemini_uses_explicit_google_model_and_server_key(monkeypatch):
