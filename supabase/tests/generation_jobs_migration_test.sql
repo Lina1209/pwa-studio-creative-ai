@@ -1130,6 +1130,15 @@ begin
     raise exception 'Credit hold release produced unexpected wallet balances';
   end if;
 
+  v_rejected := false;
+  begin
+    perform public.release_job_credit_hold(
+      '22222222-2222-4222-8222-222222222222', v_hold_id, 'different_reason'
+    );
+  exception when sqlstate '22023' then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'Mismatched release replay reason was accepted'; end if;
+
   select * into v_release_replay from public.release_job_credit_hold(
     '22222222-2222-4222-8222-222222222222', v_hold_id, 'test_terminal_failure'
   );
