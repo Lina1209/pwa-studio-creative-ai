@@ -2,6 +2,7 @@ import asyncio
 from uuid import UUID
 
 import pytest
+from types import SimpleNamespace
 
 from app.services.generation_result_storage import StoredObjectMetadata, calculate_sha256
 from app.services.generation_worker import (
@@ -31,6 +32,26 @@ class FakeRepository:
     async def heartbeat(self, *args):
         self.calls.append(("heartbeat", args))
         return self.heartbeat_result
+
+    async def begin_provider_operation(self, *args):
+        self.calls.append(("journal_begin", args))
+        return SimpleNamespace(created=True, state="submitting")
+
+    async def mark_provider_operation_accepted(self, *args):
+        self.calls.append(("journal_accepted", args))
+        return True
+
+    async def mark_provider_operation_unknown(self, *args):
+        self.calls.append(("journal_unknown", args))
+        return True
+
+    async def mark_provider_operation_failed(self, *args):
+        self.calls.append(("journal_failed", args))
+        return True
+
+    async def mark_provider_operation_result_received(self, *args):
+        self.calls.append(("journal_result", args))
+        return True
 
     async def retry(self, *args):
         self.calls.append(("retry", args))
