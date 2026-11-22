@@ -303,6 +303,7 @@ def test_create_credited_generation_job_calls_atomic_rpc_and_parses_wallet_resul
         model="model-test",
         request_hash=canonical_request_hash({"prompt": "test"}),
         idempotency_key="credited-job-key-001",
+        studio_scene_id=UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
         quantity=1,
     )
     result = generation_jobs.create_credited_generation_job(
