@@ -334,19 +334,23 @@ class SupabaseGenerationJobRepository:
 
 
     async def complete_credited(
-        self, job_id: UUID, worker_id: str, result_path: str
+        self, job_id: UUID, worker_id: str, result_path: str, result_sha256: str
     ) -> CreditedCompletion:
         """Capture the job's credit hold in the same transaction as completion.
 
         The worker must first verify the uploaded private object (bucket, owner
         path, MIME, byte count, checksum and content) using the storage adapter.
         """
+        if (not isinstance(result_sha256, str) or len(result_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in result_sha256)):
+            raise WorkerRepositoryError("Result SHA-256 must be 64 lowercase hexadecimal characters.")
         data = await self._rpc(
             "complete_credited_generation_job",
             {
                 "p_job_id": str(job_id),
                 "p_worker_id": worker_id,
                 "p_result_storage_path": result_path,
+                "p_result_sha256": result_sha256,
             },
         )
         if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
