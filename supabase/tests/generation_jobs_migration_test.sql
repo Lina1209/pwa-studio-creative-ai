@@ -2569,6 +2569,41 @@ begin
     raise exception 'Missing wallet must return zero without creating or granting credits';
   end if;
 
+  if not exists (
+    select 1 from public.credit_lots
+     where user_id = '33333333-3333-4333-8333-333333333333'
+       and lot_type = 'legacy' and available_credits = 75
+  ) then
+    raise exception 'Existing wallet balance was not safely backfilled into a legacy lot';
+  end if;
+
+  if exists (
+    select 1
+      from public.credit_wallets w
+      left join lateral (
+        select coalesce(sum(l.available_credits), 0) as available,
+               coalesce(sum(l.reserved_credits), 0) as reserved
+          from public.credit_lots l where l.user_id = w.user_id
+      ) lots on true
+     where lots.available <> w.available_credits
+        or lots.reserved <> w.reserved_credits
+  ) then
+    raise exception 'Backfilled credit lot totals do not reconcile to wallet balances';
+  end if;
+
+  if has_function_privilege('service_role',
+       'public.grant_user_credits(uuid,bigint,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('service_role',
+       'public.reserve_job_credits(uuid,uuid,bigint,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('service_role',
+       'public.release_job_credit_hold(uuid,uuid,text)', 'EXECUTE')
+     or has_function_privilege('service_role',
+       'public.create_credited_generation_job_with_outbox(uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint)', 'EXECUTE')
+     or has_function_privilege('service_role',
+       'public.complete_credited_generation_job(uuid,text,text,text)', 'EXECUTE') then
+    raise exception 'Legacy aggregate-only credit mutation RPCs must remain paused';
+  end if;
+
   if has_function_privilege('anon',
        'public.get_credit_wallet_snapshot(uuid,integer)', 'EXECUTE')
      or has_function_privilege('authenticated',
