@@ -1685,10 +1685,10 @@ begin
        'public.record_generation_provider_cost(uuid,uuid,text,text,text,text,numeric,text,bigint,bigint,bigint,text,jsonb)', 'EXECUTE')
      or has_table_privilege('authenticated', 'public.generation_provider_cost_events', 'SELECT')
      or has_table_privilege('anon', 'public.generation_provider_cost_events', 'SELECT')
+     or has_table_privilege('service_role', 'public.generation_provider_cost_events', 'INSERT')
      or has_table_privilege('service_role', 'public.generation_provider_cost_events', 'UPDATE')
      or has_table_privilege('service_role', 'public.generation_provider_cost_events', 'DELETE')
      or has_table_privilege('service_role', 'public.generation_provider_cost_events', 'TRUNCATE')
-     or not has_table_privilege('service_role', 'public.generation_provider_cost_events', 'INSERT')
      or not has_table_privilege('service_role', 'public.generation_provider_cost_events', 'SELECT') then
     raise exception 'Provider cost event privileges are not least-privilege';
   end if;
