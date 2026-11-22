@@ -205,3 +205,14 @@ The current finance request API derives scope on the server as `user:<target UUI
 ### Financial amount semantics
 
 Credit-compensation proposals use whole credit units only (`currency_code=CRD`), matching the integer credit wallet. Cash-refund proposals use a three-letter uppercase currency code such as KZT, USD, EUR, or RUB and a positive monetary amount with at most four decimal places. The API and PostgreSQL both enforce the distinction; fractional credits, non-finite values, and cash refunds denominated in the internal CRD unit are rejected. These remain proposals only, not actual wallet or payment movements.
+
+
+### Delegated request queue and workspace
+
+The finance request queue is exposed through `GET /api/finance/requests`. It is filtered in PostgreSQL by two separate allowlists derived from the verified caller's active `credit.compensation.read` and `billing.refund.read` assignments. The browser cannot submit or broaden these scope lists. Pages are bounded to 100 visible rows and use a composite descending cursor `(requested_at, request_id)`; incomplete or timezone-free cursors are rejected. The queue RPC is executable only by `service_role`.
+
+`GET /api/finance/me` returns only the authenticated caller's own allowlisted permissions and the number of assigned scopes; it does not expose scope identifiers. The delegated finance workspace uses this response for display only. Every create, cancel, approve, reject, and queue read is independently authorized by the backend against the current role registry.
+
+Request scopes are bound to the target UUID as `user:<uuid>` in the service, RPC validation, and database constraint. A mismatch is rejected before storage. The queue returns request metadata and decision metadata only; it does not read credit ledger rows, payment-provider records, or execute approved operations. Approval means reviewed/approved, not paid or credited.
+
+The current workspace can submit proposals, inspect the bounded queue, and allow the original requester to cancel a pending proposal or an independent approver to approve/reject it. The decision reason is retained. Full per-event timeline presentation, execution workflow, payment-provider integration, and credit ledger mutation remain separate future stages and are not enabled.
