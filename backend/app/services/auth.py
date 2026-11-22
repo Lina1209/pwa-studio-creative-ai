@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 from functools import lru_cache
 from uuid import UUID
 
@@ -8,6 +9,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient, PyJWTError
 
 from app.core.config import get_settings
+from app.services.admin_audit_service import AdminAuditUnavailable, record_admin_audit_event
+
+logger = logging.getLogger(__name__)
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -93,8 +97,25 @@ def get_current_user(
     return StudioUser(user_id=user_id, email=email, role=role)
 
 
+def _record_denied_admin_access(user: StudioUser, permission: str) -> None:
+    """Best-effort audit of a verified user's denied admin permission check."""
+    try:
+        record_admin_audit_event(
+            get_settings(),
+            actor_user_id=UUID(user.user_id),
+            action="admin.permission.denied",
+            outcome="denied",
+            resource_type="permission",
+            reason=f"Denied capability: {permission}",
+        )
+    except (AdminAuditUnavailable, ValueError):
+        # A denial must remain a denial even if the audit sink is unavailable.
+        logger.warning("Admin permission denial could not be persisted to the audit journal.")
+
+
 def require_admin(user: StudioUser = Depends(get_current_user)) -> StudioUser:
     if user.role != "admin":
+        _record_denied_admin_access(user, "admin.access")
         raise HTTPException(status_code=403, detail="Administrator access is required.")
     return user
 
@@ -117,6 +138,7 @@ def require_permission(permission: str):
 
     def permission_dependency(user: StudioUser = Depends(get_current_user)) -> StudioUser:
         if user.role != "admin" or permission not in OWNER_READ_PERMISSIONS:
+            _record_denied_admin_access(user, permission)
             raise HTTPException(status_code=403, detail="This operation is not permitted.")
         return user
 
