@@ -249,7 +249,7 @@ const movieHistoryStyle = document.createElement("style");
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       adminUiAuthorized = data.role === "admin";
       panel.hidden = !adminUiAuthorized;
-      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); loadAdminAiProviders(); }
+      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); loadAdminAiProviders(); loadAdminAiCostBudget(); }
       loadFinanceAccess();
     } catch {
       if (authSession?.user?.id === userId) {
@@ -372,6 +372,52 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   $("#refreshAdminAiProviders")?.addEventListener("click", loadAdminAiProviders);
+
+  const loadAdminAiCostBudget = async () => {
+    const status = $("#adminAiCostBudgetStatus"), rows = $("#adminAiCostBudgetRows");
+    if (!status || !rows || !adminUiAuthorized) return;
+    status.textContent = "Загружаем атомарные резервы и дневные USD-лимиты…";
+    rows.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/ai/budget");
+      if (!adminUiAuthorized) return;
+      const money = value => "$" + Number(value || 0).toFixed(6);
+      $("#adminAiGlobalBudget").textContent = money(data.global_daily_budget_usd);
+      $("#adminAiOutstandingBudget").textContent = money(data.global_outstanding_reserved_usd);
+      $("#adminAiRemainingBudget").textContent = money(data.global_remaining_usd);
+      const labels = {
+        within_limit: "В пределах лимита",
+        warning: "Приближается к лимиту",
+        threshold_reached: "Дневной лимит достигнут",
+        unknown_costs: "Есть неизвестные расходы",
+        disabled: "Отключён"
+      };
+      (data.providers || []).forEach(item => {
+        const tr = document.createElement("tr");
+        [
+          item.provider,
+          money(item.daily_budget_usd),
+          money(item.settled_estimated_spend_usd),
+          money(item.outstanding_reserved_usd),
+          money(item.remaining_usd),
+          String(item.unknown_reservations || 0),
+          labels[item.status] || item.status
+        ].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      status.textContent = "Дата UTC: " + data.date_utc
+        + ". Общий дневной лимит: " + money(data.global_daily_budget_usd)
+        + "; остаток: " + money(data.global_remaining_usd)
+        + "; максимальная одновременная экспозиция: " + money(data.max_outstanding_reserved_usd) + ".";
+      const note = $("#adminAiCostBudgetNote");
+      if (note) note.textContent = data.note || "Оценка стоимости не является фактическим счётом провайдера.";
+    } catch (error) {
+      status.textContent = "Не удалось загрузить денежные лимиты AI: " + error.message;
+    }
+  };
+  $("#refreshAdminAiCostBudget")?.addEventListener("click", loadAdminAiCostBudget);
 
   const setAdminAiUsageDefaultDates = () => {
     const to = new Date(), from = new Date(to);
