@@ -265,3 +265,51 @@ def list_finance_operation_requests(
         except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
             raise FinanceRequestUnavailable("Finance request queue returned malformed data.") from exc
     return parsed_rows
+
+
+
+def read_finance_operation_request_events(settings: Settings, *, request_id: UUID) -> list[dict]:
+    from datetime import datetime
+
+    if not isinstance(request_id, UUID):
+        raise ValueError("Finance request UUID is required.")
+    result = _rpc(settings, "read_finance_operation_request_events", {
+        "p_request_id": str(request_id),
+    })
+    if not isinstance(result, list) or len(result) > 100:
+        raise FinanceRequestUnavailable("Finance request timeline returned an invalid page.")
+    allowed_events = {
+        "request.created": (None, "pending"),
+        "request.approved": ("pending", "approved"),
+        "request.rejected": ("pending", "rejected"),
+        "request.cancelled": ("pending", "cancelled"),
+    }
+    events: list[dict] = []
+    for row in result:
+        if not isinstance(row, dict):
+            raise FinanceRequestUnavailable("Finance request timeline returned malformed data.")
+        try:
+            event_type = str(row["event_type"])
+            if event_type not in allowed_events:
+                raise ValueError("unknown finance event")
+            previous_status, new_status = allowed_events[event_type]
+            occurred_at = datetime.fromisoformat(str(row["occurred_at"]).replace("Z", "+00:00"))
+            if row.get("previous_status") != previous_status or row.get("new_status") != new_status:
+                raise ValueError("invalid finance event transition")
+            if occurred_at.tzinfo is None:
+                raise ValueError("timezone missing")
+            reason = row["reason"]
+            if not isinstance(reason, str) or not 1 <= len(reason) <= 500 or reason.strip() != reason:
+                raise ValueError("invalid finance event reason")
+            events.append({
+                "event_id": UUID(str(row["event_id"])),
+                "actor_id": UUID(str(row["actor_id"])),
+                "event_type": event_type,
+                "previous_status": previous_status,
+                "new_status": new_status,
+                "reason": reason,
+                "occurred_at": occurred_at,
+            })
+        except (KeyError, ValueError, TypeError, AttributeError) as exc:
+            raise FinanceRequestUnavailable("Finance request timeline returned malformed data.") from exc
+    return events
