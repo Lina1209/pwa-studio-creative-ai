@@ -249,7 +249,7 @@ const movieHistoryStyle = document.createElement("style");
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       adminUiAuthorized = data.role === "admin";
       panel.hidden = !adminUiAuthorized;
-      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); }
+      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); loadAdminAiProviders(); }
       loadFinanceAccess();
     } catch {
       if (authSession?.user?.id === userId) {
@@ -329,6 +329,45 @@ const movieHistoryStyle = document.createElement("style");
   if (authSession?.user) setTimeout(loadAccountRole, 0);
   const routeLabels = {home:"Главная",create:"Создание",movie:"Миникиностудия",editor:"Редактор",prompts:"Prompt Studio",library:"Медиатека",account:"Кабинет",voice:"Голос и музыка",scenes:"Сцены",assistant:"AI Companion",guide:"Путеводитель",rules:"Правила",settings:"Настройки",other:"Другие"};
   const formatMetric = value => new Intl.NumberFormat("ru-RU").format(value);
+  const loadAdminAiProviders = async () => {
+    const status = $("#adminAiProviderStatus"), rows = $("#adminAiProviderRows");
+    if (!status || !rows || !adminUiAuthorized) return;
+    status.textContent = "Проверяем безопасные метаданные провайдеров…";
+    rows.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/ai/providers");
+      if (!adminUiAuthorized) return;
+      $("#adminAiSelectedProvider").textContent = data.selected_provider || "—";
+      $("#adminAiSelectedModel").textContent = "Модель: " + (data.selected_model || "—");
+      $("#adminAiKeyStatus").textContent = data.ai_ready ? "Настроен" : "Не настроен";
+      $("#adminAiFallbackStatus").textContent = data.automatic_fallback ? "Включено" : "Выключено";
+      (data.providers || []).forEach(provider => {
+        const tr = document.createElement("tr");
+        const tier = provider.pricing_mode === "google_free_tier_eligible"
+          ? "Free Tier eligible · квоты Google"
+          : "Платный API";
+        [
+          provider.label + (provider.selected ? " · активен" : ""),
+          provider.model,
+          provider.supported ? "Поддерживается" : "Недоступен",
+          provider.api_key_configured ? "Да" : "Нет",
+          tier
+        ].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      const note = $("#adminAiProviderSafetyNote");
+      if (note) note.textContent = data.safety_note || "Проверьте тариф и квоты в кабинете провайдера.";
+      status.textContent = data.runtime_provider_switching
+        ? "Провайдер может изменяться настройками."
+        : "Текущий провайдер: " + data.selected_provider + ". Переключение выполняется только контролируемым обновлением backend.";
+    } catch (error) {
+      status.textContent = "Не удалось получить состояние провайдеров: " + error.message;
+    }
+  };
+  $("#refreshAdminAiProviders")?.addEventListener("click", loadAdminAiProviders);
+
   const loadAdminAnalytics = async () => {
     const status = $("#adminAnalyticsStatus");
     const requestedUserId = authSession?.user?.id;
