@@ -2535,6 +2535,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0041_require_scoped_expiring_finance_roles.sql
 \ir ../migrations/0042_finance_operation_request_storage.sql
 \ir ../migrations/0043_finance_operation_request_rpcs.sql
+\ir ../migrations/0044_finance_operation_request_queue.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3605,6 +3606,8 @@ declare
   v_request uuid;
   v_replay uuid;
   v_cancel_request uuid;
+  v_queue_request uuid;
+  v_queue_count integer;
   v_event_count integer;
   v_status text;
   v_rejected boolean := false;
