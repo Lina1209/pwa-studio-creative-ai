@@ -1759,6 +1759,13 @@ declare
   v_reserved bigint;
   v_capture_count integer;
 begin
+  update public.generation_jobs
+     set status = 'failed', last_error_code = 'fencing_test_isolation',
+         lease_owner = null, lease_expires_at = null, heartbeat_at = null,
+         completed_at = now(), updated_at = now()
+   where status in ('queued', 'retry_wait')
+      or (status = 'running' and lease_expires_at <= now());
+
   insert into auth.users(id)
   values ('33333333-3333-4333-8333-333333333333')
   on conflict (id) do nothing;
