@@ -204,7 +204,7 @@ revoke all on function public.complete_generation_job(uuid, text, text) from pub
 
 grant execute on function public.claim_next_generation_job(text, integer) to service_role;
 grant execute on function public.heartbeat_generation_job(uuid, text, integer) to service_role;
-grant execute on function public.retry_generation_job(uuid, text, integer) to service_role;
+grant execute on function public.retry_generation_job(uuid, text, text, integer) to service_role;
 grant execute on function public.complete_generation_job(uuid, text, text) to service_role;
 
 comment on function public.claim_next_generation_job(text, integer) is
