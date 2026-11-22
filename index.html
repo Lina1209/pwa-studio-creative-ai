@@ -355,6 +355,22 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <article><span>Автопереключение</span><strong id="adminAiFallbackStatus">—</strong><small>Без скрытых платных переходов</small></article>
           </div>
           <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>Поддержка</th><th>Ключ настроен</th><th>Режим тарифа</th></tr></thead><tbody id="adminAiProviderRows"></tbody></table></div>
+          <div class="admin-module" aria-labelledby="adminAiUsageHeading">
+            <div class="panel-heading"><div><h3 id="adminAiUsageHeading">Использование AI · токены и оценка расходов</h3><p>Данные из серверного журнала ai_usage. Не содержит промптов, ответов и идентификаторов пользователей.</p></div></div>
+            <div class="finance-queue-controls">
+              <label>С даты<input id="adminAiUsageDateFrom" type="date"></label>
+              <label>По дату<input id="adminAiUsageDateTo" type="date"></label>
+              <button class="secondary-button" id="loadAdminAiUsage" type="button">Загрузить статистику</button>
+            </div>
+            <p class="helper-text" id="adminAiUsageStatus" role="status">Статистика загружается только по запросу.</p>
+            <div class="owner-metrics">
+              <article><span>Запросы</span><strong id="adminAiUsageRequests">—</strong><small>Всего за период</small></article>
+              <article><span>Токены</span><strong id="adminAiUsageTokens">—</strong><small>Вход + выход</small></article>
+              <article><span>Оценка API-стоимости</span><strong id="adminAiUsageCost">—</strong><small>USD · не счёт провайдера</small></article>
+            </div>
+            <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>Запросы</th><th>Входные токены</th><th>Выходные токены</th><th>Оценка USD</th></tr></thead><tbody id="adminAiUsageRows"></tbody></table></div>
+            <p class="owner-privacy-note" id="adminAiUsageDisclaimer">Фактические списания, доступность Free Tier и остатки квот нельзя достоверно определить по журналу запросов. Сверяйте их в кабинетах DeepSeek и Google AI Studio.</p>
+          </div>
           <p class="owner-privacy-note" id="adminAiProviderSafetyNote">Бесплатные лимиты и состояние биллинга проверяются в кабинете самого провайдера; backend не может гарантировать неизменность внешних квот.</p>
         </section>
         <section class="panel admin-finance-report-panel" aria-labelledby="adminFinanceReportHeading">
