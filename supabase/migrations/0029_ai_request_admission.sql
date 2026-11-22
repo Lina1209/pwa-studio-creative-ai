@@ -50,9 +50,9 @@ declare
 begin
   if p_user_id is null or p_request_id is null
      or p_endpoint is null or p_endpoint not in ('chat', 'prompts')
-     or p_max_per_minute not between 1 and 120
-     or p_max_concurrent not between 1 and 16
-     or p_max_global_concurrent not between 1 and 128 then
+     or p_max_per_minute is null or p_max_per_minute not between 1 and 120
+     or p_max_concurrent is null or p_max_concurrent not between 1 and 16
+     or p_max_global_concurrent is null or p_max_global_concurrent not between 1 and 128 then
     raise exception 'Invalid AI admission request';
   end if;
 
@@ -145,7 +145,7 @@ declare
   v_state text;
 begin
   if p_user_id is null or p_request_id is null
-     or p_outcome not in ('completed', 'released') then
+     or p_outcome is null or p_outcome not in ('completed', 'released') then
     raise exception 'Invalid AI admission completion';
   end if;
 
