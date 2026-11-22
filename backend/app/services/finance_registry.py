@@ -34,6 +34,7 @@ ROLE_PERMISSIONS = {
     }),
     "support_readonly": frozenset(),
     "auditor_readonly": frozenset({
+        "credit.compensation.read", "billing.refund.read",
         "finance.audit.read", "finance.reconciliation.read",
     }),
 }
