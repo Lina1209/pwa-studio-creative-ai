@@ -176,10 +176,10 @@ def grant_finance_role(
         raise ValueError("Self-assignment of finance roles is prohibited.")
     if role_code not in ALLOWED_ROLES:
         raise ValueError("Unsupported finance role.")
-    if scope_key is not None and (not scope_key.strip() or len(scope_key) > 200 or scope_key.strip() != scope_key):
-        raise ValueError("Finance role scope is invalid.")
-    if valid_until is not None and (valid_until.tzinfo is None or valid_until <= datetime.now(valid_until.tzinfo)):
-        raise ValueError("Finance role expiry must be a future timezone-aware timestamp.")
+    if not isinstance(scope_key, str) or not scope_key or len(scope_key) > 200 or scope_key.strip() != scope_key:
+        raise ValueError("An explicit finance role scope is required.")
+    if valid_until is None or valid_until.tzinfo is None or valid_until <= datetime.now(valid_until.tzinfo):
+        raise ValueError("A future timezone-aware finance role expiry is required.")
     if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 500:
         raise ValueError("A reason of 1 to 500 characters is required.")
     result = _rpc(settings, "grant_finance_role", {
