@@ -134,3 +134,32 @@ def cancel_finance_operation_request(
         return returned
     except (ValueError, TypeError, AttributeError) as exc:
         raise FinanceRequestUnavailable("Finance cancellation RPC returned an invalid identifier.") from exc
+
+
+def read_finance_operation_request(settings: Settings, *, request_id: UUID) -> dict:
+    if not isinstance(request_id, UUID):
+        raise ValueError("Finance request UUID is required.")
+    result = _rpc(settings, "read_finance_operation_request", {"p_request_id": str(request_id)})
+    if not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict):
+        raise FinanceRequestUnavailable("Finance request lookup returned an invalid result.")
+    row = result[0]
+    try:
+        parsed = {
+            "request_id": UUID(str(row["request_id"])),
+            "requester_id": UUID(str(row["requester_id"])),
+            "request_type": str(row["request_type"]),
+            "target_user_id": UUID(str(row["target_user_id"])),
+            "amount": Decimal(str(row["amount"])),
+            "currency_code": str(row["currency_code"]),
+            "scope_key": str(row["scope_key"]),
+            "status": str(row["status"]),
+        }
+        if parsed["request_type"] not in REQUEST_TYPES or parsed["status"] not in {
+            "pending", "approved", "rejected", "cancelled"
+        }:
+            raise ValueError("unknown request type or state")
+        if parsed["request_id"] != request_id or not parsed["scope_key"]:
+            raise ValueError("mismatched request record")
+        return parsed
+    except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
+        raise FinanceRequestUnavailable("Finance request lookup returned malformed data.") from exc
