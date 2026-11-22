@@ -496,7 +496,7 @@ def _audit_ai_budget_change(user: StudioUser, *, reason: str) -> None:
     try:
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id),
-            action="admin.security.settings.changed", outcome="executed",
+            action="admin.security.settings.changed", outcome="requested",
             resource_type="security_setting", reason=reason,
         )
     except (AdminAuditUnavailable, ValueError) as exc:
@@ -510,6 +510,7 @@ def admin_update_ai_global_budget(
 ):
     if payload.max_outstanding_usd > payload.daily_budget_usd:
         raise HTTPException(status_code=422, detail="Outstanding exposure cannot exceed the global daily budget.")
+    _audit_ai_budget_change(user, reason=f"Requested global AI USD budget change: enabled={payload.enabled}, daily={payload.daily_budget_usd}, outstanding={payload.max_outstanding_usd}")
     try:
         result = update_global_budget(
             settings, enabled=payload.enabled,
@@ -522,7 +523,6 @@ def admin_update_ai_global_budget(
         raise HTTPException(status_code=503, detail="AI budget controls are not configured.") from exc
     except AIBudgetControlError as exc:
         raise HTTPException(status_code=502, detail="Global AI budget update failed safely.") from exc
-    _audit_ai_budget_change(user, reason="Updated global AI USD budget and outstanding exposure limits")
     return {"updated": True, "settings": result}
 
 
@@ -531,6 +531,7 @@ def admin_update_ai_provider_budget(
     payload: AdminAIProviderBudgetUpdate,
     user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
 ):
+    _audit_ai_budget_change(user, reason=f"Requested {payload.provider} daily AI USD budget change: enabled={payload.enabled}, daily={payload.daily_budget_usd}")
     try:
         result = update_provider_budget(
             settings, provider=payload.provider, enabled=payload.enabled,
@@ -542,7 +543,6 @@ def admin_update_ai_provider_budget(
         raise HTTPException(status_code=503, detail="AI budget controls are not configured.") from exc
     except AIBudgetControlError as exc:
         raise HTTPException(status_code=502, detail="Provider AI budget update failed safely.") from exc
-    _audit_ai_budget_change(user, reason=f"Updated {payload.provider} daily AI USD budget and enabled state")
     return {"updated": True, "settings": result}
 
 
@@ -551,6 +551,7 @@ def admin_resolve_ai_budget_reservation(
     payload: AdminAIReservationResolution,
     user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
 ):
+    _audit_ai_budget_change(user, reason=f"Requested reconciliation of unknown AI reservation {payload.request_id}: {payload.resolution}; {payload.note.strip()}")
     try:
         resolved = resolve_unknown_reservation(
             settings, request_id=payload.request_id, resolution=payload.resolution,
@@ -564,7 +565,6 @@ def admin_resolve_ai_budget_reservation(
         raise HTTPException(status_code=502, detail="Reservation reconciliation failed safely.") from exc
     if not resolved:
         raise HTTPException(status_code=409, detail="Reservation was not found or is no longer unresolved.")
-    _audit_ai_budget_change(user, reason=f"Reconciled unknown AI reservation {payload.request_id}: {payload.resolution}; {payload.note.strip()}")
     return {"resolved": True, "request_id": str(payload.request_id), "resolution": payload.resolution}
 
 
