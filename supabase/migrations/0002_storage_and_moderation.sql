@@ -6,7 +6,7 @@
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('studio-media', 'studio-media', false, 262144000,
-   array['image/jpeg','image/png','image/webp','image/gif','audio/mpeg','audio/wav','audio/mp4','video/mp4','video/webm','application/pdf']),
+   array['image/jpeg','image/png','image/webp','image/gif','audio/mpeg','audio/wav','audio/mp4','audio/ogg','audio/webm','video/mp4','video/webm','application/pdf']),
   ('studio-exports', 'studio-exports', false, 1073741824,
    array['video/mp4','video/quicktime','audio/mpeg','audio/wav','application/x-subrip'])
 on conflict (id) do update set
