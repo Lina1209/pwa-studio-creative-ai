@@ -24,6 +24,20 @@ def _jwks_client(url: str) -> PyJWKClient:
     return PyJWKClient(f"{url.rstrip('/')}/auth/v1/.well-known/jwks.json")
 
 
+def _configured_owner_ids(raw_value: str | None) -> set[str]:
+    """Parse the server-only UUID allowlist; malformed entries grant no access."""
+    owner_ids: set[str] = set()
+    for item in (raw_value or "").split(","):
+        candidate = item.strip()
+        if not candidate:
+            continue
+        try:
+            owner_ids.add(str(UUID(candidate)))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return owner_ids
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> StudioUser:
@@ -65,8 +79,9 @@ def get_current_user(
 
     email = claims.get("email")
     email = email.lower() if isinstance(email, str) else None
-    owner_email = (settings.owner_email or "").strip().lower()
-    role = "admin" if email and owner_email and email == owner_email else "creator"
+    # Authorization is bound to the immutable Supabase Auth subject UUID.
+    # Email is display/contact data only and cannot grant or retain admin access.
+    role = "admin" if user_id in _configured_owner_ids(settings.owner_user_ids) else "creator"
     return StudioUser(user_id=user_id, email=email, role=role)
 
 
