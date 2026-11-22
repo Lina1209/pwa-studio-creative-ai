@@ -262,7 +262,7 @@ end;
 $$;
 
 -- Expired leases are rejected, reclaimed within the attempt budget, then terminally failed.
-do $
+do $lease_test$
 declare
   v_created record;
   v_claim record;
@@ -325,7 +325,7 @@ begin
     raise exception 'An exhausted expired lease was not moved to failed';
   end if;
 end;
-$;
+$lease_test$;
 
 -- Only the trusted backend service role may execute worker lifecycle RPCs.
 do $$
