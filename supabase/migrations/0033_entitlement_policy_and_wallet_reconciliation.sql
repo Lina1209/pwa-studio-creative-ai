@@ -327,6 +327,10 @@ begin
     union
     select h.user_id from public.credit_holds h
      where p_user_id is null or h.user_id = p_user_id
+    union
+    -- Include ledger-only identities so a missing wallet projection is visible.
+    select e.user_id from public.credit_ledger e
+     where p_user_id is null or e.user_id = p_user_id
   ),
   bounded_users as (
     select t.user_id from target_users t order by t.user_id limit p_user_limit
