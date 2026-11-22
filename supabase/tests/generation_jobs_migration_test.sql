@@ -1420,7 +1420,10 @@ begin
       'pricing-test-provider',
       'pricing-test-model',
       null, null,
-      jsonb_set(v_candidate, '{request_hash}', to_jsonb(repeat('b', 64))),
+      jsonb_set(
+        jsonb_set(v_candidate, '{quote_id}', to_jsonb('cccccccc-cccc-4ccc-8ccc-cccccccccccc'::text)),
+        '{request_hash}', to_jsonb(repeat('b', 64))
+      ),
       v_expiry
     );
   exception when sqlstate '22023' then v_rejected := true;
