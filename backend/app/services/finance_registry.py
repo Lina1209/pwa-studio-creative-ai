@@ -45,9 +45,9 @@ class FinanceRoleAssignment:
     assignment_id: UUID
     principal_id: UUID
     role_code: str
-    scope_key: str | None
+    scope_key: str
     valid_from: datetime
-    valid_until: datetime | None
+    valid_until: datetime
     granted_by: UUID
     created_at: datetime
 
@@ -102,20 +102,22 @@ def _parse_assignment(row: object) -> FinanceRoleAssignment:
             raise ValueError("unknown role")
         valid_from = datetime.fromisoformat(str(row["valid_from"]).replace("Z", "+00:00"))
         created_at = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
+        scope_key = row.get("scope_key")
         valid_until_raw = row.get("valid_until")
-        valid_until = (
-            datetime.fromisoformat(str(valid_until_raw).replace("Z", "+00:00"))
-            if valid_until_raw else None
-        )
-        if valid_from.tzinfo is None or created_at.tzinfo is None:
+        if not isinstance(scope_key, str) or not scope_key or len(scope_key) > 200 or scope_key.strip() != scope_key:
+            raise ValueError("explicit scope missing")
+        if not valid_until_raw:
+            raise ValueError("expiry missing")
+        valid_until = datetime.fromisoformat(str(valid_until_raw).replace("Z", "+00:00"))
+        if valid_from.tzinfo is None or created_at.tzinfo is None or valid_until.tzinfo is None:
             raise ValueError("timezone missing")
-        if valid_until is not None and valid_until.tzinfo is None:
-            raise ValueError("timezone missing")
+        if valid_until <= datetime.now(valid_until.tzinfo):
+            raise ValueError("assignment expired")
         return FinanceRoleAssignment(
             assignment_id=UUID(str(row["assignment_id"])),
             principal_id=UUID(str(row["principal_id"])),
             role_code=role,
-            scope_key=row.get("scope_key"),
+            scope_key=scope_key,
             valid_from=valid_from,
             valid_until=valid_until,
             granted_by=UUID(str(row["granted_by"])),
