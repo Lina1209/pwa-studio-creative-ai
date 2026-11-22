@@ -87,9 +87,19 @@ returns jsonb language sql stable security definer set search_path = public, pg_
             from public.site_visit_daily_routes
             where visit_date >= (now() at time zone 'UTC')::date - 29
             group by route_group order by sum(page_views) desc, route_group limit 8) routes
-    ), '[]'::jsonb)
+    ), '[]'::jsonb),
+    'rate_limited_requests_last_24h', coalesce((
+      select sum(greatest(request_count - 20, 0))::bigint
+      from public.site_visit_rate_limits
+      where window_start >= now() - interval '24 hours'
+    ), 0),
+    'rate_limited_token_windows_last_24h', coalesce((
+      select count(*)::bigint
+      from public.site_visit_rate_limits
+      where window_start >= now() - interval '24 hours' and request_count > 20
+    ), 0)
   );
-$$;
+$;
 revoke all on function public.get_site_visit_admin_stats() from public, anon, authenticated;
 grant execute on function public.get_site_visit_admin_stats() to service_role;
 ),
