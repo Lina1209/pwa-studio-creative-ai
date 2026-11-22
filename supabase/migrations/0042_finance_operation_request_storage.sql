@@ -17,6 +17,10 @@ create table public.finance_operation_requests (
   decided_at timestamptz,
   decision_reason text check (decision_reason is null or length(decision_reason) between 1 and 500),
   cancelled_at timestamptz,
+  constraint finance_operation_request_amount_semantics check (
+    (request_type = 'credit_compensation' and currency_code = 'CRD' and amount = trunc(amount))
+    or (request_type = 'billing_refund' and currency_code <> 'CRD')
+  ),
   constraint finance_operation_request_decision_shape check (
     (status = 'pending' and decided_by is null and decided_at is null and decision_reason is null and cancelled_at is null)
     or (status in ('approved', 'rejected') and decided_by is not null and decided_at is not null and decision_reason is not null and cancelled_at is null)
