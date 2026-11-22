@@ -1,5 +1,7 @@
 import json
 from uuid import UUID
+from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -92,3 +94,32 @@ class SiteVisitRequest(BaseModel):
     event_id: UUID
     visitor_token: str = Field(min_length=20, max_length=128, pattern=r"^[a-f0-9]+$")
     route_group: str = Field(default="other", min_length=1, max_length=32)
+
+
+class CreditHoldResponse(BaseModel):
+    id: UUID
+    job_id: UUID
+    amount: int = Field(ge=1)
+    status: Literal["held"]
+    created_at: datetime
+
+
+class CreditLedgerEntryResponse(BaseModel):
+    id: int = Field(ge=1)
+    operation_type: Literal["grant", "reserve", "capture", "release", "refund", "adjustment"]
+    operation_key: str = Field(min_length=8, max_length=240)
+    delta_available: int
+    delta_reserved: int
+    balance_available_after: int = Field(ge=0)
+    balance_reserved_after: int = Field(ge=0)
+    created_at: datetime
+
+
+class CreditWalletResponse(BaseModel):
+    user_id: UUID
+    currency_unit: Literal["credit"] = "credit"
+    available_credits: int = Field(ge=0)
+    reserved_credits: int = Field(ge=0)
+    total_credits: int = Field(ge=0)
+    holds: list[CreditHoldResponse]
+    ledger: list[CreditLedgerEntryResponse]
