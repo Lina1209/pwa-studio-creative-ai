@@ -24,8 +24,8 @@ def test_registry_resolves_only_permissions_from_active_role_rows(monkeypatch):
     grant = registry.resolve_finance_grant(Settings(supabase_url="https://example.test", supabase_service_role_key="x"), principal_id=TARGET)
     assert grant.active is True
     assert grant.permissions == frozenset({
-        "credit.compensation.read", "credit.compensation.request",
-        "billing.refund.read", "billing.refund.request",
+        "credit.compensation.read", "credit.compensation.request", "credit.compensation.cancel",
+        "billing.refund.read", "billing.refund.request", "billing.refund.cancel",
     })
     assert grant.scope_ids == frozenset({"tenant-a"})
 
