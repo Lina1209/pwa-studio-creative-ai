@@ -2526,6 +2526,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0032_lot_aware_credit_lifecycle.sql
 \ir ../migrations/0033_entitlement_policy_and_wallet_reconciliation.sql
 \ir ../migrations/0034_paginated_wallet_reconciliation.sql
+\ir ../migrations/0035_admin_audit_journal.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3260,3 +3261,63 @@ end;
 $wallet_reconciliation_pagination_test$;
 
 select 'wallet reconciliation pagination checks passed' as result;
+
+
+-- Administrative audit journal: only service_role can call bounded RPCs;
+-- table access is denied and existing rows cannot be updated or deleted.
+do $$
+declare
+  v_actor uuid := '11111111-1111-4111-8111-111111111111';
+  v_event uuid;
+  v_count integer;
+  v_mutation_blocked boolean := false;
+begin
+  v_event := public.record_admin_audit_event(
+    v_actor, 'admin.access', 'allowed', 'platform', null, gen_random_uuid(),
+    'Read-only integration fixture'
+  );
+  if v_event is null then
+    raise exception 'audit insert did not return an event id';
+  end if;
+
+  select count(*) into v_count
+    from public.read_admin_audit_events(null, 10)
+   where id = v_event and actor_user_id = v_actor
+     and action = 'admin.access' and outcome = 'allowed';
+  if v_count <> 1 then
+    raise exception 'audit event could not be read through the bounded RPC';
+  end if;
+
+  begin
+    update public.admin_audit_events set reason = 'tampered' where id = v_event;
+  exception when sqlstate '55000' then
+    v_mutation_blocked := true;
+  end;
+  if not v_mutation_blocked then
+    raise exception 'audit update was not blocked';
+  end if;
+
+  begin
+    delete from public.admin_audit_events where id = v_event;
+    raise exception 'audit delete was not blocked';
+  exception when sqlstate '55000' then
+    null;
+  end;
+
+  begin
+    perform public.record_admin_audit_event(
+      v_actor, 'unknown.action', 'allowed', 'platform'
+    );
+    raise exception 'unknown audit action was accepted';
+  exception when sqlstate '22023' then
+    null;
+  end;
+
+  begin
+    perform * from public.read_admin_audit_events(null, 201);
+    raise exception 'unbounded audit page was accepted';
+  exception when sqlstate '22023' then
+    null;
+  end;
+end;
+$$;
