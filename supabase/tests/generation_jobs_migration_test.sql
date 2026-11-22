@@ -185,8 +185,7 @@ end;
 $$;
 
 -- Worker lifecycle: atomic claim, lease ownership, retry, and verified-result completion.
-do $
-declare
+do $$1declare
   v_job_id uuid;
   v_claim record;
   v_second_claim record;
@@ -262,8 +261,7 @@ end;
 $;
 
 -- Only the trusted backend service role may execute worker lifecycle RPCs.
-do $
-begin
+do $$1begin
   if has_function_privilege('authenticated',
        'public.claim_next_generation_job(text,integer)', 'EXECUTE')
      or has_function_privilege('authenticated',
