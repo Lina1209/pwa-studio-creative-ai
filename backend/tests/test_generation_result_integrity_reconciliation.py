@@ -1,4 +1,5 @@
 from uuid import UUID
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,15 +32,16 @@ class FakeStorage:
             raise GenerationResultStorageError("stored_object_content_mismatch")
         if job_id == TEMPORARY:
             raise SupabaseStorageAdapterError("storage_request_timeout", retryable=True)
-        return object()
+        return SimpleNamespace(sha256_hex='a' * 64)
 
 
-def row(job_id, status="succeeded", path=None):
+def row(job_id, status="succeeded", path=None, sha="a" * 64):
     return GenerationJobInventoryRow(
         job_id=job_id,
         status=status,
         result_storage_path=path,
         updated_at="2026-11-01T00:00:00+00:00",
+        result_sha256=sha,
     )
 
 
