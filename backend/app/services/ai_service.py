@@ -41,18 +41,14 @@ def _semaphore_for_capacity(capacity: int) -> threading.BoundedSemaphore:
 
 
 def _provider_credentials(settings: Settings) -> tuple[str, str | None]:
-    provider = settings.ai_provider.strip().lower()
-    if provider == "openai":
-        return settings.ai_model, settings.openai_api_key
+    """Resolve only explicitly enabled providers; never perform automatic fallback."""
+    provider = settings.ai_provider
     if provider == "deepseek":
-        return settings.ai_model if settings.ai_model.startswith("deepseek/") else f"deepseek/{settings.ai_model}", settings.deepseek_api_key
-    if provider in {"anthropic", "claude"}:
-        model = settings.ai_model if settings.ai_model.startswith("anthropic/") else f"anthropic/{settings.ai_model}"
-        return model, settings.anthropic_api_key
-    if provider == "ollama":
-        model = settings.ai_model if settings.ai_model.startswith("ollama/") else f"ollama/{settings.ai_model}"
-        return model, None
-    raise AIConfigurationError(f"Unsupported AI_PROVIDER: {provider}")
+        return f"deepseek/{settings.ai_model}", settings.deepseek_api_key
+    if provider == "gemini":
+        return f"gemini/{settings.ai_model}", settings.gemini_api_key
+    # Settings validation should make this unreachable; fail closed if bypassed.
+    raise AIConfigurationError("Unsupported AI provider configuration.")
 
 
 def _usage_value(usage, name: str) -> int | None:
@@ -75,7 +71,7 @@ def _response_cost(response) -> Decimal | None:
 def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
     model, api_key = _provider_credentials(settings)
     provider = settings.ai_provider.strip().lower()
-    if provider != "ollama" and not api_key:
+    if not api_key:
         raise AIConfigurationError(
             f"AI provider '{settings.ai_provider}' is selected, but its API key is not configured."
         )
@@ -94,9 +90,6 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
             "max_retries": settings.ai_max_retries,
             "max_tokens": settings.ai_max_output_tokens,
         }
-        if provider == "ollama":
-            completion_options["api_base"] = settings.ollama_api_base.rstrip("/")
-
         try:
             response = completion(**completion_options)
         except Exception as exc:
