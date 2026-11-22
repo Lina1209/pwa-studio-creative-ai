@@ -23,6 +23,8 @@
 - JWT verification against Supabase JWKS.
 - Authenticated AI Companion and prompt-generation endpoints with PostgreSQL-backed per-user rate/concurrency admission.
 - LiteLLM adapter supports DeepSeek (default) and Google Gemini as an explicitly selected alternative. No automatic provider fallback is performed.
+- AI admission is fail-closed and enforced in PostgreSQL across backend replicas: default ceilings are 10 requests/minute and 100 requests/rolling 24 hours per user, 2,000 requests/rolling 24 hours globally, plus per-user/global concurrency caps. Values are server-configurable through `AI_MAX_REQUESTS_PER_DAY_PER_USER` and `AI_MAX_REQUESTS_PER_DAY_GLOBAL`.
+- These request ceilings reduce runaway usage but are not a hard USD spending cap. Actual provider billing must still be monitored in DeepSeek/Google consoles; no automatic paid-provider fallback is enabled.
 - Initial text safety checks. This is not full multimodal moderation.
 
 ## Важные ограничения
