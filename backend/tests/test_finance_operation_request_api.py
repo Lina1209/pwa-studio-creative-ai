@@ -39,7 +39,7 @@ def test_create_finance_request_uses_verified_actor_and_exact_permission_scope(m
     monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
         "request_id": REQUEST, "requester_id": ACTOR,
         "request_type": "credit_compensation", "target_user_id": OTHER,
-        "amount": Decimal("12.5000"), "currency_code": "KZT",
+        "amount": Decimal("12.5000"), "currency_code": "CRD",
         "scope_key": f"user:{OTHER}", "status": "pending",
     })
     client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
@@ -86,7 +86,7 @@ def test_finance_decision_rejects_self_approval_before_rpc(monkeypatch):
     monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
         "request_id": REQUEST, "requester_id": ACTOR,
         "request_type": "credit_compensation", "target_user_id": OTHER,
-        "amount": Decimal("1"), "currency_code": "KZT",
+        "amount": Decimal("1"), "currency_code": "CRD",
         "scope_key": f"user:{OTHER}", "status": "pending",
     })
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
@@ -111,7 +111,7 @@ def test_approval_checks_approver_role_and_server_actor(monkeypatch):
     monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
         "request_id": REQUEST, "requester_id": OTHER,
         "request_type": "credit_compensation", "target_user_id": ACTOR,
-        "amount": Decimal("1"), "currency_code": "KZT",
+        "amount": Decimal("1"), "currency_code": "CRD",
         "scope_key": f"user:{ACTOR}", "status": "pending",
     })
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
