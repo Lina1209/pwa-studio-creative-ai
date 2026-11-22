@@ -49,10 +49,11 @@ def _headers(settings: Settings) -> dict[str, str]:
 
 
 def _rpc(settings: Settings, name: str, payload: dict):
+    request_headers = _headers(settings)
     url = f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/{name}"
     try:
         with httpx.Client(timeout=5.0) as client:
-            response = client.post(url, json=payload, headers=_headers(settings))
+            response = client.post(url, json=payload, headers=request_headers)
             response.raise_for_status()
             return response.json()
     except Exception as exc:
