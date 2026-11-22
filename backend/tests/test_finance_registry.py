@@ -112,6 +112,10 @@ def test_permissions_keep_the_scope_of_the_role_that_granted_them(monkeypatch):
     )
     with pytest.raises(FinanceAuthorizationDenied):
         require_finance_permission(
+            grant, actor_id=TARGET, permission="credit.compensation.request"
+        )
+    with pytest.raises(FinanceAuthorizationDenied):
+        require_finance_permission(
             grant, actor_id=TARGET, permission="credit.compensation.request", target_scope="tenant-b"
         )
     require_finance_permission(
