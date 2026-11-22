@@ -1476,6 +1476,31 @@ const movieHistoryStyle = document.createElement("style");
       });
       actions.append(aiGenerate,aiScriptStatus);
     }
+    if(stage.key==="story"){
+      const directorButton=document.createElement("button"); directorButton.type="button"; directorButton.className="secondary-button";
+      directorButton.textContent="🎬 Разложить сценарий на сцены (AI-режиссёр)";
+      const directorStatus=document.createElement("p"); directorStatus.className="movie-stage-feedback";
+      directorStatus.setAttribute("role","status"); directorStatus.setAttribute("aria-live","polite");
+      directorStatus.style.cssText="display:block;flex-basis:100%;margin:4px 0;";
+      directorButton.addEventListener("click",async()=>{
+        if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите, чтобы использовать AI-режиссёра.");return;}
+        const screenplay=inputs.story.value.trim();
+        if(screenplay.length<50){directorStatus.textContent="Сначала создайте или вставьте сценарий (не менее 50 символов).";return;}
+        const userId=authSession.user.id; directorButton.disabled=true; directorButton.textContent="🎬 Режиссёр разбирает сценарий…";
+        directorStatus.textContent="Формируем сцены, действия, персонажей, планы камеры и свет.";
+        try{
+          const result=await apiRequest("/api/movie/director",{method:"POST",body:JSON.stringify({
+            title:project.name||"Новый фильм",story:screenplay,genre:project.genre||"Приключения",
+            duration_minutes:Number(project.duration)||5,frame:project.frame||"16:9",language:"Русский"
+          })});
+          if(authSession?.user?.id!==userId)return;
+          inputs.storyboard.value=JSON.stringify({scenes:result.scenes},null,2);
+          directorStatus.textContent="✓ Подготовлено сцен: "+result.scenes.length+" ("+result.provider+" · "+result.model+"). Проверьте и сохраните черновик.";
+        }catch(error){if(authSession?.user?.id===userId)directorStatus.textContent="Не удалось разбить сценарий на сцены: "+error.message;}
+        finally{directorButton.disabled=false;directorButton.textContent="🎬 Разложить сценарий на сцены (AI-режиссёр)";}
+      });
+      actions.append(directorButton,directorStatus);
+    }
     const draftStatus=document.createElement("p"); draftStatus.className="movie-stage-feedback"; draftStatus.setAttribute("role","status"); draftStatus.setAttribute("aria-live","polite"); draftStatus.style.cssText="display:block;flex-basis:100%;margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,.12);font-size:14px;";
     let draftStatusTimer=null;
     draft.addEventListener("click",()=>{
