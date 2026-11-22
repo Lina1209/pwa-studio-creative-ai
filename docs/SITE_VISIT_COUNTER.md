@@ -16,7 +16,9 @@
 - PostgreSQL атомарно увеличивает lifetime total и дневной агрегат.
 - Повторная доставка одного event UUID не увеличивает счётчики повторно.
 - Публичный endpoint `GET /api/analytics/stats` отдаёт только агрегированные числа.
-- Owner-only endpoint `GET /api/admin/analytics/site-visits` защищён `require_admin`.
+- Owner-only endpoint `GET /api/admin/analytics/site-visits` защищён `require_admin` и отдаёт 30-дневный ряд просмотров и агрегат популярных разделов.
+- Migration 0028 хранит дневные счётчики по укрупнённым разделам; dashboard доступен только владельцу через личный кабинет.
+- Страны и география не собираются: IP-адреса не сохраняются и не используются для GeoIP.
 - Таблицы доступны только service_role; anon/authenticated не имеют прямого доступа.
 - IP, email, auth user ID, user-agent, prompt, media names and precise location are not stored.
 - Deduplication event rows are pruned opportunistically after 7 days; daily visitor hashes after 2 days. Daily aggregates and lifetime total remain.
@@ -29,10 +31,13 @@
 - Без отдельного CDN/WAF rate limit публичный endpoint можно искусственно накрутить. Перед публичным production-запуском включить edge rate limiting/bot filtering и мониторинг аномалий. Не использовать эти цифры как биллинговую или финансовую метрику.
 - Текущий frontend считает один просмотр при загрузке документа. Внутренние SPA-переходы не увеличивают просмотры до отдельного route-change hook; это намеренно консервативный подсчёт.
 - Сутки считаются по UTC.
+- Статистика по разделам начинает накапливаться после применения миграции 0028; она не восстанавливает исторические просмотры по разделам.
+- Owner dashboard показывает 30 дней, пять агрегированных KPI и популярные разделы. Это просмотры, не пользователи.
+- География намеренно исключена ради минимизации данных и приватности.
 
 ## Включение
 
-1. Проверить migration 0027 в staging и применить её к целевой Supabase базе вручную по обычному release-процессу.
+1. Проверить migrations 0027 и 0028 в staging и применить их к целевой Supabase базе вручную по обычному release-процессу.
 2. Убедиться, что backend имеет `SUPABASE_URL` и server-only `SUPABASE_SERVICE_ROLE_KEY`.
 3. Развернуть backend с новыми маршрутами и frontend с `analytics.js`.
 4. Проверить `GET /api/analytics/stats`, одну тестовую загрузку, повтор одного event UUID и отсутствие доступа anon к таблицам/RPC.
