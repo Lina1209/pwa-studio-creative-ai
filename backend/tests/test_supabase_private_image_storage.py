@@ -220,3 +220,47 @@ async def test_boolean_size_metadata_is_rejected_as_invalid():
             await storage.upload_image(
                 owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
             )
+
+
+@pytest.mark.asyncio
+async def test_owner_inventory_paginates_and_returns_only_relative_names():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        payload = request.read()
+        import json
+        body = json.loads(payload)
+        if body["offset"] == 0:
+            return httpx.Response(200, json=[{
+                "name": "one.png",
+                "created_at": "2026-11-01T00:00:00+00:00",
+                "metadata": {"size": 100, "mimetype": "image/png"},
+            }])
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        objects = await storage.list_owner_generated_objects(
+            owner_id=OWNER, page_size=1, max_pages=3
+        )
+    assert len(objects) == 1
+    assert objects[0].object_path == f"{OWNER}/generated/one.png"
+    assert len(requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_owner_inventory_fails_closed_when_page_limit_is_reached():
+    def handler(request):
+        return httpx.Response(200, json=[{
+            "name": "one.png",
+            "created_at": "2026-11-01T00:00:00+00:00",
+            "metadata": {"size": 100, "mimetype": "image/png"},
+        }])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(SupabaseStorageAdapterError):
+            await storage.list_owner_generated_objects(
+                owner_id=OWNER, page_size=1, max_pages=1
+            )
