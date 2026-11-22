@@ -408,3 +408,20 @@ async def test_record_provider_cost_rejects_malformed_rpc_result():
                 cost_usd=Decimal("0.01"),
                 cost_source="estimated",
             )
+
+
+@pytest.mark.asyncio
+async def test_complete_credited_rejects_invalid_sha256_before_network():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: (_ for _ in ()).throw(AssertionError("Network must not be called"))
+        )
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError):
+            await repository.complete_credited(
+                UUID("22222222-2222-4222-8222-222222222222"),
+                "worker-a",
+                "11111111-1111-4111-8111-111111111111/generated/result.png",
+                "g" * 64,
+            )
