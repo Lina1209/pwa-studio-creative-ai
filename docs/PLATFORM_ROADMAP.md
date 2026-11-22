@@ -1,6 +1,6 @@
 # PWA Studio — platform roadmap
 
-Updated: 2026-11-21
+Updated: 2026-11-22
 
 ## Product direction
 
@@ -12,12 +12,12 @@ PWA Studio is a multi-user creative platform with a public guest-facing area, pr
 - Supabase Auth sign-in, sign-up and password reset email flow are present in the frontend.
 - A personal-account screen has been added. It displays the signed-in user's profile and links to their creative areas.
 - A separate owner panel is shown only after the backend confirms the account role.
-- Mini Movie Studio supports local project creation, compact project list, per-project edit/copy/delete, bounded version history, and a four-stage guided text workflow. Drafts remain in browser localStorage, namespaced by Supabase user ID; no cloud project CRUD exists yet.
+- Mini Movie Studio supports local project creation, compact project list, per-project edit/copy/delete, bounded version history, and a four-stage guided text workflow. Drafts are local-first and namespaced by Supabase user ID; signed-in projects synchronize directly with `public.projects` through Supabase RLS. Cross-device, conflict, and deletion behavior remain unverified.
 - Rules and safety page has been added to the public interface.
 - Backend AI chat and prompt-generation routes now require a valid Supabase access token.
 - The backend has an initial text safety guard for a limited set of clearly harmful request patterns.
 - Migration 0002 defines private Storage buckets and owner-path policies only; it does not create moderation reports or an admin audit log. Migration 0005 defines the private `studio-media` bucket and project table.
-- PWA shell cache is v14; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback.
+- PWA shell cache is v15; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback, including version-insensitive cache fallback for query-string asset versions.
 
 ## Important gaps — do not describe these as finished
 
@@ -140,5 +140,5 @@ The initial regex guard must not be treated as a substitute for the above system
 
 1. Verify the new frontend pages and account flows on GitHub Pages.
 2. Run a syntax/deployment check for the updated FastAPI backend on Render.
-3. In Supabase, review and then run 0002_storage_and_moderation.sql; do not rerun 0001 blindly.
-4. After confirming the live schema and owner role, implement cloud project APIs and media upload.
+3. Inspect whether the private `studio-exports` bucket exists. Apply migration 0002 only if it is missing and after reviewing its policies; do not rerun 0001 blindly.
+4. Verify same-account cross-device project sync, conflict handling, and deletion tombstones; then implement private media upload and download.
