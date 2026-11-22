@@ -283,3 +283,23 @@ Backend module `backend/app/services/pricing_service.py` adds the first pricing 
 The authenticated `POST /api/pricing/quotes` endpoint now issues preview quotes from the server-only catalog. It requires an `Idempotency-Key`, binds optional cloud-project or studio-scene target, returns `Cache-Control: private, no-store`, and never reserves or charges credits. It returns unavailable while the catalog is empty or the signing secret is absent. Unit tests cover catalog parsing, arithmetic, invalid/duplicate rules, quote tampering, expiry, owner/request/model/target binding, idempotency binding, secret length, and canonical request hashing. The credited-job adapter tests use signed quotes and verify malformed or mismatched quotes are rejected before any Supabase request.
 
 **Activation remains blocked:** there is no approved production price catalog, no paid-generation endpoint, and no payment/provider-cost reconciliation. A real catalog must be based on measured provider costs, storage/egress, retries, taxes/fees where applicable, safety margins and the product's approved credit economics. Add explicit rules only after that review; do not copy test rates into production. Keep `generation_jobs_enabled`, worker readiness and runtime flags disabled until all SQL, backend, provider, storage and two-account end-to-end checks pass.
+
+
+## 31. Durable idempotency for signed pricing quotes (migration 0021)
+
+A signed quote must not be regenerated with a different UUID/expiry every time the browser retries the same request. Otherwise a network retry could return a new snapshot and conflict with the later atomic job-admission replay.
+
+Migration `0021_persist_pricing_quotes.sql` adds `generation_pricing_quotes` with a unique `(user_id, idempotency_key)` boundary. The service-role-only `store_generation_pricing_quote` RPC:
+
+- stores the first signed quote snapshot for the owner/key;
+- locks and returns that exact original snapshot on a matching replay, even if the caller generated a new candidate quote;
+- rejects reuse of the key with a changed request hash, job type, provider, model, project or scene;
+- reports when the original quote has expired; the API returns HTTP 409 and requires a new idempotency key rather than silently repricing an existing operation;
+- checks that an optional cloud project or studio scene belongs to the authenticated owner before persisting;
+- is not executable by anon/authenticated roles.
+
+The quote table is owner-readable under RLS but has no client mutation grants. A trigger rejects UPDATE/DELETE even from service_role, preserving immutable quote history. The authenticated preview endpoint now persists the quote and re-verifies the exact database-returned snapshot before returning it. A replay therefore returns the original quote ID, amount, catalog version and expiry.
+
+The disposable PostgreSQL integration suite now applies migration 0021 and tests first insert, replay returning the original quote, changed-request rejection, immutability and client execute denial. Python tests cover the service adapter, endpoint replay and expired-key behavior.
+
+This is still quote persistence only: it does not charge credits, submit provider work, or activate paid generation. The production catalog remains empty by default; all generation, worker and billing flags remain disabled.
