@@ -257,3 +257,22 @@ The adapter supports new Supabase secret API keys through `apikey` and legacy JW
 Tests use HTTPX MockTransport and cover create-only upload, private-bucket enforcement, authoritative metadata lookup, downloaded-byte equality, checksum, cleanup, missing metadata, size cap, and both service-key formats.
 
 **Limitations / deployment gate:** tests are mocked; no live Supabase project has been contacted. Bucket `studio-media` must already exist, be private, and have the intended 20 MiB limit and image MIME allowlist. The worker runtime and job submission remain disabled. Before production, run a dedicated staging integration test against a non-production Supabase project, verify the exact Storage API response shape for the deployed Supabase version, test cleanup/reconciliation and confirm the storage bucket policies. Do not apply migrations or enable the worker as part of this change.
+
+
+## 15. Read-only Storage recovery inventory and orphan planning
+
+Added a bounded owner-scoped recovery scan:
+
+- Storage adapter lists only `{owner_uuid}/generated`, first verifying that the configured bucket remains private.
+- Storage listing is paginated with bounded page size/page count. Reaching the page cap is an error, never a partial-success result.
+- Job repository reads only the same owner's generation job rows through service-role PostgREST, with bounded pagination and strict response validation.
+- Recovery planner correlates UUID-based object names with job records and classifies objects as:
+  - referenced: a succeeded job points to the exact object path;
+  - pending: job is active/retryable or object/job is still within the grace period;
+  - orphan candidate: no corresponding job exists, or the corresponding job is terminal failed/cancelled/expired, and both object and terminal job are older than the grace period (default seven days);
+  - integrity warning: succeeded job path mismatch, invalid timestamp/name, foreign path, or unknown state.
+- Duplicate inventory rows, incomplete pagination, malformed metadata, and invalid timestamps fail closed or are preserved as warnings.
+
+**No deletion is implemented.** The scanner produces a report only. It deliberately preserves succeeded assets, live jobs, recent objects, unknown statuses and ambiguous records. A later cleanup operation must require a separately reviewed report, re-check the exact job and object immediately before deletion, enforce a second grace window, and write an audit record. There is no scheduled scanner, no production credentials used, and no live Supabase scan performed.
+
+Tests cover successful result preservation, old missing-job objects, terminal-job orphans, live/recent preservation, mismatched success paths, unknown states, malformed timestamps, duplicate inventory and pagination caps.
