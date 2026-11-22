@@ -206,13 +206,9 @@ jobs:
               now() + interval '5 minutes'
             );")"
           wait "$FIRST_PID"
-          FIRST_RESULT="$(grep -E '^[0-9a-f-]{36}:true "$FIRST_OUTPUT" | head -n 1)"
+          FIRST_RESULT="$(grep -E '^[0-9a-f-]{36}:true
+ "$FIRST_OUTPUT" | head -n 1)"
           test "$FIRST_RESULT" = "aaaaaaaa-1111-4111-8111-111111111111:true"
           test "$SECOND_OUTPUT" = "aaaaaaaa-1111-4111-8111-111111111111:false"
-          rm -f "$FIRST_OUTPUT"
-          trap - EXIT
- "$FIRST_OUTPUT" | head -n 1)"
-          test "$FIRST_RESULT" = "aaaaaaaa-1111-4111-8111-111111111111:t"
-          test "$SECOND_OUTPUT" = "aaaaaaaa-1111-4111-8111-111111111111:f"
           rm -f "$FIRST_OUTPUT"
           trap - EXIT
