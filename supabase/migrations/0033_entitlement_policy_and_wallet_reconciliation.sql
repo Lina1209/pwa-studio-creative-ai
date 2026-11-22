@@ -309,7 +309,8 @@ returns table(
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $$
+as $
+#variable_conflict use_column
 begin
   if p_user_limit is null or p_user_limit not between 1 and 5000 then
     raise exception 'Reconciliation limit must be between 1 and 5000'
