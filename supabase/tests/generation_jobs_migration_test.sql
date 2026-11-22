@@ -1123,6 +1123,10 @@ begin
   end;
   if not v_rejected then raise exception 'Insufficient credit reservation was accepted'; end if;
 
+  update public.generation_jobs
+     set status = 'queued', completed_at = null, updated_at = now()
+   where id = v_job_id;
+
   v_rejected := false;
   begin
     perform public.release_job_credit_hold(
