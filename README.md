@@ -69,6 +69,12 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 Подробная карта проверенного состояния, этапов разработки и критериев готовности находится в [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md). В ней отдельно отмечены работающие функции, прототипы и ещё не реализованные возможности.\n\nРекомендуемая модель тарифов, доступных кредитных пакетов, расчёта себестоимости и защиты от перерасхода описана в [`docs/PRICING_STRATEGY.md`](docs/PRICING_STRATEGY.md). Это предложение для утверждения, а не активные цены или включённый биллинг.\n\nГлобальные лимиты расходов AI-провайдеров, атомарные резервы, ручная сверка неизвестной стоимости и границы безопасного включения описаны в [`docs/PROVIDER_BUDGET_OPERATIONS.md`](docs/PROVIDER_BUDGET_OPERATIONS.md). Для этого подготовлена миграция `0026_global_provider_budget_reservations.sql`; она не применялась к production.
 
+## Счётчик посещений
+
+- Главная показывает накопительное число просмотров **за всё время** и просмотры за сегодня.
+- Backend endpoints: `POST /api/analytics/visit`, `GET /api/analytics/stats`; owner-only aggregate report: `GET /api/admin/analytics/site-visits`.
+- Migration `0027_site_visit_analytics.sql` создаёт privacy-minimizing aggregate counters. Счётчик начинает работу только после ручного применения миграции и развёртывания backend/frontend. См. [docs/SITE_VISIT_COUNTER.md](docs/SITE_VISIT_COUNTER.md).
+
 ## Международные платежи, аналитика и безопасность провайдеров
 
 - Предварительная конвертация KZT-тарифов в USD/EUR/RUB, правила фиксации FX-курса и безопасный счётчик посещений: [docs/MULTI_CURRENCY_PRICING_AND_VISITOR_ANALYTICS.md](docs/MULTI_CURRENCY_PRICING_AND_VISITOR_ANALYTICS.md). Это проектирование, не подключённый checkout или счётчик.
