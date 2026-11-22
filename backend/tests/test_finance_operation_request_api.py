@@ -298,3 +298,55 @@ def test_finance_profile_returns_inactive_without_grants(monkeypatch):
         assert response.json() == {"active": False, "permissions": [], "scope_count": 0}
     finally:
         app.dependency_overrides.clear()
+
+
+
+def test_finance_event_timeline_requires_read_scope_and_returns_append_only_history(monkeypatch):
+    import app.main as main_module
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
+        "request_id": REQUEST, "requester_id": OTHER,
+        "request_type": "credit_compensation", "target_user_id": OTHER,
+        "amount": Decimal("1"), "currency_code": "CRD",
+        "scope_key": f"user:{OTHER}", "status": "approved",
+    })
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
+        ACTOR, {"credit.compensation.read"}, f"user:{OTHER}"
+    ))
+    monkeypatch.setattr(main_module, "read_finance_operation_request_events", lambda *a, **k: [{
+        "event_id": IDEMPOTENCY, "actor_id": OTHER, "event_type": "request.approved",
+        "previous_status": "pending", "new_status": "approved",
+        "reason": "Independent review complete",
+        "occurred_at": datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc),
+    }])
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.get(f"/api/finance/requests/{REQUEST}/events")
+        assert response.status_code == 200
+        assert response.json()["events"][0]["event_type"] == "request.approved"
+        assert response.json()["events"][0]["actor_id"] == str(OTHER)
+        assert response.headers["cache-control"] == "private, no-store"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_event_timeline_denies_missing_read_permission(monkeypatch):
+    import app.main as main_module
+
+    called = []
+    monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
+        "request_id": REQUEST, "requester_id": OTHER,
+        "request_type": "billing_refund", "target_user_id": OTHER,
+        "amount": Decimal("1"), "currency_code": "USD",
+        "scope_key": f"user:{OTHER}", "status": "pending",
+    })
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(ACTOR, set(), f"user:{OTHER}"))
+    monkeypatch.setattr(main_module, "read_finance_operation_request_events", lambda *a, **k: called.append(True))
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.get(f"/api/finance/requests/{REQUEST}/events")
+        assert response.status_code == 403
+        assert called == []
+    finally:
+        app.dependency_overrides.clear()
