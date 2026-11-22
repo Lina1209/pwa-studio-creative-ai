@@ -267,3 +267,19 @@ The SQL integration script now includes migration 0020 and exercises atomic admi
 **Critical trust boundary:** the database cannot prove that a Storage object was actually uploaded, is private, has the expected MIME/size/checksum, or passed the existing storage adapter's byte-for-byte verification. The worker must complete all those checks before calling `complete_credited_generation_job`. The RPC's owner-prefixed path check is defense in depth, not asset verification.
 
 **Still not production-ready:** backend service/repository adapters now exist for atomic admission and capture, with unit tests, but no user-facing endpoint or worker execution path calls them yet; no trusted server-side pricing quote issuer or canonical request-hash pipeline is finalized; no real provider or payment integration is enabled; no durable dispatcher/worker is deployed; the SQL suite has not yet been run in CI or against a disposable PostgreSQL instance. The older `reserve_job_credits` RPC remains a low-level primitive for tests/controlled administration and must not be used as a paid-generation API because it is separate from job/outbox creation.
+
+
+## 30. Server-owned pricing catalog and signed quotes
+
+Backend module `backend/app/services/pricing_service.py` adds the first pricing primitives without inventing or activating production prices:
+
+- `PricingCatalog` is an immutable, versioned server-side catalog. A rule is keyed by the exact job type, provider and model and defines an integer credit rate, unit label, and bounded quantity range. Duplicate identities and invalid rates are rejected.
+- The production catalog is intentionally not populated. An unknown/unpriced provider or model fails closed; no browser-supplied amount or provider-cost value can create a quote.
+- `canonical_request_hash` hashes a bounded JSON object using sorted keys, compact separators, UTF-8 and NaN rejection. The admission adapter recomputes the hash from the exact request snapshot and rejects any mismatch.
+- `issue_pricing_quote` calculates the amount exclusively from the server catalog and creates a short-lived HMAC-SHA256 signed quote. The quote binds the authenticated owner, exact job type/provider/model, canonical request hash, client idempotency key, quantity, credit unit, maximum authorized charge, catalog version, issue time and expiry.
+- `verify_pricing_quote` checks signature in constant time, owner/request/configuration/idempotency binding, amount bounds, maximum-charge consistency, timestamp validity and expiry. The admission adapter derives the credit amount only from this verified quote; it does not accept a separate client amount.
+- Quote signing uses the server-only `PRICING_QUOTE_SIGNING_SECRET` setting, which must contain at least 32 bytes. Never expose it in frontend configuration, logs, health output or API responses.
+
+Unit tests cover catalog lookup, arithmetic, invalid/duplicate rules, quote tampering, expiry, owner/request/model binding, idempotency binding, secret length, and canonical request hashing. The credited-job adapter tests now use signed quotes and verify that malformed or mismatched quotes are rejected before any Supabase request.
+
+**Activation remains blocked:** there is no approved production price catalog, no quote-issuance endpoint, no paid-generation endpoint, and no payment/provider-cost reconciliation. A real catalog must be based on measured provider costs, storage/egress, retries, taxes/fees where applicable, safety margins and the product's approved credit economics. Add explicit rules only after that review; do not copy test rates into production. Keep `generation_jobs_enabled`, worker readiness and runtime flags disabled until all SQL, backend, provider, storage and two-account end-to-end checks pass.
