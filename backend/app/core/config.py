@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +14,8 @@ class Settings(BaseSettings):
         "https://lina1209.github.io"
     )
 
-    ai_provider: str = "deepseek"
+    # Only DeepSeek and Google Gemini are supported. DeepSeek remains the default.
+    ai_provider: Literal["deepseek", "gemini"] = "deepseek"
     ai_model: str = "deepseek-flash"
     ai_max_concurrent_requests: int = Field(default=4, ge=1, le=32)
     ai_queue_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
@@ -24,10 +25,8 @@ class Settings(BaseSettings):
     ai_max_requests_per_minute_per_user: int = Field(default=10, ge=1, le=120)
     ai_max_concurrent_requests_per_user: int = Field(default=2, ge=1, le=16)
     ai_max_global_concurrent_requests: int = Field(default=16, ge=1, le=128)
-    openai_api_key: str | None = None
     deepseek_api_key: str | None = None
-    anthropic_api_key: str | None = None
-    ollama_api_base: str = "http://localhost:11434"
+    gemini_api_key: str | None = None
 
     # Supabase Auth verifies user sessions. Never put the service-role key in the frontend.
     supabase_url: str | None = None
@@ -59,6 +58,16 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_ai_provider_model(self):
+        allowed_models = {
+            "deepseek": {"deepseek-flash", "deepseek-v4-pro"},
+            "gemini": {"gemini-2.5-flash", "gemini-2.5-flash-lite"},
+        }
+        if self.ai_model not in allowed_models[self.ai_provider]:
+            raise ValueError("AI_MODEL is not allowed for the selected AI_PROVIDER.")
+        return self
 
     @field_validator("generation_storage_bucket")
     @classmethod
