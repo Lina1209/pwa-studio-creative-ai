@@ -2591,6 +2591,31 @@ begin
     raise exception 'Backfilled credit lot totals do not reconcile to wallet balances';
   end if;
 
+  if exists (
+    select 1
+      from public.credit_holds h
+     where h.status = 'held'
+       and not exists (
+         select 1 from public.credit_hold_allocations a
+          where a.hold_id = h.id and a.user_id = h.user_id
+            and a.status = 'held'
+       )
+  ) then
+    raise exception 'An active legacy hold is missing its lot allocation';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.credit_lots'::regclass
+       and conname = 'credit_lots_amounts_within_grant'
+  ) or not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.credit_hold_allocations'::regclass
+       and conname = 'credit_hold_allocations_hold_lot_unique'
+  ) then
+    raise exception 'Credit lot integrity constraints are missing';
+  end if;
+
   if has_function_privilege('service_role',
        'public.grant_user_credits(uuid,bigint,text,jsonb)', 'EXECUTE')
      or has_function_privilege('service_role',
