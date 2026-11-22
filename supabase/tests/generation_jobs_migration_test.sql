@@ -96,7 +96,6 @@ create table public.studio_media (
 \ir ../migrations/0028_site_visit_admin_analytics.sql
 \ir ../migrations/0029_ai_request_admission.sql
 \ir ../migrations/0030_credit_wallet_snapshot.sql
-\ir ../migrations/0031_credit_lots_and_allocations.sql
 
 -- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
 do $credit_ledger_privileges_test$
@@ -2521,6 +2520,8 @@ $ai_request_admission_test$;
 
 select 'distributed AI admission checks passed' as result;
 
+
+\ir ../migrations/0031_credit_lots_and_allocations.sql
 
 do $credit_wallet_snapshot_test$
 declare
