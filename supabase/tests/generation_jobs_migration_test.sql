@@ -2817,7 +2817,10 @@ begin
     raise exception 'The soonest-expiring bonus lot was not selected first';
   end if;
 
-  perform pg_sleep(1.2);
+  update public.credit_lots
+     set created_at = now() - interval '10 seconds',
+         expires_at = now() - interval '1 second'
+   where id = v_lot_id;
   update public.generation_jobs
      set status = 'failed', last_error_code = 'expired_lot_release_test',
          completed_at = now(), updated_at = now()
@@ -2840,7 +2843,10 @@ begin
     v_user, 7, 'free', 'expired-free-cycle', 'grant-expired-free-001',
     now() + interval '1 second', '{"test_case":"available-expiry"}'::jsonb
   );
-  perform pg_sleep(1.2);
+  update public.credit_lots
+     set created_at = now() - interval '10 seconds',
+         expires_at = now() - interval '1 second'
+   where user_id = v_user and idempotency_key = 'grant-expired-free-001';
   v_expired := public.expire_credit_lots_for_user(v_user);
   if v_expired <> 7 then
     raise exception 'Expiry sweep did not expire the exact available lot amount';
