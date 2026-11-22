@@ -516,3 +516,59 @@ async def test_upload_inventory_page_cap_is_retryable_and_preserves_object():
     assert exc_info.value.retryable is True
     assert sum(1 for method, path in calls if method == "POST" and path.endswith("/object/list/studio-media")) == 10
     assert not any(method == "DELETE" for method, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_existing_result_verification_paginates_until_target_is_found():
+    offsets = []
+
+    def handler(request):
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            payload = json.loads(request.content)
+            offsets.append(payload["offset"])
+            if payload["offset"] == 0:
+                return httpx.Response(200, json=[
+                    {"name": f"older-{index}.png", "metadata": {"size": 1, "mimetype": "image/png"}}
+                    for index in range(100)
+                ])
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        verified = await storage.verify_existing_image(
+            owner_id=OWNER, job_id=JOB, object_path=f"{OWNER}/generated/{JOB}.png"
+        )
+
+    assert verified.sha256_hex == calculate_sha256(PNG)
+    assert offsets == [0, 100]
+
+
+@pytest.mark.asyncio
+async def test_existing_result_verification_page_cap_is_retryable_not_corruption():
+    def handler(request):
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[
+                {"name": f"older-{index}.png", "metadata": {"size": 1, "mimetype": "image/png"}}
+                for index in range(100)
+            ])
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(SupabaseStorageAdapterError) as exc_info:
+            await storage.verify_existing_image(
+                owner_id=OWNER, job_id=JOB, object_path=f"{OWNER}/generated/{JOB}.png"
+            )
+
+    assert exc_info.value.error_code == "storage_verification_listing_limit_reached"
+    assert exc_info.value.retryable is True
