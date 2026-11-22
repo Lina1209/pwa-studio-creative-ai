@@ -10,6 +10,9 @@ declare
   v_replay jsonb;
   v_limited jsonb;
   v_event uuid := gen_random_uuid();
+  v_rate_event uuid := gen_random_uuid();
+  v_blocked_event uuid := gen_random_uuid();
+  v_event_count bigint;
   v_hash text := repeat('a', 64);
   v_rate_hash text := repeat('b', 64);
   i integer;
@@ -58,7 +61,20 @@ begin
 
   -- A distinct visitor token can record no more than 20 unique page views
   -- within one minute. The 21st event must be rejected without incrementing totals.
-  for i in 1..20 loop
+  v_limited := public.record_site_visit(
+    v_rate_event, (now() at time zone 'UTC')::date, v_rate_hash, 'other'
+  );
+  -- Exact replay must not consume another rate-limit slot.
+  for i in 1..5 loop
+    v_limited := public.record_site_visit(
+      v_rate_event, (now() at time zone 'UTC')::date, v_rate_hash, 'other'
+    );
+    if coalesce((v_limited->>'rate_limited')::boolean, false) then
+      raise exception 'idempotent replay consumed rate-limit budget';
+    end if;
+  end loop;
+
+  for i in 2..20 loop
     v_limited := public.record_site_visit(
       gen_random_uuid(), (now() at time zone 'UTC')::date, v_rate_hash, 'other'
     );
@@ -67,10 +83,18 @@ begin
     end if;
   end loop;
   v_limited := public.record_site_visit(
-    gen_random_uuid(), (now() at time zone 'UTC')::date, v_rate_hash, 'other'
+    v_blocked_event, (now() at time zone 'UTC')::date, v_rate_hash, 'other'
   );
   if coalesce((v_limited->>'rate_limited')::boolean, false) is not true then
     raise exception '21st event was not rate limited';
+  end if;
+  select count(*) into v_event_count
+  from public.site_visit_events where visitor_token_hash = v_rate_hash;
+  if v_event_count <> 20 then
+    raise exception 'rejected events were persisted or accepted event deduplication is incorrect';
+  end if;
+  if exists (select 1 from public.site_visit_events where event_id = v_blocked_event) then
+    raise exception 'rate-limited event ID was persisted';
   end if;
 end;
 $$;
