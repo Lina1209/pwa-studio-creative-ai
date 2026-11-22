@@ -150,10 +150,10 @@ class ImageGenerationResult:
     provider: str
     model: str
     provider_request_id: str | None = None
-    usage: ProviderUsage = field(default_factory=ProviderUsage)
+    usage: ProviderUsage | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.usage, ProviderUsage):
+        if self.usage is not None and not isinstance(self.usage, ProviderUsage):
             raise ValueError("Provider usage must use the normalized ProviderUsage contract.")
         if not isinstance(self.image_bytes, bytes) or not self.image_bytes:
             raise ValueError("Provider returned an empty or invalid image payload.")
