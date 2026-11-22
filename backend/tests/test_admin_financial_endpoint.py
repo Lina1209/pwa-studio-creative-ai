@@ -1,4 +1,5 @@
 from datetime import date
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -38,8 +39,11 @@ def test_financial_report_admin_response_is_private_and_no_store(monkeypatch):
         "known_provider_cost_usd": "0.0000000000",
         "cost_evidence": {"reported": 0, "estimated": 0, "unknown": 0},
     }
+    audit_calls = []
     monkeypatch.setattr(main_module, "get_provider_cost_report", lambda *a, **k: expected)
-    client = _client_for(StudioUser(user_id="admin-id", email="admin@example.com", role="admin"))
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: audit_calls.append(k) or "audit-id")
+    actor_id = "22222222-2222-4222-8222-222222222222"
+    client = _client_for(StudioUser(user_id=actor_id, email="admin@example.com", role="admin"))
     try:
         response = client.get(
             "/api/admin/financial/provider-costs",
@@ -48,6 +52,10 @@ def test_financial_report_admin_response_is_private_and_no_store(monkeypatch):
         assert response.status_code == 200
         assert response.json() == expected
         assert response.headers["cache-control"] == "private, no-store"
+        assert len(audit_calls) == 1
+        assert audit_calls[0]["actor_user_id"] == UUID(actor_id)
+        assert audit_calls[0]["action"] == "admin.access"
+        assert audit_calls[0]["reason"] == "Viewed provider cost report"
     finally:
         app.dependency_overrides.clear()
 
