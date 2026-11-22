@@ -64,6 +64,272 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/generation_jobs_migration_test.sql
+      - name: Verify concurrent provider budget reservations cannot overbook exposure
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          JOB_A="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '11111111-1111-4111-8111-111111111111', null,
+            'image_generation', 'budget-race-provider', 'budget-race-model',
+            'global-budget-concurrent-a', repeat('a', 64),
+            '{\"prompt\":\"budget race A\"}'::jsonb,
+            '{\"maximum_provider_cost_usd\":\"0.10\"}'::jsonb
+          );")"
+          JOB_B="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '11111111-1111-4111-8111-111111111111', null,
+            'image_generation', 'budget-race-provider', 'budget-race-model',
+            'global-budget-concurrent-b', repeat('b', 64),
+            '{\"prompt\":\"budget race B\"}'::jsonb,
+            '{\"maximum_provider_cost_usd\":\"0.10\"}'::jsonb
+          );")"
+          test -n "$JOB_A"
+          test -n "$JOB_B"
+          "${DB[@]}" -c "update public.generation_jobs
+            set status = 'running',
+                attempt_count = 1,
+                lease_owner = case when id = '$JOB_A' then 'budget-race-worker-a' else 'budget-race-worker-b' end,
+                lease_expires_at = now() + interval '120 seconds',
+                heartbeat_at = now(),
+                updated_at = now()
+            where id in ('$JOB_A', '$JOB_B');"
+          "${DB[@]}" -c "select public.configure_provider_budget_policy(1.00, 0.10);"
+
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select public.authorize_generation_provider_operation('$JOB_A', 'budget-race-worker-a');
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+          sleep 1
+          SECOND_OUTPUT="$("${DB[@]}" -c "select public.authorize_generation_provider_operation('$JOB_B', 'budget-race-worker-b');")"
+          wait "$FIRST_PID"
+          FIRST_RESULT="$(grep -E '^(t|f)        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          JOB_ID="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '11111111-1111-4111-8111-111111111111', null,
+            'image_generation', 'test-provider', 'test-model',
+            'concurrent-claim-test-1', repeat('9', 64),
+            '{\"prompt\":\"concurrency test\"}'::jsonb, '{}'::jsonb
+          );")"
+          test -n "$JOB_ID"
+          # The preceding migration suite intentionally leaves an idempotency fixture queued.
+          # Isolate this race test so both workers compete for exactly one eligible row.
+          "${DB[@]}" -c "update public.generation_jobs
+            set status = 'failed', lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, completed_at = now(), updated_at = now()
+            where id <> '$JOB_ID'
+              and (
+                status in ('queued', 'retry_wait')
+                or (status = 'running' and lease_expires_at <= now())
+              );"
+
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select job_id from public.claim_next_generation_job('worker-concurrent-a', 120);
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+
+          # Give worker A time to claim and hold the row lock inside its transaction.
+          sleep 1
+          SECOND_OUTPUT="$("${DB[@]}" -c "select job_id from public.claim_next_generation_job('worker-concurrent-b', 120);")"
+          wait "$FIRST_PID"
+          grep -q "$JOB_ID" "$FIRST_OUTPUT"
+          if [ -n "$SECOND_OUTPUT" ]; then
+            echo "A concurrent worker unexpectedly claimed a second job: $SECOND_OUTPUT"
+            exit 1
+          fi
+
+          ATTEMPT_COUNT="$("${DB[@]}" -c "select attempt_count from public.generation_jobs where id = '$JOB_ID';")"
+          LEASE_OWNER="$("${DB[@]}" -c "select lease_owner from public.generation_jobs where id = '$JOB_ID';")"
+          test "$ATTEMPT_COUNT" = "1"
+          test "$LEASE_OWNER" = "worker-concurrent-a"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
+
+      - name: Verify concurrent provider journal begin is idempotent
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          JOB_ID="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '11111111-1111-4111-8111-111111111111', null,
+            'image_generation', 'journal-race-provider', 'journal-race-model',
+            'provider-journal-race-job-001', repeat('8', 64),
+            '{\"prompt\":\"provider journal race\"}'::jsonb, '{}'::jsonb
+          );")"
+          test -n "$JOB_ID"
+          "${DB[@]}" -c "update public.generation_jobs
+            set status = 'failed', lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, completed_at = now(), updated_at = now()
+            where id <> '$JOB_ID'
+              and (
+                status in ('queued', 'retry_wait')
+                or (status = 'running' and lease_expires_at <= now())
+              );"
+          CLAIMED="$("${DB[@]}" -c "select job_id from public.claim_next_generation_job('journal-race-worker', 120);")"
+          test "$CLAIMED" = "$JOB_ID"
+
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select created from public.begin_generation_provider_operation(
+              '$JOB_ID', 'journal-race-worker', 'journal-race-provider', '$JOB_ID'
+            );
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+          sleep 1
+          SECOND_CREATED="$("${DB[@]}" -c "select created from public.begin_generation_provider_operation(
+            '$JOB_ID', 'journal-race-worker', 'journal-race-provider', '$JOB_ID'
+          );")"
+          wait "$FIRST_PID"
+          FIRST_CREATED="$(grep -E '^(t|f)$' "$FIRST_OUTPUT" | head -n 1)"
+          test "$FIRST_CREATED" = "t"
+          test "$SECOND_CREATED" = "f"
+          OPERATION_COUNT="$("${DB[@]}" -c "select count(*) from public.generation_provider_operations where job_id = '$JOB_ID';")"
+          test "$OPERATION_COUNT" = "1"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
+
+      - name: Verify concurrent pricing quote creation is idempotent
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select quote_snapshot->>'quote_id' || ':' || created::text
+              from public.store_generation_pricing_quote(
+                'aaaaaaaa-1111-4111-8111-111111111111',
+                '11111111-1111-4111-8111-111111111111',
+                'pricing-concurrent-key-001', repeat('c', 64),
+                'image_generation', 'pricing-race-provider', 'pricing-race-model',
+                null, null,
+                jsonb_build_object(
+                  'quote_id', 'aaaaaaaa-1111-4111-8111-111111111111',
+                  'user_id', '11111111-1111-4111-8111-111111111111',
+                  'idempotency_key', 'pricing-concurrent-key-001',
+                  'request_hash', repeat('c', 64),
+                  'job_type', 'image_generation',
+                  'provider', 'pricing-race-provider',
+                  'model', 'pricing-race-model',
+                  'quantity', 1,
+                  'project_id', null,
+                  'studio_scene_id', null,
+                  'expires_at', now() + interval '5 minutes'
+                ),
+                now() + interval '5 minutes'
+              );
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+          sleep 1
+          SECOND_OUTPUT="$("${DB[@]}" -c "select quote_snapshot->>'quote_id' || ':' || created::text
+            from public.store_generation_pricing_quote(
+              'bbbbbbbb-2222-4222-8222-222222222222',
+              '11111111-1111-4111-8111-111111111111',
+              'pricing-concurrent-key-001', repeat('c', 64),
+              'image_generation', 'pricing-race-provider', 'pricing-race-model',
+              null, null,
+              jsonb_build_object(
+                'quote_id', 'bbbbbbbb-2222-4222-8222-222222222222',
+                'user_id', '11111111-1111-4111-8111-111111111111',
+                'idempotency_key', 'pricing-concurrent-key-001',
+                'request_hash', repeat('c', 64),
+                'job_type', 'image_generation',
+                'provider', 'pricing-race-provider',
+                'model', 'pricing-race-model',
+                'quantity', 1,
+                'project_id', null,
+                'studio_scene_id', null,
+                'expires_at', now() + interval '5 minutes'
+              ),
+              now() + interval '5 minutes'
+            );")"
+          wait "$FIRST_PID"
+          FIRST_RESULT="$(grep -F ':true' "$FIRST_OUTPUT" | head -n 1)"
+          test "$FIRST_RESULT" = "aaaaaaaa-1111-4111-8111-111111111111:true"
+          test "$SECOND_OUTPUT" = "aaaaaaaa-1111-4111-8111-111111111111:false"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
+
+      - name: Verify concurrent provider cost events are idempotent
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          JOB_ID="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '11111111-1111-4111-8111-111111111111', null,
+            'image_generation', 'cost-race-provider', 'cost-race-model',
+            'provider-cost-race-job-001', repeat('7', 64),
+            '{\"prompt\":\"provider cost race\"}'::jsonb, '{}'::jsonb
+          );")"
+          test -n "$JOB_ID"
+          "${DB[@]}" -c "update public.generation_jobs
+            set pricing_snapshot = '{\"maximum_provider_cost_usd\":0.10}'::jsonb
+            where id = '$JOB_ID';"
+
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select event_id::text || ':' || case when created then 't' else 'f' end
+              from public.record_generation_provider_cost(
+                '$JOB_ID', '11111111-1111-4111-8111-111111111111',
+                'provider-cost-race-op-001', 'cost-race-provider', 'cost-race-model',
+                'provider-cost-race-usage-001', 0.01, 'reported',
+                10, 5, 15, 'token', '{}'::jsonb
+              );
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+          sleep 1
+          SECOND_OUTPUT="$("${DB[@]}" -c "select event_id::text || ':' || case when created then 't' else 'f' end
+            from public.record_generation_provider_cost(
+              '$JOB_ID', '11111111-1111-4111-8111-111111111111',
+              'provider-cost-race-op-001', 'cost-race-provider', 'cost-race-model',
+              'provider-cost-race-usage-001', 0.01, 'reported',
+              10, 5, 15, 'token', '{}'::jsonb
+            );")"
+          wait "$FIRST_PID"
+          FIRST_RESULT="$(grep -E '^[0-9]+:t$' "$FIRST_OUTPUT" | head -n 1)"
+          test -n "$FIRST_RESULT"
+          test "$SECOND_OUTPUT" = "$(printf '%s' "$FIRST_RESULT" | sed 's/:t$/:f/')"
+          EVENT_COUNT="$("${DB[@]}" -c "select count(*) from public.generation_provider_cost_events where job_id = '$JOB_ID';")"
+          test "$EVENT_COUNT" = "1"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
+ "$FIRST_OUTPUT" | head -n 1)"
+          if [ "$FIRST_RESULT" = "$SECOND_OUTPUT" ] || { [ "$FIRST_RESULT" != "t" ] && [ "$FIRST_RESULT" != "f" ]; } || { [ "$SECOND_OUTPUT" != "t" ] && [ "$SECOND_OUTPUT" != "f" ]; }; then
+            echo "Concurrent provider admissions did not produce exactly one success and one denial."
+            cat "$FIRST_OUTPUT"
+            echo "Second admission: $SECOND_OUTPUT"
+            exit 1
+          fi
+          RESERVATION_COUNT="$("${DB[@]}" -c "select count(*) from public.generation_provider_cost_reservations
+            where job_id in ('$JOB_A', '$JOB_B') and status = 'reserved';")"
+          test "$RESERVATION_COUNT" = "1"
+          ADMITTED_JOB="$("${DB[@]}" -c "select job_id from public.generation_provider_cost_reservations
+            where job_id in ('$JOB_A', '$JOB_B') and status = 'reserved' limit 1;")"
+          "${DB[@]}" -c "select public.resolve_generation_provider_reservation(
+            '$ADMITTED_JOB', 'budget-race-cleanup-001', 'release_no_charge', null,
+            'Concurrent fixture was never submitted to a provider.'
+          );"
+          "${DB[@]}" -c "select public.configure_provider_budget_policy(null, null);"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
+
       - name: Verify concurrent workers cannot claim the same job
         env:
           PGPASSWORD: postgres
