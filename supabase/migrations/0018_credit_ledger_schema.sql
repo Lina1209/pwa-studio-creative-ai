@@ -59,7 +59,7 @@ create table if not exists public.credit_holds (
 
 create table if not exists public.credit_ledger (
   id bigint generated always as identity primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete restrict,
   hold_id uuid,
   operation_type text not null check (operation_type in (
     'grant', 'reserve', 'capture', 'release', 'refund', 'adjustment'
