@@ -207,6 +207,14 @@ class GenerationWorker:
                             return WorkerResult("lease_lost", "provider_journal_transition_rejected")
                         return await self._terminal_failure(job, code)
                     else:
+                        # Once a result has been observed, a later negative or
+                        # inconclusive lookup must never trigger a new submission.
+                        # Keep the durable result_received state intact and retry
+                        # reconciliation until the provider can return that asset.
+                        if journal.state == "result_received":
+                            return await self._schedule_retry(
+                                job, "provider_result_recovery_pending"
+                            )
                         if not await self.repository.mark_provider_operation_unknown(
                             job.job_id, self.worker_id,
                             decision.error_code or "provider_operation_status_unknown"
@@ -216,7 +224,7 @@ class GenerationWorker:
                             job, "provider_operation_quarantined"
                         )
 
-                if result.provider_request_id:
+                if result.provider_request_id and journal.state != "result_received":
                     if not await self.repository.mark_provider_operation_accepted(
                         job.job_id, self.worker_id, result.provider_request_id
                     ):
