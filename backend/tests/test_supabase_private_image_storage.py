@@ -64,6 +64,66 @@ async def test_upload_verifies_private_bucket_object_metadata_and_downloaded_byt
 
 
 @pytest.mark.asyncio
+async def test_retry_after_ambiguous_upload_verifies_existing_object_without_overwrite():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            assert request.headers["x-upsert"] == "false"
+            return httpx.Response(409, json={"message": "already exists"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        uploaded = await storage.upload_image(
+            owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+        )
+
+    assert uploaded.metadata.sha256_hex == calculate_sha256(PNG)
+    assert [method for method, _ in calls].count("POST") == 2
+    assert not any(method == "DELETE" for method, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_mismatched_preexisting_object_is_not_deleted_on_retry():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.method == "POST" and "/object/studio-media/" in request.url.path:
+            return httpx.Response(409, json={"message": "already exists"})
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG + b"unexpected")
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(GenerationResultStorageError):
+            await storage.upload_image(
+                owner_id=OWNER, job_id=JOB, image_bytes=PNG, mime_type="image/png"
+            )
+
+    assert not any(method == "DELETE" for method, _ in calls)
+
+
+@pytest.mark.asyncio
 async def test_public_bucket_is_rejected_and_uploaded_object_cleanup_attempted():
     calls = []
 
