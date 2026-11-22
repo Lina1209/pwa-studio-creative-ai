@@ -55,6 +55,7 @@ def test_create_finance_request_uses_verified_actor_and_exact_permission_scope(m
         }
         assert captured["requester_id"] == ACTOR
         assert captured["target_user_id"] == OTHER
+        assert captured["scope_key"] == f"user:{OTHER}"
     finally:
         app.dependency_overrides.clear()
 
