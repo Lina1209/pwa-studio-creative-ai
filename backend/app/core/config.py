@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     ai_max_retries: int = Field(default=1, ge=0, le=3)
     ai_max_output_tokens: int = Field(default=2048, ge=1, le=8192)
     ai_max_requests_per_minute_per_user: int = Field(default=10, ge=1, le=120)
+    ai_max_requests_per_day_per_user: int = Field(default=100, ge=1, le=10000)
+    ai_max_requests_per_day_global: int = Field(default=2000, ge=1, le=100000)
     ai_max_concurrent_requests_per_user: int = Field(default=2, ge=1, le=16)
     ai_max_global_concurrent_requests: int = Field(default=16, ge=1, le=128)
     deepseek_api_key: str | None = None
