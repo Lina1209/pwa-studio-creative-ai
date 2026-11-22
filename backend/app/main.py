@@ -150,10 +150,8 @@ def root():
 def health():
     provider = settings.ai_provider.strip().lower()
     ai_configured = (
-        bool(settings.openai_api_key) if provider == "openai"
-        else bool(settings.deepseek_api_key) if provider == "deepseek"
-        else bool(settings.anthropic_api_key) if provider in {"anthropic", "claude"}
-        else bool(settings.ollama_api_base) if provider == "ollama"
+        bool(settings.deepseek_api_key) if provider == "deepseek"
+        else bool(settings.gemini_api_key) if provider == "gemini"
         else False
     )
     try:
