@@ -243,9 +243,11 @@ class GenerationWorker:
                             self.repository.authorize_provider_operation(job.job_id, self.worker_id), lost
                         )
                         if not budget_allowed:
-                            await self.repository.mark_provider_operation_failed(
+                            changed = await self.repository.mark_provider_operation_failed(
                                 job.job_id, self.worker_id, "provider_budget_blocked"
                             )
+                            if not changed:
+                                return WorkerResult("lease_lost", "provider_journal_transition_rejected")
                             return await self._terminal_failure(job, "provider_budget_blocked")
                         result = await self._run_while_leased(
                             provider.generate(request, idempotency_key=provider_idempotency_key), lost
