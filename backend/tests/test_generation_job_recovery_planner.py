@@ -54,3 +54,20 @@ def test_job_recovery_warns_on_missing_lease_or_retry_schedule():
     report = plan_generation_job_recovery(owner_id=OWNER, jobs=jobs, now=NOW)
     assert len(report.integrity_warnings) == 3
     assert not report.expired_leases_reclaimable
+
+import pytest
+from app.services.generation_storage_recovery import scan_owner_generation_jobs
+
+
+@pytest.mark.asyncio
+async def test_scan_owner_generation_jobs_uses_complete_repository_inventory():
+    class Repository:
+        async def list_owner_job_inventory(self, owner_id):
+            assert owner_id == OWNER
+            return [make_job(11, "queued")]
+
+    report = await scan_owner_generation_jobs(
+        owner_id=OWNER, repository=Repository(), now=NOW
+    )
+    assert report.scanned_jobs == 1
+    assert len(report.queued_jobs) == 1
