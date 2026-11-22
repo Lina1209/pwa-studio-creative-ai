@@ -8,8 +8,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from app.services.supabase_generation_worker_repository import GenerationJobInventoryRow
-from app.services.supabase_private_image_storage import ListedGeneratedObject
+from app.services.supabase_generation_worker_repository import (
+    GenerationJobInventoryRow,
+    SupabaseGenerationJobRepository,
+)
+from app.services.supabase_private_image_storage import (
+    ListedGeneratedObject,
+    SupabasePrivateImageStorage,
+)
 
 
 TERMINAL_ORPHAN_STATUSES = frozenset({"failed", "cancelled", "expired"})
@@ -145,4 +151,24 @@ def plan_generation_storage_recovery(
         pending_objects=tuple(sorted(pending)),
         orphan_candidates=tuple(sorted(candidates)),
         integrity_warnings=tuple(sorted(warnings)),
+    )
+
+
+async def scan_owner_generation_storage(
+    *,
+    owner_id: UUID,
+    storage: SupabasePrivateImageStorage,
+    repository: SupabaseGenerationJobRepository,
+    now: datetime | None = None,
+    grace_period: timedelta = timedelta(days=7),
+) -> StorageRecoveryReport:
+    """Build a complete, read-only inventory before planning any cleanup."""
+    objects = await storage.list_owner_generated_objects(owner_id=owner_id)
+    jobs = await repository.list_owner_job_inventory(owner_id)
+    return plan_generation_storage_recovery(
+        owner_id=owner_id,
+        objects=objects,
+        jobs=jobs,
+        now=now,
+        grace_period=grace_period,
     )
