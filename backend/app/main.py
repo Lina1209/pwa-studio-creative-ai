@@ -15,6 +15,7 @@ from app.services.pricing_service import PricingError, canonical_request_hash, i
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
+    GenerationPricingQuoteConflictError,
     get_generation_job,
     create_scene_generation_job,
     store_pricing_quote,
@@ -144,6 +145,8 @@ def create_pricing_quote(
         raise
     except PricingError as exc:
         raise HTTPException(status_code=503, detail="The requested generation price is not available.") from exc
+    except GenerationPricingQuoteConflictError as exc:
+        raise HTTPException(status_code=409, detail="This idempotency key is already bound to a different generation request.") from exc
     except (GenerationJobsNotConfiguredError, GenerationJobsServiceError) as exc:
         raise HTTPException(status_code=503, detail="Pricing quote storage is not available.") from exc
     response.headers["Cache-Control"] = "private, no-store"
