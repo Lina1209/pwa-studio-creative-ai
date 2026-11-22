@@ -14,6 +14,7 @@ import httpx
 from app.core.config import Settings
 from app.services.generation_result_storage import (
     GenerationResultStorageError,
+    GenerationStorageAdapterError,
     StoredObjectMetadata,
     calculate_sha256,
 )
@@ -23,15 +24,13 @@ from app.services.image_generation import ALLOWED_IMAGE_MIME_TYPES, MAX_IMAGE_BY
 logger = logging.getLogger(__name__)
 
 
-class SupabaseStorageNotConfiguredError(RuntimeError):
+class SupabaseStorageNotConfiguredError(GenerationStorageAdapterError):
+    def __init__(self):
+        super().__init__("storage_not_configured", retryable=False)
+
+
+class SupabaseStorageAdapterError(GenerationStorageAdapterError):
     pass
-
-
-class SupabaseStorageAdapterError(RuntimeError):
-    def __init__(self, error_code: str, *, retryable: bool = False):
-        super().__init__(error_code)
-        self.error_code = error_code
-        self.retryable = retryable
 
 
 @dataclass(frozen=True)
@@ -52,9 +51,7 @@ class SupabasePrivateImageStorage:
     ):
         key = settings.supabase_service_role_key
         if not settings.supabase_url or not key:
-            raise SupabaseStorageNotConfiguredError(
-                "Server-side Supabase Storage access is not configured."
-            )
+            raise SupabaseStorageNotConfiguredError()
         if not 1 <= timeout_seconds <= 180:
             raise ValueError("Storage timeout must be between 1 and 180 seconds.")
         self._base_url = settings.supabase_url.rstrip("/") + "/storage/v1"
