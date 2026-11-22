@@ -99,6 +99,56 @@ class MovieDirectorResponse(BaseModel):
     model: str
 
 
+class MovieStoryboardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=120)
+    scenes: list[MovieDirectorScene] = Field(min_length=1, max_length=50)
+    frame: Literal["16:9", "9:16", "1:1"] = "16:9"
+    visual_style: str = Field(default="Кинематографичный реализм", min_length=1, max_length=120)
+    language: Literal["Русский", "English", "Қазақша"] = "Русский"
+
+    @field_validator("title", "visual_style")
+    @classmethod
+    def require_trimmed_storyboard_text(cls, value: str) -> str:
+        if value.strip() != value:
+            raise ValueError("Text fields must not contain surrounding whitespace.")
+        return value
+
+    @model_validator(mode="after")
+    def require_sequential_input_scenes(self):
+        if [scene.scene_number for scene in self.scenes] != list(range(1, len(self.scenes) + 1)):
+            raise ValueError("Input scene numbers must be sequential.")
+        return self
+
+
+class MovieStoryboardFrame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    frame_number: int = Field(ge=1, le=20)
+    duration_seconds: int = Field(ge=1, le=600)
+    shot_type: str = Field(min_length=1, max_length=100)
+    camera_angle: str = Field(min_length=1, max_length=160)
+    camera_movement: str = Field(min_length=1, max_length=160)
+    composition: str = Field(min_length=1, max_length=600)
+    subject_focus: str = Field(min_length=1, max_length=300)
+    visual_prompt: str = Field(min_length=1, max_length=1800)
+    continuity_notes: str = Field(min_length=1, max_length=600)
+
+
+class MovieStoryboardScene(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scene_number: int = Field(ge=1, le=50)
+    frames: list[MovieStoryboardFrame] = Field(min_length=1, max_length=20)
+
+
+class MovieStoryboardResponse(BaseModel):
+    scenes: list[MovieStoryboardScene] = Field(min_length=1, max_length=50)
+    provider: str
+    model: str
+
+
 class SceneImageJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
