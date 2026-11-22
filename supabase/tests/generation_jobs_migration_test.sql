@@ -2078,8 +2078,9 @@ begin
   select available_credits, reserved_credits into v_available, v_reserved
     from public.credit_wallets
    where user_id = '11111111-1111-4111-8111-111111111111';
-  if v_available <> 100 or v_reserved <> 0 then
-    raise exception 'Terminal worker paths did not restore the exact reserved credit balance';
+  -- Preserve the separate 10-credit held fixture created by the schema test above.
+  if v_available <> 90 or v_reserved <> 10 then
+    raise exception 'Terminal worker paths did not restore their reservations without changing the unrelated held fixture';
   end if;
 
   select count(*) into v_released_count
