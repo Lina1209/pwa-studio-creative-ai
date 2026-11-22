@@ -149,3 +149,72 @@ def get_generation_job(
     if len(data) != 1 or not isinstance(data[0], dict):
         raise GenerationJobsServiceError("The job status service returned an ambiguous response.")
     return data[0]
+
+
+def create_scene_generation_job(
+    settings: Settings,
+    *,
+    user_id: UUID,
+    studio_scene_id: UUID,
+    job_type: str,
+    provider: str,
+    model: str,
+    idempotency_key: str,
+    request_hash: str,
+    request_snapshot: dict[str, Any] | None = None,
+    pricing_snapshot: dict[str, Any] | None = None,
+) -> GenerationJobCreateResult:
+    """Create a job for an owned Mini Movie Studio scene via the atomic RPC.
+
+    The user_id must come from the verified server-side auth dependency. The
+    database RPC checks scene ownership and the composite FK closes race windows.
+    Studio project IDs are deliberately not passed as public.projects IDs.
+    """
+    if not settings.generation_jobs_enabled:
+        raise GenerationJobsNotConfiguredError(
+            "Generation jobs are not enabled on this server."
+        )
+    headers = _headers(settings)
+    payload = {
+        "p_user_id": str(user_id),
+        "p_studio_scene_id": str(studio_scene_id),
+        "p_job_type": job_type,
+        "p_provider": provider,
+        "p_model": model,
+        "p_idempotency_key": idempotency_key,
+        "p_request_hash": request_hash,
+        "p_request_snapshot": request_snapshot or {},
+        "p_pricing_snapshot": pricing_snapshot or {},
+    }
+    url = (
+        f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/"
+        "create_scene_generation_job_with_outbox"
+    )
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+    except GenerationJobsNotConfiguredError:
+        raise
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        raise GenerationJobsServiceError(
+            f"Could not create scene generation job (HTTP {status_code})."
+        ) from exc
+
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise GenerationJobsServiceError(
+            "The scene job creation service returned an invalid response."
+        )
+    row = data[0]
+    try:
+        return GenerationJobCreateResult(
+            job_id=UUID(str(row["job_id"])),
+            event_id=UUID(str(row["event_id"])) if row.get("event_id") else None,
+            created=bool(row["created"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GenerationJobsServiceError(
+            "The scene job creation service returned an incomplete response."
+        ) from exc
