@@ -8,7 +8,7 @@ from app import main
 from app.core.config import Settings
 from app.schemas import PricingQuoteRequest
 from app.services.auth import StudioUser
-from app.services.pricing_service import verify_pricing_quote
+from app.services.pricing_service import canonical_request_hash, verify_pricing_quote
 from app.services.generation_jobs import PersistedPricingQuote
 
 
@@ -106,6 +106,10 @@ def test_quote_endpoint_returns_signed_owner_and_scene_bound_preview(monkeypatch
         studio_scene_id=SCENE_ID,
     )
     assert verified.amount == 24
+    assert snapshot["request_hash"] == canonical_request_hash({
+        "prompt": "a safe test scene",
+        "quantity": 2,
+    })
 
     # A second call with the same key and same request returns the byte-for-byte
     # original signed quote, rather than issuing a fresh quote ID or expiry.
@@ -166,3 +170,47 @@ def test_quote_endpoint_rejects_expired_persisted_idempotency_key(monkeypatch):
             StudioUser(str(USER_ID), None, "creator"),
         )
     assert error.value.status_code == 409
+
+
+def test_quote_endpoint_rejects_quantity_conflicting_with_request_snapshot(monkeypatch):
+    catalog = {
+        "version": "test-catalog-v1",
+        "rules": [{
+            "job_type": "image_generation",
+            "provider": "provider-a",
+            "model": "model-a",
+            "credits_per_unit": 12,
+            "unit_label": "image",
+            "min_quantity": 1,
+            "max_quantity": 2,
+        }],
+    }
+    monkeypatch.setattr(
+        main,
+        "settings",
+        Settings(
+            supabase_url="https://example.supabase.co",
+            supabase_service_role_key="sb_secret_test_key",
+            pricing_quote_signing_secret=SECRET,
+            pricing_catalog_json=json.dumps(catalog),
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "store_pricing_quote",
+        lambda **kwargs: pytest.fail("Mismatched quantity must be rejected before persistence"),
+    )
+    with pytest.raises(HTTPException) as error:
+        main.create_pricing_quote(
+            PricingQuoteRequest(
+                job_type="image_generation",
+                provider="provider-a",
+                model="model-a",
+                request_snapshot={"prompt": "quantity mismatch", "quantity": 1},
+                quantity=2,
+            ),
+            Response(),
+            "pricing-endpoint-key-mismatch",
+            StudioUser(str(USER_ID), None, "creator"),
+        )
+    assert error.value.status_code == 422
