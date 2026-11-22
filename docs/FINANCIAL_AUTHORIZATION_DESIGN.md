@@ -185,3 +185,13 @@ This file is documentation only. It creates no database migration, table, RPC, A
 Migrations 0042 and 0043 add private request storage and server-only transactional RPCs for credit-compensation and billing-refund proposals. A request is created in `pending`, then may be approved, rejected, or cancelled by its requester while pending. Approval/rejection by the requester is rejected; decisions lock the row and allow only one transition from pending. Each transition writes an append-only event. The requester/idempotency-key pair is unique; exact retries return the original request, while changed payloads using the same key are rejected.
 
 Important boundary: this is a request and decision ledger only. It does not grant credits, modify wallet balances, initiate refunds, or execute payment-provider operations. Backend endpoints and delegated-role checks must be added and tested before any user-facing finance request workflow is enabled. The new migrations are in the review branch only and have not been applied to production.
+
+
+### Backend API checkpoint
+
+The review branch now includes authenticated API routes:
+- `POST /api/finance/requests` — creates a pending request after resolving the caller's active delegated grant and checking the exact permission/scope.
+- `POST /api/finance/requests/{request_id}/decision` — reads the request from the server registry, checks the matching approver permission for its stored scope, and rejects self-approval.
+- `POST /api/finance/requests/{request_id}/cancel` — only the original requester can cancel a pending request, with a matching scoped cancel permission.
+
+The verified JWT subject supplies the actor identity; client-supplied actor IDs are not accepted. All endpoints use private no-store responses. They return proposal/decision state only; there is no execution endpoint, credit balance mutation, or payment-provider call.
