@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     generation_jobs_enabled: bool = False
     # HMAC secret for short-lived, owner-bound server pricing quotes (>=32 bytes).
     pricing_quote_signing_secret: str | None = None
+    # Empty catalog means pricing is unavailable; configure only approved server-side rules.
+    pricing_catalog_json: str = '{"version":"unconfigured","rules":[]}'
     # Keep submission disabled until a durable dispatcher and worker are deployed.
     generation_job_worker_ready: bool = False
     # Runtime remains off until real provider and private storage adapters are deployed.
