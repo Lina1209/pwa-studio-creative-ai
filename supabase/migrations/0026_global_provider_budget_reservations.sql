@@ -283,7 +283,7 @@ begin
        or v_existing.model <> v_job.model
        or v_existing.operation_key <> p_job_id::text
        or v_existing.reserved_cost_usd <> v_job_cap
-       or v_existing.status not in ('reserved', 'unknown') then
+       or v_existing.status <> 'reserved' then
       return false;
     end if;
     return v_daily_spent + v_outstanding <= v_policy.daily_budget_usd
