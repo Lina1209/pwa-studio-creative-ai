@@ -112,7 +112,8 @@
 - Redis/Celery не добавлены и не подключены к Render.
 - Миграции `0009_generation_jobs_and_outbox.sql` и `0010_create_generation_job_rpc.sql` подготовлены в audit branch, но не применены к live Supabase. Их проверяет изолированный PostgreSQL 16 integration test.
 - `generation_jobs` и `outbox_events` определены в миграции; backend-only RPC атомарно создаёт job + outbox event и поддерживает idempotent replay. SQL test проверяет owner isolation, client read-only permissions, отсутствие client execute permission, повтор запроса и единственность outbox event.
-- Нет backend API для создания/чтения jobs, outbox dispatcher, worker process, provider webhook adapters или reconciler.
+- Подготовлен backend service wrapper для trusted RPC и owner-scoped status reads; добавлен `GET /api/jobs/{job_id}`. Endpoint закрыт feature flag `GENERATION_JOBS_ENABLED`, который по умолчанию `false`; включение до применения и проверки миграций запрещено.
+- Нет публичного `POST /api/jobs` (его контракт зависит от первого provider operation и серверной pricing policy), outbox dispatcher, worker process, provider webhook adapters или reconciler.
 - Нет утверждённого денежного эквивалента кредита, финального прайс-листа, подписок и платёжного провайдера.
 - Нельзя включать реальное списание, пока не пройдены race-condition, retry, webhook replay, worker-crash и two-account tests.
 
@@ -120,7 +121,7 @@
 
 1. Сначала утвердить контракт job + asset и выбрать первый реальный provider/тип операции.
 2. Подготовить и проверить SQL migrations для jobs/outbox, owner constraints, RLS и backend-only atomic creation RPC. (Schema/RPC подготовлены; live migration ещё не применена.)
-3. Реализовать backend API для job creation/status поверх доверенного RPC, затем outbox dispatcher и worker deployment; добавить health checks, lease recovery и structured logs.
+3. Завершить backend API для создания job после выбора первой provider operation и server-side pricing contract. Owner-scoped status read уже подготовлен и feature-gated. Затем реализовать outbox dispatcher и worker deployment; добавить health checks, lease recovery и structured logs.
 4. Добавить provider adapter для одной операции и тестовый fake provider.
 5. Добавить wallet/hold/ledger RPC с транзакционными тестами и idempotency.
 6. Только после подтверждения unit economics — включить pricing catalog и user-visible quotes.
