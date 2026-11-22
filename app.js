@@ -227,12 +227,16 @@ const movieHistoryStyle = document.createElement("style");
   const getApiBase = () => (localStorage.getItem(API_URL_KEY) || DEFAULT_API_BASE).trim().replace(/\/+$/, "");
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
-    if (!authSession?.user || !panel) { if (panel) panel.hidden = true; return; }
+    const userId = authSession?.user?.id;
+    if (!userId || !panel) { if (panel) panel.hidden = true; return; }
     try {
       const data = await apiRequest("/api/auth/me");
+      if (authSession?.user?.id !== userId) return;
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       panel.hidden = data.role !== "admin";
-    } catch { panel.hidden = true; }
+    } catch {
+      if (authSession?.user?.id === userId) panel.hidden = true;
+    }
   };
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
@@ -330,6 +334,7 @@ const movieHistoryStyle = document.createElement("style");
 
   $("#buildPrompt").addEventListener("click", async () => {
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы пользоваться AI-инструментами."); return; }
+    const requestUserId = authSession.user.id;
     const idea = $("#promptIdea").value.trim();
     if (!idea) {
       $("#promptFeedback").textContent = "Добавьте описание вашей задумки, чтобы сформировать промт.";
@@ -344,10 +349,11 @@ const movieHistoryStyle = document.createElement("style");
         method: "POST",
         body: JSON.stringify({ idea, purpose: $("#promptType").value, language: $("#promptLanguage").value, style: "Cinematic, coherent, detailed" })
       });
+      if (authSession?.user?.id !== requestUserId) return;
       $("#promptOutput").textContent = result.prompt;
       $("#promptFeedback").textContent = "Готово: ответ получен от " + result.provider + " · " + result.model + ".";
     } catch (error) {
-      $("#promptFeedback").textContent = error.message;
+      if (authSession?.user?.id === requestUserId) $("#promptFeedback").textContent = error.message;
     } finally {
       button.disabled = false;
       button.textContent = "✦ Сформировать промт";
