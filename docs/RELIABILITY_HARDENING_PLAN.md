@@ -159,3 +159,14 @@
 Не объявлять PWA Studio готовой к публичному запуску, пока не пройдены автоматические тесты, реальные тесты на двух аккаунтах, проверка RLS/Storage, fault-injection и тесты на поддерживаемых устройствах. Для каждой интеграции хранить evidence: дата, среда, версия, сценарий, результат и ссылка на лог/артефакт.
 
 Ни один программный проект нельзя гарантированно сделать «без единого сбоя». Цель — предотвратить известные классы ошибок, обнаруживать сбои, безопасно восстанавливаться и не терять проекты/деньги/приватные данные.
+
+
+## 9. Outbox delivery lifecycle primitives (schema/RPC only)
+
+Migration `0014_outbox_delivery_lifecycle.sql` adds bounded delivery attempts, worker leases, and a terminal dead-letter timestamp to `outbox_events`. The service-role-only RPCs are:
+
+- `claim_next_outbox_event`: atomically leases one due event with `FOR UPDATE SKIP LOCKED`; expired leases can be reclaimed while the attempt budget remains.
+- `mark_outbox_event_published`: acknowledges delivery only for the active, unexpired lease owner.
+- `retry_outbox_event`: releases the active lease and schedules a bounded retry, or sets `failed_at` after the configured attempt limit.
+
+The PostgreSQL integration suite verifies event ownership, competing workers, acknowledgement, retry, and dead-letter behavior. These are database primitives, not a running dispatcher: no broker delivery, polling process, monitoring, or production migration is enabled. A future dispatcher must publish idempotently and tolerate the unavoidable crash window between broker acceptance and recording `published_at`; consumers should deduplicate by the stable `event_id`.
