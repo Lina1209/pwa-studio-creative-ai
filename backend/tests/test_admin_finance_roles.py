@@ -43,6 +43,7 @@ def test_finance_role_grant_uses_verified_actor_and_audited_registry_rpc(monkeyp
             "principal_id": TARGET,
             "role_code": "finance_operator",
             "scope_key": "tenant-a",
+            "valid_until": "2027-01-01T00:00:00Z",
             "reason": "Support finance operations",
         })
         assert response.status_code == 200
@@ -62,6 +63,7 @@ def test_finance_role_grant_rejects_extra_client_fields(monkeypatch):
     try:
         response = client.post("/api/admin/finance/roles", json={
             "principal_id": TARGET, "role_code": "finance_operator",
+            "scope_key": "tenant-a", "valid_until": "2027-01-01T00:00:00Z",
             "granted_by": TARGET, "reason": "Invalid client actor",
         })
         assert response.status_code == 422
@@ -100,8 +102,30 @@ def test_finance_role_grant_duplicate_returns_conflict(monkeypatch):
     try:
         response = client.post("/api/admin/finance/roles", json={
             "principal_id": TARGET, "role_code": "finance_operator",
+            "scope_key": "tenant-a", "valid_until": "2027-01-01T00:00:00Z",
             "reason": "Duplicate assignment",
         })
         assert response.status_code == 409
+    finally:
+        app.dependency_overrides.clear()
+
+def test_finance_role_grant_requires_explicit_scope_and_expiry(monkeypatch):
+    import app.main as main_module
+
+    called = []
+    monkeypatch.setattr(main_module, "grant_finance_role", lambda *a, **k: called.append(k) or UUID(ASSIGNMENT))
+    client = _client_for(StudioUser(user_id=ACTOR, email=None, role="admin"))
+    try:
+        missing_scope = client.post("/api/admin/finance/roles", json={
+            "principal_id": TARGET, "role_code": "finance_operator",
+            "valid_until": "2027-01-01T00:00:00Z", "reason": "Missing scope",
+        })
+        missing_expiry = client.post("/api/admin/finance/roles", json={
+            "principal_id": TARGET, "role_code": "finance_operator",
+            "scope_key": "tenant-a", "reason": "Missing expiry",
+        })
+        assert missing_scope.status_code == 422
+        assert missing_expiry.status_code == 422
+        assert called == []
     finally:
         app.dependency_overrides.clear()
