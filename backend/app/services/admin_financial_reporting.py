@@ -61,7 +61,9 @@ def _row(raw: Any) -> dict[str, Any]:
         raise ValueError("invalid_provider")
     if not isinstance(model, str) or not 1 <= len(model) <= 200:
         raise ValueError("invalid_model")
-    if source not in {"reported", "estimated", "unknown"}:
+    # Validate the type before set membership: malformed JSON arrays/objects
+    # must fail closed with a controlled validation error, not TypeError.
+    if not isinstance(source, str) or source not in {"reported", "estimated", "unknown"}:
         raise ValueError("invalid_cost_source")
     job_id = raw.get("job_id")
     if not isinstance(job_id, str) or len(job_id) > 64:
@@ -191,4 +193,6 @@ def get_provider_cost_report(
     except (httpx.HTTPError, ValueError, TypeError, OverflowError) as exc:
         raise ProviderCostReportError("Provider cost report could not be loaded safely.") from exc
 
+    # The endpoint returns a complete report or an error; it never silently
+    # labels a capped/partial result as complete.
     return _aggregate(rows, date_from, date_to)
