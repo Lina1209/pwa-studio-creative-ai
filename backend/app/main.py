@@ -1206,7 +1206,7 @@ def generate_movie_script(payload: MovieScriptRequest, user: StudioUser = Depend
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
     ], user_id=UUID(user.user_id)))
-    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="movie_script",
+    record_ai_usage(settings, user_id=user.user_id, request_id=getattr(result, "request_id", uuid4()), endpoint="movie_script",
                     provider=settings.ai_provider, result=result)
     raw = result.text.strip()
     if raw.startswith(chr(96) * 3):
@@ -1247,7 +1247,7 @@ def direct_movie_scenes(payload: MovieDirectorRequest, user: StudioUser = Depend
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
     ], user_id=UUID(user.user_id)))
-    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="movie_director",
+    record_ai_usage(settings, user_id=user.user_id, request_id=getattr(result, "request_id", uuid4()), endpoint="movie_director",
                     provider=settings.ai_provider, result=result)
     raw = result.text.strip()
     if raw.startswith(chr(96) * 3):
@@ -1314,7 +1314,7 @@ def create_movie_storyboard(payload: MovieStoryboardRequest, user: StudioUser = 
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
     ], user_id=UUID(user.user_id)))
-    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="movie_storyboard",
+    record_ai_usage(settings, user_id=user.user_id, request_id=getattr(result, "request_id", uuid4()), endpoint="movie_storyboard",
                     provider=settings.ai_provider, result=result)
     raw = result.text.strip()
     if raw.startswith(chr(96) * 3):
@@ -1372,6 +1372,6 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         {"role": "system", "content": system},
         {"role": "user", "content": request},
     ], user_id=UUID(user.user_id)))
-    record_ai_usage(settings, user_id=user.user_id, request_id=result.request_id, endpoint="prompts",
+    record_ai_usage(settings, user_id=user.user_id, request_id=getattr(result, "request_id", uuid4()), endpoint="prompts",
                     provider=settings.ai_provider, result=result)
     return PromptResponse(prompt=result.text, provider=settings.ai_provider, model=result.actual_model)
