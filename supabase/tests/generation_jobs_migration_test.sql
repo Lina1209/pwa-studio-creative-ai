@@ -2250,7 +2250,7 @@ begin
     raise exception 'Disabled global provider budget policy admitted a billable call';
   end if;
 
-  -- Daily limit 0.30 USD and outstanding exposure limit 0.15 USD.
+  -- Daily limit 0.40 USD and outstanding exposure limit 0.15 USD.
   if not public.configure_provider_budget_policy(0.40, 0.15) then
     raise exception 'Operator could not configure the global provider budget policy';
   end if;
