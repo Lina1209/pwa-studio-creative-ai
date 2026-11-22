@@ -133,12 +133,12 @@ begin
     raise exception 'Insufficient available credits' using errcode = 'P0001';
   end if;
 
-  update public.credit_wallets
-     set available_credits = available_credits - p_credit_amount,
-         reserved_credits = reserved_credits + p_credit_amount,
+  update public.credit_wallets as wallet
+     set available_credits = wallet.available_credits - p_credit_amount,
+         reserved_credits = wallet.reserved_credits + p_credit_amount,
          updated_at = now()
-   where id = v_wallet.id
-   returning * into v_wallet;
+   where wallet.id = v_wallet.id
+   returning wallet.* into v_wallet;
 
   insert into public.credit_holds(
     user_id, job_id, amount, quote_snapshot, operation_key
@@ -238,11 +238,11 @@ begin
       using errcode = '23514';
   end if;
 
-  update public.credit_wallets
-     set reserved_credits = reserved_credits - v_hold.amount,
+  update public.credit_wallets as wallet
+     set reserved_credits = wallet.reserved_credits - v_hold.amount,
          updated_at = now()
-   where id = v_wallet.id
-   returning * into v_wallet;
+   where wallet.id = v_wallet.id
+   returning wallet.* into v_wallet;
 
   update public.credit_holds
      set status = 'captured', captured_at = now(), updated_at = now()
@@ -334,12 +334,12 @@ begin
     raise exception 'Wallet reserved balance is inconsistent' using errcode = '23514';
   end if;
 
-  update public.credit_wallets
-     set available_credits = available_credits + v_hold.amount,
-         reserved_credits = reserved_credits - v_hold.amount,
+  update public.credit_wallets as wallet
+     set available_credits = wallet.available_credits + v_hold.amount,
+         reserved_credits = wallet.reserved_credits - v_hold.amount,
          updated_at = now()
-   where id = v_wallet.id
-   returning * into v_wallet;
+   where wallet.id = v_wallet.id
+   returning wallet.* into v_wallet;
 
   update public.credit_holds
      set status = 'released', released_at = now(), updated_at = now()
