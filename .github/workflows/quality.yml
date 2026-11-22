@@ -21,6 +21,7 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check app.js
+          node --check movie-storage.js
           node --check audio-lab.js
           node --check sw.js
       - name: Install backend test dependencies
