@@ -1354,7 +1354,7 @@ begin
 
   select * into v_completed from public.complete_credited_generation_job(
     v_job_id, 'atomic-test-worker',
-    '22222222-2222-4222-8222-222222222222/generated/atomic-result.png'
+    '22222222-2222-4222-8222-222222222222/generated/atomic-result.png', repeat('a', 64)
   );
   if not v_completed.completed or v_completed.replayed
      or v_completed.available_credits <> 60 or v_completed.reserved_credits <> 0 then
@@ -1363,7 +1363,7 @@ begin
 
   select * into v_completed_replay from public.complete_credited_generation_job(
     v_job_id, 'atomic-test-worker',
-    '22222222-2222-4222-8222-222222222222/generated/atomic-result.png'
+    '22222222-2222-4222-8222-222222222222/generated/atomic-result.png', repeat('a', 64)
   );
   if not v_completed_replay.completed or not v_completed_replay.replayed
      or v_completed_replay.available_credits <> 60
@@ -1376,8 +1376,8 @@ begin
   begin
     perform public.complete_credited_generation_job(
       v_job_id, 'different-worker',
-      '22222222-2222-4222-8222-222222222222/generated/other-result.png'
-    );
+      '22222222-2222-4222-8222-222222222222/generated/other-result.png', repeat('b', 64)
+  );
   exception when sqlstate '22023' then v_rejected := true;
   end;
   if not v_rejected then
@@ -1403,7 +1403,7 @@ begin
   if has_function_privilege('authenticated',
        'public.create_credited_generation_job_with_outbox(uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint)', 'EXECUTE')
      or has_function_privilege('authenticated',
-       'public.complete_credited_generation_job(uuid,text,text)', 'EXECUTE') then
+       'public.complete_credited_generation_job(uuid,text,text,text)', 'EXECUTE') then
     raise exception 'Authenticated role unexpectedly has atomic credited generation RPC privileges';
   end if;
 end;
@@ -1849,8 +1849,8 @@ begin
   select * into v_stale_completed
     from public.complete_credited_generation_job(
       v_job_id, 'fencing-worker-a',
-      '33333333-3333-4333-8333-333333333333/results/final.png'
-    );
+      '33333333-3333-4333-8333-333333333333/results/final.png', repeat('c', 64)
+  );
   if v_stale_completed.completed then
     raise exception 'Stale worker completed a job after its lease was reclaimed';
   end if;
@@ -1858,8 +1858,8 @@ begin
   select * into v_completed
     from public.complete_credited_generation_job(
       v_job_id, 'fencing-worker-b',
-      '33333333-3333-4333-8333-333333333333/results/final.png'
-    );
+      '33333333-3333-4333-8333-333333333333/results/final.png', repeat('c', 64)
+  );
   if not v_completed.completed or v_completed.replayed then
     raise exception 'Replacement worker could not atomically complete the credited job';
   end if;
@@ -1881,8 +1881,8 @@ begin
   select * into v_stale_completed
     from public.complete_credited_generation_job(
       v_job_id, 'fencing-worker-a',
-      '33333333-3333-4333-8333-333333333333/results/final.png'
-    );
+      '33333333-3333-4333-8333-333333333333/results/final.png', repeat('c', 64)
+  );
   if not v_stale_completed.completed or not v_stale_completed.replayed then
     raise exception 'Exact completion replay was not recognized as a harmless idempotent replay';
   end if;
