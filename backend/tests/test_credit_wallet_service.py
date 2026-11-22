@@ -222,3 +222,28 @@ def test_unknown_credit_lot_type_is_rejected(monkeypatch):
 
     with pytest.raises(wallet.CreditWalletUnavailable):
         wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+
+def test_expired_lot_is_not_counted_as_spendable_wallet_balance(monkeypatch):
+    client = FakeClient([{
+        "user_id": str(USER_ID),
+        "currency_unit": "credit",
+        "available_credits": 0,
+        "reserved_credits": 0,
+        "holds": [],
+        "ledger": [],
+        "lots": [{
+            "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "lot_type": "free", "granted_credits": 25,
+            "available_credits": 0, "reserved_credits": 0,
+            "expires_at": "2026-11-22T00:00:00Z",
+            "created_at": "2026-11-21T00:00:00Z",
+        }],
+        "allocations": [],
+    }])
+    monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
+
+    result = wallet.get_credit_wallet_snapshot(settings(), user_id=USER_ID)
+
+    assert result.available_credits == 0
+    assert result.lots[0]["available_credits"] == 0
