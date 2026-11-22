@@ -88,6 +88,7 @@ create table public.studio_media (
 \ir ../migrations/0020_atomic_credited_generation.sql
 \ir ../migrations/0021_persist_pricing_quotes.sql
 \ir ../migrations/0022_generation_provider_cost_events.sql
+\ir ../migrations/0023_release_credits_on_terminal_worker_states.sql
 
 -- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
 do $credit_ledger_privileges_test$
@@ -1742,3 +1743,108 @@ end;
 $provider_cost_event_test$;
 
 select 'provider cost event audit checks passed' as result;
+
+-- Every terminal worker path releases held credits exactly once.
+do $terminal_worker_credit_release_test$
+declare
+  v_fail_job uuid;
+  v_retry_job uuid;
+  v_expired_job uuid;
+  v_hold_id uuid;
+  v_claim record;
+  v_available bigint;
+  v_reserved bigint;
+  v_released_count integer;
+begin
+  update public.generation_jobs
+     set status = 'failed', lease_owner = null, lease_expires_at = null,
+         heartbeat_at = null, completed_at = now(), updated_at = now()
+   where status in ('queued', 'retry_wait');
+
+  select job_id into v_fail_job from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'release-test-provider', 'release-test-model',
+    'terminal-release-fail-001', repeat('a', 64), '{}'::jsonb, '{}'::jsonb
+  );
+  select job_id into v_retry_job from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'release-test-provider', 'release-test-model',
+    'terminal-release-retry-001', repeat('b', 64), '{}'::jsonb, '{}'::jsonb
+  );
+  select job_id into v_expired_job from public.create_generation_job_with_outbox(
+    '11111111-1111-4111-8111-111111111111', null,
+    'image_generation', 'release-test-provider', 'release-test-model',
+    'terminal-release-expired-001', repeat('c', 64), '{}'::jsonb, '{}'::jsonb
+  );
+
+  select hold_id into v_hold_id from public.reserve_job_credits(
+    '11111111-1111-4111-8111-111111111111', v_fail_job, 5,
+    'terminal-release-fail-operation',
+    '{"price_version":"test-v1","approved_maximum":5}'::jsonb
+  );
+  select hold_id into v_hold_id from public.reserve_job_credits(
+    '11111111-1111-4111-8111-111111111111', v_retry_job, 7,
+    'terminal-release-retry-operation',
+    '{"price_version":"test-v1","approved_maximum":7}'::jsonb
+  );
+  select hold_id into v_hold_id from public.reserve_job_credits(
+    '11111111-1111-4111-8111-111111111111', v_expired_job, 9,
+    'terminal-release-expired-operation',
+    '{"price_version":"test-v1","approved_maximum":9}'::jsonb
+  );
+
+  update public.generation_jobs
+     set status = 'running', attempt_count = 1, lease_owner = 'terminal-worker-a',
+         lease_expires_at = now() + interval '60 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id = v_fail_job;
+  if not public.fail_generation_job(v_fail_job, 'terminal-worker-a', 'provider_rejected') then
+    raise exception 'Active worker could not fail the credited job';
+  end if;
+
+  update public.generation_jobs
+     set status = 'running', attempt_count = max_attempts, lease_owner = 'terminal-worker-b',
+         lease_expires_at = now() + interval '60 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id = v_retry_job;
+  if not public.retry_generation_job(v_retry_job, 'terminal-worker-b', 'retry_exhausted', 30) then
+    raise exception 'Exhausted retry did not transition the credited job';
+  end if;
+
+  update public.generation_jobs
+     set status = 'running', attempt_count = max_attempts, lease_owner = 'worker-that-crashed',
+         lease_expires_at = now() - interval '1 second',
+         heartbeat_at = now() - interval '2 seconds', updated_at = now()
+   where id = v_expired_job;
+  select * into v_claim from public.claim_next_generation_job('replacement-worker', 60);
+  if v_claim.job_id is not null then
+    raise exception 'Expired exhausted job was incorrectly reclaimed for another attempt';
+  end if;
+
+  if (select status from public.generation_jobs where id = v_fail_job) <> 'failed'
+     or (select status from public.generation_jobs where id = v_retry_job) <> 'failed'
+     or (select status from public.generation_jobs where id = v_expired_job) <> 'failed' then
+    raise exception 'A terminal worker path did not leave its job failed';
+  end if;
+
+  select available_credits, reserved_credits into v_available, v_reserved
+    from public.credit_wallets
+   where user_id = '11111111-1111-4111-8111-111111111111';
+  if v_available <> 100 or v_reserved <> 0 then
+    raise exception 'Terminal worker paths did not restore the exact reserved credit balance';
+  end if;
+
+  select count(*) into v_released_count
+    from public.credit_holds h
+    join public.credit_ledger l on l.hold_id = h.id
+   where h.job_id in (v_fail_job, v_retry_job, v_expired_job)
+     and h.status = 'released'
+     and l.operation_type = 'release';
+  if v_released_count <> 3 then
+    raise exception 'Expected exactly one release ledger entry per terminal credited job';
+  end if;
+end;
+$terminal_worker_credit_release_test$;
+
+select 'terminal worker credit release checks passed' as result;
+
