@@ -1,6 +1,5 @@
 """Privacy-minimizing site visit counter backed by Supabase RPCs."""
 import hashlib
-import re
 from datetime import datetime, timezone
 from uuid import UUID
 
