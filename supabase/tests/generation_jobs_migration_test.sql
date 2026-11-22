@@ -2155,3 +2155,180 @@ end;
 $provider_budget_admission_test$;
 
 select 'provider budget admission checks passed' as result;
+
+
+-- Global provider budgets serialize admission across distinct jobs and retain
+-- ambiguous reservations across worker lease expiry and UTC day boundaries.
+do $global_provider_budget_reservations_test$
+declare
+  v_job_a uuid := '26262626-2626-4262-8262-262626262626';
+  v_job_b uuid := '27272727-2727-4272-8272-272727272727';
+  v_job_unknown uuid := '28282828-2828-4282-8282-282828282828';
+  v_job_next_day uuid := '29292929-2929-4292-8292-292929292929';
+  v_allowed boolean;
+  v_count integer;
+  v_status text;
+  v_reserved numeric(20,10);
+begin
+  -- No operator policy means no billable operation is admitted.
+  perform public.configure_provider_budget_policy(null, null);
+
+  insert into public.generation_jobs(
+    id, user_id, job_type, provider, model, idempotency_key,
+    request_hash, pricing_snapshot
+  ) values
+    (v_job_a, '11111111-1111-4111-8111-111111111111',
+     'image_generation', 'global-budget-provider', 'global-budget-model',
+     'global-budget-job-a-001', repeat('a', 64),
+     '{"maximum_provider_cost_usd":"0.10"}'::jsonb),
+    (v_job_b, '11111111-1111-4111-8111-111111111111',
+     'image_generation', 'global-budget-provider', 'global-budget-model',
+     'global-budget-job-b-001', repeat('b', 64),
+     '{"maximum_provider_cost_usd":"0.10"}'::jsonb),
+    (v_job_unknown, '11111111-1111-4111-8111-111111111111',
+     'image_generation', 'global-budget-provider', 'global-budget-model',
+     'global-budget-job-unknown-001', repeat('c', 64),
+     '{"maximum_provider_cost_usd":"0.05"}'::jsonb),
+    (v_job_next_day, '11111111-1111-4111-8111-111111111111',
+     'image_generation', 'global-budget-provider', 'global-budget-model',
+     'global-budget-job-next-day-001', repeat('d', 64),
+     '{"maximum_provider_cost_usd":"0.05"}'::jsonb);
+
+  update public.generation_jobs
+     set status = 'running', lease_owner = 'global-budget-worker',
+         lease_expires_at = now() + interval '120 seconds',
+         heartbeat_at = now(), updated_at = now()
+   where id in (v_job_a, v_job_b, v_job_unknown, v_job_next_day);
+
+  select public.authorize_generation_provider_operation(v_job_a, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from false then
+    raise exception 'Disabled global provider budget policy admitted a billable call';
+  end if;
+
+  -- Daily limit 0.20 USD and outstanding exposure limit 0.15 USD.
+  if not public.configure_provider_budget_policy(0.20, 0.15) then
+    raise exception 'Operator could not configure the global provider budget policy';
+  end if;
+
+  select public.authorize_generation_provider_operation(v_job_a, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from true then
+    raise exception 'First job was not admitted under available global budget';
+  end if;
+
+  -- Idempotent re-admission for the same job reuses one reservation.
+  select public.authorize_generation_provider_operation(v_job_a, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from true then
+    raise exception 'Repeated admission for the same job was not idempotent';
+  end if;
+  select count(*) into v_count
+    from public.generation_provider_cost_reservations
+   where job_id = v_job_a;
+  if v_count <> 1 then
+    raise exception 'Repeated admission created duplicate provider reservations';
+  end if;
+
+  -- A different job cannot overbook the shared outstanding-exposure cap.
+  select public.authorize_generation_provider_operation(v_job_b, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from false then
+    raise exception 'Second distinct job overbooked the global exposure cap';
+  end if;
+
+  -- Known usage settles the reserve and actual spend replaces estimated exposure.
+  perform public.record_generation_provider_cost(
+    v_job_a, '11111111-1111-4111-8111-111111111111',
+    'global-budget-known-operation-001', 'global-budget-provider', 'global-budget-model',
+    'global-budget-usage-known-001', 0.04, 'reported', 10, 10, 20, 'token', '{}'::jsonb
+  );
+  select status into v_status
+    from public.generation_provider_cost_reservations where job_id = v_job_a;
+  if v_status <> 'settled' then
+    raise exception 'Known provider cost did not settle its reservation';
+  end if;
+
+  select public.authorize_generation_provider_operation(v_job_b, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from true then
+    raise exception 'Second job was not admitted after the first reserve settled';
+  end if;
+
+  -- Unknown usage keeps the full reservation; it is never treated as zero.
+  select public.authorize_generation_provider_operation(v_job_unknown, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from true then
+    raise exception 'Unknown-cost fixture could not reserve remaining exposure';
+  end if;
+  perform public.record_generation_provider_cost(
+    v_job_unknown, '11111111-1111-4111-8111-111111111111',
+    'global-budget-unknown-operation-001', 'global-budget-provider', 'global-budget-model',
+    null, null, 'unknown', null, null, null, 'unknown',
+    '{"reason":"provider usage unavailable"}'::jsonb
+  );
+  select status, reserved_cost_usd into v_status, v_reserved
+    from public.generation_provider_cost_reservations
+   where job_id = v_job_unknown;
+  if v_status <> 'unknown' or v_reserved <> 0.05 then
+    raise exception 'Unknown provider cost released or reduced its reservation';
+  end if;
+
+  -- Expiring the worker lease does not release uncertain provider exposure.
+  update public.generation_jobs
+     set lease_expires_at = now() - interval '1 second'
+   where id = v_job_unknown;
+  select public.authorize_generation_provider_operation(v_job_unknown, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from false then
+    raise exception 'Expired worker lease was admitted';
+  end if;
+  select status into v_status
+    from public.generation_provider_cost_reservations
+   where job_id = v_job_unknown;
+  if v_status <> 'unknown' then
+    raise exception 'Worker lease expiry incorrectly released an unknown-cost reservation';
+  end if;
+
+  -- A new UTC day resets daily spend, but outstanding reservations from the
+  -- previous day still count against the concurrent exposure ceiling.
+  update public.generation_provider_cost_events
+     set created_at = (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC')
+                      - interval '1 second'
+   where job_id = v_job_a;
+  update public.generation_provider_cost_reservations
+     set created_at = now() - interval '1 day'
+   where job_id in (v_job_b, v_job_unknown);
+
+  if not public.configure_provider_budget_policy(0.20, 0.30) then
+    raise exception 'Could not adjust test policy for UTC rollover assertion';
+  end if;
+
+  select public.authorize_generation_provider_operation(v_job_next_day, 'global-budget-worker')
+    into v_allowed;
+  if v_allowed is distinct from true then
+    raise exception 'Previous-day known spend incorrectly consumed the new UTC daily budget';
+  end if;
+
+  -- Reservations created before midnight remain in the exposure calculation.
+  if (select coalesce(sum(reserved_cost_usd), 0)
+        from public.generation_provider_cost_reservations
+       where status in ('reserved', 'unknown')) < 0.15 then
+    raise exception 'Outstanding prior-day reservations disappeared at UTC rollover';
+  end if;
+
+  if has_function_privilege('authenticated',
+       'public.configure_provider_budget_policy(numeric,numeric)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.configure_provider_budget_policy(numeric,numeric)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.resolve_generation_provider_reservation(uuid,text,text,numeric,text)', 'EXECUTE') then
+    raise exception 'Global provider budget operator RPC privileges are not least-privilege';
+  end if;
+
+  -- Leave the disposable test database fail-closed after this test block.
+  perform public.configure_provider_budget_policy(null, null);
+end;
+$global_provider_budget_reservations_test$;
+
+select 'global provider budget reservation checks passed' as result;
