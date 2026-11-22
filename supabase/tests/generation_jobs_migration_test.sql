@@ -2534,6 +2534,13 @@ declare
   v_after_revision record;
   v_lot_count integer;
 begin
+  if has_function_privilege('authenticated',
+       'public.grant_user_credit_entitlement(uuid,text,text,text,jsonb)', 'EXECUTE')
+     or has_table_privilege('service_role', 'public.credit_entitlement_policies', 'INSERT')
+     or has_table_privilege('service_role', 'public.credit_entitlement_policies', 'UPDATE')
+     or has_table_privilege('service_role', 'public.credit_entitlement_events', 'INSERT') then
+    raise exception 'Entitlement policy or event storage has excessive runtime privileges';
+  end if;
   insert into auth.users(id) values (v_user);
   insert into public.credit_entitlement_policies(
     policy_code, policy_version, lot_type, amount, expires_in_seconds, enabled
