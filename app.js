@@ -32,6 +32,7 @@
   const refreshAuthUI = session => {
     authSession = session;
     const adminPanel = $("#adminPanel");
+    adminUiAuthorized = false;
     if (adminPanel) adminPanel.hidden = true;
     const user = session && session.user;
     authGate.hidden = true;
@@ -227,6 +228,7 @@ const movieHistoryStyle = document.createElement("style");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
 
 
+  let adminUiAuthorized = false;
   const getApiBase = () => (localStorage.getItem(API_URL_KEY) || DEFAULT_API_BASE).trim().replace(/\/+$/, "");
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
@@ -236,10 +238,11 @@ const movieHistoryStyle = document.createElement("style");
       const data = await apiRequest("/api/auth/me");
       if (authSession?.user?.id !== userId) return;
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
-      panel.hidden = data.role !== "admin";
-      if (data.role === "admin") loadAdminAnalytics();
+      adminUiAuthorized = data.role === "admin";
+      panel.hidden = !adminUiAuthorized;
+      if (adminUiAuthorized) loadAdminAnalytics();
     } catch {
-      if (authSession?.user?.id === userId) panel.hidden = true;
+      if (authSession?.user?.id === userId) { adminUiAuthorized = false; panel.hidden = true; }
     }
   };
   const apiRequest = async (path, options = {}) => {
@@ -330,10 +333,11 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   $("#refreshSiteAnalytics")?.addEventListener("click", loadAdminAnalytics);
-  const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  const labels = {"admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
+    if (view.startsWith("admin-") && !adminUiAuthorized) { view = "account"; window.location.hash = "account"; }
     $$(".view").forEach(el => el.classList.toggle("active", el.id === "view-" + view));
     $$(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
     $("#crumbCurrent").textContent = labels[view];
