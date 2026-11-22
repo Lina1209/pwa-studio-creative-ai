@@ -31,7 +31,7 @@ begin
   end if;
 
   -- Exhausted jobs whose worker disappeared become terminal instead of looping forever.
-  update public.generation_jobs
+  update public.generation_jobs as expired
      set status = 'failed',
          last_error_code = 'worker_lease_expired',
          lease_owner = null,
@@ -39,9 +39,9 @@ begin
          heartbeat_at = null,
          completed_at = now(),
          updated_at = now()
-   where status = 'running'
-     and lease_expires_at <= now()
-     and attempt_count >= max_attempts;
+   where expired.status = 'running'
+     and expired.lease_expires_at <= now()
+     and expired.attempt_count >= expired.max_attempts;
 
   return query
   with candidate as (
