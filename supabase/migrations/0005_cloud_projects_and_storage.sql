@@ -27,6 +27,19 @@ alter table public.projects add column if not exists settings jsonb not null def
 alter table public.projects add column if not exists created_at timestamptz not null default now();
 alter table public.projects add column if not exists updated_at timestamptz not null default now();
 
+-- Existing installations may already have a projects table. Do not silently
+-- leave owner_id nullable: stop with an actionable error if legacy rows need
+-- an explicit ownership backfill before enabling the stricter constraint.
+do $
+begin
+  if exists (select 1 from public.projects where owner_id is null) then
+    raise exception 'Migration 0005 cannot enforce project ownership: public.projects contains rows with NULL owner_id. Backfill each row to its verified auth.users owner, then rerun this migration.';
+  end if;
+end;
+$;
+
+alter table public.projects alter column owner_id set not null;
+
 create index if not exists projects_owner_type_updated_idx
   on public.projects(owner_id, project_type, updated_at desc);
 
@@ -48,8 +61,8 @@ values (
   262144000,
   array[
     'image/jpeg','image/png','image/webp','image/gif',
-    'audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/webm','application/pdf',
-    'video/mp4','video/webm','video/quicktime'
+    'audio/mpeg','audio/wav','audio/mp4','audio/ogg','audio/webm',
+    'video/mp4','video/webm','video/quicktime','application/pdf'
   ]
 )
 on conflict (id) do update set
@@ -60,7 +73,7 @@ on conflict (id) do update set
 drop policy if exists "Users read own studio media" on storage.objects;
 create policy "Users read own studio media" on storage.objects
   for select to authenticated
-  using (bucket_id = 'studio-media' and (storage.foldername(name))[1] = auth.uid()::text);
+  using (bucket_id in ('studio-media','studio-exports') and (storage.foldername(name))[1] = auth.uid()::text);
 
 drop policy if exists "Users upload own studio media" on storage.objects;
 create policy "Users upload own studio media" on storage.objects
