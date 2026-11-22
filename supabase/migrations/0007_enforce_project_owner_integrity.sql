@@ -12,7 +12,7 @@ $$;
 
 alter table public.projects alter column owner_id set not null;
 
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_constraint
@@ -24,4 +24,4 @@ begin
       foreign key (owner_id) references auth.users(id) on delete cascade;
   end if;
 end;
-$;
+$$;
