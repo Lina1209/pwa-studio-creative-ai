@@ -1,6 +1,9 @@
 /* Privacy-minimizing aggregate page-view counter. */
 (() => {
-  const apiBase = (window.PWA_API_BASE || "").replace(/\/$/, "");
+  const configuredBase = (() => {
+    try { return localStorage.getItem("pwa-studio-api-url") || ""; } catch (_) { return ""; }
+  })();
+  const apiBase = (window.PWA_API_BASE || configuredBase || "https://pwa-studio-creative-ai.onrender.com").trim().replace(/\/$/, "");
   const allowedRoutes = new Set(["home","create","movie","editor","prompts","library","account","voice","scenes","assistant","guide","rules","settings"]);
   const route = () => {
     const active = document.querySelector(".view.active");
