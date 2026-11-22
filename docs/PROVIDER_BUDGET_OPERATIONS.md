@@ -49,7 +49,7 @@ Legacy unknown-cost events that cannot be associated with a valid per-job USD ce
 
 The SQL integration suite covers disabled-policy denial, idempotent reservation, a second job being denied by the shared exposure limit, known-cost settlement, unknown-cost retention, lease-expiry retention, UTC daily spend rollover, and least-privilege RPC grants.
 
-These checks are committed as test source; they are **not reported as executed** until the repository's PostgreSQL migration test workflow returns a successful run.
+The repository quality workflow completed successfully in [run #920](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45062225526) for the reviewed PR head. It passed backend unit tests, the PostgreSQL migration suite (including migration 0026), the two-session concurrent provider-budget admission check, and the existing worker/journal/quote/cost-event concurrency checks. This validates the disposable CI database only; it does not mean a production migration or budget policy was applied.
 
 Before enabling generation in production:
 
