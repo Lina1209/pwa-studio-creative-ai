@@ -339,3 +339,95 @@ jobs:
           test "$EVENT_COUNT" = "1"
           rm -f "$FIRST_OUTPUT"
           trap - EXIT
+
+
+      - name: Verify concurrent source-separated credit grants are idempotent
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          USER_ID="77777777-7777-4777-8777-777777777777"
+          "${DB[@]}" -c "insert into auth.users(id) values ('$USER_ID') on conflict (id) do nothing;"
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select replayed from public.grant_user_credit_lot(
+              '$USER_ID', 10, 'bonus', 'concurrent-grant-source',
+              'concurrent-credit-grant-001', '2099-01-01T00:00:00Z',
+              '{\"test_case\":\"concurrent-grant-replay\"}'::jsonb
+            );
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+          sleep 1
+          SECOND_RESULT="$("${DB[@]}" -c "select replayed from public.grant_user_credit_lot(
+            '$USER_ID', 10, 'bonus', 'concurrent-grant-source',
+            'concurrent-credit-grant-001', '2099-01-01T00:00:00Z',
+            '{\"test_case\":\"concurrent-grant-replay\"}'::jsonb
+          );")"
+          wait "$FIRST_PID"
+          FIRST_RESULT="$(grep -E '^(t|f)$' "$FIRST_OUTPUT" | head -n 1)"
+          test "$FIRST_RESULT" = "f"
+          test "$SECOND_RESULT" = "t"
+          LOT_COUNT="$("${DB[@]}" -c "select count(*) from public.credit_lots where user_id = '$USER_ID' and idempotency_key = 'concurrent-credit-grant-001';")"
+          GRANT_COUNT="$("${DB[@]}" -c "select count(*) from public.credit_ledger where user_id = '$USER_ID' and operation_key = 'grant:concurrent-credit-grant-001';")"
+          AVAILABLE="$("${DB[@]}" -c "select available_credits from public.credit_wallets where user_id = '$USER_ID';")"
+          test "$LOT_COUNT" = "1"
+          test "$GRANT_COUNT" = "1"
+          test "$AVAILABLE" = "10"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
+
+      - name: Verify concurrent reservations cannot overspend one wallet
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          DB=(psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -At)
+          USER_ID="77777777-7777-4777-8777-777777777777"
+          JOB_A="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '$USER_ID', null, 'image_generation', 'credit-race-provider', 'credit-race-model',
+            'concurrent-credit-reserve-job-a', repeat('a', 64),
+            '{\"prompt\":\"concurrent reserve A\"}'::jsonb, '{}'::jsonb
+          );")"
+          JOB_B="$("${DB[@]}" -c "select job_id from public.create_generation_job_with_outbox(
+            '$USER_ID', null, 'image_generation', 'credit-race-provider', 'credit-race-model',
+            'concurrent-credit-reserve-job-b', repeat('b', 64),
+            '{\"prompt\":\"concurrent reserve B\"}'::jsonb, '{}'::jsonb
+          );")"
+          test -n "$JOB_A"
+          test -n "$JOB_B"
+          FIRST_OUTPUT="$(mktemp)"
+          "${DB[@]}" -c "begin;
+            select hold_id from public.reserve_job_credits(
+              '$USER_ID', '$JOB_A', 7, 'concurrent-credit-reserve-a',
+              '{\"price_version\":\"race-v1\",\"approved_maximum\":7}'::jsonb
+            );
+            select pg_sleep(4);
+            commit;" > "$FIRST_OUTPUT" &
+          FIRST_PID=$!
+          trap 'kill "$FIRST_PID" 2>/dev/null || true; rm -f "$FIRST_OUTPUT"' EXIT
+          sleep 1
+          if SECOND_ERROR="$("${DB[@]}" -c "select hold_id from public.reserve_job_credits(
+            '$USER_ID', '$JOB_B', 7, 'concurrent-credit-reserve-b',
+            '{\"price_version\":\"race-v1\",\"approved_maximum\":7}'::jsonb
+          );" 2>&1)"; then
+            echo "A second concurrent reservation unexpectedly overspent the wallet."
+            echo "$SECOND_ERROR"
+            exit 1
+          fi
+          echo "$SECOND_ERROR" | grep -qi "insufficient"
+          wait "$FIRST_PID"
+          HELD_COUNT="$("${DB[@]}" -c "select count(*) from public.credit_holds where user_id = '$USER_ID' and status = 'held';")"
+          ALLOCATION_COUNT="$("${DB[@]}" -c "select count(*) from public.credit_hold_allocations a join public.credit_holds h on h.id = a.hold_id where h.user_id = '$USER_ID' and a.status = 'held';")"
+          AVAILABLE="$("${DB[@]}" -c "select available_credits from public.credit_wallets where user_id = '$USER_ID';")"
+          RESERVED="$("${DB[@]}" -c "select reserved_credits from public.credit_wallets where user_id = '$USER_ID';")"
+          JOB_B_HOLDS="$("${DB[@]}" -c "select count(*) from public.credit_holds where job_id = '$JOB_B';")"
+          test "$HELD_COUNT" = "1"
+          test "$ALLOCATION_COUNT" = "1"
+          test "$AVAILABLE" = "3"
+          test "$RESERVED" = "7"
+          test "$JOB_B_HOLDS" = "0"
+          rm -f "$FIRST_OUTPUT"
+          trap - EXIT
