@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     ai_request_timeout_seconds: int = Field(default=90, ge=5, le=300)
     ai_max_retries: int = Field(default=1, ge=0, le=3)
     ai_max_output_tokens: int = Field(default=2048, ge=1, le=8192)
+    ai_max_input_bytes: int = Field(default=30000, ge=256, le=200000)
     ai_max_requests_per_minute_per_user: int = Field(default=10, ge=1, le=120)
     ai_max_requests_per_day_per_user: int = Field(default=100, ge=1, le=10000)
     ai_max_requests_per_day_global: int = Field(default=2000, ge=1, le=100000)
