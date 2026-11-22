@@ -56,6 +56,10 @@ begin
   get diagnostics v_inserted = row_count;
 
   if v_inserted = 1 then
+    -- Keep only short-lived deduplication material; lifetime aggregates remain.
+    delete from public.site_visit_events where created_at < now() - interval '7 days';
+    delete from public.site_visit_daily_visitors where created_at < now() - interval '2 days';
+
     insert into public.site_visit_totals(singleton, total_page_views, updated_at)
     values (true, 1, now())
     on conflict (singleton) do update
