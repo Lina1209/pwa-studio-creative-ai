@@ -139,7 +139,7 @@ begin
            coalesce(lam.mismatch_count, 0)::bigint as lot_allocation_mismatches,
            e.balance_available_after as ledger_available,
            e.balance_reserved_after as ledger_reserved
-      from bounded_users b
+      from page_users b
       left join wallets w using (user_id)
       left join lots l using (user_id)
       left join holds h using (user_id)
@@ -168,9 +168,10 @@ begin
           and c.hold_allocation_mismatches = 0
           and c.lot_allocation_mismatches = 0
           and c.ledger_available is not distinct from c.wallet_available
-          and c.ledger_reserved is not distinct from c.wallet_reserved) as healthy
-    from combined c
-   order by c.user_id;
+          and c.ledger_reserved is not distinct from c.wallet_reserved) as healthy,
+          m.has_more
+     from combined c cross join page_meta m
+    order by c.user_id;
 end;
 $reconcile$;
 
