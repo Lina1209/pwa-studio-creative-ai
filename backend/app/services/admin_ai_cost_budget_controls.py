@@ -30,7 +30,7 @@ def _rpc(settings: Settings, name: str, payload: dict[str, Any]) -> Any:
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise AIBudgetControlNotConfigured("AI budget controls are not configured.")
     key = settings.supabase_service_role_key
-    headers = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"}
+    headers = {"apikey": key, "Content-Type": "application/json", "Accept": "application/json"}\n    if key.startswith("eyJ"):\n        headers["Authorization"] = f"Bearer {key}"
     try:
         with httpx.Client(timeout=10.0) as client:
             response = client.post(
