@@ -411,7 +411,7 @@ def load_pricing_catalog(raw_json: str) -> PricingCatalog:
                 max_quantity=item.get("max_quantity", 1),
                 max_provider_cost_usd_per_unit=Decimal(raw_cost_ceiling) if raw_cost_ceiling is not None else None,
             ))
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, InvalidOperation) as exc:
             if isinstance(exc, PricingError):
                 raise
             raise PricingError("Server pricing catalog contains an invalid rule.") from exc
