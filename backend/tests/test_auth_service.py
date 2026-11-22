@@ -153,3 +153,19 @@ def test_malformed_owner_uuid_configuration_fails_closed(monkeypatch):
     user = auth.get_current_user(credentials)
 
     assert user.role == "creator"
+
+
+def test_oversized_bearer_token_is_rejected_before_jwks_lookup(monkeypatch):
+    settings = Settings(supabase_url="https://project.example.supabase.co")
+    monkeypatch.setattr(auth, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        auth,
+        "_jwks_client",
+        lambda _url: (_ for _ in ()).throw(AssertionError("JWKS must not be contacted")),
+    )
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="x" * 8193)
+
+    with pytest.raises(HTTPException) as error:
+        auth.get_current_user(credentials)
+
+    assert error.value.status_code == 401
