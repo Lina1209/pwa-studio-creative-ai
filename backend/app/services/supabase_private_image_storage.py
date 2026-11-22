@@ -228,24 +228,42 @@ class SupabasePrivateImageStorage:
         if not isinstance(bucket_info, dict) or bucket_info.get("public") is not False:
             raise GenerationResultStorageError("object_bucket_must_be_private")
 
-        listing_response = await self._request(
-            "POST",
-            f"{self._base_url}/object/list/{encoded_bucket}",
-            json={"prefix": f"{owner_id}/generated", "limit": 1000, "offset": 0},
-        )
-        listing = listing_response.json()
-        if not isinstance(listing, list):
-            raise SupabaseStorageAdapterError("storage_metadata_invalid")
-        if len(listing) >= 1000:
-            # Do not report a false "missing object" when the requested file
-            # may be beyond the bounded first page of a large owner folder.
-            raise SupabaseStorageAdapterError("storage_verification_listing_limit_reached")
-        matches = [
-            row for row in listing
-            if isinstance(row, dict) and row.get("name") == filename
-        ]
+        matches = []
+        page_size = 100
+        max_pages = 10
+        for page in range(max_pages):
+            listing_response = await self._request(
+                "POST",
+                f"{self._base_url}/object/list/{encoded_bucket}",
+                json={
+                    "prefix": f"{owner_id}/generated",
+                    "limit": page_size,
+                    "offset": page * page_size,
+                    "sortBy": {"column": "created_at", "order": "asc"},
+                },
+            )
+            listing = listing_response.json()
+            if not isinstance(listing, list):
+                raise SupabaseStorageAdapterError("storage_metadata_invalid")
+            if any(not isinstance(row, dict) for row in listing):
+                raise SupabaseStorageAdapterError("storage_metadata_invalid")
+            matches.extend(row for row in listing if row.get("name") == filename)
+            if len(matches) > 1:
+                raise GenerationResultStorageError("duplicate_storage_object_metadata")
+            if len(matches) == 1:
+                break
+            if len(listing) < page_size:
+                break
+        else:
+            # Do not report a false missing result when the target may be
+            # beyond this bounded verification window.
+            raise SupabaseStorageAdapterError(
+                "storage_verification_listing_limit_reached", retryable=True
+            )
         if len(matches) != 1:
-            raise SupabaseStorageAdapterError("storage_object_metadata_missing")
+            raise SupabaseStorageAdapterError(
+                "storage_object_metadata_missing", retryable=True
+            )
         metadata = matches[0].get("metadata")
         if not isinstance(metadata, dict):
             raise SupabaseStorageAdapterError("storage_object_metadata_invalid")
