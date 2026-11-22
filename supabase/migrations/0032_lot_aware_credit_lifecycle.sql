@@ -313,6 +313,8 @@ declare
   v_entry public.credit_ledger%rowtype;
   v_ledger_key text;
   v_metadata jsonb;
+  v_lot_available_total bigint;
+  v_lot_reserved_total bigint;
 begin
   if p_user_id is null or p_amount is null or p_amount <= 0
      or p_amount > 1000000000000
@@ -338,6 +340,15 @@ begin
   on conflict (user_id) do nothing;
   select * into v_wallet from public.credit_wallets
    where user_id = p_user_id for update;
+  select coalesce(sum(available_credits), 0),
+         coalesce(sum(reserved_credits), 0)
+    into v_lot_available_total, v_lot_reserved_total
+    from public.credit_lots where user_id = p_user_id;
+  if v_lot_available_total <> v_wallet.available_credits
+     or v_lot_reserved_total <> v_wallet.reserved_credits then
+    raise exception 'Credit lot totals do not reconcile with wallet before grant'
+      using errcode = '23514';
+  end if;
 
   select * into v_lot from public.credit_lots
    where user_id = p_user_id and idempotency_key = p_idempotency_key;
