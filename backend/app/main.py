@@ -1,6 +1,6 @@
 import hashlib
 import logging
-from datetime import date
+from datetime import date, datetime
 import json
 from uuid import UUID, uuid4
 
@@ -18,6 +18,11 @@ from app.services.ai_admission import (
     AIAdmissionUnavailable,
     reserve_ai_request,
     finish_ai_request,
+)
+from app.services.admin_audit_service import (
+    AdminAuditUnavailable,
+    get_admin_audit_events,
+    record_admin_audit_event,
 )
 from app.services.admin_financial_reporting import (
     ProviderCostReportError,
@@ -374,6 +379,37 @@ def admin_provider_cost_report(
         ) from exc
     response.headers["Cache-Control"] = "private, no-store"
     return report
+
+
+
+@app.get(f"{settings.api_prefix}/admin/audit-events")
+def admin_audit_events(
+    response: Response,
+    before: datetime | None = None,
+    limit: int = 100,
+    user: StudioUser = Depends(require_permission("admin.security.audit.read")),
+):
+    """Read a bounded, secret-free page from the append-only admin journal."""
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=422, detail="Audit page limit must be between 1 and 200.")
+    if before is not None and before.tzinfo is None:
+        raise HTTPException(status_code=422, detail="Audit cursor must include a timezone.")
+    try:
+        # Identity comes only from the verified JWT principal, never request input.
+        record_admin_audit_event(
+            settings,
+            actor_user_id=UUID(user.user_id),
+            action="admin.access",
+            outcome="allowed",
+            resource_type="platform",
+            reason="Viewed administrative audit journal",
+        )
+        events = get_admin_audit_events(settings, before=before, limit=limit)
+    except AdminAuditUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Administrative audit journal is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"events": events, "limit": limit, "next_before": events[-1]["occurred_at"] if len(events) == limit else None}
+
 
 
 def _run_admitted_ai(operation: str, user_id: str, call):
