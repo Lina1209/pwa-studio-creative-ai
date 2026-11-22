@@ -1521,10 +1521,13 @@ const movieHistoryStyle = document.createElement("style");
             frame:project.frame||"16:9",visual_style:project.visualStyle||"Кинематографичный реализм",language:"Русский"
           })});
           if(authSession?.user?.id!==userId)return;
-          inputs.storyboard.value=JSON.stringify({scenes:sceneData.scenes.map((scene,index)=>({
-            ...scene,frames:result.scenes[index].frames
-          }))},null,2);
-          storyboardStatus.textContent="✓ Подготовлена покадровая раскадровка: "+result.scenes.reduce((n,scene)=>n+scene.frames.length,0)+" кадров в "+result.scenes.length+" сценах. Проверьте и сохраните черновик.";
+          inputs.storyboard.value=JSON.stringify({
+            character_bible:result.characters,
+            scenes:sceneData.scenes.map((scene,index)=>({
+              ...scene,frames:result.scenes[index].frames
+            }))
+          },null,2);
+          storyboardStatus.textContent="✓ Создан паспорт внешности "+result.characters.length+" персонажей и "+result.scenes.reduce((n,scene)=>n+scene.frames.length,0)+" кадров в "+result.scenes.length+" сценах. Проверьте и сохраните черновик.";
         }catch(error){if(authSession?.user?.id===userId)storyboardStatus.textContent="Не удалось создать раскадровку: "+error.message;}
         finally{storyboardButton.disabled=false;storyboardButton.textContent="🎞 Создать покадровую раскадровку";}
       });
