@@ -375,6 +375,11 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
                 <article><span>Всего</span><strong id="adminWalletTotal">—</strong><small>Доступно + резерв</small></article>
               </div>
               <p class="helper-text" id="adminWalletDetails">Количество активных резервов и партий появится после проверки.</p>
+              <div class="table-scroll">
+                <table class="admin-audit-table"><thead><tr><th>Дата UTC</th><th>Операция</th><th>Изменение доступно</th><th>Изменение резерва</th><th>Баланс после</th></tr></thead><tbody id="adminCreditLedgerRows"></tbody></table>
+              </div>
+              <p class="helper-text" id="adminCreditLedgerStatus" role="status">Журнал кредитных единиц загружается отдельно; денежные платежи здесь не отображаются.</p>
+              <button class="secondary-button" id="loadMoreAdminCreditLedger" type="button" hidden>Загрузить ещё</button>
             </article>
           </div>
         </section>
