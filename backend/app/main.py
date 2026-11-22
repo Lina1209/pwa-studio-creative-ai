@@ -396,6 +396,7 @@ def admin_audit_events(
         raise HTTPException(status_code=422, detail="Audit cursor must include a timezone.")
     try:
         # Identity comes only from the verified JWT principal, never request input.
+        events = get_admin_audit_events(settings, before=before, limit=limit)
         record_admin_audit_event(
             settings,
             actor_user_id=UUID(user.user_id),
@@ -404,7 +405,6 @@ def admin_audit_events(
             resource_type="platform",
             reason="Viewed administrative audit journal",
         )
-        events = get_admin_audit_events(settings, before=before, limit=limit)
     except AdminAuditUnavailable as exc:
         raise HTTPException(status_code=503, detail="Administrative audit journal is temporarily unavailable.") from exc
     response.headers["Cache-Control"] = "private, no-store"
