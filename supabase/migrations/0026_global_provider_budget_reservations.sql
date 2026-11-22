@@ -174,8 +174,7 @@ begin
            else 'Known provider cost evidence was recorded; reservation settled.'
          end,
          resolved_by = 'provider-cost-ledger'
-   where job_id = new.job_id
-     and status in ('reserved', 'unknown');
+   where job_id = new.job_id;
 
   return new;
 end;
