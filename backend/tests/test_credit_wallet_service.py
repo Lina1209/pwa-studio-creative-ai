@@ -58,6 +58,19 @@ def test_wallet_uses_one_atomic_owner_scoped_rpc_and_returns_history(monkeypatch
             "amount": 30, "status": "held", "created_at": "2026-11-23T00:00:00Z",
             "quote_snapshot": {"private": "must not be returned"},
         }],
+        "lots": [{
+            "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "lot_type": "purchased", "granted_credits": 150,
+            "available_credits": 120, "reserved_credits": 30,
+            "expires_at": None, "created_at": "2026-11-22T00:00:00Z",
+            "source_reference": "must not be returned",
+        }],
+        "allocations": [{
+            "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            "hold_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "lot_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "amount": 30, "status": "held", "created_at": "2026-11-23T00:00:00Z",
+        }],
         "ledger": [{
             "id": 9, "operation_type": "reserve", "operation_key": "reserve:job-1234",
             "delta_available": -30, "delta_reserved": 30,
@@ -74,6 +87,10 @@ def test_wallet_uses_one_atomic_owner_scoped_rpc_and_returns_history(monkeypatch
     assert result.holds[0]["amount"] == 30
     assert "quote_snapshot" not in result.holds[0]
     assert result.ledger[0]["delta_available"] == -30
+    assert result.lots[0]["lot_type"] == "purchased"
+    assert result.lots[0]["reserved_credits"] == 30
+    assert result.allocations[0]["amount"] == 30
+    assert "source_reference" not in result.lots[0]
     assert len(client.calls) == 1
     url, payload, headers = client.calls[0]
     assert url.endswith("/rpc/get_credit_wallet_snapshot")
@@ -89,6 +106,8 @@ def test_missing_wallet_is_zero_balance_not_an_implicit_grant(monkeypatch):
         "reserved_credits": 0,
         "holds": [],
         "ledger": [],
+        "lots": [],
+        "allocations": [],
     }])
     monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
 
@@ -125,6 +144,8 @@ def test_invalid_wallet_balance_is_rejected(monkeypatch):
         "reserved_credits": 0,
         "holds": [],
         "ledger": [],
+        "lots": [],
+        "allocations": [],
     }])
     monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
 
@@ -140,6 +161,8 @@ def test_wallet_snapshot_identity_mismatch_is_rejected(monkeypatch):
         "reserved_credits": 0,
         "holds": [],
         "ledger": [],
+        "lots": [],
+        "allocations": [],
     }])
     monkeypatch.setattr(wallet.httpx, "Client", lambda timeout: client)
 
