@@ -1,11 +1,18 @@
 import logging
 import threading
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
+from uuid import UUID, uuid4
 
 from litellm import completion
 
 from app.core.config import Settings
+from app.services.ai_cost_admission import (
+    AIProviderBudgetUnavailable,
+    mark_ai_provider_cost_unknown,
+    reserve_ai_provider_cost,
+    settle_ai_provider_cost,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -56,19 +63,9 @@ def _usage_value(usage, name: str) -> int | None:
     return value if isinstance(value, int) and value >= 0 else None
 
 
-def _response_cost(response) -> Decimal | None:
-    hidden = getattr(response, "_hidden_params", None) or {}
-    value = hidden.get("response_cost") if isinstance(hidden, dict) else None
-    if value is None:
-        return None
-    try:
-        cost = Decimal(str(value))
-        return cost if cost.is_finite() and cost >= 0 else None
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
+def ask_ai(
+    settings: Settings, messages: list[dict[str, str]], *, user_id: UUID
+) -> AIResult:
     model, api_key = _provider_credentials(settings)
     provider = settings.ai_provider.strip().lower()
     if not api_key:
@@ -81,7 +78,14 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
     if not acquired:
         raise AIOverloadedError("AI capacity is currently full.")
 
+    reservation = None
+    settled = False
+    request_id = uuid4()
     try:
+        # Reserve worst-case USD exposure atomically before the provider call.
+        reservation = reserve_ai_provider_cost(
+            settings, user_id=user_id, request_id=request_id, messages=messages
+        )
         completion_options = {
             "model": model,
             "messages": messages,
@@ -93,7 +97,7 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
         try:
             response = completion(**completion_options)
         except Exception as exc:
-            # Log diagnostic metadata only; never log prompts, credentials, or raw provider errors.
+            # A timeout may happen after the provider accepted and billed the request.
             status_code = getattr(exc, "status_code", None)
             logger.error(
                 "AI provider request failed: provider=%s model=%s error_type=%s status_code=%s",
@@ -104,26 +108,41 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
             )
             raise
 
+        usage = getattr(response, "usage", None)
+        input_tokens = _usage_value(usage, "prompt_tokens")
+        output_tokens = _usage_value(usage, "completion_tokens")
+        total_tokens = _usage_value(usage, "total_tokens")
+        cost = settle_ai_provider_cost(
+            settings, reservation,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+        )
+        settled = True
         choices = getattr(response, "choices", None)
         message = getattr(choices[0], "message", None) if choices else None
         content = getattr(message, "content", None)
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("The AI provider returned an empty response.")
 
-        usage = getattr(response, "usage", None)
-        input_tokens = _usage_value(usage, "prompt_tokens")
-        output_tokens = _usage_value(usage, "completion_tokens")
-        total_tokens = _usage_value(usage, "total_tokens")
         actual_model = getattr(response, "model", None) or model
-        cost = _response_cost(response)
         return AIResult(
             text=content.strip(),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cost_usd=cost,
-            cost_source="litellm_response_cost" if cost is not None else None,
+            cost_source="server_peak_price_estimate" if cost is not None else None,
             actual_model=str(actual_model),
+            request_id=request_id,
         )
+    except Exception:
+        if reservation is not None and not settled:
+            try:
+                mark_ai_provider_cost_unknown(settings, reservation)
+            except AIProviderBudgetUnavailable:
+                logger.error(
+                    "AI provider cost reservation remains unresolved: provider=%s model=%s",
+                    provider, model,
+                )
+        raise
     finally:
         gate.release()
