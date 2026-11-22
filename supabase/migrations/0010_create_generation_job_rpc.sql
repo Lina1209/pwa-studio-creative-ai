@@ -34,13 +34,17 @@ begin
   if p_user_id is null then
     raise exception 'p_user_id is required' using errcode = '22023';
   end if;
-  if p_provider is null or length(btrim(p_provider)) = 0
-     or p_model is null or length(btrim(p_model)) = 0 then
-    raise exception 'provider and model are required' using errcode = '22023';
+  if p_provider is null or length(btrim(p_provider)) not between 1 and 100
+     or p_model is null or length(btrim(p_model)) not between 1 and 200 then
+    raise exception 'provider and model must be non-empty and within their length limits' using errcode = '22023';
   end if;
   if jsonb_typeof(coalesce(p_request_snapshot, '{}'::jsonb)) <> 'object'
      or jsonb_typeof(coalesce(p_pricing_snapshot, '{}'::jsonb)) <> 'object' then
     raise exception 'request_snapshot and pricing_snapshot must be JSON objects' using errcode = '22023';
+  end if;
+  if octet_length(coalesce(p_request_snapshot, '{}'::jsonb)::text) > 65536
+     or octet_length(coalesce(p_pricing_snapshot, '{}'::jsonb)::text) > 16384 then
+    raise exception 'request_snapshot or pricing_snapshot exceeds the allowed size' using errcode = '22023';
   end if;
 
   insert into public.generation_jobs (
