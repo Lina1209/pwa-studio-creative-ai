@@ -68,7 +68,7 @@ class Settings(BaseSettings):
             or not value
             or len(value) > 100
             or "/" in value
-            or "\\\\" in value
+            or "\\" in value
             or value.strip() != value
         ):
             raise ValueError("Generation storage bucket name is invalid.")
