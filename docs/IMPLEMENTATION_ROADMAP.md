@@ -131,3 +131,10 @@ Done when: users can chat safely, moderation is enforced server-side, and admin 
 ## Platform rules and moderation
 
 The detailed policy and moderation plan is maintained in [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md), including policy taxonomy, layered filters, enforcement ladder, temporary/permanent bans, appeals, audit logging, and privacy requirements. These capabilities are planned and must be enforced server-side; frontend-only filters or hidden buttons do not count as security.
+
+
+## 10. Durable jobs and credit ledger — design prepared
+
+The design contract is documented in [GENERATION_JOBS_AND_LEDGER_DESIGN.md](./GENERATION_JOBS_AND_LEDGER_DESIGN.md).
+
+Current status: design only. No Redis/Celery dependency, worker, job tables, wallet, holds, ledger, or real billing has been deployed. The next implementation step is to define the first provider-backed operation and job/asset contract, then add the database job/outbox schema with ownership/RLS and automated SQL tests. Credit wallet and ledger RPCs follow after transaction semantics and pricing assumptions are reviewed. Existing `ai_usage` remains telemetry only and must never be treated as a credit balance.
