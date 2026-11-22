@@ -1,4 +1,4 @@
--- Disposable PostgreSQL integration test for migrations 0005, 0007 and 0009.
+-- Disposable PostgreSQL integration test for cloud ownership and generation-job migrations.
 -- Run with psql -v ON_ERROR_STOP=1 -f this_file against an empty test database.
 \set ON_ERROR_STOP on
 
@@ -54,12 +54,45 @@ $$;
 \ir ../migrations/0009_generation_jobs_and_outbox.sql
 \ir ../migrations/0010_create_generation_job_rpc.sql
 
+-- Minimal Mini Movie Studio tables matching the production baseline in 0001.
+create table public.studio_projects (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade
+);
+create table public.studio_scenes (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid not null references public.studio_projects(id) on delete cascade,
+  scene_number integer not null default 1,
+  output_path text
+);
+create table public.studio_media (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references public.studio_projects(id) on delete set null,
+  media_type text not null,
+  storage_path text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+\ir ../migrations/0011_link_generation_jobs_to_movie_scenes.sql
+
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
   ('22222222-2222-4222-8222-222222222222');
 
 insert into public.projects(id, owner_id, title)
 values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Test project');
+
+insert into public.studio_projects(id, user_id) values
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', '11111111-1111-4111-8111-111111111111'),
+  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '22222222-2222-4222-8222-222222222222');
+insert into public.studio_scenes(id, user_id, project_id, scene_number) values
+  ('ffffffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111',
+   'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 1),
+  ('abababab-abab-4bab-8bab-abababababab', '22222222-2222-4222-8222-222222222222',
+   'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 1);
 
 insert into public.generation_jobs(
   id, user_id, project_id, job_type, provider, model, idempotency_key, request_hash
@@ -70,6 +103,17 @@ insert into public.generation_jobs(
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '22222222-2222-4222-8222-222222222222',
    null, 'image_generation', 'test-provider', 'test-model',
    'test-key-user-two', repeat('b', 64));
+
+update public.generation_jobs
+set studio_scene_id = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+insert into public.studio_media(user_id, project_id, scene_id, generation_job_id, media_type, storage_path)
+values ('11111111-1111-4111-8111-111111111111',
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'image', '11111111-1111-4111-8111-111111111111/projects/test/scenes/scene-1/image.png');
 
 insert into public.outbox_events(aggregate_type, aggregate_id, event_type, payload)
 values ('generation_job', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -193,6 +237,36 @@ select 1 / case when not has_table_privilege('authenticated', 'public.outbox_eve
 reset role;
 reset request.jwt.claim.sub;
 
+-- A job cannot be linked to another user's scene.
+do $
+begin
+  begin
+    update public.generation_jobs
+    set studio_scene_id = 'abababab-abab-4bab-8bab-abababababab'
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    raise exception 'Cross-owner scene link was accepted';
+  exception when foreign_key_violation then
+    null;
+  end;
+end;
+$;
+
+-- Media cannot claim another user's scene or a mismatched studio project.
+do $
+begin
+  begin
+    insert into public.studio_media(user_id, project_id, scene_id, media_type, storage_path)
+    values ('11111111-1111-4111-8111-111111111111',
+            'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            'abababab-abab-4bab-8bab-abababababab',
+            'image', '11111111-1111-4111-8111-111111111111/forbidden.png');
+    raise exception 'Cross-owner media scene link was accepted';
+  exception when foreign_key_violation then
+    null;
+  end;
+end;
+$;
+
 -- Deleting a project must preserve the job while detaching the optional project link.
 delete from public.projects where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 do $$
@@ -206,4 +280,21 @@ begin
 end;
 $$;
 
-select 'generation jobs migration integration checks passed' as result;
+-- Deleting a scene detaches optional scene references without deleting the saved media or job.
+delete from public.studio_scenes where id = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+do $
+begin
+  if not exists (select 1 from public.generation_jobs
+                 where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+                   and studio_scene_id is null) then
+    raise exception 'Deleting a scene did not detach its generation job';
+  end if;
+  if not exists (select 1 from public.studio_media
+                 where generation_job_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+                   and scene_id is null) then
+    raise exception 'Deleting a scene did not preserve media and detach its scene reference';
+  end if;
+end;
+$;
+
+select 'generation jobs and movie scene migration integration checks passed' as result;
