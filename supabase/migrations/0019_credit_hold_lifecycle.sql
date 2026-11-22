@@ -180,7 +180,8 @@ begin
   select * into v_entry from public.credit_ledger
    where user_id = p_user_id and operation_key = v_key;
   if found then
-    if v_entry.operation_type <> 'release' or v_entry.hold_id <> p_hold_id then
+    if v_entry.operation_type <> 'release' or v_entry.hold_id <> p_hold_id
+       or v_entry.metadata ->> 'reason_code' <> p_reason_code then
       raise exception 'Credit release idempotency key mismatch' using errcode = '22023';
     end if;
     return query select v_wallet.available_credits, v_wallet.reserved_credits, true;
