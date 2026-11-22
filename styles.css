@@ -152,3 +152,16 @@ body.light .audio-lab-status,body.light .audio-stat-card,body.light .audio-tab,b
 .guest-space-footnote{margin-top:18px;padding:13px 15px;border-left:2px solid #a88aff;background:#8e6ff214;color:var(--muted);font-size:10px;line-height:1.7}
 body.light .guest-project-card{background:#fff;border-color:#e4deef}
 @media(max-width:720px){.guest-space-hero{align-items:stretch;flex-direction:column;padding:19px}.guest-space-actions{min-width:0}.guest-space-actions button{width:100%}.guest-project-list{grid-template-columns:1fr}.guest-projects-head h2{font-size:17px}}
+
+
+/* Private admin console */
+.admin-entry-actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+.admin-security-banner{display:flex;flex-direction:column;gap:6px;padding:16px 18px;margin:18px 0 22px;border:1px solid rgba(231,180,91,.35);border-radius:14px;background:rgba(231,180,91,.07)}
+.admin-security-banner b{color:var(--text)}
+.admin-security-banner span{font-size:13px;line-height:1.55;color:var(--muted)}
+.admin-module-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0 24px}
+.admin-module{min-width:0;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--panel,rgba(255,255,255,.025))}
+.admin-module b{display:block;font-size:15px;margin-bottom:8px}
+.admin-module p{font-size:13px;line-height:1.55;color:var(--muted);margin:0 0 12px}
+.admin-module small{font-size:11px;color:var(--muted)}
+@media(max-width:650px){.admin-module-grid{grid-template-columns:1fr}.admin-entry-actions{flex-direction:column}.admin-entry-actions button{width:100%}}
