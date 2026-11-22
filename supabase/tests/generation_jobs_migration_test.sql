@@ -2601,6 +2601,11 @@ declare
   v_hold_two uuid;
   v_allocation_one uuid;
   v_allocation_two uuid;
+  v_extra_job uuid;
+  v_extra_hold uuid;
+  v_extra_allocation uuid;
+  v_extra_lot uuid;
+  v_legacy_lot uuid;
 begin
   insert into auth.users(id) values
     (v_user), (v_empty_user), (v_zero_wallet_user), (v_ledger_only_user);
@@ -2670,6 +2675,41 @@ begin
   select * into v_audit from public.audit_credit_wallet_reconciliation(v_user, 10);
   if not found or not v_audit.healthy or not v_audit.allocations_match then
     raise exception 'Reconciliation did not recover after per-hold allocations were restored';
+  end if;
+
+  -- Verify per-lot allocation totals independently: move one held allocation
+  -- to another valid lot without changing its hold amount or aggregate totals.
+  perform public.grant_user_credit_lot(
+    v_user, 3, 'bonus', 'audit-extra-source', 'audit-extra-lot-001',
+    now() + interval '1 day', '{}'::jsonb
+  );
+  select id into v_extra_lot from public.credit_lots
+   where user_id = v_user and idempotency_key = 'audit-extra-lot-001';
+  select id into v_legacy_lot from public.credit_lots
+   where user_id = v_user and lot_type = 'legacy';
+  select job_id into v_extra_job from public.create_generation_job_with_outbox(
+    v_user, null, 'image_generation', 'audit-provider', 'audit-model',
+    'audit-hold-job-extra', repeat('d', 64), '{}'::jsonb, '{}'::jsonb
+  );
+  select hold_id into v_extra_hold from public.reserve_job_credits(
+    v_user, v_extra_job, 3, 'audit-hold-key-extra', '{}'::jsonb
+  );
+  select id into v_extra_allocation from public.credit_hold_allocations
+   where hold_id = v_extra_hold and status = 'held' and lot_id = v_extra_lot;
+  if v_extra_allocation is null then
+    raise exception 'FIFO reservation did not select the earliest-expiring bonus lot';
+  end if;
+  update public.credit_hold_allocations set lot_id = v_legacy_lot
+   where id = v_extra_allocation;
+  select * into v_audit from public.audit_credit_wallet_reconciliation(v_user, 10);
+  if not found or v_audit.healthy or v_audit.allocations_match then
+    raise exception 'Reconciliation missed per-lot allocation drift with matching aggregate totals';
+  end if;
+  update public.credit_hold_allocations set lot_id = v_extra_lot
+   where id = v_extra_allocation;
+  select * into v_audit from public.audit_credit_wallet_reconciliation(v_user, 10);
+  if not found or not v_audit.healthy or not v_audit.allocations_match then
+    raise exception 'Reconciliation did not recover after per-lot allocations were restored';
   end if;
 
   -- A persisted zero-balance wallet without any journal entry is an anomaly,
