@@ -7,8 +7,8 @@
 
 - Backend identity is derived from a verified Supabase Auth access token. The immutable JWT `sub` UUID is the identity key; email is display/contact data only.
 - `OWNER_USER_IDS` is a server-side UUID allowlist. Empty or malformed configuration grants no owner role.
-- The current backend role vocabulary is only `admin` and `creator`. `require_admin` is a broad owner gate.
-- Existing admin endpoints are read-only operational reporting (site analytics and provider-cost reporting). There is no delegated finance role, scoped permission registry, approval workflow, compensation mutation endpoint, or payment-provider refund workflow.
+- The current backend role vocabulary is only `admin` and `creator`. Narrow `require_permission(...)` dependencies now protect admin analytics and provider-cost reports; the owner capability set is read-only and rejects unknown/write permissions. `require_admin` remains for owner identity/status endpoints only.
+- Existing admin endpoints are read-only operational reporting (site analytics and provider-cost reporting). There is no delegated finance role registry, approval workflow, compensation mutation endpoint, or payment-provider refund workflow. The current static owner read-capability allowlist is a transitional least-privilege boundary, not delegated role management.
 - Supabase service-role credentials remain server-only. Browser clients and ordinary authenticated users must never receive finance mutation privileges.
 
 The owner allowlist is not a finance permission system. Do not use `require_admin` alone as authorization for future credit or cash mutations.
@@ -49,7 +49,7 @@ Use stable, explicit permission identifiers rather than scattered role-name chec
 - `finance.reconciliation.read`
 - `finance.policy.manage` (high-risk; owner-controlled, separately audited)
 
-Permissions are checked server-side on every request and again inside the transaction/RPC that performs a mutation. Hiding a button or trusting a frontend role is not authorization.
+Permissions are checked server-side on every request and again inside the transaction/RPC that performs a mutation. The current implementation only exposes a small static read-only owner capability set; it does not implement the proposed operator/approver assignments. Hiding a button or trusting a frontend role is not authorization.
 
 ## 4. Suggested permission matrix (subject to explicit approval)
 
