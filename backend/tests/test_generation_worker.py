@@ -687,3 +687,39 @@ async def test_worker_restart_recovers_ambiguous_submission_without_duplicate_ge
     assert not any(call[0] == "generate" for call in restarted_repository.calls)
     assert any(call[0] == "journal_result" for call in restarted_repository.calls)
     assert any(call[0] == "complete" for call in restarted_repository.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_retries_transient_database_disconnect_without_new_provider_submission():
+    from app.services.worker_repository_errors import WorkerRepositoryError
+
+    class DisconnectedJournalRepository(FakeRepository):
+        async def begin_provider_operation(self, *args):
+            raise WorkerRepositoryError("database_connection_error", retryable=True)
+
+    provider = FakeProvider()
+    repo = DisconnectedJournalRepository()
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "retry_scheduled"
+    assert result.error_code == "database_connection_error"
+    assert provider.idempotency_keys == []
+    assert any(call[0] == "retry" for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_fails_closed_on_permanent_database_credential_rejection():
+    from app.services.worker_repository_errors import WorkerRepositoryError
+
+    class RejectedCredentialsRepository(FakeRepository):
+        async def begin_provider_operation(self, *args):
+            raise WorkerRepositoryError("database_credentials_rejected", retryable=False)
+
+    provider = FakeProvider()
+    repo = RejectedCredentialsRepository()
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "failed"
+    assert result.error_code == "database_credentials_rejected"
+    assert provider.idempotency_keys == []
+    assert any(call[0] == "fail" for call in repo.calls)
