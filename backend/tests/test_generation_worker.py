@@ -327,3 +327,17 @@ async def test_reclaimed_unknown_operation_without_lookup_is_quarantined():
     assert result.outcome == "retry_scheduled"
     assert result.error_code == "provider_operation_quarantined"
     assert repo.calls[-1][0] == "retry"
+
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_provider_submission_is_journaled_before_retry():
+    repo = FakeRepository()
+    provider = FakeProvider(error=ImageGenerationError(
+        "provider_response_lost", retryable=True, ambiguous=True
+    ))
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "retry_scheduled"
+    assert any(call[0] == "journal_unknown" for call in repo.calls)
+    assert repo.calls[-1][0] == "retry"
