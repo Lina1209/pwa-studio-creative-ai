@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     ai_request_timeout_seconds: int = Field(default=90, ge=5, le=300)
     ai_max_retries: int = Field(default=1, ge=0, le=3)
     ai_max_output_tokens: int = Field(default=2048, ge=1, le=8192)
+    ai_max_requests_per_minute_per_user: int = Field(default=10, ge=1, le=120)
+    ai_max_concurrent_requests_per_user: int = Field(default=2, ge=1, le=16)
     openai_api_key: str | None = None
     deepseek_api_key: str | None = None
     anthropic_api_key: str | None = None
