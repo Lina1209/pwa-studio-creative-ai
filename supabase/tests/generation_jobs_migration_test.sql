@@ -95,6 +95,7 @@ create table public.studio_media (
 \ir ../migrations/0027_site_visit_analytics.sql
 \ir ../migrations/0028_site_visit_admin_analytics.sql
 \ir ../migrations/0029_ai_request_admission.sql
+\ir ../migrations/0030_credit_wallet_snapshot.sql
 
 -- Credit accounting tables are mutated only by SECURITY DEFINER transaction RPCs.
 do $credit_ledger_privileges_test$
@@ -2518,3 +2519,60 @@ end;
 $ai_request_admission_test$;
 
 select 'distributed AI admission checks passed' as result;
+
+
+do $credit_wallet_snapshot_test$
+declare
+  v_user uuid := gen_random_uuid();
+  v_empty_user uuid := gen_random_uuid();
+  v_snapshot jsonb;
+begin
+  insert into auth.users(id) values (v_user), (v_empty_user);
+  insert into public.credit_wallets(user_id, available_credits, reserved_credits)
+  values (v_user, 125, 25);
+  insert into public.credit_ledger(
+    user_id, operation_type, operation_key,
+    delta_available, delta_reserved,
+    balance_available_after, balance_reserved_after, metadata
+  ) values (
+    v_user, 'grant', 'grant:test-wallet-001',
+    150, 0, 125, 25, '{"source":"integration_test"}'::jsonb
+  );
+
+  v_snapshot := public.get_credit_wallet_snapshot(v_user, 50);
+  if v_snapshot->>'user_id' <> v_user::text
+     or v_snapshot->>'currency_unit' <> 'credit'
+     or (v_snapshot->>'available_credits')::bigint <> 125
+     or (v_snapshot->>'reserved_credits')::bigint <> 25
+     or jsonb_array_length(v_snapshot->'ledger') <> 1
+     or v_snapshot->'ledger'->0->>'operation_type' <> 'grant'
+     or v_snapshot ? 'quote_snapshot' then
+    raise exception 'Wallet snapshot did not return the expected owner-scoped balances/history';
+  end if;
+
+  v_snapshot := public.get_credit_wallet_snapshot(v_empty_user, 10);
+  if (v_snapshot->>'available_credits')::bigint <> 0
+     or (v_snapshot->>'reserved_credits')::bigint <> 0
+     or jsonb_array_length(v_snapshot->'ledger') <> 0 then
+    raise exception 'Missing wallet must return zero without creating or granting credits';
+  end if;
+
+  if has_function_privilege('anon',
+       'public.get_credit_wallet_snapshot(uuid,integer)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.get_credit_wallet_snapshot(uuid,integer)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.get_credit_wallet_snapshot(uuid,integer)', 'EXECUTE') then
+    raise exception 'Wallet snapshot RPC privileges are not least-privilege';
+  end if;
+
+  begin
+    perform public.get_credit_wallet_snapshot(v_user, 101);
+    raise exception 'Wallet history limit above 100 should be rejected';
+  exception when sqlstate '22023' then
+    null;
+  end;
+end;
+$credit_wallet_snapshot_test$;
+
+select 'credit wallet snapshot checks passed' as result;
