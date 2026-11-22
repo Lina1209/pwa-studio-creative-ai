@@ -34,7 +34,7 @@ class FakeRepository:
     def __init__(
         self, *, heartbeat=True, complete=True, journal_created=True,
         journal_unknown=True, journal_failed=True, journal_state=None,
-        completion_replayed=False,
+        completion_replayed=False, budget_allowed=True,
     ):
         self.heartbeat_result = heartbeat
         self.complete_result = complete
@@ -43,6 +43,7 @@ class FakeRepository:
         self.journal_state = journal_state or ("submitting" if journal_created else "unknown")
         self.journal_unknown_result = journal_unknown
         self.journal_failed_result = journal_failed
+        self.budget_allowed = budget_allowed
         self.calls = []
 
     async def heartbeat(self, *args):
@@ -52,6 +53,10 @@ class FakeRepository:
     async def begin_provider_operation(self, *args):
         self.calls.append(("journal_begin", args))
         return SimpleNamespace(created=self.journal_created, state=self.journal_state)
+
+    async def authorize_provider_operation(self, *args):
+        self.calls.append(("budget_authorize", args))
+        return self.budget_allowed
 
     async def mark_provider_operation_accepted(self, *args):
         self.calls.append(("journal_accepted", args))
@@ -196,6 +201,21 @@ def make_worker(repo=None, provider=None, storage=None):
         storage=storage or FakeStorage(),
         heartbeat_interval_seconds=0.01,
     )
+
+
+@pytest.mark.asyncio
+async def test_worker_blocks_provider_call_when_server_budget_gate_denies_admission():
+    repo = FakeRepository(budget_allowed=False)
+    provider = FakeProvider()
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "failed"
+    assert result.error_code == "provider_budget_blocked"
+    assert provider.idempotency_keys == []
+    assert any(call[0] == "budget_authorize" for call in repo.calls)
+    assert any(call[0] == "journal_failed" for call in repo.calls)
+    assert any(call[0] == "fail" for call in repo.calls)
+    assert not any(call[0] in {"provider_cost", "complete"} for call in repo.calls)
 
 
 @pytest.mark.asyncio
