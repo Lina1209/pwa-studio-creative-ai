@@ -7,7 +7,7 @@
 - **Frontend:** Vanilla JavaScript, HTML, CSS, Tailwind utilities; публикация через GitHub Pages.
 - **Backend:** Python 3.12, FastAPI, LiteLLM; отдельное развёртывание через Render.
 - **Authentication:** Supabase Auth; frontend использует только публичный publishable key.
-- **Database / Storage:** Supabase Postgres and private Storage. Mini Movie Studio cloud sync code targets `public.projects`; migration `0005_cloud_projects_and_storage.sql` defines its owner-scoped schema and a private media bucket (migration application and cross-device sync still require live verification). Media upload UI is not implemented yet.
+- **Database / Storage:** Supabase Postgres and private Storage. Mini Movie Studio uses local-first drafts with Supabase synchronization to `public.projects`; migration `0005_cloud_projects_and_storage.sql` was applied and the table, owner policies, and private `studio-media` bucket were verified. Cross-device sync, conflict handling, and deletion synchronization still require end-to-end testing. Media upload UI is not implemented yet.
 
 ## Что уже реализовано
 
