@@ -50,6 +50,7 @@ from app.services.finance_operation_requests import (
     create_finance_operation_request,
     decide_finance_operation_request,
     read_finance_operation_request,
+    list_finance_operation_requests,
 )
 from app.services.credit_wallet_service import (
     CreditWalletNotConfigured,
@@ -589,6 +590,43 @@ def _finance_target_scope(target_user_id: UUID) -> str:
     return f"user:{target_user_id}"
 
 
+def _finance_request_read_scopes(user: StudioUser) -> tuple[list[str], list[str]]:
+    try:
+        actor_id = UUID(user.user_id)
+        grant = resolve_finance_grant(settings, principal_id=actor_id)
+        if grant is None or not grant.active or grant.principal_id != actor_id:
+            raise FinanceAuthorizationDenied("No active finance assignment.")
+        resolved: dict[str, list[str]] = {}
+        for request_type, permission in (
+            ("credit_compensation", "credit.compensation.read"),
+            ("billing_refund", "billing.refund.read"),
+        ):
+            allowed: list[str] = []
+            for scope in grant.permission_scopes.get(permission, frozenset()):
+                if not isinstance(scope, str) or not scope.startswith("user:"):
+                    continue
+                try:
+                    target_id = UUID(scope[5:])
+                except (ValueError, TypeError, AttributeError):
+                    continue
+                if scope != _finance_target_scope(target_id):
+                    continue
+                require_finance_permission(
+                    grant, actor_id=actor_id, permission=permission, target_scope=scope,
+                )
+                allowed.append(scope)
+            resolved[request_type] = sorted(set(allowed))
+        if not resolved["credit_compensation"] and not resolved["billing_refund"]:
+            raise FinanceAuthorizationDenied("No finance request read scope.")
+        return resolved["credit_compensation"], resolved["billing_refund"]
+    except FinanceAuthorizationDenied as exc:
+        raise HTTPException(status_code=403, detail="Finance request access is not permitted.") from exc
+    except FinanceRegistryNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance authorization is not configured.") from exc
+    except FinanceRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance authorization is temporarily unavailable.") from exc
+
+
 def _require_finance_action(user: StudioUser, *, request_type: str, action: str, scope_key: str) -> None:
     prefix = "credit.compensation" if request_type == "credit_compensation" else "billing.refund"
     try:
@@ -603,6 +641,62 @@ def _require_finance_action(user: StudioUser, *, request_type: str, action: str,
         raise HTTPException(status_code=503, detail="Finance authorization is not configured.") from exc
     except FinanceRegistryUnavailable as exc:
         raise HTTPException(status_code=503, detail="Finance authorization is temporarily unavailable.") from exc
+
+
+@app.get(f"{settings.api_prefix}/finance/requests")
+def finance_request_queue(
+    response: Response,
+    status: str | None = None,
+    limit: int = 50,
+    before: datetime | None = None,
+    before_id: UUID | None = None,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Read a bounded finance queue restricted to the actor's delegated scopes."""
+    if status is not None and status not in {"pending", "approved", "rejected", "cancelled"}:
+        raise HTTPException(status_code=422, detail="Finance request status is invalid.")
+    if isinstance(limit, bool) or not 1 <= limit <= 100:
+        raise HTTPException(status_code=422, detail="Finance request page size is invalid.")
+    if (before is None) != (before_id is None) or (before is not None and before.tzinfo is None):
+        raise HTTPException(status_code=422, detail="A complete timezone-aware queue cursor is required.")
+    credit_scopes, billing_scopes = _finance_request_read_scopes(user)
+    try:
+        rows = list_finance_operation_requests(
+            settings, credit_scope_keys=credit_scopes, billing_scope_keys=billing_scopes,
+            status=status, before=before, before_id=before_id, limit=limit + 1,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Finance queue query is invalid.") from exc
+    except FinanceRequestNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
+    except FinanceRequestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Finance request queue is temporarily unavailable.") from exc
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "items": [{
+            "request_id": str(item["request_id"]),
+            "requester_id": str(item["requester_id"]),
+            "request_type": item["request_type"],
+            "target_user_id": str(item["target_user_id"]),
+            "amount": format(item["amount"], "f"),
+            "currency_code": item["currency_code"],
+            "reason": item["reason"],
+            "status": item["status"],
+            "requested_at": item["requested_at"].isoformat(),
+            "decided_by": str(item["decided_by"]) if item["decided_by"] else None,
+            "decided_at": item["decided_at"].isoformat() if item["decided_at"] else None,
+            "decision_reason": item["decision_reason"],
+            "cancelled_at": item["cancelled_at"].isoformat() if item["cancelled_at"] else None,
+        } for item in page],
+        "limit": limit,
+        "next_cursor": ({
+            "before": page[-1]["requested_at"].isoformat(),
+            "before_id": str(page[-1]["request_id"]),
+        } if has_more and page else None),
+        "execution_enabled": False,
+    }
 
 
 @app.post(f"{settings.api_prefix}/finance/requests", status_code=201)
