@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
+from uuid import UUID
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -49,9 +50,18 @@ def get_current_user(
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Could not verify the sign-in session.") from exc
 
+    # Supabase user access tokens carry role=authenticated. Reject service-role
+    # and other project JWTs even if their signature and audience are valid.
+    if claims.get("role") != "authenticated":
+        raise HTTPException(status_code=401, detail="The sign-in token is not a user session.")
+
     user_id = claims.get("sub")
     if not isinstance(user_id, str) or not user_id:
         raise HTTPException(status_code=401, detail="The sign-in token has no user identity.")
+    try:
+        user_id = str(UUID(user_id))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=401, detail="The sign-in token has an invalid user identity.") from exc
 
     email = claims.get("email")
     email = email.lower() if isinstance(email, str) else None
