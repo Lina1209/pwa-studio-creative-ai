@@ -78,6 +78,7 @@ create table public.studio_media (
 
 \ir ../migrations/0011_link_generation_jobs_to_movie_scenes.sql
 \ir ../migrations/0012_create_scene_generation_job_rpc.sql
+\ir ../migrations/0013_generation_job_worker_lifecycle.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
@@ -182,6 +183,105 @@ begin
   end;
 end;
 $$;
+
+-- Worker lifecycle: atomic claim, lease ownership, retry, and verified-result completion.
+do $
+declare
+  v_job_id uuid;
+  v_claim record;
+  v_second_claim record;
+  v_ok boolean;
+  v_status text;
+begin
+  select id into v_job_id
+    from public.generation_jobs
+   where idempotency_key = 'scene-job-idempotency-1';
+
+  select * into v_claim
+    from public.claim_next_generation_job('worker-alpha', 120);
+  if v_claim.job_id is distinct from v_job_id or v_claim.attempt_count <> 1 then
+    raise exception 'Worker did not atomically claim the expected scene job';
+  end if;
+
+  select * into v_second_claim
+    from public.claim_next_generation_job('worker-beta', 120);
+  if v_second_claim.job_id is not null then
+    raise exception 'A second worker claimed a job with an active lease';
+  end if;
+
+  if public.heartbeat_generation_job(v_job_id, 'worker-beta', 120) then
+    raise exception 'A different worker extended a lease it does not own';
+  end if;
+  if not public.heartbeat_generation_job(v_job_id, 'worker-alpha', 120) then
+    raise exception 'The lease owner could not extend its active lease';
+  end if;
+
+  if not public.retry_generation_job(v_job_id, 'worker-alpha', 'provider_temporary_error', 30) then
+    raise exception 'The active lease owner could not schedule a retry';
+  end if;
+  select status into v_status from public.generation_jobs where id = v_job_id;
+  if v_status <> 'retry_wait' then
+    raise exception 'Retry did not move the job to retry_wait';
+  end if;
+
+  update public.generation_jobs set available_at = now() where id = v_job_id;
+  select * into v_claim
+    from public.claim_next_generation_job('worker-beta', 120);
+  if v_claim.job_id is distinct from v_job_id or v_claim.attempt_count <> 2 then
+    raise exception 'Retry job was not claimed by the next worker attempt';
+  end if;
+
+  if public.complete_generation_job(
+    v_job_id, 'worker-alpha',
+    '11111111-1111-4111-8111-111111111111/results/image.png'
+  ) then
+    raise exception 'A worker without the active lease completed the job';
+  end if;
+  if public.complete_generation_job(
+    v_job_id, 'worker-beta',
+    '22222222-2222-4222-8222-222222222222/results/image.png'
+  ) then
+    raise exception 'A worker stored a result under another user path';
+  end if;
+  if not public.complete_generation_job(
+    v_job_id, 'worker-beta',
+    '11111111-1111-4111-8111-111111111111/results/image.png'
+  ) then
+    raise exception 'The active worker could not complete with an owner-scoped result path';
+  end if;
+
+  select status into v_status from public.generation_jobs where id = v_job_id;
+  if v_status <> 'succeeded' then
+    raise exception 'Completed job did not enter succeeded state';
+  end if;
+end;
+$;
+
+-- Only the trusted backend service role may execute worker lifecycle RPCs.
+do $
+begin
+  if has_function_privilege('authenticated',
+       'public.claim_next_generation_job(text,integer)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.heartbeat_generation_job(uuid,text,integer)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.retry_generation_job(uuid,text,text,integer)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.complete_generation_job(uuid,text,text)', 'EXECUTE') then
+    raise exception 'Authenticated role unexpectedly has worker RPC execute permission';
+  end if;
+  if not has_function_privilege('service_role',
+       'public.claim_next_generation_job(text,integer)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.heartbeat_generation_job(uuid,text,integer)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.retry_generation_job(uuid,text,text,integer)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.complete_generation_job(uuid,text,text)', 'EXECUTE') then
+    raise exception 'service_role is missing a worker lifecycle RPC grant';
+  end if;
+end;
+$;
 
 -- Only the trusted backend service role may execute the RPC.
 do $$
