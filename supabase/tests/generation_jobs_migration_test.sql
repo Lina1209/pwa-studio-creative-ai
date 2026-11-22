@@ -2536,6 +2536,7 @@ select 'distributed AI admission checks passed' as result;
 \ir ../migrations/0042_finance_operation_request_storage.sql
 \ir ../migrations/0043_finance_operation_request_rpcs.sql
 \ir ../migrations/0044_finance_operation_request_queue.sql
+\ir ../migrations/0045_finance_operation_request_event_read.sql
 
 do $credit_entitlement_policy_test$
 declare
@@ -3838,6 +3839,19 @@ begin
    where request_id = v_request;
   if v_event_count <> 2 then
     raise exception 'Finance request audit stream has unexpected event count';
+  end if;
+  select count(*) into v_event_count
+    from public.read_finance_operation_request_events(v_request)
+   where (event_type = 'request.created' and previous_status is null and new_status = 'pending')
+      or (event_type = 'request.approved' and previous_status = 'pending' and new_status = 'approved');
+  if v_event_count <> 2 then
+    raise exception 'Server-only finance event timeline returned an incorrect history';
+  end if;
+  if has_function_privilege('authenticated',
+       'public.read_finance_operation_request_events(uuid)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.read_finance_operation_request_events(uuid)', 'EXECUTE') then
+    raise exception 'Finance event timeline RPC has excessive privileges';
   end if;
 
   v_rejected := false;
