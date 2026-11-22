@@ -7,7 +7,8 @@ Scope: source-level review of the FastAPI backend. This document does not claim 
 
 Protected endpoints use Supabase JWT verification in `backend/app/services/auth.py`:
 
-- Tokens are verified against the project's Supabase JWKS endpoint.
+- Tokens are verified against the project's Supabase JWKS endpoint with a five-second network timeout and a five-minute JWKS cache.
+- Bearer tokens larger than 8 KiB are rejected before JWKS lookup to bound unauthenticated input work.
 - Accepted signing algorithms are ES256 and RS256.
 - Audience must be `authenticated`; issuer must match the configured Supabase Auth issuer.
 - `exp`, `sub`, `iss`, and `aud` are required.
@@ -57,7 +58,7 @@ Before public AI launch, extend admission to plan-based monthly credit/usage ent
 
 ## Browser response headers
 
-The FastAPI app applies nosniff, frame denial, no-referrer, a restrictive permissions policy and same-origin resource policy to responses. HSTS is added only when APP_ENV=production; TLS termination and correct proxy configuration must still be verified at the hosting edge. These headers are defense-in-depth and do not replace a frontend Content Security Policy.
+The FastAPI app applies private/no-store caching to all API responses, plus nosniff, frame denial, no-referrer, a restrictive permissions policy and same-origin resource policy. HSTS is added only when APP_ENV=production; TLS termination and correct proxy configuration must still be verified at the hosting edge. These headers are defense-in-depth and do not replace a frontend Content Security Policy.
 
 ## Validation status
 
