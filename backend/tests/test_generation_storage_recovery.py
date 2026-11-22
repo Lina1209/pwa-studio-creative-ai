@@ -125,3 +125,59 @@ def test_duplicate_job_rows_and_invalid_grace_period_fail_closed():
         plan_generation_storage_recovery(
             owner_id=OWNER, objects=[], jobs=[], now=NOW, grace_period=timedelta(minutes=5)
         )
+
+
+@pytest.mark.asyncio
+async def test_verify_owner_succeeded_results_reports_missing_path_and_verifies_existing():
+    from app.services.generation_storage_recovery import verify_owner_succeeded_results
+
+    valid_path = f"{OWNER}/generated/{JOB_OK}.png"
+
+    class Repository:
+        async def list_owner_job_inventory(self, owner_id):
+            assert owner_id == OWNER
+            return [
+                job(JOB_OK, "succeeded", valid_path),
+                job(JOB_FAILED, "succeeded", None),
+            ]
+
+    class Storage:
+        async def verify_existing_image(self, *, owner_id, job_id, object_path):
+            assert owner_id == OWNER
+            assert job_id == JOB_OK
+            assert object_path == valid_path
+            return object()
+
+    report = await verify_owner_succeeded_results(
+        owner_id=OWNER, storage=Storage(), repository=Repository()
+    )
+
+    assert report.checked_jobs == 2
+    assert report.verified_results == (valid_path,)
+    assert report.integrity_failures == (
+        (str(JOB_FAILED), "succeeded_job_missing_result_path"),
+    )
+    assert report.deferred_checks == ()
+
+
+@pytest.mark.asyncio
+async def test_verify_owner_succeeded_results_defers_transient_storage_errors():
+    from app.services.generation_storage_recovery import verify_owner_succeeded_results
+    from app.services.generation_result_storage import GenerationStorageAdapterError
+
+    path = f"{OWNER}/generated/{JOB_OK}.png"
+
+    class Repository:
+        async def list_owner_job_inventory(self, owner_id):
+            return [job(JOB_OK, "succeeded", path)]
+
+    class Storage:
+        async def verify_existing_image(self, **kwargs):
+            raise GenerationStorageAdapterError("storage_request_timeout", retryable=True)
+
+    report = await verify_owner_succeeded_results(
+        owner_id=OWNER, storage=Storage(), repository=Repository()
+    )
+
+    assert report.integrity_failures == ()
+    assert report.deferred_checks == ((str(JOB_OK), "storage_request_timeout"),)
