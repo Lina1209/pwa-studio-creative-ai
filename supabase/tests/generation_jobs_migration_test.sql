@@ -2591,10 +2591,13 @@ do $credit_wallet_snapshot_test$
 declare
   v_user uuid := gen_random_uuid();
   v_empty_user uuid := gen_random_uuid();
+  v_zero_wallet_user uuid := gen_random_uuid();
+  v_ledger_only_user uuid := gen_random_uuid();
   v_snapshot jsonb;
   v_audit record;
 begin
-  insert into auth.users(id) values (v_user), (v_empty_user);
+  insert into auth.users(id) values
+    (v_user), (v_empty_user), (v_zero_wallet_user), (v_ledger_only_user);
   insert into public.credit_wallets(user_id, available_credits, reserved_credits)
   values (v_user, 125, 0);
   insert into public.credit_lots(
@@ -2628,6 +2631,34 @@ begin
     raise exception 'Reconciliation did not detect lot/wallet drift';
   end if;
   update public.credit_lots set available_credits = 125 where user_id = v_user;
+
+  -- A persisted zero-balance wallet without any journal entry is an anomaly,
+  -- not an unrecorded "healthy" account. A user with only ledger rows must
+  -- also appear in the reconciliation result instead of being silently skipped.
+  insert into public.credit_wallets(user_id, available_credits, reserved_credits)
+  values (v_zero_wallet_user, 0, 0);
+  select * into v_audit
+    from public.audit_credit_wallet_reconciliation(v_zero_wallet_user, 10);
+  if not found or v_audit.healthy or v_audit.latest_ledger_matches then
+    raise exception 'Zero wallet without a ledger entry was not flagged as an anomaly';
+  end if;
+
+  insert into public.credit_ledger(
+    user_id, operation_type, operation_key,
+    delta_available, delta_reserved,
+    balance_available_after, balance_reserved_after, metadata
+  ) values (
+    v_ledger_only_user, 'grant', 'grant:ledger-only-test',
+    9, 0, 9, 0, '{"source":"reconciliation_test"}'::jsonb
+  );
+  select * into v_audit
+    from public.audit_credit_wallet_reconciliation(v_ledger_only_user, 10);
+  if not found or v_audit.healthy
+     or v_audit.wallet_available <> 0
+     or v_audit.latest_ledger_available <> 9
+     or v_audit.latest_ledger_matches then
+    raise exception 'Ledger-only user was omitted or not flagged for missing wallet projection';
+  end if;
 
   if has_function_privilege('authenticated',
        'public.audit_credit_wallet_reconciliation(uuid,integer)', 'EXECUTE') then
