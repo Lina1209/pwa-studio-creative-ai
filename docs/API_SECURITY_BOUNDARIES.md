@@ -15,7 +15,7 @@ Protected endpoints use Supabase JWT verification in `backend/app/services/auth.
 - The subject must be a valid UUID before it becomes a `StudioUser`.
 - Admin access is separately checked by `require_admin`.
 
-The current owner mapping is based on a server-side `OWNER_EMAIL` comparison with the signed email claim. Keep this value server-only and protected. A future hardening step should prefer a stable owner UUID allowlist, because email addresses can change.
+The current owner mapping is based on the verified Supabase JWT `sub` UUID matching the server-side `OWNER_USER_IDS` allowlist. Email is display/contact data only and never grants administrator access. A missing or malformed UUID allowlist fails closed. This owner allowlist is not a delegated finance permission system; do not authorize credit compensation or cash refunds with `require_admin` alone.
 
 ## Endpoint-level input bounds
 
