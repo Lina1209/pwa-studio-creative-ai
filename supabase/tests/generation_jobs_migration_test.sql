@@ -86,6 +86,7 @@ create table public.studio_media (
 \ir ../migrations/0018_credit_ledger_schema.sql
 \ir ../migrations/0019_credit_hold_lifecycle.sql
 \ir ../migrations/0020_atomic_credited_generation.sql
+\ir ../migrations/0021_persist_pricing_quotes.sql
 
 insert into auth.users(id) values
   ('11111111-1111-4111-8111-111111111111'),
