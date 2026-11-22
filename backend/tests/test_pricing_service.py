@@ -32,6 +32,7 @@ def make_quote(**overrides):
         "provider": "provider-a",
         "model": "model-a",
         "request_hash": "a" * 64,
+        "idempotency_key": "pricing-test-key-001",
         "quantity": 3,
         "now": NOW,
     }
@@ -47,6 +48,7 @@ def verify(snapshot, **overrides):
         "provider": "provider-a",
         "model": "model-a",
         "request_hash": "a" * 64,
+        "idempotency_key": "pricing-test-key-001",
         "now": NOW + timedelta(seconds=1),
     }
     values.update(overrides)
@@ -72,6 +74,8 @@ def test_quote_is_bound_to_owner_and_exact_generation_request():
         verify(snapshot, request_hash="b" * 64)
     with pytest.raises(PricingError, match="does not match"):
         verify(snapshot, model="model-b")
+    with pytest.raises(PricingError, match="idempotency key"):
+        verify(snapshot, idempotency_key="another-idempotency-key")
 
 
 def test_quote_tampering_is_detected_even_when_amount_and_limit_are_changed():
