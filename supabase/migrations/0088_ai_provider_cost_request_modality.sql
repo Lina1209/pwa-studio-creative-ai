@@ -144,7 +144,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $$
 declare
   v_row public.ai_provider_cost_reservations%rowtype;
 begin
@@ -190,7 +190,7 @@ begin
   end if;
   return true;
 end;
-$;
+$$;
 
 create or replace function public.settle_ai_provider_cost(
   p_request_id uuid,
@@ -201,11 +201,11 @@ returns boolean
 language sql
 security definer
 set search_path = pg_catalog, public
-as $
+as $$
   select public.settle_ai_provider_cost_v2(
     p_request_id, 'text', p_actual_estimated_cost_usd, p_cost_source
   );
-$;
+$$;
 
 -- Preserve compatibility for existing backend versions: old calls are text requests.
 create or replace function public.reserve_ai_provider_cost(
