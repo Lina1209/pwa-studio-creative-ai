@@ -4241,3 +4241,36 @@ begin
   end if;
 end;
 $pending_plan_is_not_active_test$;
+
+
+do $media_generation_quota_unit_test$
+declare
+  v_job record;
+  v_units integer;
+begin
+  select * into v_job
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'video_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-quota-video-duration-001',
+      repeat('9', 64),
+      '{"prompt":"video duration is not generation count","quantity":30}'::jsonb,
+      '{"amount":30,"quantity":30,"price_version":"test-v1"}'::jsonb,
+      30
+    );
+  select sum(reserved_units)::integer into v_units
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and feature_key in ('daily_video_generations','monthly_video_generations');
+  if v_units <> 2 then
+    raise exception 'Video quota must count one generation per job, not quote quantity';
+  end if;
+  update public.generation_jobs
+     set status = 'failed', completed_at = now(), updated_at = now()
+   where id = v_job.job_id;
+end;
+$media_generation_quota_unit_test$;
