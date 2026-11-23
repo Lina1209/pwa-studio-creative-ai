@@ -1241,12 +1241,10 @@ def finance_request_create(
         scope_key=target_scope,
     )
     audit_action = "admin.finance.request.create"
-    audit_resource = "credit_wallet" if payload.request_type == "credit_compensation" else "payment"
     try:
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id), action=audit_action,
-            outcome="requested", resource_type=audit_resource,
-            resource_type="user", resource_id=payload.target_user_id, reason=f"Requested {payload.request_type}: {payload.reason}",
+            outcome="requested", resource_type="user", resource_id=payload.target_user_id, reason=f"Requested {payload.request_type}: {payload.reason}",
         )
     except (AdminAuditUnavailable, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Журнал аудита недоступен; финансовая заявка не создана.") from exc
