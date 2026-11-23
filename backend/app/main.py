@@ -1,17 +1,20 @@
 from uuid import uuid4
+import logging
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest)
+from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
+from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.app_name,
@@ -77,7 +80,33 @@ def admin_reports(user: StudioUser = Depends(require_admin)):
 
 @app.patch(f"{settings.api_prefix}/admin/reports/{{report_id}}")
 def review_report(report_id: str, payload: ReportReviewRequest, user: StudioUser = Depends(require_admin)):
-    return review_user_report(settings, report_id, user.user_id, payload)
+    result = review_user_report(settings, report_id, user.user_id, payload)
+    try:
+        status_label = {"reviewing": "взята в работу", "resolved": "рассмотрена", "rejected": "отклонена"}.get(payload.status, payload.status)
+        note = (payload.moderator_note or "").strip()
+        body = "Статус вашего обращения изменён: " + status_label + "."
+        if note:
+            body += " Ответ модерации: " + note
+        create_notification(settings, result["reporter_user_id"], "report_update",
+            "Обновление по обращению", body, {"report_id": result["id"], "status": result["status"]})
+    except Exception:
+        logger.exception("Could not deliver report status notification")
+    return {"id": result["id"], "status": result["status"], "created_at": result["created_at"]}
+
+
+@app.get(f"{settings.api_prefix}/notifications", response_model=list[NotificationResponse])
+def user_notifications(user: StudioUser = Depends(get_current_user)):
+    return list_notifications(settings, user.user_id)
+
+
+@app.post(f"{settings.api_prefix}/notifications/{notification_id}/read")
+def read_notification(notification_id: str, user: StudioUser = Depends(get_current_user)):
+    return mark_notification_read(settings, user.user_id, notification_id)
+
+
+@app.post(f"{settings.api_prefix}/notifications/read-all")
+def read_all_notifications(user: StudioUser = Depends(get_current_user)):
+    return mark_all_notifications_read(settings, user.user_id)
 
 
 @app.post(f"{settings.api_prefix}/admin/suspensions", response_model=SuspensionResponse, status_code=201)
