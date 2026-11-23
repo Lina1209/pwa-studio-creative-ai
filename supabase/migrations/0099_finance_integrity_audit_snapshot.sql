@@ -31,14 +31,14 @@ as $function$
   ),
   ledger_count as (select count(*)::bigint as total from ledger_source),
   ledger_page as (
-    select * from ledger_source order by id limit 10001
+    select * from ledger_source order by id limit 10000
   ),
   holds_source as (
     select h.id, h.user_id, h.job_id, h.amount, h.status
       from public.credit_holds h where h.user_id = p_user_id
   ),
   holds_count as (select count(*)::bigint as total from holds_source),
-  holds_page as (select * from holds_source order by id limit 5001),
+  holds_page as (select * from holds_source order by id limit 5000),
   lots_source as (
     select l.id, l.user_id, l.lot_type, l.granted_credits,
            l.available_credits, l.reserved_credits, l.expires_at, l.created_at
