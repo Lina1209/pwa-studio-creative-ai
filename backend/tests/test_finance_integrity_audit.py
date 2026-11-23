@@ -138,3 +138,14 @@ def test_duplicate_operation_key_is_detected_even_with_distinct_usage_ids():
     report = audit(provider_cost_events=[cost_event(), second])
     assert report["status"] == "critical"
     assert any(item["code"] == "duplicate_provider_operation_key" for item in report["findings"])
+
+
+def test_completeness_must_be_explicitly_confirmed():
+    report = audit_finance_integrity(
+        ledger_entries=[],
+        wallets={},
+        generation_jobs=[],
+        provider_cost_events=[],
+    )
+    assert report["status"] == "incomplete"
+    assert report["complete"] is False
