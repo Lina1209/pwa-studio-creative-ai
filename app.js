@@ -1918,7 +1918,9 @@ const movieHistoryStyle = document.createElement("style");
         {onConflict:"user_id,asset_id"}
       );
       if(error)throw error;
-      assertOwner();
+      // The cloud write is committed for the captured owner. If the user switched
+      // accounts while the request was in flight, do not roll back that owner's
+      // uploaded objects; the caller will skip writing into the newly active account.
       return item;
     }catch(error){
       if(uploaded.length)await supabaseClient.storage.from(cloudVisualBucket).remove(uploaded).catch(()=>{});
