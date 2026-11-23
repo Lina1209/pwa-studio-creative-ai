@@ -11,6 +11,8 @@ def ledger(entry_id, delta_available, delta_reserved, available, reserved, **cha
     row = {
         "entry_id": entry_id,
         "user_id": USER,
+        "operation_type": "grant" if entry_id == 1 else "reserve",
+        "operation_key": f"operation-key-{entry_id:04d}",
         "delta_available": delta_available,
         "delta_reserved": delta_reserved,
         "balance_available_after": available,
@@ -211,3 +213,16 @@ def test_orphan_or_cross_owner_allocation_is_critical():
     report = audit(**rows)
     assert report["status"] == "critical"
     assert any(item["code"] == "orphan_hold_allocation" for item in report["findings"])
+
+
+def test_duplicate_ledger_operation_key_is_critical():
+    rows = [ledger(1, 100, 0, 100, 0), ledger(2, -20, 20, 80, 20, operation_key="operation-key-0001")]
+    report = audit(ledger_entries=rows)
+    assert report["status"] == "critical"
+    assert any(item["code"] == "duplicate_ledger_operation_key" for item in report["findings"])
+
+
+def test_zero_delta_ledger_entry_is_invalid():
+    report = audit(ledger_entries=[ledger(1, 0, 0, 100, 0)])
+    assert report["status"] == "critical"
+    assert any(item["code"] == "invalid_ledger_row" for item in report["findings"])
