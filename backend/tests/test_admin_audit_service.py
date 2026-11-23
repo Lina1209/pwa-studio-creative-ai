@@ -94,3 +94,18 @@ def test_record_admin_audit_event_accepts_resource_types_used_by_admin_routes(mo
     )
     assert result == "audit-id"
     assert captured["p_resource_type"] == resource_type
+
+
+@pytest.mark.parametrize("action", ["admin.support.reply", "admin.support.status.changed"])
+def test_record_admin_audit_event_accepts_explicit_support_mutation_actions(monkeypatch, action):
+    import app.services.admin_audit_service as service
+
+    captured = {}
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: captured.update(payload) or "audit-id")
+    result = record_admin_audit_event(
+        SETTINGS, actor_user_id=ACTOR, action=action, outcome="executed",
+        resource_type="support_ticket", resource_id=RESOURCE,
+    )
+    assert result == "audit-id"
+    assert captured["p_action"] == action
+    assert captured["p_outcome"] == "executed"
