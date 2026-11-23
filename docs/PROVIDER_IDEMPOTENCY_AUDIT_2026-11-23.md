@@ -122,3 +122,10 @@ causes the centralized bootstrap to fail startup. Therefore, changing the
 mode alone cannot activate live payments, and enabling the flag alone cannot
 activate a provider. The repository currently registers no concrete payment
 adapter.
+
+The process-level registry is attached to `app.state.payment_provider_registry`
+so future route dependencies can consume the same centrally constructed
+instance instead of creating request-scoped registries. This state attachment
+does not add a webhook route or expose payment processing. A dedicated app
+test verifies that the registered instance remains empty and rejects provider
+lookup under the default configuration.
