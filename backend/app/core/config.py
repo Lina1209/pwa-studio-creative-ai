@@ -86,6 +86,14 @@ class Settings(BaseSettings):
             raise ValueError("AI_MODEL is not allowed for the selected AI_PROVIDER.")
         return self
 
+    @model_validator(mode="after")
+    def validate_payment_provider_mode(self):
+        if self.payment_provider_mode == "live" and self.payment_provider_runtime_enabled is not True:
+            raise ValueError(
+                "PAYMENT_PROVIDER_RUNTIME_ENABLED must be true before live payment mode can be selected."
+            )
+        return self
+
     @field_validator("free_entitlement_policy_code")
     @classmethod
     def validate_free_entitlement_policy_code(cls, value: str | None) -> str | None:
