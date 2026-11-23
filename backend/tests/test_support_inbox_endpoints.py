@@ -42,14 +42,27 @@ def test_admin_support_inbox_requires_admin(monkeypatch):
 def test_support_ticket_create_trims_text_and_uses_verified_user(monkeypatch):
     import app.main as main
     captured={}
-    monkeypatch.setattr(main, "create_ticket", lambda *a: captured.update(user_id=a[1],subject=a[2],body=a[3]) or {"id":TICKET})
+    monkeypatch.setattr(main, "create_ticket", lambda *a, **k: captured.update(user_id=a[1],subject=a[2],body=a[3],category=k["category"],context=k["context"]) or {"id":TICKET})
     monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: "audit")
     client=client_for(StudioUser(user_id=OWNER,email=None,role="creator"))
-    response=client.post("/api/support/tickets",json={"subject":"  Help  ","message":"  Please help  "})
+    response=client.post("/api/support/tickets",json={"subject":"  Help  ","message":"  Please help  ","category":"bug","context":{"page_path":"#account"}})
     assert response.status_code == 201
-    assert captured == {"user_id":UUID(OWNER),"subject":"Help","body":"Please help"}
+    assert captured == {"user_id":UUID(OWNER),"subject":"Help","body":"Please help","category":"bug","context":{"page_path":"#account"}}
 
 def test_support_message_rejects_extra_fields():
     client=client_for(StudioUser(user_id=OWNER,email=None,role="creator"))
     response=client.post(f"/api/support/tickets/{TICKET}/messages",json={"message":"hello","sender_user_id":OTHER})
+    assert response.status_code == 422
+
+
+
+def test_support_ticket_rejects_unknown_category():
+    client=client_for(StudioUser(user_id=OWNER,email=None,role="creator"))
+    response=client.post("/api/support/tickets",json={"subject":"Help","message":"Please help","category":"root"})
+    assert response.status_code == 422
+
+
+def test_support_ticket_context_rejects_unapproved_fields():
+    client=client_for(StudioUser(user_id=OWNER,email=None,role="creator"))
+    response=client.post("/api/support/tickets",json={"subject":"Help","message":"Please help","context":{"email":"private@example.com"}})
     assert response.status_code == 422
