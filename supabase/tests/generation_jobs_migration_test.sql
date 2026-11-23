@@ -5409,6 +5409,12 @@ begin
   if v_ack or v_status <> 'cancel_requested' or v_hold_status <> 'held' or v_count <> 0 then
     raise exception 'Unknown provider operation was incorrectly acknowledged or refunded';
   end if;
+  -- Free the plan concurrency reservation for the next independent fixture;
+  -- the transaction-level test still verifies the held credit above.
+  update public.generation_jobs
+     set status='failed', lease_owner=null, lease_expires_at=null,
+         heartbeat_at=null, completed_at=now(), updated_at=now()
+   where id=v_unknown_operation.job_id;
 
   -- A result-received provider operation is definitive: discard its asset,
   -- acknowledge cancellation, and release the customer hold exactly once.
