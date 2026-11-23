@@ -87,9 +87,9 @@ def test_service_marks_over_limit_snapshot_incomplete(monkeypatch):
         "user_id": str(USER_ID),
         "operation_type": "grant",
         "operation_key": f"ledger-op-{index + 1:05d}",
-        "delta_available": 0,
+        "delta_available": 1 if index % 2 == 0 else -1,
         "delta_reserved": 0,
-        "balance_available_after": 0,
+        "balance_available_after": 1 if index % 2 == 0 else 0,
         "balance_reserved_after": 0,
         "created_at": "2026-11-23T10:00:00Z",
     } for index in range(10000)]
