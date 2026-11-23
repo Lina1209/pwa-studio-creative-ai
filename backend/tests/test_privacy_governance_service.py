@@ -46,6 +46,7 @@ def test_transfer_audit_rpc_payload_contains_no_user_content(monkeypatch):
     privacy.record_ai_transfer_event(
         Settings(), user_id=USER_ID, provider="deepseek", model="deepseek-flash",
         operation="vision", outcome="attempted", consent_event_id=EVENT_ID,
+        correlation_id=UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
     )
     name, payload = calls[0]
     assert name == "record_ai_data_transfer_event"
