@@ -60,3 +60,34 @@ def test_tariff_draft_rejects_unsupported_model(monkeypatch):
     payload["rules"][0]["model"] = "unknown-model"
     response = client_for(StudioUser(user_id=ADMIN,email=None,role="admin")).post("/api/admin/pricing/drafts",json=payload)
     assert response.status_code == 422
+
+
+def test_pricing_draft_audit_intent_precedes_creation(monkeypatch):
+    import app.main as main
+
+    calls = []
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: calls.append(("audit", k)) or "audit-id")
+    monkeypatch.setattr(main, "create_draft", lambda *a, **k: calls.append(("create", k)) or {"id": DRAFT})
+    response = client_for(StudioUser(user_id=ADMIN, email=None, role="admin")).post(
+        "/api/admin/pricing/drafts", json=valid_payload()
+    )
+    assert response.status_code == 201
+    assert [entry[0] for entry in calls] == ["audit", "create", "audit"]
+    assert calls[0][1]["action"] == "admin.pricing.draft.create"
+    assert calls[0][1]["outcome"] == "requested"
+    assert calls[2][1]["outcome"] == "executed"
+    assert calls[2][1]["resource_id"] == UUID(DRAFT)
+
+
+def test_pricing_draft_fails_closed_when_intent_audit_is_unavailable(monkeypatch):
+    import app.main as main
+    from app.services.admin_audit_service import AdminAuditUnavailable
+
+    mutations = []
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: (_ for _ in ()).throw(AdminAuditUnavailable("unavailable")))
+    monkeypatch.setattr(main, "create_draft", lambda *a, **k: mutations.append(True) or {"id": DRAFT})
+    response = client_for(StudioUser(user_id=ADMIN, email=None, role="admin")).post(
+        "/api/admin/pricing/drafts", json=valid_payload()
+    )
+    assert response.status_code == 503
+    assert mutations == []
