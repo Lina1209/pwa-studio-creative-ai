@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from app.services import ai_service
 from app.services.ai_cost_admission import AIProviderCostReservation, estimate_actual_cost
+from app.services.vision_input import ValidatedVisionImage
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +18,11 @@ def stub_cost_admission(monkeypatch):
         return AIProviderCostReservation(request_id=request_id, reserved_cost_usd=Decimal("0.1"))
 
     monkeypatch.setattr(ai_service, "reserve_ai_provider_cost", reserve)
+    monkeypatch.setattr(
+        ai_service, "reserve_ai_provider_vision_cost",
+        lambda settings, *, user_id, request_id, text_messages, image_count=1:
+            AIProviderCostReservation(request_id, Decimal("0.2"), "vision"),
+    )
     monkeypatch.setattr(
         ai_service, "settle_ai_provider_cost",
         lambda settings, reservation, *, input_tokens, output_tokens:
@@ -138,3 +144,86 @@ def test_only_deepseek_provider_is_accepted():
 def test_billable_ai_retries_are_disabled_at_configuration_boundary():
     with pytest.raises(ValidationError):
         Settings(ai_max_retries=1)
+
+
+
+def test_vision_completion_sends_only_validated_data_url_and_settles_usage(monkeypatch):
+    seen = {}
+    image = ValidatedVisionImage(
+        mime_type="image/png",
+        data_url="data:image/png;base64,aGVsbG8=",
+        byte_length=5,
+        width=1,
+        height=1,
+        sha256_hex="a" * 64,
+    )
+
+    def fake_completion(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=[
+                SimpleNamespace(type="text", text="Вижу маяк у моря."),
+            ]))],
+            usage={"prompt_tokens": 1200, "completion_tokens": 20, "total_tokens": 1220},
+            model="deepseek-flash",
+        )
+
+    monkeypatch.setattr(ai_service, "completion", fake_completion)
+    result = ai_service.ask_ai_vision(
+        settings(),
+        system_prompt="Analyze safely.",
+        user_prompt="Опиши изображение.",
+        image=image,
+        user_id=uuid4(),
+    )
+    assert result.text == "Вижу маяк у моря."
+    assert result.input_tokens == 1200
+    assert result.output_tokens == 20
+    assert result.request_id
+    assert seen["model"] == "deepseek/deepseek-flash"
+    assert seen["max_retries"] == 0
+    assert seen["messages"][1]["content"][0] == {
+        "type": "text", "text": "Опиши изображение.",
+    }
+    assert seen["messages"][1]["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": image.data_url},
+    }
+
+
+def test_vision_rejects_unsupported_model_before_reservation_or_provider(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ai_service, "reserve_ai_provider_vision_cost",
+                        lambda *args, **kwargs: calls.append("reserve"))
+    monkeypatch.setattr(ai_service, "completion",
+                        lambda **kwargs: calls.append("provider"))
+    image = ValidatedVisionImage(
+        "image/png", "data:image/png;base64,aGVsbG8=", 5, 1, 1, "a" * 64,
+    )
+    with pytest.raises(ai_service.AIConfigurationError):
+        ai_service.ask_ai_vision(
+            settings(ai_model="deepseek-v4-pro"),
+            system_prompt="system", user_prompt="prompt", image=image, user_id=uuid4(),
+        )
+    assert calls == []
+
+
+def test_vision_provider_failure_marks_reservation_unknown(monkeypatch):
+    unknown = []
+    monkeypatch.setattr(
+        ai_service, "mark_ai_provider_cost_unknown",
+        lambda settings, reservation: unknown.append(reservation.request_modality),
+    )
+    monkeypatch.setattr(
+        ai_service, "completion",
+        lambda **kwargs: (_ for _ in ()).throw(TimeoutError("simulated timeout")),
+    )
+    image = ValidatedVisionImage(
+        "image/png", "data:image/png;base64,aGVsbG8=", 5, 1, 1, "a" * 64,
+    )
+    with pytest.raises(TimeoutError):
+        ai_service.ask_ai_vision(
+            settings(), system_prompt="system", user_prompt="prompt",
+            image=image, user_id=uuid4(),
+        )
+    assert unknown == ["vision"]
