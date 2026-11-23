@@ -571,7 +571,7 @@ def audit_finance_integrity(
                     findings.append(_finding("settled_payment_fulfillment_missing", "critical", payment_order_id=oid))
                 if not any(e.get("event_type") == "payment.succeeded" and e.get("processing_status") == "processed" for e in provider_events_by_order.get(oid, [])):
                     findings.append(_finding("settled_payment_provider_success_missing", "critical", payment_order_id=oid))
-            elif outbox is not None:
+            elif order.get("status") in {"created", "pending", "failed", "cancelled"} and outbox is not None:
                 findings.append(_finding("unsettled_payment_has_fulfillment", "critical", payment_order_id=oid))
             if order.get("status") in {"refunded", "partially_refunded"}:
                 findings.append(_finding("refund_lifecycle_not_implemented", "warning", payment_order_id=oid))
