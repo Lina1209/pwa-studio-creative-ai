@@ -160,3 +160,9 @@ def test_wallet_without_ledger_history_is_not_reported_healthy():
     )
     assert report["status"] == "warning"
     assert any(item["code"] == "ledger_history_missing" for item in report["findings"])
+
+
+def test_provider_cost_owner_or_provider_mismatch_is_critical():
+    report = audit(provider_cost_events=[cost_event(user_id="different-user")])
+    assert report["status"] == "critical"
+    assert any(item["code"] == "provider_cost_job_identity_mismatch" for item in report["findings"])
