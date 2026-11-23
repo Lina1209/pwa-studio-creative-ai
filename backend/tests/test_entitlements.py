@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
@@ -208,8 +208,8 @@ def test_future_scheduled_assignment_is_reported_pending_not_active(monkeypatch)
     now = datetime.now(timezone.utc)
     future = {
         **_active_assignment(),
-        "starts_at": (now.replace(day=1) + __import__("datetime").timedelta(days=40)).isoformat(),
-        "ends_at": (now.replace(day=1) + __import__("datetime").timedelta(days=70)).isoformat(),
+        "starts_at": (now.replace(day=1) + timedelta(days=40)).isoformat(),
+        "ends_at": (now.replace(day=1) + timedelta(days=70)).isoformat(),
     }
     calls = []
     responses = {
