@@ -3924,7 +3924,7 @@ insert into public.plan_catalog_drafts(
   '{
     "daily_ai_requests": 20,
     "monthly_ai_requests": 200,
-    "max_concurrent_ai_requests": 2,
+    "max_concurrent_ai_requests": 1,
     "daily_image_generations": 10,
     "monthly_image_generations": 100,
     "daily_video_generations": 5,
@@ -4110,6 +4110,35 @@ begin
   if jsonb_array_length(v_created.quota_reservations) <> 3 then
     raise exception 'AI request must reserve daily, monthly and concurrency dimensions';
   end if;
+
+  -- One concurrent AI slot is available. A second active job must fail and
+  -- roll back its job, hold, and the daily/monthly reservations it tentatively made.
+  select count(*) into v_before_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select count(*) into v_before_holds from public.credit_holds
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  begin
+    perform * from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null, null, 'ai_processing', 'quota-test-provider', 'quota-test-model',
+      'plan-quota-ai-job-overflow',
+      repeat('d', 64),
+      '{"prompt":"concurrency overflow","quantity":1}'::jsonb,
+      '{"amount":5,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      5
+    );
+    raise exception 'Second concurrent AI job was unexpectedly admitted';
+  exception when sqlstate '54000' then
+    null;
+  end;
+  select count(*) into v_after_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select count(*) into v_after_holds from public.credit_holds
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  if v_after_jobs <> v_before_jobs or v_after_holds <> v_before_holds then
+    raise exception 'Concurrent AI quota denial did not roll back job and hold';
+  end if;
+
   update public.generation_jobs
      set status = 'succeeded', completed_at = now(), updated_at = now()
    where id = v_created.job_id;
@@ -4121,6 +4150,26 @@ begin
          and feature_key = 'max_concurrent_ai_requests'
          and status = 'released') <> 1 then
     raise exception 'AI success must consume period quotas and release concurrency';
+  end if;
+
+  -- Once the slot is released, a later request can enter; failure then releases
+  -- all three dimensions rather than consuming period usage.
+  select * into v_created
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null, null, 'ai_processing', 'quota-test-provider', 'quota-test-model',
+      'plan-quota-ai-job-failure',
+      repeat('e', 64),
+      '{"prompt":"terminal failure release","quantity":1}'::jsonb,
+      '{"amount":5,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      5
+    );
+  update public.generation_jobs
+     set status = 'failed', completed_at = now(), updated_at = now()
+   where id = v_created.job_id;
+  if (select count(*) from public.plan_quota_reservations
+       where request_id = v_created.job_id and status = 'released') <> 3 then
+    raise exception 'Terminal failure must release all AI quota dimensions';
   end if;
 end;
 $plan_quota_atomic_admission_test$;
