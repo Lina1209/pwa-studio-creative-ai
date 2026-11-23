@@ -212,6 +212,7 @@ def audit_finance_integrity(
 
     allocation_sums: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {"held": 0, "captured": 0, "released": 0})
     lot_held_allocations: dict[str, int] = defaultdict(int)
+    lot_captured_allocations: dict[str, int] = defaultdict(int)
     seen_allocations: set[str] = set()
     seen_hold_lots: set[tuple[str, str]] = set()
     for allocation in hold_allocations if check_allocations else ():
@@ -244,6 +245,8 @@ def audit_finance_integrity(
             allocation_sums[(hold_id, state)][state] += amount
             if state == "held":
                 lot_held_allocations[lot_id] += amount
+            elif state == "captured":
+                lot_captured_allocations[lot_id] += amount
         except (ValueError, TypeError):
             findings.append(_finding("invalid_hold_allocation", "critical"))
 
@@ -260,6 +263,13 @@ def audit_finance_integrity(
     for lot_id, lot in lot_map.items() if check_lots and check_allocations else ():
         if lot_held_allocations.get(lot_id, 0) != lot["reserved_credits"]:
             findings.append(_finding("lot_allocation_total_mismatch", "critical", user_id=lot["user_id"], lot_id=lot_id))
+        consumed_and_remaining = (
+            lot["available_credits"]
+            + lot["reserved_credits"]
+            + lot_captured_allocations.get(lot_id, 0)
+        )
+        if consumed_and_remaining > lot["granted_credits"]:
+            findings.append(_finding("lot_consumption_exceeds_grant", "critical", user_id=lot["user_id"], lot_id=lot_id))
 
     for owner, wallet in wallets.items():
         if not isinstance(wallet, dict):
