@@ -128,3 +128,13 @@ def test_audit_does_not_leak_raw_provider_metadata():
     serialized = str(report)
     assert "private prompt" not in serialized
     assert "private-usage" not in serialized
+
+
+def test_duplicate_operation_key_is_detected_even_with_distinct_usage_ids():
+    second = cost_event(
+        event_id=2,
+        provider_usage_id="usage-002",
+    )
+    report = audit(provider_cost_events=[cost_event(), second])
+    assert report["status"] == "critical"
+    assert any(item["code"] == "duplicate_provider_operation_key" for item in report["findings"])
