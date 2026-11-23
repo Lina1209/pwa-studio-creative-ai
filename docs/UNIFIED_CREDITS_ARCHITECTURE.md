@@ -74,7 +74,7 @@ Idempotent operation lifecycle:
 - provider_request_reference, nullable
 - timestamps and safe failure/reconciliation metadata
 
-A reservation must be created before starting a paid provider operation. Repeating the same idempotency key must return the existing reservation, not reserve twice.
+A reservation must be created before starting a paid provider operation. Repeating the same idempotency key with identical operation, pricing version, and amount returns the existing reservation; reusing it with different parameters is rejected.
 
 ### operation_pricing
 Server-owned versioned credit prices:
@@ -96,7 +96,7 @@ Never accept a client-supplied credit price or arbitrary multiplier.
 7. On confirmed success, calculate the final charge from trusted provider/job telemetry, capture that amount, and return unused reserved credits to available in one transaction.
 8. On confirmed failure before work was accepted, release the full reservation.
 9. If provider/job completion is ambiguous (timeout, lost callback, worker crash), keep the reservation in reconciliation_required; do not blindly refund and do not launch a duplicate paid operation.
-10. Reconcile the job using provider reference/status and settle or release exactly once.
+10. Reconcile the job using provider reference/status and settle or release exactly once. Reconciliation-required reservations remain locked until a trusted outcome is known; they may then be settled or released through the same guarded lifecycle RPCs.
 
 All settlement/release RPCs must be idempotent. A repeated callback must never double-charge or double-refund.
 
@@ -143,6 +143,6 @@ The repository currently has:
 - a backend credit-service adapter with strict UUID/amount/operation validation, a server-side grant-source allowlist, RPC response validation, and fail-closed storage handling;
 - unit tests for the credit-service adapter. The adapter is intentionally not connected to paid AI or media endpoints until server-owned operation pricing exists.
 
-The wallet migration has not been applied, its SQL has not been executed against Supabase, and the RPCs are not yet called by application endpoints. Subscription entitlements, payment webhooks, operation pricing, frontend wallet views, and end-to-end paid-operation enforcement are not implemented. The credit foundation must not be described as active until migration history is reconciled, the SQL is reviewed and applied with authorization, backend integration is tested, and live behavior is verified.
+The wallet migration has not been applied, its SQL has not been executed against Supabase, and the RPCs are not yet called by application endpoints. The draft migration includes wallet-first row-lock ordering, parameter-consistent idempotency checks, service-role read-only ledger access (with writes performed by the definer RPCs), and an audited reconciliation-required transition. These are source-level safeguards only until PostgreSQL integration/concurrency tests are completed. Subscription entitlements, payment webhooks, operation pricing, frontend wallet views, and end-to-end paid-operation enforcement are not implemented. The credit foundation must not be described as active until migration history is reconciled, the SQL is reviewed and applied with authorization, backend integration is tested, and live behavior is verified.
 
 No SQL from this design should be executed against production until the migration history and live schema are reconciled.
