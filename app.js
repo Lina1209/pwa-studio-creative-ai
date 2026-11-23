@@ -1586,7 +1586,23 @@ const movieHistoryStyle = document.createElement("style");
         if (titleUpdateError) throw titleUpdateError;
       }
       if (authSession?.user?.id !== requestUserId) return;
-      const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
+      const activeProject = activeMovieId ? movieRead().find(project => project.id === activeMovieId) : null;
+      const projectContext = activeProject ? {
+        title: String(activeProject.name || "Без названия").slice(0, 120),
+        idea: String(activeProject.idea || "").slice(0, 2000),
+        genre: String(activeProject.genre || "").slice(0, 80),
+        duration_minutes: Number.isInteger(activeProject.duration) ? Math.min(30, Math.max(1, activeProject.duration)) : null,
+        frame: ["16:9", "9:16", "1:1"].includes(activeProject.frame) ? activeProject.frame : null,
+        story: String(activeProject.story || "").slice(0, 6000),
+        storyboard: String(activeProject.storyboard || "").slice(0, 6000),
+        characters: String(activeProject.characters || "").slice(0, 3000),
+        voices: String(activeProject.voices || "").slice(0, 2000),
+        edit: String(activeProject.edit || "").slice(0, 2000)
+      } : null;
+      const chatPayload = projectContext
+        ? { message: value, project_context: projectContext }
+        : { message: value };
+      const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify(chatPayload) });
       if (authSession?.user?.id !== requestUserId) {
         setAssistantStatus("Сеанс аккаунта изменился. Ответ не был сохранён в другом аккаунте.");
         return;
