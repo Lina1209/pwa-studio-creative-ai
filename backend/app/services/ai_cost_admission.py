@@ -208,12 +208,11 @@ def estimate_worst_case_vision_cost(
     *,
     image_count: int = 1,
 ) -> tuple[int, int, Decimal]:
-    """Estimate a fail-closed Vision reservation without contacting any provider.
+    """Estimate Vision exposure before reserving it in the shared USD ledger.
 
     The browser never supplies token counts. Text is serialized canonically and bounded
     by the existing byte limit; image tokens use DeepSeek's documented 1,024-token
-    per-image upper bound. This is an estimator only: the Vision RPC/ledger path must
-    be added separately before a paid Vision request can be enabled.
+    per-image upper bound. The returned estimate is reserved before any provider call.
     """
     if settings.ai_provider != "deepseek" or settings.ai_model != "deepseek-flash":
         raise AIProviderBudgetUnavailable(
