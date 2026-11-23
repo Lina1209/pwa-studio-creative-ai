@@ -1467,8 +1467,8 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         "Return only the finished prompt."
     )
     request = (
-        f"Purpose: {payload.purpose}\\nOutput language: {payload.language}\\n"
-        f"Visual style: {payload.style or 'Choose a fitting style'}\\n"
+        f"Purpose: {payload.purpose}\nOutput language: {payload.language}\n"
+        f"Visual style: {payload.style or 'Choose a fitting style'}\n"
         f"User idea: {payload.idea}"
     )
     result = _run_admitted_ai("prompts", user.user_id, lambda: ask_ai(settings, [
@@ -1504,7 +1504,6 @@ def support_create_ticket(payload: SupportTicketCreate, user: StudioUser = Depen
     if len(subject)<3 or not body: raise HTTPException(status_code=422, detail="Тема и сообщение обязательны.")
     try:
         ticket=create_ticket(settings, UUID(user.user_id), subject, body)
-        record_admin_audit_event(settings, actor_user_id=UUID(user.user_id), action="admin.support.view", outcome="requested", resource_type="support_ticket", resource_id=UUID(ticket["id"]), reason="User created support ticket")
         return {"ticket":ticket}
     except SupportUnavailable: _support_error()
 
