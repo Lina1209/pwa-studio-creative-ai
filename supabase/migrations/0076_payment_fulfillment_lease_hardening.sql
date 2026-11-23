@@ -62,6 +62,8 @@ begin
 end;
 $$;
 
+drop function if exists public.claim_payment_fulfillment(integer);
+
 create or replace function public.claim_payment_fulfillment(
   p_lease_seconds integer default 120,
   p_batch_size integer default 1
