@@ -5,6 +5,7 @@
 \ir ../migrations/0078_atomic_payment_fulfillment.sql
 \ir ../migrations/0100_finance_integrity_payments_subscriptions_quotas.sql
 \ir ../migrations/0102_payment_refund_foundation.sql
+\ir ../migrations/0103_finance_integrity_refund_snapshot.sql
 
 insert into auth.users(id)
 values
@@ -546,5 +547,26 @@ begin
   end if;
 end;
 $payment_refund_privilege_boundaries$;
+
+select 'payment refund intent and settlement checks passed' as result;
+
+
+do $finance_refund_snapshot_test$
+declare
+  v_snapshot jsonb;
+begin
+  v_snapshot := public.get_finance_integrity_audit_snapshot(
+    '88888888-8888-4888-8888-888888888888'
+  );
+  if v_snapshot ->> 'complete' <> 'true'
+     or (v_snapshot -> 'counts' ->> 'payment_refunds')::integer <> 2
+     or (v_snapshot -> 'counts' ->> 'payment_refund_provider_events')::integer <> 3
+     or (v_snapshot -> 'counts' ->> 'payment_refund_events')::integer <> 5
+     or (v_snapshot -> 'counts' ->> 'payment_refund_reconciliations')::integer <> 2
+     or jsonb_array_length(v_snapshot -> 'payment_refunds') <> 2 then
+    raise exception 'Refund evidence is missing from the bounded one-statement finance snapshot: %', v_snapshot;
+  end if;
+end;
+$finance_refund_snapshot_test$;
 
 select 'payment refund intent and settlement checks passed' as result;
