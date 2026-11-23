@@ -113,7 +113,7 @@ def read_messages(settings: Settings, conversation_id: UUID, user_id: UUID, *, l
     if not _require_participant(settings, conversation_id, user_id):
         return None
     rows = _request(settings, "GET", "direct_messages", params={
-        "select": "id,conversation_id,sender_user_id,body,created_at",
+        "select": "id,conversation_id,sender_user_id,body,created_at,edited_at,deleted_at",
         "conversation_id": f"eq.{conversation_id}", "order": "created_at.asc,id.asc",
         "limit": str(max(1, min(limit, 200))),
     })
@@ -133,6 +133,37 @@ def send_message(settings: Settings, conversation_id: UUID, sender_id: UUID,
     if isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict):
         return rows[0]
     raise DirectMessagingUnavailable("Could not send private message.")
+
+
+def edit_message(settings: Settings, conversation_id: UUID, message_id: UUID,
+                 sender_id: UUID, body: str):
+    """Edit only the authenticated sender's message within the server-enforced edit window."""
+    rows = _request(settings, "POST", "rpc/edit_direct_message", payload={
+        "p_conversation_id": str(conversation_id),
+        "p_message_id": str(message_id),
+        "p_sender_user_id": str(sender_id),
+        "p_body": body.strip(),
+    })
+    if rows is True or (isinstance(rows, list) and rows and rows[0] is True):
+        return True
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return bool(rows[0].get("edit_direct_message"))
+    return False
+
+
+def delete_message(settings: Settings, conversation_id: UUID, message_id: UUID,
+                   sender_id: UUID):
+    """Soft-delete only the authenticated sender's message."""
+    rows = _request(settings, "POST", "rpc/delete_direct_message", payload={
+        "p_conversation_id": str(conversation_id),
+        "p_message_id": str(message_id),
+        "p_sender_user_id": str(sender_id),
+    })
+    if rows is True or (isinstance(rows, list) and rows and rows[0] is True):
+        return True
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return bool(rows[0].get("delete_direct_message"))
+    return False
 
 
 def mark_read(settings: Settings, conversation_id: UUID, user_id: UUID):
