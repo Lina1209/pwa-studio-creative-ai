@@ -1490,7 +1490,7 @@ const movieHistoryStyle = document.createElement("style");
     .prompt-version-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--muted)}
     .prompt-version-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
     .prompt-block-builder{margin:14px 0;padding:14px;border:1px solid rgba(170,140,255,.25);border-radius:14px;background:rgba(135,105,220,.06)}
-    .prompt-preset-row{display:flex;align-items:end;gap:9px;margin:12px 0}.prompt-preset-row>div{flex:1;min-width:0}.prompt-preset-row select{width:100%;min-height:42px;padding:9px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)}
+    .prompt-visual-library{margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}.prompt-visual-library textarea{width:100%;resize:vertical}.prompt-visual-list{display:grid;gap:9px;margin-top:12px}.prompt-visual-card{padding:11px;border:1px solid var(--border);border-radius:11px;background:var(--card,transparent)}.prompt-visual-card p{margin:7px 0;white-space:pre-wrap;overflow-wrap:anywhere}.prompt-preset-row{display:flex;align-items:end;gap:9px;margin:12px 0}.prompt-preset-row>div{flex:1;min-width:0}.prompt-preset-row select{width:100%;min-height:42px;padding:9px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)}
     .prompt-block-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.prompt-block-list{display:grid;gap:8px;margin-top:10px}
     .prompt-builder-block{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:11px;border:1px solid var(--border);border-radius:11px;background:var(--surface)}
     .prompt-builder-block b{font-size:13px}.prompt-builder-block p{grid-column:1;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
@@ -1801,7 +1801,45 @@ const movieHistoryStyle = document.createElement("style");
   });
   $("#clearPromptBlocks").addEventListener("click",()=>{promptBuilderBlocks=[];renderPromptBuilderBlocks();$("#promptSaveFeedback").textContent="Блоки конструктора очищены.";});
   renderPromptBuilderBlocks();
-  const promptTemplates = {
+  const visualLibraryKey = () => "pwa-studio-visual-library-v1:"+(authSession?.user?.id||"guest");
+  const readVisualLibrary = () => {
+    try {
+      const items=JSON.parse(localStorage.getItem(visualLibraryKey())||"[]");
+      return Array.isArray(items)?items.filter(item=>item&&["character","scene"].includes(item.type)&&typeof item.name==="string"&&typeof item.text==="string").slice(0,100):[];
+    } catch { return []; }
+  };
+  const renderVisualLibrary = () => {
+    const list=$("#visualAssetList");if(!list)return;
+    const items=readVisualLibrary();list.replaceChildren();
+    if(!items.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent="Ваша библиотека пока пуста.";list.append(empty);return;}
+    items.forEach((item,index)=>{
+      const card=document.createElement("article");card.className="prompt-visual-card";
+      const title=document.createElement("b");title.textContent=(item.type==="character"?"Персонаж · ":"Сцена · ")+item.name;
+      const description=document.createElement("p");description.textContent=item.text;
+      const actions=document.createElement("div");actions.className="prompt-library-actions";
+      const insert=document.createElement("button");insert.type="button";insert.className="secondary-button";insert.textContent="Вставить в конструктор";insert.addEventListener("click",()=>{
+        $("#promptBlockType").value=item.type;$("#promptBlockText").value=item.text;$("#promptBlockText").focus();
+        $("#promptSaveFeedback").textContent="Материал «"+item.name+"» загружен в конструктор. При необходимости дополните его и добавьте блок.";
+      });
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
+        const next=readVisualLibrary();next.splice(index,1);localStorage.setItem(visualLibraryKey(),JSON.stringify(next));renderVisualLibrary();
+      });
+      actions.append(insert,remove);card.append(title,description,actions);list.append(card);
+    });
+  };
+  $("#saveVisualAsset").addEventListener("click",()=>{
+    const type=$("#visualAssetType").value,name=$("#visualAssetName").value.trim(),value=$("#visualAssetDescription").value.trim();
+    if(!["character","scene"].includes(type)||!name||!value){$("#promptSaveFeedback").textContent="Укажите тип, название и описание материала.";return;}
+    const items=readVisualLibrary();
+    if(items.length>=100){$("#promptSaveFeedback").textContent="Библиотека вмещает до 100 материалов. Удалите ненужные записи.";return;}
+    items.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),type,name:name.slice(0,80),text:value.slice(0,5000),createdAt:new Date().toISOString()});
+    try{localStorage.setItem(visualLibraryKey(),JSON.stringify(items));}
+    catch{$("#promptSaveFeedback").textContent="Не удалось сохранить материал: проверьте свободное место браузера.";return;}
+    $("#visualAssetName").value="";$("#visualAssetDescription").value="";renderVisualLibrary();
+    $("#promptSaveFeedback").textContent="«"+name+"» сохранён в библиотеке и доступен в других фильмах на этом устройстве.";
+  });
+  renderVisualLibrary();
+    const promptTemplates = {
     cinematic: "Субъект: {{subject}}.\nЛокация: {{location}}.\nНастроение: {{mood}}.\nКинематографичная композиция, выразительная глубина кадра, естественное освещение, детализированные материалы, продуманная цветовая палитра. Камера: {{camera}}. Сохранить визуальную целостность и реалистичную физику.",
     character: "Персонаж: {{subject}}.\nВнешность и отличительные черты: {{appearance}}.\nОдежда и аксессуары: {{wardrobe}}.\nХарактер и манера движения: {{personality}}. Сохранять одинаковые черты лица, пропорции, причёску и одежду во всех кадрах. Не менять идентичность персонажа.",
     video: "Сцена: {{subject}}.\nДействие: {{action}}.\nОкружение: {{location}}.\nДвижение камеры: {{camera}}.\nДлительность: {{duration}}. Описать начало, развитие и завершение движения, темп, направление, непрерывность и переход к следующему кадру.",
