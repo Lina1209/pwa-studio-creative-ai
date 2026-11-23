@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
 
     ai_provider: str = "deepseek"
     ai_model: str = "deepseek-flash"
+    # Server-side output ceiling to bound worst-case provider usage per request.
+    ai_max_output_tokens: int = Field(default=2048, ge=256, le=8192)
     openai_api_key: str | None = None
     deepseek_api_key: str | None = None
     anthropic_api_key: str | None = None
