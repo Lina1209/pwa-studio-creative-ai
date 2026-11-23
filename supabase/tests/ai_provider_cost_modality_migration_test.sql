@@ -7,19 +7,13 @@ declare
   v_user uuid := '8c1a9a44-47b8-4d58-9f9c-30b0f55e9a88';
   v_text_request uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a101';
   v_vision_request uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a102';
-  v_blocked_request uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a103';
   v_result jsonb;
   v_count integer;
   v_state text;
   v_modality text;
   v_failed boolean;
 begin
-  insert into auth.users (
-    id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at
-  ) values (
-    v_user, 'authenticated', 'authenticated',
-    'ai-cost-modality-test@example.invalid', '', now(), now(), now()
-  ) on conflict (id) do nothing;
+  insert into auth.users(id) values (v_user) on conflict (id) do nothing;
 
   -- Isolate this transaction from unrelated reservations in the disposable test DB.
   delete from public.ai_provider_cost_reservations;
