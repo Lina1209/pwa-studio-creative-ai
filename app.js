@@ -1886,6 +1886,15 @@ const movieHistoryStyle = document.createElement("style");
         }
       }
       if(!isCurrentSync())return;
+      // Remove owner-scoped local image blobs for assets whose cloud tombstones won.
+      for(const localItem of readVisualLibrary()){
+        if(!tombstones.has(localItem.id))continue;
+        for(const ref of (Array.isArray(localItem.referenceImages)?localItem.referenceImages:[])){
+          if(!isCurrentSync())return;
+          await deleteVisualRefImage(ref.id,userId);
+        }
+      }
+      if(!isCurrentSync())return;
       localStorage.setItem(visualLibraryKey(),JSON.stringify(activeItems));
       renderVisualLibrary();
       $("#promptSaveFeedback").textContent=invalidRows||missingImages
