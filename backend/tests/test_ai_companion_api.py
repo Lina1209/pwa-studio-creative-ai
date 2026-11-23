@@ -326,3 +326,115 @@ def test_chat_and_prompt_studio_reject_invalid_payloads():
         assert extra_prompt.status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+
+def test_vision_analysis_is_disabled_by_default_and_never_calls_provider(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", False)
+    monkeypatch.setattr(
+        main, "ask_ai_vision",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider must not run")),
+    )
+    client = _client()
+    try:
+        response = client.post("/api/vision/analyze", json={
+            "prompt": "Опиши изображение.",
+            "image_data_url": "data:image/png;base64,aGVsbG8=",
+            "consent_to_deepseek": True,
+        })
+        assert response.status_code == 503
+        assert "отключён" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_vision_analysis_requires_explicit_consent():
+    client = _client()
+    try:
+        response = client.post("/api/vision/analyze", json={
+            "prompt": "Опиши изображение.",
+            "image_data_url": "data:image/png;base64,aGVsbG8=",
+        })
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch):
+    import app.main as main
+    from app.services.vision_input import ValidatedVisionImage
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    validated = ValidatedVisionImage(
+        mime_type="image/png",
+        data_url="data:image/png;base64,aGVsbG8=",
+        byte_length=5,
+        width=1,
+        height=1,
+        sha256_hex="a" * 64,
+    )
+    validation_inputs = []
+    monkeypatch.setattr(
+        main, "validate_vision_data_url",
+        lambda value: validation_inputs.append(value) or validated,
+    )
+    calls, usage = [], []
+    result = SimpleNamespace(
+        text="На изображении маяк на скалистом берегу.",
+        actual_model="deepseek-flash",
+        request_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    )
+    def run(operation, user_id, call):
+        calls.append((operation, user_id))
+        return call()
+    def ask(settings, *, system_prompt, user_prompt, image, user_id):
+        assert image is validated
+        assert user_id == USER.user_id
+        assert "не идентифицируй" not in system_prompt.lower()
+        assert user_prompt == "Опиши композицию."
+        return result
+
+    monkeypatch.setattr(main, "_run_admitted_ai", run)
+    monkeypatch.setattr(main, "ask_ai_vision", ask)
+    monkeypatch.setattr(main, "record_ai_usage", lambda *args, **kwargs: usage.append(kwargs))
+    client = _client()
+    try:
+        response = client.post("/api/vision/analyze", json={
+            "prompt": "Опиши композицию.",
+            "image_data_url": validated.data_url,
+            "consent_to_deepseek": True,
+        })
+        assert response.status_code == 200
+        assert response.json()["analysis"] == result.text
+        assert calls == [("vision", USER.user_id)]
+        assert validation_inputs == [validated.data_url]
+        assert usage[0]["endpoint"] == "vision"
+        assert usage[0]["request_id"] == result.request_id
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_vision_analysis_rejects_invalid_image_before_admission(monkeypatch):
+    import app.main as main
+    from app.services.vision_input import VisionInputError
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(
+        main, "validate_vision_data_url",
+        lambda value: (_ for _ in ()).throw(VisionInputError("invalid image")),
+    )
+    calls = []
+    monkeypatch.setattr(main, "_run_admitted_ai", lambda *args: calls.append(args))
+    client = _client()
+    try:
+        response = client.post("/api/vision/analyze", json={
+            "prompt": "Опиши изображение.",
+            "image_data_url": "data:image/png;base64,aGVsbG8=",
+            "consent_to_deepseek": True,
+        })
+        assert response.status_code == 422
+        assert calls == []
+    finally:
+        app.dependency_overrides.clear()
