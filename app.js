@@ -1901,9 +1901,11 @@ const movieHistoryStyle = document.createElement("style");
   };
   const deleteVisualAssetFromCloud=async(item)=>{
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
-    const {error:markError}=await supabaseClient.from("character_visual_assets")
-      .update({deleted_at:new Date().toISOString(),updated_at:new Date().toISOString()})
-      .eq("user_id",userId).eq("asset_id",item.id);
+    const deletedAt=new Date().toISOString();
+    const {error:markError}=await supabaseClient.from("character_visual_assets").upsert(
+      {user_id:userId,asset_id:item.id,asset:item,deleted_at:deletedAt,updated_at:deletedAt},
+      {onConflict:"user_id,asset_id"}
+    );
     if(markError)throw markError;
     const paths=(item?.referenceImages||[]).map(ref=>ref.storagePath).filter(Boolean);
     if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error)throw error;}
