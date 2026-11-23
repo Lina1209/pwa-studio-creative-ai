@@ -2652,6 +2652,16 @@ const movieHistoryStyle = document.createElement("style");
       if (authSession?.user?.id !== requestUserId) throw new Error("Сеанс аккаунта изменился. Повторите действие.");
       const prompt = ($("#assistantVisionPrompt")?.value || "").trim() ||
         "Опиши изображение и выдели важные детали для будущего видео.";
+      // Persist the exact, server-versioned consent decision before any image is sent.
+      await apiRequest("/api/privacy/consent", {
+        method: "POST",
+        body: JSON.stringify({
+          consent_scope: "vision_deepseek",
+          action: "accepted",
+          source: "web_app"
+        })
+      });
+      if (authSession?.user?.id !== requestUserId) throw new Error("Сеанс аккаунта изменился. Повторите действие.");
       const response = await apiRequest("/api/vision/analyze", {
         method: "POST",
         body: JSON.stringify({
