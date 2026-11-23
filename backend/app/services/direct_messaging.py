@@ -95,7 +95,7 @@ def list_conversations(settings: Settings, user_id: UUID, *, limit: int = 50):
             })
             peer_profile = profiles[0] if isinstance(profiles, list) and profiles and profiles[0].get("profile_visibility") == "public" else None
         latest = _request(settings, "GET", "direct_messages", params={
-            "select": "id,sender_user_id,body,created_at", "conversation_id": f"eq.{conversation_id}",
+            "select": "id,sender_user_id,body,created_at,deleted_at", "conversation_id": f"eq.{conversation_id}",
             "order": "created_at.desc,id.desc", "limit": "1",
         })
         item = dict(conversations[0])
@@ -104,6 +104,8 @@ def list_conversations(settings: Settings, user_id: UUID, *, limit: int = 50):
         item["peer_display_name"] = peer_profile.get("display_name") if peer_profile else None
         item["last_read_at"] = membership.get("last_read_at")
         item["last_message"] = latest[0] if isinstance(latest, list) and latest else None
+        if item["last_message"] and item["last_message"].get("deleted_at"):
+            item["last_message"]["body"] = "Сообщение удалено"
         result.append(item)
     result.sort(key=lambda item: item.get("last_message_at") or "", reverse=True)
     return result
