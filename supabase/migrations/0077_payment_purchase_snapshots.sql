@@ -77,6 +77,7 @@ begin
     (item_type = 'credit_pack'
       and approved_credit_pack_version_id is not null
       and approved_plan_version_id is null
+      and credit_validity_days is not null
       and credit_validity_days between 1 and 3650
       and plan_period_days is null)
     or
@@ -84,6 +85,7 @@ begin
       and approved_plan_version_id is not null
       and approved_credit_pack_version_id is null
       and credit_validity_days is null
+      and plan_period_days is not null
       and plan_period_days in (7,30))
   )
 );
