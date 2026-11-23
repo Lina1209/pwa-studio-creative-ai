@@ -707,15 +707,16 @@ const movieHistoryStyle = document.createElement("style");
     finally{button.disabled=false;}
   });
   if (authSession?.user) setTimeout(loadAccountRole, 0);
-  const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",control:"Центр управления",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
-    $$(".view").forEach(el => el.classList.toggle("active", el.id === "view-" + view));
-    $$(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
+    const targetView = view === "control" ? "home" : view;
+    $(".view").forEach(el => el.classList.toggle("active", el.id === "view-" + targetView));
+    $(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
     $("#crumbCurrent").textContent = labels[view];
     $("#sidebar").classList.remove("open");
-    window.location.hash = view === "home" ? "" : view;
+    window.location.hash = targetView === "home" && view === "home" ? "" : view;
     window.scrollTo({top:0,behavior:"smooth"});
   }
 
