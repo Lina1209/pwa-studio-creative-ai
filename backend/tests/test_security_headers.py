@@ -30,3 +30,34 @@ def test_api_responses_are_never_cached():
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "private, no-store"
     assert response.headers["Pragma"] == "no-cache"
+
+def test_admin_put_preflight_is_allowed_for_configured_frontend_origin():
+    client = TestClient(main.app)
+    response = client.options(
+        "/api/admin/ai/budget/global",
+        headers={
+            "Origin": "https://lina1209.github.io",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "https://lina1209.github.io"
+    assert "PUT" in response.headers["Access-Control-Allow-Methods"]
+    allowed_headers = response.headers["Access-Control-Allow-Headers"].lower()
+    assert "authorization" in allowed_headers
+    assert "content-type" in allowed_headers
+
+
+def test_admin_put_preflight_rejects_untrusted_origin():
+    client = TestClient(main.app)
+    response = client.options(
+        "/api/admin/ai/budget/global",
+        headers={
+            "Origin": "https://attacker.example",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert response.status_code == 400
+    assert "Access-Control-Allow-Origin" not in response.headers
