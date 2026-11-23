@@ -4736,7 +4736,7 @@ begin
   insert into public.user_plan_assignment_events(
     assignment_id, user_id, event_type, actor_user_id, event_key, reason
   ) values (
-    '20202020-2020-4202-8202-202020202020',
+    '30303030-3030-4303-8303-303030303030',
     '22222222-2222-4222-8222-222222222222',
     'expired',
     '11111111-1111-4111-8111-111111111111',
@@ -4795,7 +4795,7 @@ begin
   select count(*) into v_quota_released
     from public.plan_quota_reservations
    where request_id = v_job.job_id
-     and assignment_id = '20202020-2020-4202-8202-202020202020'
+     and assignment_id = '30303030-3030-4303-8303-303030303030'
      and status = 'released';
   select count(*) into v_successor_reservations
     from public.plan_quota_reservations
@@ -4824,6 +4824,9 @@ begin
       v_job.hold_id,
       'user_cancelled'
     );
+  select count(*) into v_release_count
+    from public.credit_ledger
+   where hold_id = v_job.hold_id and operation_type = 'release';
   if not v_replay.replayed or v_release_count <> 1 then
     raise exception 'Repeated cancellation settlement was not idempotent';
   end if;
