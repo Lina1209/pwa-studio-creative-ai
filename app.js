@@ -1571,6 +1571,14 @@ const movieHistoryStyle = document.createElement("style");
       }
       const conversationId = activeAssistantConversationId;
       if (!conversationId) throw new Error("Не удалось открыть диалог. Начните новый разговор.");
+      const { data: previousMessages, error: historyReadError } = await supabaseClient.from("assistant_messages")
+        .select("role,content").eq("conversation_id", conversationId).eq("user_id", requestUserId)
+        .order("created_at", { ascending: false }).limit(8);
+      if (historyReadError) throw historyReadError;
+      if (authSession?.user?.id !== requestUserId) return;
+      const chatHistory = (previousMessages || []).reverse().map(item => ({
+        role: item.role, content: String(item.content || "").slice(0, 3000)
+      }));
       const { error: userSaveError } = await supabaseClient.from("assistant_messages")
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "user", content: value });
       if (userSaveError) throw userSaveError;
@@ -1599,9 +1607,11 @@ const movieHistoryStyle = document.createElement("style");
         voices: String(activeProject.voices || "").slice(0, 2000),
         edit: String(activeProject.edit || "").slice(0, 2000)
       } : null;
-      const chatPayload = projectContext
-        ? { message: value, project_context: projectContext }
-        : { message: value };
+      const chatPayload = {
+        message: value,
+        history: chatHistory,
+        ...(projectContext ? { project_context: projectContext } : {})
+      };
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify(chatPayload) });
       if (authSession?.user?.id !== requestUserId) {
         setAssistantStatus("Сеанс аккаунта изменился. Ответ не был сохранён в другом аккаунте.");
