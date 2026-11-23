@@ -1420,6 +1420,7 @@ const movieHistoryStyle = document.createElement("style");
       : "Сначала напишите тему или идею будущего видео.";
   });
 
+  let lastGeneratedPrompt = null;
   $("#buildPrompt").addEventListener("click", async () => {
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы пользоваться AI-инструментами."); return; }
     const requestUserId = authSession.user.id;
@@ -1461,6 +1462,18 @@ const movieHistoryStyle = document.createElement("style");
       });
       if (authSession?.user?.id !== requestUserId) return;
       $("#promptOutput").textContent = result.prompt;
+      lastGeneratedPrompt = {
+        prompt: result.prompt,
+        purpose: $("#promptType").value,
+        language: $("#promptLanguage").value,
+        idea,
+        provider: result.provider,
+        model: result.model,
+        createdAt: new Date().toISOString()
+      };
+      $("#promptSaveFeedback").textContent = activeMovieId
+        ? "Промпт готов. Его можно сохранить в выбранный фильм."
+        : "Промпт готов. Чтобы сохранить его, сначала откройте фильм в Миникиностудии.";
       $("#promptFeedback").textContent = "Готово: ответ получен от " + result.provider + " · " + result.model + ".";
     } catch (error) {
       if (authSession?.user?.id === requestUserId) $("#promptFeedback").textContent = error.message;
@@ -1468,6 +1481,29 @@ const movieHistoryStyle = document.createElement("style");
       button.disabled = false;
       button.textContent = "✦ Сформировать промт";
     }
+  });
+
+  $("#savePromptToMovie").addEventListener("click", () => {
+    const feedback = $("#promptSaveFeedback");
+    if (!lastGeneratedPrompt?.prompt) { feedback.textContent = "Сначала сформируйте промпт."; return; }
+    if (!authSession?.user) { feedback.textContent = "Войдите в аккаунт, чтобы сохранить промпт в проект."; return; }
+    if (!activeMovieId) { feedback.textContent = "Сначала откройте нужный фильм в Миникиностудии."; return; }
+    const projects = movieRead();
+    const index = projects.findIndex(project => project.id === activeMovieId);
+    if (index < 0) { feedback.textContent = "Выбранный фильм не найден. Откройте его заново."; return; }
+    const project = { ...projects[index] };
+    const saved = Array.isArray(project.prompts) ? [...project.prompts] : [];
+    saved.push({
+      ...lastGeneratedPrompt,
+      prompt: String(lastGeneratedPrompt.prompt).slice(0, 12000),
+      idea: String(lastGeneratedPrompt.idea || "").slice(0, 2000)
+    });
+    project.prompts = saved.slice(-100);
+    project.updatedAt = new Date().toISOString();
+    projects[index] = project;
+    if (!movieWrite(projects)) { feedback.textContent = "Не удалось сохранить промпт. Проверьте свободное место."; return; }
+    renderMovieProjects();
+    feedback.textContent = "✓ Промпт сохранён в фильме «" + String(project.name || "Без названия").slice(0, 80) + "».";
   });
 
   $("#copyPrompt").addEventListener("click", async () => {
