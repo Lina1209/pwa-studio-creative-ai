@@ -232,3 +232,28 @@ def test_future_scheduled_assignment_is_reported_pending_not_active(monkeypatch)
     assert result["status"] == "no_active_plan"
     assert result["pending_assignment_exists"] is True
     assert result["capabilities_enabled"] is False
+
+@pytest.mark.parametrize(
+    "assignments",
+    [
+        [{**_active_assignment(), "id": "not-a-uuid"}],
+        [{**_active_assignment(), "user_id": "99999999-9999-4999-8999-999999999999"}],
+        [
+            _active_assignment(),
+            _active_assignment(),
+        ],
+    ],
+)
+def test_invalid_assignment_identity_fails_before_privileged_event_lookup(monkeypatch, assignments):
+    calls = []
+    responses = {"user_plan_assignments": [assignments]}
+    monkeypatch.setattr(
+        entitlements.httpx, "Client",
+        lambda timeout: FakeClient(responses, calls),
+    )
+
+    with pytest.raises(entitlements.EntitlementsUnavailable, match="identity|ownership"):
+        entitlements.resolve_user_entitlements(configured_settings(), user_id=USER)
+
+    assert [call[0] for call in calls] == ["user_plan_assignments"]
+
