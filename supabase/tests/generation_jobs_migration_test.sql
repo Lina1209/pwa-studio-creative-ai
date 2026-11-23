@@ -110,6 +110,7 @@ create table public.ai_usage (
 );
 \ir ../migrations/0050_sync_ai_provider_cost_reservations.sql
 \ir ../migrations/0088_ai_provider_cost_request_modality.sql
+\ir ../migrations/0089_vision_ai_admission_endpoint.sql
 
 \ir ../migrations/0046_admin_credit_ledger_read.sql
 
