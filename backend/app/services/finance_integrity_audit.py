@@ -62,6 +62,10 @@ def audit_finance_integrity(
     approved_plans: list[dict[str, Any]] | None = None,
     quota_reservations: list[dict[str, Any]] | None = None,
     quota_events: list[dict[str, Any]] | None = None,
+    payment_refunds: list[dict[str, Any]] | None = None,
+    payment_refund_provider_events: list[dict[str, Any]] | None = None,
+    payment_refund_events: list[dict[str, Any]] | None = None,
+    payment_refund_reconciliations: list[dict[str, Any]] | None = None,
     opening_balances: dict[str, tuple[int, int]] | None = None,
     complete: bool = False,
 ) -> dict[str, Any]:
@@ -94,6 +98,13 @@ def audit_finance_integrity(
         "quota_events": quota_events,
     }
     check_commerce = all(rows is not None for rows in commerce_sources.values())
+    refund_sources = {
+        "payment_refunds": payment_refunds,
+        "payment_refund_provider_events": payment_refund_provider_events,
+        "payment_refund_events": payment_refund_events,
+        "payment_refund_reconciliations": payment_refund_reconciliations,
+    }
+    check_refunds = all(rows is not None for rows in refund_sources.values())
     credit_holds = [] if credit_holds is None else credit_holds
     credit_lots = [] if credit_lots is None else credit_lots
     hold_allocations = [] if hold_allocations is None else hold_allocations
@@ -107,11 +118,17 @@ def audit_finance_integrity(
     approved_plans = [] if approved_plans is None else approved_plans
     quota_reservations = [] if quota_reservations is None else quota_reservations
     quota_events = [] if quota_events is None else quota_events
+    payment_refunds = [] if payment_refunds is None else payment_refunds
+    payment_refund_provider_events = [] if payment_refund_provider_events is None else payment_refund_provider_events
+    payment_refund_events = [] if payment_refund_events is None else payment_refund_events
+    payment_refund_reconciliations = [] if payment_refund_reconciliations is None else payment_refund_reconciliations
     if not all(isinstance(rows, list) for rows in (
         credit_holds, credit_lots, hold_allocations,
         payment_orders, payment_provider_events, payment_order_events,
         purchase_items, fulfillment_outbox, plan_assignments,
         plan_assignment_events, approved_plans, quota_reservations, quota_events,
+        payment_refunds, payment_refund_provider_events, payment_refund_events,
+        payment_refund_reconciliations,
     )):
         raise ValueError("invalid_audit_input")
     if not isinstance(complete, bool):
@@ -433,7 +450,7 @@ def audit_finance_integrity(
                     findings.append(_finding("invalid_closed_payment_timestamps", "critical", payment_order_id=oid))
                 if status in {"created", "pending"} and (paid_at or closed_at):
                     findings.append(_finding("invalid_open_payment_timestamps", "critical", payment_order_id=oid))
-                if status in {"partially_refunded", "refunded"}:
+                if status in {"partially_refunded", "refunded"} and not check_refunds:
                     findings.append(_finding("refund_amounts_not_auditable", "warning", payment_order_id=oid))
             except (AttributeError, ValueError, TypeError):
                 findings.append(_finding("invalid_payment_order", "critical"))
@@ -579,7 +596,7 @@ def audit_finance_integrity(
                     findings.append(_finding("settled_payment_provider_success_missing", "critical", payment_order_id=oid))
             elif order.get("status") in {"created", "pending", "failed", "cancelled"} and outbox is not None:
                 findings.append(_finding("unsettled_payment_has_fulfillment", "critical", payment_order_id=oid))
-            if order.get("status") in {"refunded", "partially_refunded"}:
+            if order.get("status") in {"refunded", "partially_refunded"} and not check_refunds:
                 findings.append(_finding("refund_lifecycle_not_implemented", "warning", payment_order_id=oid))
             events = order_events_by_order.get(oid, [])
             if events:
@@ -613,6 +630,149 @@ def audit_finance_integrity(
                     assignment = assignment_by_order.get(oid)
                     if assignment is None or assignment.get("approved_plan_version_id") != item.get("approved_plan_version_id"):
                         findings.append(_finding("completed_subscription_fulfillment_assignment_missing", "critical", payment_order_id=oid))
+
+
+        if check_refunds:
+            refunds_by_id: dict[str, dict[str, Any]] = {}
+            refunds_by_order: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            refund_idempotency: set[tuple[str, str]] = set()
+            provider_refund_ids: set[tuple[str, str]] = set()
+            refund_provider_events_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            refund_events_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            reconciliations_by_refund: dict[str, dict[str, Any]] = {}
+
+            for refund in payment_refunds:
+                if not isinstance(refund, dict):
+                    findings.append(_finding("invalid_payment_refund", "critical"))
+                    continue
+                rid, oid = refund.get("id"), refund.get("payment_order_id")
+                order = orders_by_id.get(oid)
+                amount, currency = refund.get("amount_minor"), refund.get("currency_code")
+                state, provider = refund.get("status"), refund.get("provider_code")
+                owner, idem = refund.get("user_id"), refund.get("idempotency_key")
+                if (not isinstance(rid, str) or not rid or rid in refunds_by_id
+                    or order is None or owner != order.get("user_id")
+                    or provider != order.get("provider_code")
+                    or currency != order.get("currency_code")
+                    or not _integer(amount) or amount <= 0
+                    or not isinstance(idem, str) or not idem
+                    or state not in {"requested", "submitted", "succeeded", "failed", "cancelled"}):
+                    findings.append(_finding("invalid_or_mismatched_payment_refund", "critical", payment_order_id=oid if isinstance(oid, str) else None))
+                    continue
+                identity = (oid, idem)
+                if identity in refund_idempotency:
+                    findings.append(_finding("duplicate_payment_refund_idempotency_key", "critical", payment_order_id=oid))
+                refund_idempotency.add(identity)
+                provider_refund_id = refund.get("provider_refund_id")
+                if provider_refund_id is not None:
+                    provider_identity = (provider, provider_refund_id)
+                    if provider_identity in provider_refund_ids:
+                        findings.append(_finding("duplicate_provider_refund_id", "critical", payment_order_id=oid))
+                    provider_refund_ids.add(provider_identity)
+                refunds_by_id[rid] = refund
+                refunds_by_order[oid].append(refund)
+
+            for event in payment_refund_provider_events:
+                if not isinstance(event, dict):
+                    findings.append(_finding("invalid_payment_refund_provider_event", "critical"))
+                    continue
+                rid = event.get("refund_id")
+                refund = refunds_by_id.get(rid)
+                digest = event.get("payload_sha256")
+                if (refund is None
+                    or event.get("provider_code") != refund.get("provider_code")
+                    or event.get("amount_minor") != refund.get("amount_minor")
+                    or event.get("currency_code") != refund.get("currency_code")
+                    or event.get("provider_refund_id") != refund.get("provider_refund_id")
+                    or event.get("signature_verified") is not True
+                    or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
+                    or event.get("event_type") not in {"refund.pending", "refund.succeeded", "refund.failed", "refund.cancelled"}
+                    or not isinstance(event.get("provider_event_id"), str) or not event.get("provider_event_id")):
+                    findings.append(_finding("payment_refund_provider_event_mismatch", "critical", refund_id=rid if isinstance(rid, str) else None))
+                    continue
+                refund_provider_events_by_id[rid].append(event)
+
+            for event in payment_refund_events:
+                if not isinstance(event, dict) or not isinstance(event.get("refund_id"), str):
+                    findings.append(_finding("invalid_payment_refund_event", "critical"))
+                    continue
+                rid = event["refund_id"]
+                if rid not in refunds_by_id:
+                    findings.append(_finding("orphan_payment_refund_event", "critical", refund_id=rid))
+                    continue
+                refund_events_by_id[rid].append(event)
+
+            for row in payment_refund_reconciliations:
+                if not isinstance(row, dict):
+                    findings.append(_finding("invalid_payment_refund_reconciliation", "critical"))
+                    continue
+                rid = row.get("refund_id")
+                refund = refunds_by_id.get(rid)
+                if (refund is None or rid in reconciliations_by_refund
+                    or row.get("payment_order_id") != refund.get("payment_order_id")
+                    or row.get("user_id") != refund.get("user_id")
+                    or row.get("amount_minor") != refund.get("amount_minor")
+                    or row.get("currency_code") != refund.get("currency_code")
+                    or row.get("purchase_type") not in {"credit_pack", "subscription"}
+                    or row.get("status") not in {"pending_review", "manual_review", "compensated"}):
+                    findings.append(_finding("payment_refund_reconciliation_mismatch", "critical", refund_id=rid if isinstance(rid, str) else None))
+                    continue
+                purchase = purchases.get(refund.get("payment_order_id"))
+                if purchase is None or purchase.get("item_type") != row.get("purchase_type"):
+                    findings.append(_finding("payment_refund_reconciliation_purchase_mismatch", "critical", refund_id=rid))
+                reconciliations_by_refund[rid] = row
+
+            for rid, refund in refunds_by_id.items():
+                timeline = refund_events_by_id.get(rid, [])
+                try:
+                    timeline = sorted(timeline, key=lambda e: (_timestamp(e["occurred_at"]), str(e["id"])))
+                    if not timeline or timeline[0].get("previous_status") is not None or timeline[0].get("new_status") != "requested":
+                        findings.append(_finding("payment_refund_event_opening_mismatch", "critical", refund_id=rid))
+                    for previous, current in zip(timeline, timeline[1:]):
+                        if current.get("previous_status") != previous.get("new_status"):
+                            findings.append(_finding("payment_refund_event_discontinuity", "critical", refund_id=rid))
+                            break
+                    if timeline and timeline[-1].get("new_status") != refund.get("status"):
+                        findings.append(_finding("payment_refund_event_projection_mismatch", "critical", refund_id=rid))
+                except (KeyError, ValueError, TypeError):
+                    findings.append(_finding("invalid_payment_refund_event_timeline", "critical", refund_id=rid))
+
+                provider_types = {e.get("event_type") for e in refund_provider_events_by_id.get(rid, [])}
+                expected_provider_type = {
+                    "submitted": "refund.pending",
+                    "succeeded": "refund.succeeded",
+                    "failed": "refund.failed",
+                    "cancelled": "refund.cancelled",
+                }.get(refund.get("status"))
+                if expected_provider_type and expected_provider_type not in provider_types:
+                    findings.append(_finding("payment_refund_provider_lifecycle_missing", "critical", refund_id=rid))
+
+                reconciliation = reconciliations_by_refund.get(rid)
+                if refund.get("status") == "succeeded":
+                    if reconciliation is None:
+                        findings.append(_finding("settled_refund_reconciliation_missing", "critical", refund_id=rid))
+                    elif reconciliation.get("status") in {"pending_review", "manual_review"}:
+                        findings.append(_finding("refund_entitlement_compensation_pending_review", "warning", refund_id=rid))
+                elif reconciliation is not None:
+                    findings.append(_finding("unsettled_refund_has_compensation_record", "critical", refund_id=rid))
+
+            for oid, order in orders_by_id.items():
+                refunds = refunds_by_order.get(oid, [])
+                settled_total = sum(r["amount_minor"] for r in refunds if r.get("status") == "succeeded")
+                reserved_total = sum(r["amount_minor"] for r in refunds if r.get("status") in {"requested", "submitted", "succeeded"})
+                if settled_total > order.get("amount_minor", 0) or reserved_total > order.get("amount_minor", 0):
+                    findings.append(_finding("payment_refund_total_exceeds_order", "critical", payment_order_id=oid))
+                order_status = order.get("status")
+                if settled_total == 0 and order_status in {"partially_refunded", "refunded"}:
+                    findings.append(_finding("payment_refund_order_status_without_settlement", "critical", payment_order_id=oid))
+                elif settled_total == order.get("amount_minor") and settled_total > 0 and order_status != "refunded":
+                    findings.append(_finding("payment_refund_full_settlement_status_mismatch", "critical", payment_order_id=oid))
+                elif 0 < settled_total < order.get("amount_minor") and order_status != "partially_refunded":
+                    findings.append(_finding("payment_refund_partial_settlement_status_mismatch", "critical", payment_order_id=oid))
+                if order_status == "refunded" and settled_total != order.get("amount_minor"):
+                    findings.append(_finding("payment_refund_closed_amount_mismatch", "critical", payment_order_id=oid))
+                if order_status == "partially_refunded" and not (0 < settled_total < order.get("amount_minor")):
+                    findings.append(_finding("payment_refund_partial_amount_mismatch", "critical", payment_order_id=oid))
 
         # Plan quota reservations must have a matching owner-scoped assignment,
         # request job, append-only reserved event and exactly one terminal event.
@@ -749,6 +909,10 @@ def audit_finance_integrity(
             "approved_plans": len(approved_plans),
             "quota_reservations": len(quota_reservations),
             "quota_events": len(quota_events),
+            "payment_refunds": len(payment_refunds),
+            "payment_refund_provider_events": len(payment_refund_provider_events),
+            "payment_refund_events": len(payment_refund_events),
+            "payment_refund_reconciliations": len(payment_refund_reconciliations),
         },
         "findings": findings,
     }
