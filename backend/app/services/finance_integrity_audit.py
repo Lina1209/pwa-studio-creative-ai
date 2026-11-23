@@ -505,8 +505,10 @@ def audit_finance_integrity(
                 findings.append(_finding("payment_provider_event_unprocessed", "warning", payment_order_id=oid))
             order_status = order.get("status")
             event_type = event.get("event_type")
-            if (event_type == "payment.succeeded" and order_status in {"failed", "cancelled"})
-                or (event_type in {"payment.failed", "payment.cancelled"} and order_status in {"succeeded", "partially_refunded", "refunded"}):
+            if (
+                (event_type == "payment.succeeded" and order_status in {"failed", "cancelled"})
+                or (event_type in {"payment.failed", "payment.cancelled"} and order_status in {"succeeded", "partially_refunded", "refunded"})
+            ):
                 findings.append(_finding("payment_provider_event_status_conflict", "critical", payment_order_id=oid))
             provider_events_by_order[oid].append(event)
 
