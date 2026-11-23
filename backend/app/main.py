@@ -4,11 +4,12 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse
+from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
+from app.services.moderation_service import create_user_report, list_user_reports
 
 settings = get_settings()
 
@@ -62,6 +63,16 @@ def auth_me(user: StudioUser = Depends(get_current_user)):
 def admin_me(user: StudioUser = Depends(require_admin)):
     return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
 
+
+
+@app.post(f"{settings.api_prefix}/reports", response_model=ReportResponse, status_code=201)
+def submit_report(payload: ReportCreateRequest, user: StudioUser = Depends(get_current_user)):
+    return create_user_report(settings, user.user_id, payload)
+
+
+@app.get(f"{settings.api_prefix}/admin/reports", response_model=list[ReportListItem])
+def admin_reports(user: StudioUser = Depends(require_admin)):
+    return list_user_reports(settings)
 
 @app.post(f"{settings.api_prefix}/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
