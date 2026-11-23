@@ -1489,6 +1489,10 @@ const movieHistoryStyle = document.createElement("style");
     .prompt-version-history{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(135,105,220,.045)}
     .prompt-version-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--muted)}
     .prompt-version-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+    .prompt-editor-toolbar{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}
+    .prompt-editor-toolbar button{font-size:12px;padding:8px 10px}
+    .prompt-output[contenteditable="true"]{outline:1px solid rgba(170,140,255,.45);cursor:text}
+    .prompt-output[contenteditable="true"]:focus{outline:2px solid rgba(170,140,255,.75)}
     .prompt-version-row>div{min-width:0}.prompt-version-row b{font-size:12px}.prompt-version-row p{margin:5px 0 0;overflow-wrap:anywhere}
     .prompt-version-compare{margin:12px 0;padding:12px;border:1px solid rgba(170,140,255,.22);border-radius:12px;background:rgba(8,7,18,.18)}
     .prompt-version-compare-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
