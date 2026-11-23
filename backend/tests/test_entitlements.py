@@ -1,0 +1,176 @@
+from datetime import datetime, timezone
+from uuid import UUID
+
+import pytest
+
+from app.core.config import Settings
+from app.services import entitlements
+
+
+USER = UUID("11111111-1111-4111-8111-111111111111")
+ASSIGNMENT = "22222222-2222-4222-8222-222222222222"
+PLAN = "33333333-3333-4333-8333-333333333333"
+
+
+class FakeResponse:
+    def __init__(self, data):
+        self.data = data
+        self.content = b"[]"
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.data
+
+
+class FakeClient:
+    def __init__(self, responses, calls):
+        self.responses = responses
+        self.calls = calls
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, *, params, headers):
+        table = url.rsplit("/", 1)[-1]
+        self.calls.append((table, params, headers))
+        return FakeResponse(self.responses[table].pop(0))
+
+
+def configured_settings():
+    return Settings(
+        supabase_url="https://example.supabase.co/",
+        supabase_service_role_key="sb_secret_test_key",
+    )
+
+
+def _active_assignment():
+    now = datetime.now(timezone.utc)
+    return {
+        "id": ASSIGNMENT,
+        "user_id": str(USER),
+        "approved_plan_version_id": PLAN,
+        "status": "active",
+        "starts_at": (now.replace(day=1)).isoformat(),
+        "ends_at": (now.replace(day=1).replace(month=12)).isoformat(),
+    }
+
+
+def test_no_active_plan_does_not_promote_pending_assignment(monkeypatch):
+    calls = []
+    responses = {
+        "user_plan_assignments": [[], [{"id": ASSIGNMENT, "status": "pending"}]],
+    }
+    monkeypatch.setattr(
+        entitlements.httpx, "Client",
+        lambda timeout: FakeClient(responses, calls),
+    )
+    result = entitlements.resolve_user_entitlements(configured_settings(), user_id=USER)
+    assert result["status"] == "no_active_plan"
+    assert result["plan"] is None
+    assert result["features"] == []
+    assert result["capabilities_enabled"] is False
+    assert result["pending_assignment_exists"] is True
+    assert [call[0] for call in calls] == ["user_plan_assignments", "user_plan_assignments"]
+
+
+def test_multiple_active_assignments_fail_closed(monkeypatch):
+    calls = []
+    responses = {
+        "user_plan_assignments": [
+            [_active_assignment(), {**_active_assignment(), "id": "44444444-4444-4444-8444-444444444444"}],
+            [],
+        ],
+    }
+    monkeypatch.setattr(
+        entitlements.httpx, "Client",
+        lambda timeout: FakeClient(responses, calls),
+    )
+    result = entitlements.resolve_user_entitlements(configured_settings(), user_id=USER)
+    assert result["status"] == "ambiguous_active_assignments"
+    assert result["capabilities_enabled"] is False
+    assert result["plan"] is None
+
+
+def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    calls = []
+    responses = {
+        "user_plan_assignments": [
+            [_active_assignment()],
+            [],
+        ],
+        "approved_plan_versions": [{
+            "id": PLAN,
+            "plan_code": "creator",
+            "plan_version": 3,
+            "display_name": "Creator",
+            "billing_period": "month",
+            "period_days": 30,
+            "credits_per_period": 1000,
+            "price_minor": None,
+            "currency": None,
+            "limits_json": {
+                "daily_image_generations": 10,
+                "monthly_image_generations": 100,
+                "max_concurrent_ai_requests": 2,
+                "max_video_seconds": 60,
+                "max_resolution": "1080p",
+            },
+            "features_json": ["image", "video", "audio", "ai"],
+        }],
+        "plan_quota_reservations": [
+            {"feature_key": "daily_image_generations", "reserved_units": 3,
+             "status": "completed", "period_start": day_start.isoformat()},
+            {"feature_key": "monthly_image_generations", "reserved_units": 7,
+             "status": "reserved", "period_start": month_start.isoformat()},
+            {"feature_key": "max_concurrent_ai_requests", "reserved_units": 1,
+             "status": "reserved", "period_start": now.isoformat()},
+            {"feature_key": "max_concurrent_ai_requests", "reserved_units": 1,
+             "status": "completed", "period_start": now.isoformat()},
+        ],
+    }
+    monkeypatch.setattr(
+        entitlements.httpx, "Client",
+        lambda timeout: FakeClient(responses, calls),
+    )
+    result = entitlements.resolve_user_entitlements(configured_settings(), user_id=USER)
+
+    assert result["status"] == "active"
+    assert result["capabilities_enabled"] is True
+    assert result["plan"]["code"] == "creator"
+    assert result["features"] == ["image", "video", "audio", "ai"]
+    assert result["quotas"]["daily_image_generations"] == {
+        "limit": 10, "used": 3, "remaining": 7, "enforced": True, "configured": True
+    }
+    assert result["quotas"]["monthly_image_generations"]["used"] == 7
+    assert result["quotas"]["max_concurrent_ai_requests"]["used"] == 1
+    assert result["quotas"]["max_video_seconds"]["enforced"] is False
+    assert result["quotas"]["max_video_seconds"]["limit"] == 60
+    assert result["activation_enabled"] is False
+    assert result["checkout_enabled"] is False
+    assert result["credits_granted"] is False
+    assert [call[0] for call in calls] == [
+        "user_plan_assignments", "user_plan_assignments",
+        "approved_plan_versions", "plan_quota_reservations",
+    ]
+
+
+def test_invalid_active_plan_snapshot_fails_closed(monkeypatch):
+    calls = []
+    responses = {
+        "user_plan_assignments": [[_active_assignment()], []],
+        "approved_plan_versions": [],
+    }
+    monkeypatch.setattr(
+        entitlements.httpx, "Client",
+        lambda timeout: FakeClient(responses, calls),
+    )
+    with pytest.raises(entitlements.EntitlementsUnavailable):
+        entitlements.resolve_user_entitlements(configured_settings(), user_id=USER)
