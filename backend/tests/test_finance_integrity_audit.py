@@ -149,3 +149,12 @@ def test_completeness_must_be_explicitly_confirmed():
     )
     assert report["status"] == "incomplete"
     assert report["complete"] is False
+
+
+def test_wallet_without_ledger_history_is_not_reported_healthy():
+    report = audit(
+        ledger_entries=[],
+        wallets={USER: {"available_credits": 0, "reserved_credits": 0}},
+    )
+    assert report["status"] == "warning"
+    assert any(item["code"] == "ledger_history_missing" for item in report["findings"])
