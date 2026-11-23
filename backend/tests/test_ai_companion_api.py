@@ -441,3 +441,28 @@ def test_vision_analysis_rejects_invalid_image_after_admission(monkeypatch):
         assert calls == [("vision", USER.user_id)]
     finally:
         app.dependency_overrides.clear()
+
+
+
+def test_health_exposes_vision_only_when_flag_and_server_credentials_are_present(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "ai_model", "deepseek-flash")
+    monkeypatch.setattr(main.settings, "deepseek_api_key", "server-only-test-key")
+    monkeypatch.setattr(main.settings, "supabase_url", "https://project.example.supabase.co")
+    monkeypatch.setattr(main.settings, "supabase_service_role_key", "server-only-test-service-key")
+    client = TestClient(app)
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["vision_analysis_enabled"] is True
+
+
+def test_health_keeps_vision_disabled_when_feature_flag_is_off(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", False)
+    client = TestClient(app)
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["vision_analysis_enabled"] is False
