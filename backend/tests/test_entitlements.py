@@ -127,6 +127,9 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
                 "daily_image_generations": 10,
                 "monthly_image_generations": 100,
                 "max_concurrent_ai_requests": 2,
+                "daily_generation_jobs": 20,
+                "monthly_generation_jobs": 100,
+                "max_parallel_jobs": 2,
                 "max_video_seconds": 60,
                 "max_resolution": "1080p",
             },
@@ -141,6 +144,14 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
              "status": "reserved", "period_start": now.isoformat()},
             {"feature_key": "max_concurrent_ai_requests", "reserved_units": 1,
              "status": "completed", "period_start": now.isoformat()},
+            {"feature_key": "daily_generation_jobs", "reserved_units": 2,
+             "status": "completed", "period_start": day_start.isoformat()},
+            {"feature_key": "monthly_generation_jobs", "reserved_units": 3,
+             "status": "reserved", "period_start": month_start.isoformat()},
+            {"feature_key": "max_parallel_jobs", "reserved_units": 1,
+             "status": "reserved", "period_start": "1970-01-01T00:00:00+00:00"},
+            {"feature_key": "max_parallel_jobs", "reserved_units": 1,
+             "status": "completed", "period_start": "1970-01-01T00:00:00+00:00"},
         ],
     }
     monkeypatch.setattr(
@@ -161,8 +172,12 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
     }
     assert result["quotas"]["monthly_image_generations"]["used"] == 7
     assert result["quotas"]["max_concurrent_ai_requests"]["used"] == 1
-    assert result["quotas"]["max_video_seconds"]["enforced"] is False
+    assert result["quotas"]["max_video_seconds"]["enforced"] is True
     assert result["quotas"]["max_video_seconds"]["limit"] == 60
+    assert result["quotas"]["max_resolution"]["enforced"] is True
+    assert result["quotas"]["max_parallel_jobs"]["used"] == 1
+    assert result["quotas"]["daily_generation_jobs"]["used"] == 2
+    assert result["quotas"]["monthly_generation_jobs"]["used"] == 3
     assert result["activation_enabled"] is False
     assert result["checkout_enabled"] is False
     assert result["credits_granted"] is False
