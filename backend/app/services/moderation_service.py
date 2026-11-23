@@ -1,4 +1,5 @@
 import httpx
+from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from app.core.config import Settings
@@ -67,7 +68,7 @@ def review_user_report(settings: Settings, report_id: str, moderator_id: str, pa
     rows = _request(settings, "PATCH", "user_reports",
         params={"id": f"eq.{report_id}", "select": "id,status,created_at"},
         payload={"status": payload.status, "moderator_note": payload.moderator_note,
-                 "reviewed_by": moderator_id, "reviewed_at": "now()"})
+                 "reviewed_by": moderator_id, "reviewed_at": datetime.now(timezone.utc).isoformat()})
     if not rows:
         raise HTTPException(status_code=404, detail="Report not found.")
     _write_audit(settings, moderator_id, "report.reviewed", "report", report_id,
@@ -99,7 +100,7 @@ def revoke_suspension(settings: Settings, moderator_id: str, suspension_id: str)
     rows = _request(settings, "PATCH", "user_suspensions",
         params={"id": f"eq.{suspension_id}", "revoked_at": "is.null",
                 "select": "id,user_id,scope"},
-        payload={"revoked_at": "now()", "revoked_by": moderator_id})
+        payload={"revoked_at": datetime.now(timezone.utc).isoformat(), "revoked_by": moderator_id})
     if not rows:
         raise HTTPException(status_code=404, detail="Active restriction not found.")
     _write_audit(settings, moderator_id, "user.suspension_revoked", "suspension", suspension_id,
@@ -113,3 +114,16 @@ def _write_audit(settings: Settings, actor_id: str, action: str, entity_type: st
         payload={"actor_user_id": actor_id, "action": action,
                  "entity_type": entity_type, "entity_id": entity_id,
                  "metadata": metadata})
+
+
+def ensure_user_not_suspended(settings: Settings, user_id: str, scope: str):
+    now = datetime.now(timezone.utc).isoformat()
+    rows = _request(settings, "GET", "user_suspensions",
+        params={"select": "id,reason,expires_at",
+                "user_id": f"eq.{user_id}",
+                "scope": f"in.(platform,{scope})",
+                "revoked_at": "is.null",
+                "or": f"(expires_at.is.null,expires_at.gt.{now})",
+                "limit": "1"})
+    if rows:
+        raise HTTPException(status_code=403, detail="This account is temporarily restricted from using this feature.")
