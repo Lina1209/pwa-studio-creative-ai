@@ -1246,7 +1246,7 @@ def finance_request_create(
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id), action=audit_action,
             outcome="requested", resource_type=audit_resource,
-            resource_id=payload.target_user_id, reason=f"Requested {payload.request_type}: {payload.reason}",
+            resource_type="user", resource_id=payload.target_user_id, reason=f"Requested {payload.request_type}: {payload.reason}",
         )
     except (AdminAuditUnavailable, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Журнал аудита недоступен; финансовая заявка не создана.") from exc
@@ -1267,7 +1267,7 @@ def finance_request_create(
     try:
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id), action=audit_action,
-            outcome="executed", resource_type=audit_resource, resource_id=request_id,
+            outcome="executed", resource_type="finance_request", resource_id=request_id,
             reason=f"Created {payload.request_type} request for target {payload.target_user_id}",
         )
     except (AdminAuditUnavailable, ValueError):
@@ -1316,7 +1316,7 @@ def finance_request_decide(
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id), action=audit_action,
             outcome=audit_outcome,
-            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_type="finance_request",
             resource_id=request_id, reason=f"Requested finance decision {payload.decision}: {payload.reason}",
         )
     except (AdminAuditUnavailable, ValueError) as exc:
@@ -1338,7 +1338,7 @@ def finance_request_decide(
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id), action=audit_action,
             outcome="executed",
-            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_type="finance_request",
             resource_id=request_id, reason=f"Finance request decision completed: {payload.decision}",
         )
     except (AdminAuditUnavailable, ValueError):
@@ -1376,7 +1376,7 @@ def finance_request_cancel(
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id), action=audit_action,
             outcome="requested",
-            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_type="finance_request",
             resource_id=request_id, reason=f"Requested finance cancellation: {payload.reason}",
         )
     except (AdminAuditUnavailable, ValueError) as exc:
@@ -1398,7 +1398,7 @@ def finance_request_cancel(
         record_admin_audit_event(
             settings, actor_user_id=UUID(user.user_id), action=audit_action,
             outcome="executed",
-            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_type="finance_request",
             resource_id=request_id, reason="Finance request cancellation completed",
         )
     except (AdminAuditUnavailable, ValueError):
