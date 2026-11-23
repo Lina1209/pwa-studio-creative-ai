@@ -120,7 +120,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT"],
+    allow_methods=["GET", "POST", "PUT", "PATCH"],
     allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
 )
 
@@ -1585,7 +1585,7 @@ class PricingCatalogDraftCreate(BaseModel):
     rules: list[dict] = Field(max_length=500)
 
 @app.get(f"{settings.api_prefix}/admin/pricing/drafts")
-def admin_list_pricing_drafts(user: StudioUser = Depends(require_admin)):
+def admin_list_pricing_drafts(user: StudioUser = Depends(require_permission("admin.pricing.drafts.manage"))):
     try:
         rows=list_drafts(settings)
         _audit_admin_read(user,resource_type="pricing_catalog_draft",reason="Admin viewed tariff drafts")
@@ -1594,12 +1594,18 @@ def admin_list_pricing_drafts(user: StudioUser = Depends(require_admin)):
         raise HTTPException(status_code=503,detail="Хранилище черновиков тарифов временно недоступно.")
 
 @app.post(f"{settings.api_prefix}/admin/pricing/drafts",status_code=201)
-def admin_create_pricing_draft(payload: PricingCatalogDraftCreate,user: StudioUser = Depends(require_admin)):
+def admin_create_pricing_draft(payload: PricingCatalogDraftCreate,user: StudioUser = Depends(require_permission("admin.pricing.drafts.manage"))):
     catalog_payload={"version":payload.version,"rules":payload.rules}
     try:
         validated=load_pricing_catalog(json.dumps(catalog_payload,ensure_ascii=False,allow_nan=False))
         if not validated.rules:
             raise HTTPException(status_code=422,detail="Нельзя сохранить пустой тарифный каталог.")
+        supported_models={"deepseek":{"deepseek-flash","deepseek-v4-pro"},"gemini":{"gemini-3.1-flash-lite"}}
+        for rule in validated.rules:
+            if rule.provider not in supported_models or rule.model not in supported_models[rule.provider]:
+                raise HTTPException(status_code=422,detail="Тариф содержит неподдерживаемую модель.")
+            if rule.max_provider_cost_usd_per_unit is None:
+                raise HTTPException(status_code=422,detail="Для каждого тарифа обязателен предел стоимости провайдера.")
         draft=create_draft(settings,version=validated.version,catalog=catalog_payload,actor_id=UUID(user.user_id))
         record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.access",outcome="allowed",resource_type="pricing_catalog_draft",resource_id=UUID(draft["id"]),reason=f"Created inactive tariff draft {validated.version}")
         return {"draft":draft,"live_pricing_changed":False}
