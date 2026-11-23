@@ -56,9 +56,18 @@ def _rpc(settings: Settings, name: str, payload: dict[str, Any]) -> Any:
                 json=payload,
                 headers=_headers(settings),
             )
-            if response.status_code in (403, 404, 409, 422):
-                raise PlanQuotaRejected("plan_quota_denied")
-            response.raise_for_status()
+            if response.status_code >= 400:
+                if 400 <= response.status_code < 500:
+                    try:
+                        error = response.json()
+                    except ValueError:
+                        error = {}
+                    code = error.get("code") if isinstance(error, dict) else None
+                    if code in {"42501", "54000", "P0002", "23514", "23505", "22023"}:
+                        raise PlanQuotaRejected("plan_quota_denied")
+                    if response.status_code in (400, 403, 404, 409, 422):
+                        raise PlanQuotaRejected("plan_quota_denied")
+                response.raise_for_status()
             return response.json()
     except PlanQuotaRejected:
         raise
