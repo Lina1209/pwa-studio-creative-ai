@@ -89,6 +89,7 @@
         if (typeof restoreMovieStorageForCurrentUser === "function") restoreMovieStorageForCurrentUser();
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
         if (typeof loadAccountRole === "function") loadAccountRole();
+        if (typeof loadMyEntitlements === "function") loadMyEntitlements();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
       }, 0);
     });
@@ -121,6 +122,7 @@
           }
         }
         if (typeof loadAccountRole === "function") loadAccountRole();
+        if (typeof loadMyEntitlements === "function") loadMyEntitlements();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
         if (typeof renderMovieProjects === "function") renderMovieProjects();
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
@@ -298,6 +300,115 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
 
+
+  const entitlementCapabilityLabels = {
+    ai: { title: "AI Companion", icon: "✦", dimensions: ["daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests"] },
+    image: { title: "Генерация изображений", icon: "▧", dimensions: ["daily_image_generations", "monthly_image_generations"] },
+    video: { title: "Генерация видео", icon: "🎬", dimensions: ["daily_video_generations", "monthly_video_generations"] },
+    audio: { title: "Генерация аудио", icon: "♫", dimensions: ["daily_audio_generations", "monthly_audio_generations"] }
+  };
+  const entitlementDimensionLabels = {
+    daily_ai_requests: "Запросы AI за день",
+    monthly_ai_requests: "Запросы AI за месяц",
+    max_concurrent_ai_requests: "Одновременные AI-запросы",
+    daily_image_generations: "Изображения за день",
+    monthly_image_generations: "Изображения за месяц",
+    daily_video_generations: "Видео за день",
+    monthly_video_generations: "Видео за месяц",
+    daily_audio_generations: "Аудио за день",
+    monthly_audio_generations: "Аудио за месяц"
+  };
+  let entitlementRequestVersion = 0;
+  const clearMyEntitlements = message => {
+    const status = $("#myEntitlementsStatus");
+    const plan = $("#myEntitlementsPlan");
+    const cards = $("#myEntitlementsCapabilities");
+    const refresh = $("#refreshMyEntitlements");
+    if (status) status.textContent = message;
+    if (plan) { plan.hidden = true; plan.textContent = ""; }
+    if (cards) cards.replaceChildren();
+    if (refresh) refresh.hidden = !authSession?.user;
+  };
+  const renderMyEntitlements = data => {
+    const status = $("#myEntitlementsStatus");
+    const planBox = $("#myEntitlementsPlan");
+    const cards = $("#myEntitlementsCapabilities");
+    const footnote = $("#myEntitlementsFootnote");
+    if (!status || !planBox || !cards) return;
+    cards.replaceChildren();
+    if (data.status === "no_active_plan") {
+      status.textContent = data.pending_assignment_exists
+        ? "Назначение тарифа ожидает активации. Пока действует гостевой доступ без тарифных преимуществ."
+        : "Активный тариф пока не назначен. Доступные функции будут показаны здесь после активации тарифа.";
+      planBox.hidden = true;
+      return;
+    }
+    if (data.status === "ambiguous_active_assignments") {
+      status.textContent = "Не удалось однозначно определить тариф. Доступ к тарифным функциям временно закрыт до проверки.";
+      planBox.hidden = true;
+      return;
+    }
+    if (data.status !== "active" || !data.plan) {
+      status.textContent = "Состояние тарифа не удалось определить.";
+      planBox.hidden = true;
+      return;
+    }
+    const plan = data.plan;
+    planBox.hidden = false;
+    planBox.textContent = plan.name + " · версия " + plan.version + " · " +
+      (plan.billing_period === "week" ? "7 дней" : "30 дней") +
+      (data.assignment?.ends_at ? " · действует до " + new Date(data.assignment.ends_at).toLocaleDateString() : "");
+    status.textContent = data.capabilities_enabled
+      ? "Тариф определён. Ниже показаны доступные инструменты и текущие квоты."
+      : "Тариф назначен, но для доступных инструментов пока не настроены все обязательные квоты.";
+    for (const [key, meta] of Object.entries(entitlementCapabilityLabels)) {
+      const capability = data.capabilities?.[key] || {};
+      const card = document.createElement("article");
+      card.className = "account-tile entitlement-quota-card";
+      const icon = document.createElement("span"); icon.textContent = meta.icon;
+      const title = document.createElement("b"); title.textContent = meta.title;
+      const state = document.createElement("p");
+      state.textContent = capability.available ? "Доступно по вашему тарифу" :
+        capability.included_in_plan ? "Включено в тариф, но квоты ещё не готовы" : "Не входит в тариф";
+      card.append(icon, title, state);
+      for (const dimension of meta.dimensions) {
+        const quota = data.quotas?.[dimension];
+        const line = document.createElement("small");
+        line.className = "entitlement-quota-line";
+        if (!quota || !quota.configured) {
+          line.textContent = entitlementDimensionLabels[dimension] + ": лимит не задан";
+        } else {
+          line.textContent = entitlementDimensionLabels[dimension] + ": " +
+            quota.used + " / " + quota.limit +
+            (quota.remaining !== null ? " · осталось " + quota.remaining : "");
+        }
+        card.append(line);
+      }
+      cards.append(card);
+    }
+    const notEnforced = Object.entries(data.quotas || {}).filter(([, quota]) => quota.configured && !quota.enforced);
+    if (footnote && notEnforced.length) {
+      footnote.textContent = "Некоторые дополнительные ограничения тарифа отображаются справочно и пока не блокируют генерацию. Мы не показываем их как действующие лимиты.";
+    }
+  };
+  const loadMyEntitlements = async () => {
+    const requestVersion = ++entitlementRequestVersion;
+    const userId = authSession?.user?.id;
+    if (!userId) { clearMyEntitlements("Войдите в аккаунт, чтобы проверить тариф и доступные инструменты."); return; }
+    const status = $("#myEntitlementsStatus");
+    const refresh = $("#refreshMyEntitlements");
+    if (status) status.textContent = "Проверяем ваш тариф и квоты…";
+    if (refresh) refresh.hidden = false;
+    try {
+      const data = await apiRequest("/api/me/entitlements", { cache: "no-store" });
+      if (requestVersion !== entitlementRequestVersion || authSession?.user?.id !== userId) return;
+      renderMyEntitlements(data);
+    } catch (error) {
+      if (requestVersion !== entitlementRequestVersion || authSession?.user?.id !== userId) return;
+      clearMyEntitlements("Не удалось загрузить тариф: " + error.message);
+    }
+  };
+  $("#refreshMyEntitlements")?.addEventListener("click", loadMyEntitlements);
 
   const supportStatusLabels = {open:"Открыто",in_progress:"В работе",waiting_user:"Ожидает ответа",resolved:"Решено",closed:"Закрыто"};
   let mySupportTickets = [];
