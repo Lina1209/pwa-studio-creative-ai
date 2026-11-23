@@ -123,6 +123,9 @@ app = FastAPI(
     description="Private API for PWA Studio — Creative AI.",
     version="0.4.0",
 )
+# Keep the single server-built registry available to future route dependencies.
+# This does not expose or activate a payment endpoint.
+app.state.payment_provider_registry = payment_provider_registry
 
 app.add_middleware(
     CORSMiddleware,
