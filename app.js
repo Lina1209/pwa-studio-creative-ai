@@ -2002,13 +2002,22 @@ const movieHistoryStyle = document.createElement("style");
         });
         actions.append(pack);
       }
-      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
-        const next=readVisualLibrary();const removed=next.splice(index,1)[0];localStorage.setItem(visualLibraryKey(),JSON.stringify(next));
-        (removed?.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
-        deleteVisualAssetFromCloud(removed).catch(error=>{
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",async()=>{
+        const current=readVisualLibrary(),removed=current.find(asset=>asset.id===item.id);if(!removed)return;
+        remove.disabled=true;
+        try{
+          // Persist the cloud tombstone before removing the local copy, so a network error cannot resurrect it.
+          if(authSession?.user?.id)await deleteVisualAssetFromCloud(removed);
+          const next=readVisualLibrary().filter(asset=>asset.id!==removed.id);
+          localStorage.setItem(visualLibraryKey(),JSON.stringify(next));
+          (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
+          $("#promptSaveFeedback").textContent="Материал удалён из библиотеки.";
+          renderVisualLibrary();
+        }catch(error){
           console.warn("Cloud asset delete failed:",error);
-          $("#promptSaveFeedback").textContent="Материал удалён с устройства, но облачную отметку удаления сохранить не удалось. Повторите синхронизацию позже.";
-        });renderVisualLibrary();
+          $("#promptSaveFeedback").textContent="Не удалось подтвердить удаление в облаке. Материал оставлен на устройстве; повторите попытку.";
+          remove.disabled=false;
+        }
       });
       actions.append(insert,pin,remove);card.append(actions);list.append(card);
     });
