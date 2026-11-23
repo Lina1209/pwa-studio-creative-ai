@@ -68,6 +68,10 @@
       if (profile) { $("b", profile).textContent = "Гость"; $("small", profile).textContent = "Гостевой режим"; }
       const sideAvatar = $(".profile .avatar"); if (sideAvatar) sideAvatar.textContent = "✦";
       const logout = $("#profileLogout"); if (logout) logout.hidden = true;
+      $("#creatorProfileForm")?.reset();
+      $("#creatorBioCount").textContent = "0";
+      $("#creatorDirectoryResults")?.replaceChildren();
+      setProfileStatus("Войдите, чтобы настроить профиль.");
       const accountName = $("#accountName"); if (accountName) accountName.textContent = "Гостевой просмотр";
       const accountEmail = $("#accountEmail"); if (accountEmail) accountEmail.textContent = "Войдите или зарегистрируйтесь, чтобы открыть личное пространство.";
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = "✦";
@@ -108,6 +112,12 @@
       authStateEventReceived = true;
       const nextUserId = session?.user?.id || null;
       const accountChanged = lastAuthUserId !== nextUserId;
+      if (accountChanged) {
+        $("#creatorProfileForm")?.reset();
+        $("#creatorBioCount").textContent = "0";
+        $("#creatorDirectoryResults")?.replaceChildren();
+        setProfileStatus("Загружаем профиль…");
+      }
       // Invalidate any in-flight visual-library sync immediately, including logout.
       if (accountChanged) visualLibrarySyncSequence++;
       lastAuthUserId = nextUserId;
