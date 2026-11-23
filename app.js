@@ -1306,6 +1306,77 @@ const movieHistoryStyle = document.createElement("style");
     panel.append(head,list,note,back); panel.hidden=false; panel.removeAttribute("data-active-stage");
     requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
+  let dashboardActivityBusy = false;
+  const renderDashboardActivity = async () => {
+    const list = $("#dashboardActivityList");
+    if (!list || dashboardActivityBusy) return;
+    dashboardActivityBusy = true;
+    const requestUserId = authSession?.user?.id || null;
+    const requestVersion = authContextVersion;
+    try {
+      const items = movieRead().slice(0, 5).map(project => ({
+        kind: "movie", id: project.id, title: project.name || "Без названия",
+        detail: "Проект фильма · " + movieProgress(project),
+        updatedAt: project.updatedAt || project.createdAt || null
+      }));
+      if (requestUserId && supabaseClient) {
+        const { data, error } = await supabaseClient.from("assistant_conversations")
+          .select("id,title,updated_at").eq("user_id", requestUserId)
+          .order("updated_at", { ascending: false }).limit(5);
+        if (error) throw error;
+        if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+        (data || []).forEach(conversation => items.push({
+          kind: "assistant", id: conversation.id,
+          title: conversation.title || "Новый диалог",
+          detail: "Разговор с AI Companion",
+          updatedAt: conversation.updated_at || null
+        }));
+      }
+      if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+      items.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+      list.replaceChildren();
+      if (!items.length) {
+        const empty = document.createElement("div"); empty.className = "dashboard-empty";
+        empty.textContent = requestUserId
+          ? "Здесь появятся ваши новые проекты и разговоры с AI Companion."
+          : "Создайте проект — и здесь появится ваша недавняя активность.";
+        list.append(empty); return;
+      }
+      items.slice(0, 6).forEach(item => {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "dashboard-activity-item";
+        const icon = document.createElement("span"); icon.className = "dashboard-activity-icon";
+        icon.textContent = item.kind === "movie" ? "🎬" : "✦";
+        const copy = document.createElement("span"); copy.className = "dashboard-activity-copy";
+        const title = document.createElement("b"); title.textContent = item.title;
+        const detail = document.createElement("small");
+        detail.textContent = item.detail + (item.updatedAt ? " · " + movieDate(item.updatedAt) : "");
+        copy.append(title, detail);
+        const arrow = document.createElement("span"); arrow.className = "dashboard-activity-arrow"; arrow.textContent = "↗";
+        button.append(icon, copy, arrow);
+        button.addEventListener("click", async () => {
+          if (item.kind === "movie") {
+            activeMovieId = item.id; navigate("movie");
+            setTimeout(() => openMovieOverview(item.id), 80);
+          } else {
+            navigate("assistant");
+            try { await loadAssistantMessages(item.id); await renderAssistantHistory(); }
+            catch (error) { setAssistantStatus("Не удалось открыть диалог: " + error.message); }
+          }
+        });
+        list.append(button);
+      });
+    } catch (error) {
+      if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+      list.replaceChildren();
+      const note = document.createElement("div"); note.className = "dashboard-empty";
+      note.textContent = "Не удалось загрузить историю разговоров. Ваши проекты остаются доступны в разделе «Мои проекты».";
+      list.append(note);
+      console.warn("Dashboard activity could not be loaded:", error);
+    } finally {
+      dashboardActivityBusy = false;
+    }
+  };
   const renderCreativeDashboard = () => {
     const list=$("#dashboardProjectList");
     if(!list)return;
@@ -1336,6 +1407,7 @@ const movieHistoryStyle = document.createElement("style");
     }
     const recent=$("#dashboardRecentLabel");
     if(recent)recent.textContent=projects.length?"Недавно изменённые проекты":"Пока нет недавних проектов";
+    renderDashboardActivity();
   };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
