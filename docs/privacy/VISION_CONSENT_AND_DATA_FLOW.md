@@ -71,3 +71,11 @@ The existing short checkbox copy in the UI is temporary, not final consent langu
 - [ ] Retention/deletion schedule implemented and tested.
 - [ ] Security/logging review completed.
 - [ ] Explicit release approval obtained before setting VISION_PRIVACY_REVIEW_APPROVED=true and VISION_INPUT_ENABLED=true.
+## Current backend enforcement
+
+- `POST /api/privacy/consent` records server-versioned acceptance or withdrawal; clients cannot submit their own policy-version strings.
+- `GET /api/privacy/consent` reads the latest state per scope for the authenticated account.
+- Vision is rejected unless the feature flag, independent privacy approval, published privacy-notice version and published Vision-consent version are all configured.
+- `POST /api/vision/analyze` additionally checks the latest persisted `vision_deepseek` event. A stale acceptance cannot override a later withdrawal.
+- The external AI transfer journal records a metadata-only attempt before the provider call and fails closed if the audit store is unavailable. Outcome metadata is appended afterward. An in-flight call that began with valid consent can finish its outcome audit after a later withdrawal; no new attempt can start with withdrawn consent.
+
