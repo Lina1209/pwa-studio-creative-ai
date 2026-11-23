@@ -4361,6 +4361,64 @@ end;
 $plan_quota_atomic_admission_test$;
 
 
+-- A job admitted under an active plan remains resolvable after that plan expires.
+-- The immutable assignment snapshot and its quota reservations stay attached to
+-- the job; terminalization must consume period usage and release concurrency.
+do $plan_expiry_inflight_job_test$
+declare
+  v_job record;
+  v_completed integer;
+  v_released integer;
+begin
+  select * into v_job
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-expiry-inflight-job-001',
+      repeat('7', 64),
+      '{"prompt":"complete after plan expiry","quantity":1}'::jsonb,
+      '{"amount":10,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      10
+    );
+
+  if not v_job.created or v_job.replayed then
+    raise exception 'Expected a new in-flight plan generation job';
+  end if;
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values (
+    '16161616-1616-4161-8161-161616161616',
+    '22222222-2222-4222-8222-222222222222',
+    'expired',
+    '11111111-1111-4111-8111-111111111111',
+    'expired:plan-expiry-inflight-job-001',
+    'Expire plan while an admitted generation is still running'
+  );
+
+  update public.generation_jobs
+     set status = 'succeeded', completed_at = now(), updated_at = now()
+   where id = v_job.job_id;
+
+  select count(*) into v_completed
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id and status = 'completed';
+  select count(*) into v_released
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and feature_key = 'max_parallel_jobs' and status = 'released';
+
+  if v_completed <> 4 or v_released <> 1 then
+    raise exception 'Plan expiry incorrectly prevented quota settlement for an admitted job';
+  end if;
+end;
+$plan_expiry_inflight_job_test$;
+
+
 -- A pending plan is not an entitlement, even when the account has credits.
 insert into public.user_plan_assignments(
   id, user_id, approved_plan_version_id, assignment_source,
