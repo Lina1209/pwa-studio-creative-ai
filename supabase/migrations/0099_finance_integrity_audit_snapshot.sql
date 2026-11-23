@@ -73,7 +73,7 @@ as $function$
     'ledger', coalesce((
       select jsonb_agg(jsonb_build_object(
         'entry_id', p.id, 'user_id', p.user_id,
-        'operation_type', p.operation_type,
+        'operation_type', p.operation_type, 'operation_key', p.operation_key,
         'delta_available', p.delta_available, 'delta_reserved', p.delta_reserved,
         'balance_available_after', p.balance_available_after,
         'balance_reserved_after', p.balance_reserved_after,
