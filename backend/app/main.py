@@ -84,7 +84,9 @@ from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
     GenerationPricingQuoteConflictError,
+    GenerationJobNotFoundError,
     get_generation_job,
+    request_generation_job_cancellation,
     create_plan_credited_generation_job,
     store_pricing_quote,
 )
@@ -311,6 +313,36 @@ def generation_job_status(
         # Do not reveal whether a job with this id belongs to another account.
         raise HTTPException(status_code=404, detail="Generation job was not found.")
     return job
+
+
+@app.post(f"{settings.api_prefix}/jobs/{{job_id}}/cancel")
+def cancel_generation_job(
+    job_id: UUID,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Request owner-scoped cancellation; the worker confirms provider reconciliation."""
+    if not settings.generation_jobs_enabled:
+        raise HTTPException(status_code=503, detail="Generation job cancellation is not enabled yet.")
+    try:
+        result = request_generation_job_cancellation(
+            settings,
+            user_id=UUID(user.user_id),
+            job_id=job_id,
+        )
+    except GenerationJobNotFoundError as exc:
+        # Do not reveal whether a job with this id belongs to another account.
+        raise HTTPException(status_code=404, detail="Generation job was not found.") from exc
+    except GenerationJobsNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail="Generation job cancellation is not configured.") from exc
+    except GenerationJobsServiceError as exc:
+        raise HTTPException(status_code=503, detail="Could not request generation cancellation.") from exc
+
+    return {
+        "job_id": str(job_id),
+        "status": result.job_status,
+        "cancellation_action": result.cancellation_action,
+        "replayed": result.replayed,
+    }
 
 
 @app.post(f"{settings.api_prefix}/scenes/{{scene_id}}/image-jobs", status_code=202)
