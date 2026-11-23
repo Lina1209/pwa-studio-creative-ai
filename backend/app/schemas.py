@@ -80,3 +80,7 @@ class NotificationResponse(BaseModel):
     data: dict = Field(default_factory=dict)
     read_at: str | None = None
     created_at: str
+
+class DirectMessageCreateRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=8000)
+
