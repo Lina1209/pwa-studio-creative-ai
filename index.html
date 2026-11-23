@@ -41,6 +41,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <button class="nav-item" data-view="prompts"><span>⌘</span> Prompt Studio <i>NEW</i></button>
         <button class="nav-item" data-view="library"><span>▧</span> Медиатека</button>
         <button class="nav-item" data-view="account"><span>♙</span> Личный кабинет</button>
+        <button class="nav-item" data-view="messages"><span>✉</span> Сообщения <i class="messages-nav-badge" id="messagesUnreadBadge" hidden>0</i></button>
         <button class="nav-item guest-space-nav" data-view="guestspace" id="guestSpaceNav" hidden><span>✧</span> Гостевое пространство</button>
       </nav>
       <div class="workspace-label tools-label">ТВОРЧЕСКИЕ ИНСТРУМЕНТЫ</div>
@@ -641,6 +642,36 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="rules-footer panel"><b>Приватность</b><p>Личные проекты по умолчанию приватны. Администратор не должен просматривать все личные работы без причины. Доступ для проверки должен ограничиваться жалобами, сигналами безопасности и необходимыми действиями модерации с записью таких действий.</p></div>
       </section>
 
+      <section class="view" id="view-messages">
+        <div class="page-heading"><div class="eyebrow">PWA STUDIO · CHAT CENTER</div><h1>Центр <span class="gradient-text">сообщений</span></h1><p>Обращения и ответы команды в одном удобном пространстве.</p></div>
+    <section class="panel messages-center-panel" id="supportUserPanel" aria-labelledby="supportUserHeading">
+          <div class="panel-heading"><div><div class="eyebrow">YOUR MESSAGES</div><h2 id="supportUserHeading">Диалоги и поддержка</h2><p>Ваши личные обращения к команде PWA Studio — в одном месте.</p></div><button class="secondary-button" id="refreshMySupportTickets" type="button">↻ Обновить</button></div>
+          <form id="supportCreateForm" class="finance-queue-controls">
+            <label>Категория обращения
+              <select id="supportNewCategory">
+                <option value="general">Общий вопрос</option>
+                <option value="bug">Ошибка или техническая проблема</option>
+                <option value="account">Аккаунт и доступ</option>
+                <option value="billing">Тарифы, кредиты и оплата</option>
+                <option value="feature_request">Предложение новой функции</option>
+                <option value="feedback">Отзыв о PWA Studio</option>
+                <option value="safety_privacy">Безопасность и конфиденциальность</option>
+              </select>
+            </label>
+            <label>Тема обращения<input id="supportNewSubject" minlength="3" maxlength="160" required placeholder="Например, проблема с сохранением проекта"></label>
+            <label>Сообщение<textarea id="supportNewMessage" minlength="1" maxlength="5000" rows="3" required placeholder="Опишите, что произошло или что можно улучшить…"></textarea></label>
+            <label class="support-context-optin"><input id="supportIncludeContext" type="checkbox"> Добавить технический контекст: открытый раздел сайта. Никакие файлы или тексты проектов не прикладываются.</label>
+            <button class="primary-button" type="submit">Отправить обращение</button>
+          </form>
+          <p id="supportUserStatus" class="helper-text" role="status" aria-live="polite">Войдите в аккаунт, чтобы пользоваться поддержкой.</p>
+          <div class="messages-list-heading">Ваши диалоги</div><div id="messagesConversationList" class="messages-conversation-list" aria-live="polite"></div><div class="finance-queue-controls messages-select-fallback"><label>Мои обращения<select id="supportMyTicketSelect"><option value="">Пока нет обращений</option></select></label></div>
+          <div id="supportMyConversation" class="panel" hidden>
+            <div id="supportMyMessages" class="assistant-messages" aria-live="polite"></div>
+            <form id="supportUserReplyForm" class="finance-queue-controls"><label>Ваш ответ<textarea id="supportUserReply" maxlength="5000" rows="2" required placeholder="Напишите сообщение…"></textarea></label><button class="secondary-button" type="submit">Отправить ответ</button></form>
+          </div>
+        </section>
+      </section>
+
       <section class="view" id="view-settings">
         <div class="page-heading"><div class="eyebrow">PREFERENCES & CONNECTIONS</div><h1>Настройки</h1><p>Подключите сервер студии. Секретные ключи AI-провайдера вводятся только в окружении backend, не здесь.</p></div>
         <div class="panel settings-list">
@@ -759,35 +790,6 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
   <script src="./movie-storage.js?v=20261123-1"></script>
   <script src="./app.js?v=20261123-1" defer></script>
   <script src="./audio-lab.js?v=20261121-1" defer></script>
-  <dialog class="support-widget-dialog" id="supportWidgetDialog" aria-label="Поддержка и обратная связь">
-    <header class="support-widget-header"><div><b>PWA Studio · Поддержка</b><small>Личная переписка с командой</small></div><button class="support-widget-close" id="supportWidgetClose" type="button" aria-label="Закрыть окно поддержки">×</button></header>
-    <section class="panel" id="supportUserPanel" aria-labelledby="supportUserHeading">
-          <div class="panel-heading"><div><div class="eyebrow">HELP DESK</div><h2 id="supportUserHeading">Поддержка и обращения</h2><p>Задайте вопрос команде PWA Studio и следите за ответом здесь.</p></div><button class="secondary-button" id="refreshMySupportTickets" type="button">↻ Обновить</button></div>
-          <form id="supportCreateForm" class="finance-queue-controls">
-            <label>Категория обращения
-              <select id="supportNewCategory">
-                <option value="general">Общий вопрос</option>
-                <option value="bug">Ошибка или техническая проблема</option>
-                <option value="account">Аккаунт и доступ</option>
-                <option value="billing">Тарифы, кредиты и оплата</option>
-                <option value="feature_request">Предложение новой функции</option>
-                <option value="feedback">Отзыв о PWA Studio</option>
-                <option value="safety_privacy">Безопасность и конфиденциальность</option>
-              </select>
-            </label>
-            <label>Тема обращения<input id="supportNewSubject" minlength="3" maxlength="160" required placeholder="Например, проблема с сохранением проекта"></label>
-            <label>Сообщение<textarea id="supportNewMessage" minlength="1" maxlength="5000" rows="3" required placeholder="Опишите, что произошло или что можно улучшить…"></textarea></label>
-            <label class="support-context-optin"><input id="supportIncludeContext" type="checkbox"> Добавить технический контекст: открытый раздел сайта. Никакие файлы или тексты проектов не прикладываются.</label>
-            <button class="primary-button" type="submit">Отправить обращение</button>
-          </form>
-          <p id="supportUserStatus" class="helper-text" role="status" aria-live="polite">Войдите в аккаунт, чтобы пользоваться поддержкой.</p>
-          <div class="finance-queue-controls"><label>Мои обращения<select id="supportMyTicketSelect"><option value="">Пока нет обращений</option></select></label></div>
-          <div id="supportMyConversation" class="panel" hidden>
-            <div id="supportMyMessages" class="assistant-messages" aria-live="polite"></div>
-            <form id="supportUserReplyForm" class="finance-queue-controls"><label>Ваш ответ<textarea id="supportUserReply" maxlength="5000" rows="2" required placeholder="Напишите сообщение…"></textarea></label><button class="secondary-button" type="submit">Отправить ответ</button></form>
-          </div>
-        </section>
-  </dialog>
-  <button class="support-launcher" id="supportLauncher" type="button" aria-label="Открыть поддержку и обратную связь" aria-haspopup="dialog" aria-controls="supportWidgetDialog" title="Поддержка и обратная связь"><span class="support-launcher-icon" aria-hidden="true">✉</span><span class="support-launcher-label">Помощь и обратная связь</span></button>
+  <button class="support-launcher" id="supportLauncher" type="button" aria-label="Открыть центр сообщений" title="Сообщения"><span class="support-launcher-icon" aria-hidden="true">✉</span><span class="support-launcher-label">Сообщения</span></button>
 </body>
 </html>

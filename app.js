@@ -473,6 +473,28 @@ const movieHistoryStyle = document.createElement("style");
       option.textContent = ticket.subject + " · " + (supportCategoryLabels[ticket.category] || "Обращение") + " · " + (supportStatusLabels[ticket.status] || ticket.status);
       select.append(option);
     });
+    const list = $("#messagesConversationList");
+    if (list) {
+      list.replaceChildren();
+      if (!tickets.length) {
+        const empty = document.createElement("p");
+        empty.className = "messages-list-empty";
+        empty.textContent = "Пока нет диалогов. Создайте первое обращение выше.";
+        list.append(empty);
+      }
+      tickets.forEach(ticket => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "messages-conversation-item" + (selectedMySupportTicket === ticket.id ? " active" : "");
+        const avatar = document.createElement("span"); avatar.className = "messages-conversation-avatar"; avatar.textContent = "✦";
+        const copy = document.createElement("span"); copy.className = "messages-conversation-copy";
+        const title = document.createElement("b"); title.textContent = ticket.subject;
+        const meta = document.createElement("small"); meta.textContent = (supportCategoryLabels[ticket.category] || "Обращение") + " · " + (supportStatusLabels[ticket.status] || ticket.status);
+        copy.append(title, meta); item.append(avatar, copy);
+        item.addEventListener("click", () => { select.value = ticket.id; select.dispatchEvent(new Event("change", {bubbles:true})); });
+        list.append(item);
+      });
+    }
   };
   const loadMySupportTickets = async () => {
     const status = $("#supportUserStatus");
@@ -496,6 +518,7 @@ const movieHistoryStyle = document.createElement("style");
       const data = await apiRequest("/api/support/tickets/" + encodeURIComponent(ticketId));
       if (list) { list.replaceChildren(); (data.messages || []).forEach(message => list.append(supportMessageNode(message))); }
       if (box) box.hidden = false;
+      setSupportOptions($("#supportMyTicketSelect"), mySupportTickets, "Пока нет обращений");
       const closed = ["resolved","closed"].includes(data.ticket?.status);
       $("#supportUserReplyForm").hidden = closed;
       $("#supportUserStatus").textContent = "Статус: " + (supportStatusLabels[data.ticket?.status] || data.ticket?.status || "—");
@@ -1395,7 +1418,7 @@ const movieHistoryStyle = document.createElement("style");
     } finally { button.disabled = false; }
   });
 
-  const labels = {"finance-operations":"Финансовые операции","admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  const labels = {"finance-operations":"Финансовые операции","admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",messages:"Сообщения",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
@@ -1412,18 +1435,11 @@ const movieHistoryStyle = document.createElement("style");
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
   $("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
-  const supportWidgetDialog = $("#supportWidgetDialog");
   $("#supportLauncher")?.addEventListener("click", () => {
-    if (supportWidgetDialog?.showModal) supportWidgetDialog.showModal();
-    else supportWidgetDialog?.setAttribute("open", "");
+    navigate("messages");
     if (authSession?.user) loadMySupportTickets();
   });
-  const closeSupportWidget = () => {
-    if (supportWidgetDialog?.close) supportWidgetDialog.close();
-    else supportWidgetDialog?.removeAttribute("open");
-  };
   resetSupportUiForAccountChange = () => {
-    closeSupportWidget();
     mySupportTickets = [];
     adminSupportTickets = [];
     selectedMySupportTicket = null;
@@ -1443,10 +1459,6 @@ const movieHistoryStyle = document.createElement("style");
     if ($("#adminSupportConversation")) $("#adminSupportConversation").hidden = true;
     if ($("#adminSupportFeedback")) $("#adminSupportFeedback").textContent = "Очередь загружается только по запросу.";
   };
-  $("#supportWidgetClose")?.addEventListener("click", closeSupportWidget);
-  supportWidgetDialog?.addEventListener("click", event => {
-    if (event.target === supportWidgetDialog) closeSupportWidget();
-  });
   $(".profile").addEventListener("click", () => navigate("account"));
   $("#topAvatar")?.addEventListener("click", () => navigate("account"));
   $("#accountLogin").addEventListener("click", () => setAuthMode("login"));
