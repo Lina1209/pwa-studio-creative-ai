@@ -946,8 +946,13 @@ const movieHistoryStyle = document.createElement("style");
     });
   }
   $("#directEmojiToggle")?.addEventListener("click",()=>{
-    if(!emojiPicker)return;emojiPicker.hidden=!emojiPicker.hidden;
+    if(!emojiPicker)return;
+    emojiPicker.hidden=!emojiPicker.hidden;
     $("#directEmojiToggle").setAttribute("aria-expanded",String(!emojiPicker.hidden));
+    if(stickerPicker && !emojiPicker.hidden){
+      stickerPicker.hidden=true;
+      $("#directStickerToggle")?.setAttribute("aria-expanded","false");
+    }
   });
 
   const directStickerSet=[
