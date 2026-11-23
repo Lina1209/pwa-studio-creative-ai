@@ -1435,7 +1435,29 @@ const movieHistoryStyle = document.createElement("style");
     try {
       const result = await apiRequest("/api/prompts", {
         method: "POST",
-        body: JSON.stringify({ idea, purpose: $("#promptType").value, language: $("#promptLanguage").value, style: "Cinematic, coherent, detailed" })
+        body: JSON.stringify({
+          idea,
+          purpose: $("#promptType").value,
+          language: $("#promptLanguage").value,
+          style: "Cinematic, coherent, detailed",
+          ...(activeMovieId && movieRead().some(project => project.id === activeMovieId) ? {
+            project_context: (() => {
+              const project = movieRead().find(item => item.id === activeMovieId);
+              return {
+                title: String(project.name || "Без названия").slice(0, 120),
+                idea: String(project.idea || "").slice(0, 2000),
+                genre: String(project.genre || "").slice(0, 80),
+                duration_minutes: Number.isInteger(project.duration) ? Math.min(30, Math.max(1, project.duration)) : null,
+                frame: ["16:9", "9:16", "1:1"].includes(project.frame) ? project.frame : null,
+                story: String(project.story || "").slice(0, 6000),
+                storyboard: String(project.storyboard || "").slice(0, 6000),
+                characters: String(project.characters || "").slice(0, 3000),
+                voices: String(project.voices || "").slice(0, 2000),
+                edit: String(project.edit || "").slice(0, 2000)
+              };
+            })()
+          } : {})
+        })
       });
       if (authSession?.user?.id !== requestUserId) return;
       $("#promptOutput").textContent = result.prompt;
