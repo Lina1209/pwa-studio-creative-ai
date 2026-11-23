@@ -265,11 +265,18 @@ def successful_payment_rows():
             "payload_sha256": "a" * 64, "signature_verified": True,
             "processing_status": "processed", "processed_at": "2026-11-23T10:00:00Z",
         }],
-        "payment_order_events": [{
-            "id": "order-event-1", "payment_order_id": order_id,
-            "event_type": "payment.succeeded", "new_status": "succeeded",
-            "occurred_at": "2026-11-23T10:00:00Z",
-        }],
+        "payment_order_events": [
+            {
+                "id": "order-event-0", "payment_order_id": order_id,
+                "event_type": "order.created", "previous_status": None, "new_status": "created",
+                "occurred_at": "2026-11-23T09:59:00Z",
+            },
+            {
+                "id": "order-event-1", "payment_order_id": order_id,
+                "event_type": "payment.succeeded", "previous_status": "created", "new_status": "succeeded",
+                "occurred_at": "2026-11-23T10:00:00Z",
+            },
+        ],
         "purchase_items": [{
             "payment_order_id": order_id, "user_id": USER, "item_type": "credit_pack",
             "approved_credit_pack_version_id": "pack-version-1",
@@ -318,7 +325,7 @@ def test_refund_status_is_explicitly_not_fully_auditable():
     rows["payment_orders"][0]["provider_payment_id"] = "provider-payment-1"
     rows["payment_order_events"].append({
         "id": "order-event-2", "payment_order_id": rows["payment_orders"][0]["id"],
-        "event_type": "payment.refunded", "new_status": "refunded",
+        "event_type": "payment.refunded", "previous_status": "succeeded", "new_status": "refunded",
         "occurred_at": "2026-11-24T10:00:00Z",
     })
     report = audit(**rows)
@@ -345,7 +352,8 @@ def subscription_rows():
     }]
     rows["payment_provider_events"][0]["payment_order_id"] = order_id
     rows["payment_provider_events"][0]["provider_event_id"] = "provider-sub-event-1"
-    rows["payment_order_events"][0]["payment_order_id"] = order_id
+    for event in rows["payment_order_events"]:
+        event["payment_order_id"] = order_id
     rows["purchase_items"] = [{
         "payment_order_id": order_id, "user_id": USER, "item_type": "subscription",
         "approved_credit_pack_version_id": None,
