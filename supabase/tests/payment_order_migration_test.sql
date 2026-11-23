@@ -62,3 +62,55 @@ begin
   end if;
 end;
 $payment_order_merchant_reference_idempotency_test$;
+
+-- Verified success events are idempotent and only settle the order.
+do $payment_success_event_idempotency_test$
+declare
+  v_order_id uuid;
+  v_first record;
+  v_replay record;
+  v_event_count bigint;
+  v_status text;
+begin
+  select id into v_order_id
+    from public.payment_orders
+   where merchant_reference = 'test-merchant-ref-001';
+
+  select * into v_first from public.record_verified_payment_provider_event(
+    'examplepay',
+    'provider-event-success-001',
+    v_order_id,
+    'payment.succeeded',
+    repeat('a', 64),
+    1250,
+    'KZT',
+    'provider-payment-001'
+  );
+  if v_first.replayed or v_first.resulting_status <> 'succeeded' then
+    raise exception 'First verified success event did not settle the order exactly once';
+  end if;
+
+  select * into v_replay from public.record_verified_payment_provider_event(
+    'examplepay',
+    'provider-event-success-001',
+    v_order_id,
+    'payment.succeeded',
+    repeat('a', 64),
+    1250,
+    'KZT',
+    'provider-payment-001'
+  );
+  if not v_replay.replayed or v_replay.resulting_status <> 'succeeded' then
+    raise exception 'Duplicate verified success event was not an idempotent replay';
+  end if;
+
+  select count(*) into v_event_count
+    from public.payment_provider_events
+   where provider_code = 'examplepay'
+     and provider_event_id = 'provider-event-success-001';
+  select status into v_status from public.payment_orders where id = v_order_id;
+  if v_event_count <> 1 or v_status <> 'succeeded' then
+    raise exception 'Duplicate success event changed payment state or duplicated the inbox row';
+  end if;
+end;
+$payment_success_event_idempotency_test$;
