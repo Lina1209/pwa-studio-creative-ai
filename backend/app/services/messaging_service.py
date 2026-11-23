@@ -1,5 +1,5 @@
 import httpx
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import HTTPException
 
@@ -70,12 +70,16 @@ def send_message(settings: Settings, sender_id: str, recipient_id: str, body: st
     })
     if blocked:
         raise HTTPException(status_code=403, detail="Messaging is unavailable for this user pair.")
-    recent = _request(settings, "GET", "direct_messages", params={
-        "select": "id", "sender_id": f"eq.{sender_id}",
-        "created_at": f"gte.{(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()}",
-        "limit": "21",
-    })
-    if len(recent) >= 20:
+    # The database RPC increments a per-user counter atomically. Unlike a
+    # read-then-count check, concurrent requests cannot all pass the same limit.
+    allowed = _request(
+        settings,
+        "POST",
+        "rpc/consume_message_rate_limit",
+        payload={"p_user_id": sender_id, "p_limit": 20, "p_window_seconds": 60},
+        prefer="return=representation",
+    )
+    if allowed is not True:
         raise HTTPException(status_code=429, detail="Please wait before sending more messages.")
     thread = _get_or_create_thread(settings, sender_id, recipient_id)
     rows = _request(settings, "POST", "direct_messages",
