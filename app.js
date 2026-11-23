@@ -1484,7 +1484,29 @@ const movieHistoryStyle = document.createElement("style");
   });
 
   let editingPromptRef = null;
+  const promptVersionStyle = document.createElement("style");
+  promptVersionStyle.textContent = `
+    .prompt-version-history{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(135,105,220,.045)}
+    .prompt-version-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--muted)}
+    .prompt-version-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+    .prompt-version-row>div{min-width:0}.prompt-version-row b{font-size:12px}.prompt-version-row p{margin:5px 0 0;overflow-wrap:anywhere}
+    @media(max-width:480px){.prompt-version-row{flex-direction:column}.prompt-version-row button{width:100%}}
+  `;
+  document.head.appendChild(promptVersionStyle);
   const promptModeLabels = { video:"Видео", image:"Изображения", music:"Музыка", sound:"Звуковые эффекты", script:"Сценарий", character:"Персонажи", voice:"Голос", storyboard:"Раскадровка" };
+  const snapshotPromptVersion = prompt => ({
+    prompt: String(prompt.prompt || "").slice(0,12000),
+    idea: String(prompt.idea || "").slice(0,2000),
+    purpose: String(prompt.purpose || "").slice(0,40),
+    language: String(prompt.language || "").slice(0,40),
+    provider: String(prompt.provider || "").slice(0,100),
+    model: String(prompt.model || "").slice(0,100),
+    savedAt: String(prompt.updatedAt || prompt.createdAt || new Date().toISOString())
+  });
+  const promptVersionLabel = version => {
+    const date = new Date(version.savedAt);
+    return Number.isNaN(date.getTime()) ? "Дата неизвестна" : date.toLocaleString("ru-RU");
+  };
   const resetPromptEditing = () => {
     editingPromptRef = null;
     $("#promptOutput").contentEditable = "false";
@@ -1523,6 +1545,47 @@ const movieHistoryStyle = document.createElement("style");
       heading.append(title,badge);
       const idea = document.createElement("p"); idea.className = "helper-text"; idea.textContent = String(entry.prompt.idea || "Без исходного описания").slice(0,240);
       const preview = document.createElement("p"); preview.className = "prompt-library-preview"; preview.textContent = String(entry.prompt.prompt).slice(0,420) + (entry.prompt.prompt.length > 420 ? "…" : "");
+      const versions = Array.isArray(entry.prompt.versions) ? entry.prompt.versions.slice(-20).reverse() : [];
+      const history = document.createElement("details"); history.className = "prompt-version-history";
+      const historySummary = document.createElement("summary"); historySummary.textContent = "История версий · " + versions.length;
+      history.appendChild(historySummary);
+      if (versions.length) {
+        versions.forEach((version, versionIndex) => {
+          const row = document.createElement("div"); row.className = "prompt-version-row";
+          const info = document.createElement("div");
+          const date = document.createElement("b"); date.textContent = "Версия " + (versions.length - versionIndex) + " · " + promptVersionLabel(version);
+          const excerpt = document.createElement("p"); excerpt.className = "helper-text"; excerpt.textContent = String(version.prompt || "").slice(0,180) + (String(version.prompt || "").length > 180 ? "…" : "");
+          info.append(date,excerpt);
+          const restore = document.createElement("button"); restore.type = "button"; restore.className = "secondary-button"; restore.textContent = "Восстановить";
+          restore.addEventListener("click", () => {
+            if (!window.confirm("Восстановить эту версию? Текущий текст сохранится в истории.")) return;
+            const all = movieRead(); const projectIndex = all.findIndex(p => p.id === entry.projectId);
+            if (projectIndex < 0) return;
+            const project = { ...all[projectIndex] }; const saved = Array.isArray(project.prompts) ? [...project.prompts] : [];
+            const current = saved[entry.index];
+            if (!current) return;
+            const currentSnapshot = snapshotPromptVersion(current);
+            const historyItems = Array.isArray(current.versions) ? [...current.versions] : [];
+            const selected = snapshotPromptVersion(version);
+            const duplicate = currentSnapshot.prompt === selected.prompt && currentSnapshot.idea === selected.idea &&
+              currentSnapshot.purpose === selected.purpose && currentSnapshot.language === selected.language;
+            saved[entry.index] = {
+              ...current, ...selected,
+              versions: (duplicate ? historyItems : [...historyItems, currentSnapshot]).slice(-20),
+              createdAt: current.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+            project.prompts = saved; project.updatedAt = new Date().toISOString(); all[projectIndex] = project;
+            if (!movieWrite(all)) { $("#promptLibraryFeedback").textContent = "Не удалось восстановить версию."; return; }
+            renderPromptLibrary(); renderMovieProjects();
+            $("#promptLibraryFeedback").textContent = "Предыдущая версия восстановлена. Текущий вариант сохранён в истории.";
+          });
+          row.append(info,restore); history.appendChild(row);
+        });
+      } else {
+        const emptyHistory = document.createElement("p"); emptyHistory.className = "helper-text"; emptyHistory.textContent = "История появится после первого изменения промпта.";
+        history.appendChild(emptyHistory);
+      }
       const actions = document.createElement("div"); actions.className = "prompt-library-actions";
       const makeButton = (label, handler, danger = false) => {
         const button = document.createElement("button"); button.type = "button"; button.className = danger ? "secondary-button prompt-library-danger" : "secondary-button"; button.textContent = label; button.addEventListener("click", handler); return button;
@@ -1565,7 +1628,7 @@ const movieHistoryStyle = document.createElement("style");
           $("#promptLibraryFeedback").textContent = "Промпт удалён из проекта.";
         }, true)
       );
-      card.append(heading,idea,preview,actions); list.appendChild(card);
+      card.append(heading,idea,preview,history,actions); list.appendChild(card);
     });
   };
   $("#promptLibrarySearch").addEventListener("input", renderPromptLibrary);
@@ -1592,7 +1655,16 @@ const movieHistoryStyle = document.createElement("style");
     };
     if (editingPromptRef) {
       if (editingPromptRef.index < 0 || editingPromptRef.index >= saved.length) { feedback.textContent = "Промпт больше не найден в проекте."; return; }
-      saved[editingPromptRef.index] = { ...saved[editingPromptRef.index], ...item, createdAt: saved[editingPromptRef.index].createdAt || item.createdAt };
+      const previous = saved[editingPromptRef.index];
+      const previousSnapshot = snapshotPromptVersion(previous);
+      const hasMeaningfulChange = previousSnapshot.prompt !== item.prompt || previousSnapshot.idea !== item.idea ||
+        previousSnapshot.purpose !== item.purpose || previousSnapshot.language !== item.language;
+      const previousVersions = Array.isArray(previous.versions) ? [...previous.versions] : [];
+      saved[editingPromptRef.index] = {
+        ...previous, ...item,
+        versions: (hasMeaningfulChange ? [...previousVersions, previousSnapshot] : previousVersions).slice(-20),
+        createdAt: previous.createdAt || item.createdAt
+      };
     } else {
       saved.push({ ...item, createdAt: item.createdAt || new Date().toISOString() });
     }
