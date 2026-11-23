@@ -5,6 +5,7 @@ provider rates, a credit conversion policy, and operation ceilings. Never read
 prices or multipliers from browser payloads.
 """
 from dataclasses import dataclass
+import re
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from typing import Mapping
 
@@ -53,6 +54,7 @@ class PricingSettlement:
 # A future rule must use the provider's actual model identifier and an
 # explicitly approved credit conversion factor.
 AI_PRICING_CATALOG: dict[tuple[str, str, str], AIPricingRule] = {}
+_OPERATION_RE = re.compile(r"^[a-z0-9_.-]{1,80}$")
 
 
 def _ceil_credits(usd: Decimal, credits_per_usd: Decimal) -> int:
@@ -68,10 +70,14 @@ def _ceil_credits(usd: Decimal, credits_per_usd: Decimal) -> int:
 def _validate_rule(rule: AIPricingRule) -> None:
     if not rule.active:
         raise PricingError("Pricing rule is not active.")
-    if not rule.operation_code or not rule.provider or not rule.model:
-        raise PricingError("Pricing rule identity is incomplete.")
-    if isinstance(rule.pricing_version, bool) or rule.pricing_version < 1:
-        raise PricingError("Pricing version must be positive.")
+    if (not isinstance(rule.operation_code, str)
+            or not _OPERATION_RE.fullmatch(rule.operation_code)
+            or not isinstance(rule.provider, str) or not rule.provider.strip()
+            or not isinstance(rule.model, str) or not rule.model.strip()):
+        raise PricingError("Pricing rule identity is invalid.")
+    if (isinstance(rule.pricing_version, bool)
+            or not isinstance(rule.pricing_version, int) or rule.pricing_version < 1):
+        raise PricingError("Pricing version must be a positive integer.")
     for rate in (
         rule.input_usd_per_million_tokens,
         rule.output_usd_per_million_tokens,
@@ -84,8 +90,10 @@ def _validate_rule(rule: AIPricingRule) -> None:
     for limit in (rule.max_input_tokens, rule.max_output_tokens):
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
             raise PricingError("Token ceilings must be positive integers.")
-    if (isinstance(rule.min_credits, bool) or isinstance(rule.max_credits, bool)
-            or rule.min_credits < 1 or rule.max_credits < rule.min_credits):
+    if (isinstance(rule.min_credits, bool) or not isinstance(rule.min_credits, int)
+            or isinstance(rule.max_credits, bool) or not isinstance(rule.max_credits, int)
+            or rule.min_credits < 1 or rule.max_credits < rule.min_credits
+            or rule.max_credits > 100_000_000):
         raise PricingError("Credit bounds are invalid.")
 
 
@@ -151,7 +159,9 @@ def settle_ai_operation(
     """Price trusted provider usage; missing usage or overrun requires reconciliation."""
     if input_tokens is None or output_tokens is None:
         raise PricingError("Provider usage is incomplete; reservation requires reconciliation.")
-    if provider.strip().lower() != quote.provider.strip().lower() or model.strip() != quote.model:
+    if (not isinstance(provider, str) or not isinstance(model, str)
+            or provider.strip().lower() != quote.provider.strip().lower()
+            or model.strip() != quote.model):
         raise PricingError("Provider/model differs from the reserved pricing quote.")
     rule = _resolve_rule(quote.operation_code, quote.provider, quote.model, catalog)
     if rule.pricing_version != quote.pricing_version:
