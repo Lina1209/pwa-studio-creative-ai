@@ -1751,6 +1751,61 @@ const movieHistoryStyle = document.createElement("style");
   $("#wrapBoldPrompt").addEventListener("click",()=>wrapPromptSelection("**"));
   $("#wrapQuotePrompt").addEventListener("click",()=>wrapPromptSelection("> ",""));
   $("#wrapCodePrompt").addEventListener("click",()=>wrapPromptSelection("`","`"));
+  const promptTemplates = {
+    cinematic: "Субъект: {{subject}}.\nЛокация: {{location}}.\nНастроение: {{mood}}.\nКинематографичная композиция, выразительная глубина кадра, естественное освещение, детализированные материалы, продуманная цветовая палитра. Камера: {{camera}}. Сохранить визуальную целостность и реалистичную физику.",
+    character: "Персонаж: {{subject}}.\nВнешность и отличительные черты: {{appearance}}.\nОдежда и аксессуары: {{wardrobe}}.\nХарактер и манера движения: {{personality}}. Сохранять одинаковые черты лица, пропорции, причёску и одежду во всех кадрах. Не менять идентичность персонажа.",
+    video: "Сцена: {{subject}}.\nДействие: {{action}}.\nОкружение: {{location}}.\nДвижение камеры: {{camera}}.\nДлительность: {{duration}}. Описать начало, развитие и завершение движения, темп, направление, непрерывность и переход к следующему кадру.",
+    music: "Создать музыкальное сопровождение для: {{subject}}.\nЖанр: {{genre}}. Настроение: {{mood}}. Темп: {{tempo}}. Инструменты: {{instruments}}. Структура: вступление, развитие, кульминация и завершение. Без вокала, если не указано иное.",
+    sound: "Звуковая сцена: {{subject}}.\nМесто: {{location}}.\nАтмосфера: {{mood}}.\nОсновные звуки: {{sounds}}. Указать дистанцию, акустику пространства, слои фонового окружения, динамику и точное время появления ключевых эффектов."
+  };
+  const fragmentStorageKey = () => "pwa-studio-prompt-fragments-v1:" + (authSession?.user?.id || "guest");
+  const readPromptFragments = () => { try { const value=JSON.parse(localStorage.getItem(fragmentStorageKey())||"[]"); return Array.isArray(value)?value.filter(x=>x&&typeof x.text==="string"&&typeof x.name==="string").slice(0,80):[]; } catch { return []; } };
+  const writePromptFragments = items => { try { localStorage.setItem(fragmentStorageKey(),JSON.stringify(items.slice(0,80))); return true; } catch { return false; } };
+  const renderPromptFragments = () => {
+    const list=$("#promptFragmentList"); if(!list)return;
+    const items=readPromptFragments(); list.replaceChildren();
+    if(!items.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent="Сохранённых фрагментов пока нет.";list.append(empty);return;}
+    items.forEach((item,index)=>{
+      const row=document.createElement("div");row.className="prompt-fragment-row";
+      const info=document.createElement("div");info.className="prompt-fragment-info";
+      const title=document.createElement("b");title.textContent=item.name;
+      const preview=document.createElement("small");preview.textContent=item.text.slice(0,180);
+      info.append(title,preview);
+      const actions=document.createElement("div");actions.className="prompt-library-actions";
+      const insert=document.createElement("button");insert.type="button";insert.className="secondary-button";insert.textContent="Вставить";insert.addEventListener("click",()=>{
+        const selected=getPromptSelection();
+        if(selected&&!selected.range.collapsed)selected.range.deleteContents();
+        const range=selected?selected.range:document.createRange();if(!selected){range.selectNodeContents(promptOutput);range.collapse(false);}
+        const node=document.createTextNode(item.text);range.insertNode(node);
+        const next=document.createRange();next.selectNodeContents(node);next.collapse(false);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(next);
+        promptOutput.contentEditable="true";promptOutput.focus();$("#promptSaveFeedback").textContent="Фрагмент вставлен. Сохраните изменения, чтобы его оставить.";
+      });
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{const next=readPromptFragments();next.splice(index,1);writePromptFragments(next);renderPromptFragments();});
+      actions.append(insert,remove);row.append(info,actions);list.append(row);
+    });
+  };
+  $("#applyPromptTemplate").addEventListener("click",()=>{
+    const key=$("#promptTemplateSelect").value; if(!promptTemplates[key]){$("#promptSaveFeedback").textContent="Сначала выберите шаблон.";return;}
+    promptOutput.textContent=promptTemplates[key];promptOutput.contentEditable="true";promptOutput.focus();
+    $("#promptSaveFeedback").textContent="Шаблон добавлен. Заполните переменные или отредактируйте текст.";
+  });
+  $("#applyPromptVariables").addEventListener("click",()=>{
+    const values={};$("#promptVariableValues").value.split("\\n").forEach(line=>{const at=line.indexOf("=");if(at>0){const key=line.slice(0,at).trim().replace(/^\\{\\{|\\}\\}$/g,"");const value=line.slice(at+1).trim();if(/^[a-zA-Z0-9_]{1,40}$/.test(key)&&value)values[key]=value;}});
+    let result=promptOutput.textContent;let count=0;
+    Object.entries(values).forEach(([key,value])=>{const pattern=new RegExp("\\\\{\\\\{\\\\s*"+key+"\\\\s*\\\\}\\\\}","g");result=result.replace(pattern,()=>{count++;return value;});});
+    promptOutput.textContent=result;promptOutput.contentEditable="true";
+    $("#promptSaveFeedback").textContent=count?"Подставлено значений: "+count+".":"Подходящие переменные не найдены. Проверьте формат имя=значение.";
+  });
+  $("#savePromptFragment").addEventListener("click",()=>{
+    const selected=getPromptSelection();const value=selected?selected.selection.toString().trim():"";
+    if(!value){$("#promptSaveFeedback").textContent="Выделите фрагмент внутри текста промпта.";return;}
+    const name=$("#promptFragmentName").value.trim()||("Фрагмент "+(readPromptFragments().length+1));
+    const items=readPromptFragments();items.unshift({id:Date.now().toString(36),name:name.slice(0,60),text:value,createdAt:new Date().toISOString()});
+    if(!writePromptFragments(items)){$("#promptSaveFeedback").textContent="Не удалось сохранить фрагмент в памяти браузера.";return;}
+    $("#promptFragmentName").value="";renderPromptFragments();$("#promptSaveFeedback").textContent="Фрагмент «"+name+"» сохранён.";
+  });
+  renderPromptFragments();
+  window.addEventListener("pwa-studio-auth-changed",renderPromptFragments);
   $("#copyPrompt").addEventListener("click", async () => {
     if (editingPromptRef) $("#promptLibraryFeedback").textContent = "Вы можете сначала сохранить изменения или отменить редактирование.";
 
