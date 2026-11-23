@@ -2209,9 +2209,12 @@ def admin_support_reply(ticket_id: UUID, payload: SupportMessageCreate, user: St
         record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="requested",resource_type="support_ticket",resource_id=ticket_id,reason="Admin reply requested")
         add_message(settings,ticket_id,UUID(user.user_id),"admin",body)
         event_id = uuid4()
-        _notify_support_activity(recipient_ids={UUID(ticket["user_id"])}, actor_id=UUID(user.user_id),
-            ticket_id=ticket_id, kind="support_ticket_reply", title="Ответ команды PWA Studio",
-            body=ticket["subject"], event_key=f"support-ticket:{ticket_id}:admin-reply:{event_id}")
+        recipient_id = ticket.get("user_id")
+        if recipient_id:
+            _notify_support_activity(recipient_ids={UUID(str(recipient_id))}, actor_id=UUID(user.user_id),
+                ticket_id=ticket_id, kind="support_ticket_reply", title="Ответ команды PWA Studio",
+                body=ticket.get("subject", "Новое сообщение поддержки"),
+                event_key=f"support-ticket:{ticket_id}:admin-reply:{event_id}")
         try:
             record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason="Admin reply persisted")
         except (AdminAuditUnavailable, ValueError):

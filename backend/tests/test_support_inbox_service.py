@@ -124,7 +124,11 @@ def test_mark_notification_read_is_scoped_to_recipient(monkeypatch):
     fake = FakeClient([{"id": TICKET}])
     monkeypatch.setattr(module.httpx, "Client", lambda **kwargs: fake)
     module.mark_notification_read(settings(), UUID(TICKET), USER)
-    call = fake.calls[0]
-    assert call["method"] == "PATCH"
-    assert call["params"]["recipient_user_id"] == f"eq.{USER}"
-    assert call["params"]["id"] == f"eq.{TICKET}"
+    assert len(fake.calls) == 2
+    ownership_check, update = fake.calls
+    assert ownership_check["method"] == "GET"
+    assert ownership_check["params"]["recipient_user_id"] == f"eq.{USER}"
+    assert ownership_check["params"]["id"] == f"eq.{TICKET}"
+    assert update["method"] == "PATCH"
+    assert update["params"]["recipient_user_id"] == f"eq.{USER}"
+    assert update["params"]["id"] == f"eq.{TICKET}"
