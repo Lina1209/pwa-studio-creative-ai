@@ -124,3 +124,35 @@ begin
   );
 end;
 $direct_messaging_safety_test$;
+
+\i supabase/migrations/0096_direct_messaging_moderation_console.sql
+
+do $direct_moderation_test$
+declare
+  v_alice uuid := '11111111-1111-4111-8111-111111111111';
+  v_bob uuid := '22222222-2222-4222-8222-222222222222';
+  v_conversation uuid;
+  v_appeal uuid;
+  v_rejected boolean := false;
+begin
+  if has_table_privilege('authenticated','public.direct_moderation_events','SELECT')
+     or has_table_privilege('authenticated','public.direct_moderation_appeals','SELECT')
+     or has_function_privilege('authenticated','public.apply_direct_user_moderation(uuid,uuid,text,text,timestamptz)','EXECUTE')
+     or has_function_privilege('authenticated','public.review_direct_moderation_appeal(uuid,uuid,text,text)','EXECUTE') then
+    raise exception 'authenticated role must not access moderation console storage';
+  end if;
+  perform public.apply_direct_user_moderation(v_bob,v_alice,'mute','Repeated abusive messages',now()+interval '1 day');
+  v_conversation := public.create_direct_conversation(v_bob,v_alice);
+  begin
+    perform * from public.send_direct_message(v_conversation,v_bob,'Muted attempt','ffffffff-ffff-4fff-8fff-ffffffffffff');
+  exception when insufficient_privilege then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'muted user was allowed to send'; end if;
+  v_appeal := public.create_direct_moderation_appeal(v_bob,'I believe this moderation decision was mistaken.');
+  if v_appeal is null then raise exception 'appeal was not created'; end if;
+  if not public.review_direct_moderation_appeal(v_appeal,v_alice,'accepted','Restriction lifted after review.') then
+    raise exception 'appeal decision failed';
+  end if;
+  perform * from public.send_direct_message(v_conversation,v_bob,'Restriction lifted','abababab-abab-4aba-8aba-abababababab');
+end;
+$direct_moderation_test$;

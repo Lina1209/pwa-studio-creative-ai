@@ -209,3 +209,30 @@ def test_report_rejects_unknown_category():
         "/api/messages/direct/reports",
         json={"target_user_id": OTHER, "category": "unknown"})
     assert response.status_code == 422
+
+
+
+def test_moderation_admin_routes_require_admin_permission():
+    from app.services.auth import require_permission
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).get(
+        "/api/messages/direct/admin/reports")
+    assert response.status_code == 403
+
+
+def test_user_can_submit_appeal_using_authenticated_identity(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "create_moderation_appeal",
+                        lambda settings, user_id, reason:
+                        captured.update(user_id=user_id, reason=reason) or "appeal-1")
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).post(
+        "/api/messages/direct/moderation/appeals",
+        json={"reason":"I believe this restriction was applied by mistake."})
+    assert response.status_code == 201
+    assert captured["user_id"] == UUID(OWNER)
+
+
+def test_user_cannot_submit_short_appeal():
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).post(
+        "/api/messages/direct/moderation/appeals", json={"reason":"No"})
+    assert response.status_code == 422

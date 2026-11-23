@@ -411,6 +411,21 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             </div>
           </section>
 
+          
+          <section class="admin-module" id="directModerationModule" aria-labelledby="directModerationHeading">
+            <div class="panel-heading"><div><div class="eyebrow">TRUST & SAFETY</div><h3 id="directModerationHeading">Модерация личных сообщений</h3><p>Жалобы, санкции и апелляции. Просмотр и действия фиксируются в журнале аудита.</p></div><button class="secondary-button" id="refreshDirectModeration" type="button">↻ Обновить</button></div>
+            <p id="directModerationStatus" class="helper-text" role="status" aria-live="polite">Очередь загружается только по запросу.</p>
+            <div class="finance-queue-controls"><label>Фильтр жалоб<select id="directModerationReportFilter"><option value="open">Открытые</option><option value="reviewing">На проверке</option><option value="resolved">Решённые</option><option value="dismissed">Отклонённые</option><option value="">Все</option></select></label></div>
+            <div id="directModerationReports" class="assistant-messages"></div>
+            <h4>Апелляции пользователей</h4><div id="directModerationAppeals" class="assistant-messages"></div>
+            <form id="directModerationActionForm" class="finance-queue-controls">
+              <label>ID пользователя<input id="moderationTargetUserId" required maxlength="36" placeholder="UUID пользователя"></label>
+              <label>Действие<select id="moderationAction"><option value="warn">Предупреждение</option><option value="mute">Временное ограничение</option><option value="ban">Блокировка сообщений</option><option value="unmute">Снять ограничение</option><option value="unban">Снять блокировку</option></select></label>
+              <label>Срок, часов<input id="moderationDuration" type="number" min="1" max="8760" placeholder="Пусто — бессрочно"></label>
+              <label>Причина<textarea id="moderationReason" rows="2" maxlength="500" required></textarea></label>
+              <button class="primary-button" type="submit">Применить действие</button>
+            </form>
+          </section>
           <section class="admin-module" id="adminPricingDraftModule" aria-labelledby="adminPricingDraftHeading">
             <div class="panel-heading"><div><div class="eyebrow">PRICING CONTROL</div><h3 id="adminPricingDraftHeading">Тарифы и лимиты · черновики</h3><p>Сохраняйте проверяемые версии тарифов. Черновики не меняют действующие цены и не включают оплату.</p></div><button class="secondary-button" id="refreshPricingDrafts" type="button">↻ Обновить</button></div>
             <p id="pricingDraftStatus" class="helper-text" role="status" aria-live="polite">Действующий каталог не изменяется через этот раздел.</p>
@@ -648,6 +663,11 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="page-heading"><div class="eyebrow">PWA STUDIO · CHAT CENTER</div><h1>Центр <span class="gradient-text">сообщений</span></h1><p>Обращения и ответы команды в одном удобном пространстве.</p></div>
     <section class="panel messages-center-panel" id="directMessagesPanel" aria-labelledby="directMessagesHeading">
       <div class="panel-heading"><div><div class="eyebrow">PRIVATE CHAT</div><h2 id="directMessagesHeading">Личные сообщения</h2><p>Приватные диалоги между пользователями PWA Studio.</p></div><button class="secondary-button" id="refreshDirectConversations" type="button">↻ Обновить</button></div>
+          <form id="directModerationAppealForm" class="finance-queue-controls">
+            <label>Обжаловать ограничение личных сообщений<textarea id="directModerationAppealReason" rows="2" minlength="10" maxlength="2000" placeholder="Опишите, почему решение нужно пересмотреть"></textarea></label>
+            <button class="secondary-button" type="submit">Отправить апелляцию</button>
+          </form>
+          <div id="directModerationAppealHistory" class="assistant-messages" aria-live="polite"></div>
       <form id="directConversationCreateForm" class="finance-queue-controls">
         <label>Открыть диалог по ID пользователя<input id="directRecipientUserId" required maxlength="36" placeholder="UUID пользователя" autocomplete="off"></label>
         <button class="primary-button" type="submit">Начать диалог</button>

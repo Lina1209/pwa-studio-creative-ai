@@ -94,7 +94,7 @@
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
-        if (typeof loadDirectConversations === "function") loadDirectConversations();
+        if (typeof loadDirectConversations === "function") loadDirectConversations();\n        if (typeof loadMyModerationAppeals === "function") loadMyModerationAppeals();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
         if (typeof syncCloudVisualLibrary === "function") syncCloudVisualLibrary();
       }, 0);
@@ -775,7 +775,76 @@ const movieHistoryStyle = document.createElement("style");
     else resetDirectMessagesUi();
   }
 
-  const loadAdminPricingDrafts = async () => {
+
+  const loadDirectModerationConsole = async () => {
+    const status = $("#directModerationStatus");
+    if (!adminUiAuthorized) { if(status) status.textContent="Нет доступа."; return; }
+    if(status) status.textContent="Загружаем жалобы и апелляции…";
+    try {
+      const filter=$("#directModerationReportFilter")?.value || "open";
+      const query=filter ? "?status="+encodeURIComponent(filter) : "";
+      const [reportData,appealData]=await Promise.all([
+        apiRequest("/api/messages/direct/admin/reports"+query),
+        apiRequest("/api/messages/direct/admin/appeals")
+      ]);
+      const reports=$("#directModerationReports"); reports?.replaceChildren();
+      (reportData.reports||[]).forEach(report=>{
+        const card=document.createElement("article"); card.className="assistant-message ai-message";
+        const title=document.createElement("b"); title.textContent=report.category+" · "+report.status;
+        const detail=document.createElement("p"); detail.textContent=(report.details||"Без дополнительного описания")+" · отправитель "+report.reporter_user_id+" · пользователь "+report.target_user_id;
+        const actions=document.createElement("div"); actions.className="messages-conversation-actions";
+        const target=document.createElement("button"); target.type="button"; target.className="secondary-button"; target.textContent="Модерация пользователя";
+        target.addEventListener("click",()=>{$("#moderationTargetUserId").value=report.target_user_id;$("#moderationReason").value="По результатам рассмотрения жалобы: "+report.category;$("#moderationTargetUserId").scrollIntoView({behavior:"smooth",block:"center"});});
+        const review=document.createElement("select"); [["reviewing","На проверке"],["resolved","Решена"],["dismissed","Отклонена"]].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;review.append(o);}); review.value=report.status;
+        const save=document.createElement("button");save.type="button";save.className="secondary-button";save.textContent="Сохранить статус";
+        save.addEventListener("click",async()=>{try{await apiRequest("/api/messages/direct/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:review.value})});await loadDirectModerationConsole();}catch(e){if(status)status.textContent=e.message;}});
+        actions.append(target,review,save);card.append(title,detail,actions);reports?.append(card);
+      });
+      const appeals=$("#directModerationAppeals");appeals?.replaceChildren();
+      (appealData.appeals||[]).forEach(appeal=>{
+        const card=document.createElement("article");card.className="assistant-message ai-message";
+        const detail=document.createElement("p");detail.textContent=appeal.reason+" · пользователь "+appeal.user_id;
+        const accept=document.createElement("button");accept.type="button";accept.className="secondary-button";accept.textContent="Удовлетворить";
+        const reject=document.createElement("button");reject.type="button";reject.className="secondary-button";reject.textContent="Отклонить";
+        const decide=async decision=>{const why=prompt("Причина решения (обязательно):");if(!why?.trim())return;try{await apiRequest("/api/messages/direct/admin/appeals/"+encodeURIComponent(appeal.id),{method:"PATCH",body:JSON.stringify({status:decision,decision_reason:why.trim()})});await loadDirectModerationConsole();}catch(e){if(status)status.textContent=e.message;}};
+        accept.addEventListener("click",()=>decide("accepted"));reject.addEventListener("click",()=>decide("rejected"));
+        card.append(detail,accept,reject);appeals?.append(card);
+      });
+      if(status)status.textContent="Жалоб: "+(reportData.reports||[]).length+" · апелляций: "+(appealData.appeals||[]).length+".";
+    } catch(error){if(status)status.textContent=error.message;}
+  };
+  $("#refreshDirectModeration")?.addEventListener("click",loadDirectModerationConsole);
+  $("#directModerationReportFilter")?.addEventListener("change",loadDirectModerationConsole);
+  $("#directModerationActionForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();const button=event.submitter;if(button)button.disabled=true;
+    try{
+      const duration=$("#moderationDuration").value;
+      const payload={action:$("#moderationAction").value,reason:$("#moderationReason").value.trim(),
+        duration_hours:duration?Number(duration):null};
+      await apiRequest("/api/messages/direct/admin/users/"+encodeURIComponent($("#moderationTargetUserId").value.trim())+"/actions",{method:"POST",body:JSON.stringify(payload)});
+      $("#directModerationStatus").textContent="Модерационное действие применено.";
+      $("#moderationReason").value="";$("#moderationDuration").value="";
+      await loadDirectModerationConsole();
+    }catch(error){$("#directModerationStatus").textContent=error.message;}
+    finally{if(button)button.disabled=false;}
+  });
+  $("#directModerationAppealForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();const reason=$("#directModerationAppealReason").value.trim();
+    try{
+      await apiRequest("/api/messages/direct/moderation/appeals",{method:"POST",body:JSON.stringify({reason})});
+      $("#directModerationAppealReason").value="";
+      $("#directModerationAppealHistory").textContent="Апелляция отправлена. Решение будет доступно здесь после рассмотрения.";
+      await loadMyModerationAppeals();
+    }catch(error){$("#directModerationAppealHistory").textContent=error.message;}
+  });
+  const loadMyModerationAppeals=async()=>{
+    if(!authSession?.user)return;
+    try{const data=await apiRequest("/api/messages/direct/moderation/appeals");
+      const box=$("#directModerationAppealHistory");if(!box)return;box.replaceChildren();
+      (data.appeals||[]).forEach(appeal=>{const p=document.createElement("p");p.textContent="Апелляция · "+appeal.status+" · "+appeal.reason;box.append(p);});
+    }catch(error){if($("#directModerationAppealHistory"))$("#directModerationAppealHistory").textContent=error.message;}
+  };
+\n  const loadAdminPricingDrafts = async () => {
     const status = $("#pricingDraftStatus");
     if (!adminUiAuthorized) { if (status) status.textContent = "Нет доступа."; return; }
     if (status) status.textContent = "Загружаем версии тарифов…";
