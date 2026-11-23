@@ -37,6 +37,8 @@ def test_admin_approval_uses_verified_actor_and_returns_inert_flags(monkeypatch)
     import app.main as main
 
     captured = {}
+    audit_calls = []
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: audit_calls.append(k) or "audit-id")
     monkeypatch.setattr(
         main, "approve_plan_draft",
         lambda *a, **k: captured.update(kwargs=k) or {"approved_plan": {"id": APPROVED}, "replayed": False},
@@ -47,6 +49,8 @@ def test_admin_approval_uses_verified_actor_and_returns_inert_flags(monkeypatch)
     assert response.status_code == 200
     assert captured["kwargs"]["actor_id"] == UUID(ADMIN)
     assert captured["kwargs"]["draft_id"] == UUID(DRAFT)
+    assert audit_calls[0]["action"] == "admin.plan.draft.approve"
+    assert audit_calls[0]["outcome"] == "requested"
     assert response.json()["activation_enabled"] is False
     assert response.json()["credits_granted"] is False
     assert response.json()["checkout_enabled"] is False
@@ -75,6 +79,8 @@ def test_admin_assignment_is_pending_and_uses_verified_actor(monkeypatch):
     import app.main as main
 
     captured = {}
+    audit_calls = []
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: audit_calls.append(k) or "audit-id")
     monkeypatch.setattr(
         main, "create_pending_assignment",
         lambda *a, **k: captured.update(kwargs=k) or {"assignment": {"id": ASSIGNMENT, "status": "pending"}, "replayed": False},
@@ -95,6 +101,8 @@ def test_admin_assignment_is_pending_and_uses_verified_actor(monkeypatch):
     assert captured["kwargs"]["actor_id"] == UUID(ADMIN)
     assert captured["kwargs"]["user_id"] == UUID(TARGET)
     assert captured["kwargs"]["assignment_source"] == "operator_grant"
+    assert audit_calls[0]["action"] == "admin.plan.assignment.create"
+    assert audit_calls[0]["outcome"] == "requested"
     assert response.json()["assignment"]["status"] == "pending"
     assert response.json()["activation_enabled"] is False
     assert response.json()["credits_granted"] is False
@@ -135,3 +143,40 @@ def test_assignment_rejects_timezone_free_dates(monkeypatch):
         },
     )
     assert response.status_code == 422
+
+
+def test_plan_approval_fails_closed_when_intent_audit_is_unavailable(monkeypatch):
+    import app.main as main
+    from app.services.admin_audit_service import AdminAuditUnavailable
+
+    mutations = []
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: (_ for _ in ()).throw(AdminAuditUnavailable("unavailable")))
+    monkeypatch.setattr(main, "approve_plan_draft", lambda *a, **k: mutations.append(True))
+    response = _client(StudioUser(user_id=ADMIN, email=None, role="admin")).post(
+        f"/api/admin/plans/drafts/{DRAFT}/approve", json={"reason": "Reviewed and approved"}
+    )
+    assert response.status_code == 503
+    assert mutations == []
+
+
+def test_plan_assignment_fails_closed_when_intent_audit_is_unavailable(monkeypatch):
+    import app.main as main
+    from app.services.admin_audit_service import AdminAuditUnavailable
+
+    mutations = []
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: (_ for _ in ()).throw(AdminAuditUnavailable("unavailable")))
+    monkeypatch.setattr(main, "create_pending_assignment", lambda *a, **k: mutations.append(True))
+    response = _client(StudioUser(user_id=ADMIN, email=None, role="admin")).post(
+        "/api/admin/plans/assignments",
+        headers={"Idempotency-Key": "test-assign-002"},
+        json={
+            "user_id": TARGET,
+            "approved_plan_version_id": APPROVED,
+            "source_reference": "manual-request-02",
+            "starts_at": "2026-12-01T00:00:00Z",
+            "ends_at": "2027-01-01T00:00:00Z",
+            "reason": "Manual operator assignment",
+        },
+    )
+    assert response.status_code == 503
+    assert mutations == []
