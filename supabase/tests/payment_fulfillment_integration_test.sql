@@ -184,6 +184,62 @@ begin
 end;
 $payment_subscription_exactly_once$;
 
+do $payment_scheduled_plan_activation_worker$
+declare
+  v_activated integer;
+  v_assignment_id uuid := '77777777-7777-4777-8777-777777777777';
+  v_latest_event text;
+begin
+  insert into public.user_plan_assignments(
+    id, user_id, approved_plan_version_id, assignment_source,
+    source_reference, idempotency_key, status, starts_at, ends_at, created_by
+  ) values (
+    v_assignment_id,
+    '33333333-3333-4333-8333-333333333333',
+    '66666666-6666-4666-8666-666666666666',
+    'verified_payment',
+    'payment-order:scheduled-fixture',
+    'payment-order:scheduled-fixture',
+    'pending',
+    now() - interval '1 minute',
+    now() + interval '30 days',
+    '33333333-3333-4333-8333-333333333333'
+  );
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, actor_type, event_key, reason
+  ) values
+  (
+    v_assignment_id, '33333333-3333-4333-8333-333333333333',
+    'created', null, 'system', 'scheduled-fixture-created',
+    'Created scheduled payment test assignment'
+  ),
+  (
+    v_assignment_id, '33333333-3333-4333-8333-333333333333',
+    'scheduled', null, 'system', 'scheduled-fixture-scheduled',
+    'Scheduled payment test assignment'
+  );
+
+  select public.activate_due_payment_plan_assignments(10) into v_activated;
+  if v_activated <> 1 then
+    raise exception 'Due payment-backed plan assignment was not activated';
+  end if;
+
+  select event_type into v_latest_event
+    from public.user_plan_assignment_events
+   where assignment_id = v_assignment_id
+   order by occurred_at desc, id desc limit 1;
+  if v_latest_event <> 'activated' then
+    raise exception 'Activation worker did not append the activated lifecycle event';
+  end if;
+
+  select public.activate_due_payment_plan_assignments(10) into v_activated;
+  if v_activated <> 0 then
+    raise exception 'Activation worker duplicated an already-appended activation event';
+  end if;
+end;
+$payment_scheduled_plan_activation_worker$;
+
 do $payment_fulfillment_privilege_boundary$
 begin
   if has_function_privilege(
