@@ -146,6 +146,9 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
     assert result["capabilities_enabled"] is True
     assert result["plan"]["code"] == "creator"
     assert result["features"] == ["image", "video", "audio", "ai"]
+    assert result["capabilities"]["image"]["available"] is True
+    assert result["capabilities"]["video"]["available"] is False
+    assert result["capabilities"]["ai"]["available"] is False
     assert result["quotas"]["daily_image_generations"] == {
         "limit": 10, "used": 3, "remaining": 7, "enforced": True, "configured": True
     }
