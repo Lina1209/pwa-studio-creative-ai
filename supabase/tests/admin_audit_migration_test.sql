@@ -12,6 +12,7 @@ $roles$;
 \i supabase/migrations/0036_admin_audit_keyset_pagination.sql
 \i supabase/migrations/0054_admin_audit_stable_cursor.sql
 \i supabase/migrations/0080_admin_audit_resource_allowlist_alignment.sql
+\i supabase/migrations/0081_admin_support_mutation_audit_actions.sql
 
 do $admin_audit_resource_allowlist_test$
 declare
