@@ -845,8 +845,7 @@ const movieHistoryStyle = document.createElement("style");
       (data.appeals||[]).forEach(appeal=>{const p=document.createElement("p");p.textContent="Апелляция · "+appeal.status+" · "+appeal.reason;box.append(p);});
     }catch(error){if($("#directModerationAppealHistory"))$("#directModerationAppealHistory").textContent=error.message;}
   };
-
-  const loadAdminPricingDrafts = async () => {
+\n  const loadAdminPricingDrafts = async () => {
     const status = $("#pricingDraftStatus");
     if (!adminUiAuthorized) { if (status) status.textContent = "Нет доступа."; return; }
     if (status) status.textContent = "Загружаем версии тарифов…";
@@ -1905,10 +1904,8 @@ const movieHistoryStyle = document.createElement("style");
           info.append(date,excerpt);
           const compare = document.createElement("button"); compare.type = "button"; compare.className = "secondary-button"; compare.textContent = "Сравнить с текущей";
           compare.addEventListener("click", () => {
-            const oldLines = String(version.prompt || "").split("
-");
-            const newLines = String(entry.prompt.prompt || "").split("
-");
+            const oldLines = String(version.prompt || "").split("\n");
+            const newLines = String(entry.prompt.prompt || "").split("\n");
             const rows = oldLines.length * newLines.length <= 40000 ? (() => {
               const dp = Array.from({length:oldLines.length + 1}, () => new Uint16Array(newLines.length + 1));
               for (let a=oldLines.length-1;a>=0;a--) for (let b=newLines.length-1;b>=0;b--)
@@ -2115,10 +2112,7 @@ const movieHistoryStyle = document.createElement("style");
   });
   $("#composePromptBlocks").addEventListener("click",()=>{
     if(!promptBuilderBlocks.length){$("#promptSaveFeedback").textContent="Сначала добавьте хотя бы один блок.";return;}
-    const assembled=promptBuilderBlocks.map((block,index)=>"["+String(index+1).padStart(2,"0")+" · "+promptBlockLabels[block.type]+"]
-"+block.text).join("
-
-");
+    const assembled=promptBuilderBlocks.map((block,index)=>"["+String(index+1).padStart(2,"0")+" · "+promptBlockLabels[block.type]+"]\n"+block.text).join("\n\n");
     const hasContent=promptOutput.textContent.trim()&&!promptOutput.textContent.startsWith("Здесь появится");
     if(hasContent&&!window.confirm("Заменить текущий текст промпта собранными блоками?"))return;
     promptOutput.textContent=assembled;promptOutput.contentEditable="true";promptOutput.focus();
@@ -2506,9 +2500,7 @@ const movieHistoryStyle = document.createElement("style");
             "CONTINUITY RULES: identical facial identity, age appearance, body proportions, hairstyle, outfit construction, accessories and palette across all panels. No redesign, no extra characters, no cropped feet, no perspective distortion, no text labels or watermarks unless requested.",
             "STYLE AND QUALITY: polished production-ready concept-art reference, clear readable silhouettes, consistent anatomy, even studio lighting, high detail."
           ];
-          const output=$("#promptOutput");if(output){output.textContent=sections.join("
-
-");output.setAttribute("contenteditable","true");output.focus();output.scrollIntoView({behavior:"smooth",block:"center"});}
+          const output=$("#promptOutput");if(output){output.textContent=sections.join("\n\n");output.setAttribute("contenteditable","true");output.focus();output.scrollIntoView({behavior:"smooth",block:"center"});}
           $("#promptSaveFeedback").textContent="Лист персонажа собран как готовый промпт. Проверьте детали и при необходимости сохраните его в библиотеку промптов.";
         });
         actions.append(sheet);
@@ -2524,8 +2516,7 @@ const movieHistoryStyle = document.createElement("style");
             "Palette: "+(p.palette||"consistent palette derived from the character description"),
             "Expression direction: "+(p.expressions||"natural readable expressions, preserve facial identity"),
             "Character essence: never change identity, apparent age, facial structure, hairstyle, body proportions, costume or accessories between references. No additional characters. Neutral uncluttered studio background. Production-quality concept art, clear anatomy, full details, no text, no watermark."
-          ].join("
-");
+          ].join("\n");
           const views=[
             ["01 — PORTRAIT FRONT","Create a straight-on head-and-shoulders portrait, neutral relaxed expression, face fully visible, centered framing, soft even studio light. Match the identity lock exactly."],
             ["02 — SIDE PROFILE","Create a strict 90-degree side profile from head to upper chest. Clearly show forehead, nose, lips, chin, ear and head silhouette. This must be the exact same character as the portrait, not a redesign."],
@@ -2534,18 +2525,8 @@ const movieHistoryStyle = document.createElement("style");
             ["05 — EXPRESSION STUDY","Create a clean expression study with six evenly sized head-and-shoulders variations: neutral, joyful, concerned, surprised, sad and determined. Preserve identical facial structure and hairstyle in every expression."],
             ["06 — COSTUME AND DETAILS","Create a design-detail reference showing the exact outfit in clear readable views, with close details of fabrics, textures, footwear, jewelry and signature accessories. Do not invent or alter costume elements."]
           ];
-          const bundle=views.map(([title,direction])=>title+"
-"+identity+"
-
-SHOT INSTRUCTIONS: "+direction).join("
-
-"+"=".repeat(56)+"
-
-");
-          const output=$("#promptOutput");if(output){output.textContent="REFERENCE PACK — "+item.name+"
-Six separate prompts. Generate each view independently and use the same identity reference image whenever the image model supports reference images.
-
-"+bundle;output.setAttribute("contenteditable","true");output.focus();output.scrollIntoView({behavior:"smooth",block:"center"});}
+          const bundle=views.map(([title,direction])=>title+"\n"+identity+"\n\nSHOT INSTRUCTIONS: "+direction).join("\n\n"+"=".repeat(56)+"\n\n");
+          const output=$("#promptOutput");if(output){output.textContent="REFERENCE PACK — "+item.name+"\nSix separate prompts. Generate each view independently and use the same identity reference image whenever the image model supports reference images.\n\n"+bundle;output.setAttribute("contenteditable","true");output.focus();output.scrollIntoView({behavior:"smooth",block:"center"});}
           $("#promptSaveFeedback").textContent="Подготовлены 6 самостоятельных промптов. Генерируйте виды отдельно и используйте один и тот же исходный референс для закрепления внешности. Изображения пока не создаются автоматически.";
         });
         actions.append(pack);
@@ -2665,25 +2646,11 @@ Six separate prompts. Generate each view independently and use the same identity
   renderVisualLibrary();
   if(authSession?.user?.id)syncCloudVisualLibrary();
     const promptTemplates = {
-    cinematic: "Субъект: {{subject}}.
-Локация: {{location}}.
-Настроение: {{mood}}.
-Кинематографичная композиция, выразительная глубина кадра, естественное освещение, детализированные материалы, продуманная цветовая палитра. Камера: {{camera}}. Сохранить визуальную целостность и реалистичную физику.",
-    character: "Персонаж: {{subject}}.
-Внешность и отличительные черты: {{appearance}}.
-Одежда и аксессуары: {{wardrobe}}.
-Характер и манера движения: {{personality}}. Сохранять одинаковые черты лица, пропорции, причёску и одежду во всех кадрах. Не менять идентичность персонажа.",
-    video: "Сцена: {{subject}}.
-Действие: {{action}}.
-Окружение: {{location}}.
-Движение камеры: {{camera}}.
-Длительность: {{duration}}. Описать начало, развитие и завершение движения, темп, направление, непрерывность и переход к следующему кадру.",
-    music: "Создать музыкальное сопровождение для: {{subject}}.
-Жанр: {{genre}}. Настроение: {{mood}}. Темп: {{tempo}}. Инструменты: {{instruments}}. Структура: вступление, развитие, кульминация и завершение. Без вокала, если не указано иное.",
-    sound: "Звуковая сцена: {{subject}}.
-Место: {{location}}.
-Атмосфера: {{mood}}.
-Основные звуки: {{sounds}}. Указать дистанцию, акустику пространства, слои фонового окружения, динамику и точное время появления ключевых эффектов."
+    cinematic: "Субъект: {{subject}}.\nЛокация: {{location}}.\nНастроение: {{mood}}.\nКинематографичная композиция, выразительная глубина кадра, естественное освещение, детализированные материалы, продуманная цветовая палитра. Камера: {{camera}}. Сохранить визуальную целостность и реалистичную физику.",
+    character: "Персонаж: {{subject}}.\nВнешность и отличительные черты: {{appearance}}.\nОдежда и аксессуары: {{wardrobe}}.\nХарактер и манера движения: {{personality}}. Сохранять одинаковые черты лица, пропорции, причёску и одежду во всех кадрах. Не менять идентичность персонажа.",
+    video: "Сцена: {{subject}}.\nДействие: {{action}}.\nОкружение: {{location}}.\nДвижение камеры: {{camera}}.\nДлительность: {{duration}}. Описать начало, развитие и завершение движения, темп, направление, непрерывность и переход к следующему кадру.",
+    music: "Создать музыкальное сопровождение для: {{subject}}.\nЖанр: {{genre}}. Настроение: {{mood}}. Темп: {{tempo}}. Инструменты: {{instruments}}. Структура: вступление, развитие, кульминация и завершение. Без вокала, если не указано иное.",
+    sound: "Звуковая сцена: {{subject}}.\nМесто: {{location}}.\nАтмосфера: {{mood}}.\nОсновные звуки: {{sounds}}. Указать дистанцию, акустику пространства, слои фонового окружения, динамику и точное время появления ключевых эффектов."
   };
   const fragmentStorageKey = () => "pwa-studio-prompt-fragments-v1:" + (authSession?.user?.id || "guest");
   const readPromptFragments = () => { try { const value=JSON.parse(localStorage.getItem(fragmentStorageKey())||"[]"); return Array.isArray(value)?value.filter(x=>x&&typeof x.text==="string"&&typeof x.name==="string").slice(0,80):[]; } catch { return []; } };
@@ -2717,8 +2684,7 @@ Six separate prompts. Generate each view independently and use the same identity
     $("#promptSaveFeedback").textContent="Шаблон добавлен. Заполните переменные или отредактируйте текст.";
   });
   $("#applyPromptVariables").addEventListener("click",()=>{
-    const values={};$("#promptVariableValues").value.split(/\r?
-/).forEach(line=>{const at=line.indexOf("=");if(at>0){const key=line.slice(0,at).trim().replace(/^\\{\\{|\\}\\}$/g,"");const value=line.slice(at+1).trim();if(/^[a-zA-Z0-9_]{1,40}$/.test(key)&&value)values[key]=value;}});
+    const values={};$("#promptVariableValues").value.split(/\r?\n/).forEach(line=>{const at=line.indexOf("=");if(at>0){const key=line.slice(0,at).trim().replace(/^\\{\\{|\\}\\}$/g,"");const value=line.slice(at+1).trim();if(/^[a-zA-Z0-9_]{1,40}$/.test(key)&&value)values[key]=value;}});
     let result=promptOutput.textContent;let count=0;
     Object.entries(values).forEach(([key,value])=>{const pattern=new RegExp("\\{\\{\\s*"+key+"\\s*\\}\\}","g");result=result.replace(pattern,()=>{count++;return value;});});
     promptOutput.textContent=result;promptOutput.contentEditable="true";
@@ -3377,10 +3343,7 @@ Six separate prompts. Generate each view independently and use the same identity
     project.versionLabel ? "Версия: "+project.versionLabel : ""
   ].filter(Boolean).join(" · ");
   // Keep collection cards focused on the synopsis, not stage-specific production notes.
-  const isMovieProductionNotes = value => /(?:Музыка и звуковое оформление|План монтажа|Монтаж\s*
-|Визуальный стиль\s*
-|Титры\s*
-|Full HD|24 кадра)/i.test(String(value || ""));
+  const isMovieProductionNotes = value => /(?:Музыка и звуковое оформление|План монтажа|Монтаж\s*\n|Визуальный стиль\s*\n|Титры\s*\n|Full HD|24 кадра)/i.test(String(value || ""));
   const movieCardDescription = project => {
     const current = String(project.story || project.idea || "").trim();
     if (current && !isMovieProductionNotes(current)) return current;
