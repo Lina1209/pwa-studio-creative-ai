@@ -59,6 +59,30 @@ def test_privacy_consent_withdrawal_is_recorded_even_when_feature_is_disabled(mo
         app.dependency_overrides.clear()
 
 
+def test_privacy_consent_acceptance_uses_server_published_versions(monkeypatch):
+    import app.main as main
+
+    calls = []
+    monkeypatch.setattr(main.settings, "privacy_notice_version", "privacy-v1")
+    monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main.settings, "vision_consent_version", "vision-v1")
+    monkeypatch.setattr(main, "record_consent_event", lambda *args, **kwargs: calls.append(kwargs) or "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+    client = _client()
+    try:
+        response = client.post("/api/privacy/consent", json={
+            "consent_scope": "vision_deepseek",
+            "action": "accepted",
+            "source": "web_app",
+        })
+        assert response.status_code == 200
+        assert calls[0]["policy_version"] == "privacy-v1"
+        assert calls[0]["consent_version"] == "vision-v1"
+        assert calls[0]["user_id"] == UUID(USER.user_id)
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_privacy_consent_status_is_owner_scoped_and_not_cacheable(monkeypatch):
     import app.main as main
 
