@@ -242,6 +242,35 @@ const movieHistoryStyle = document.createElement("style");
     return data;
   };
 
+  const reportFeedback = message => { const el = $("#reportFeedback"); if (el) el.textContent = message; };
+  $("#userReportForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!authSession?.user) { setAuthMode("login"); authGate.hidden = false; reportFeedback("Сначала войдите в аккаунт, чтобы отправить обращение."); return; }
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const version = authContextVersion;
+    const description = $("#reportDescription").value.trim();
+    if (description.length < 10) { reportFeedback("Добавьте немного больше подробностей (не менее 10 символов)."); return; }
+    const payload = {
+      category: $("#reportCategory").value,
+      description,
+      reported_user_id: $("#reportUserId").value.trim() || null,
+      content_reference: $("#reportReference").value.trim() || null
+    };
+    button.disabled = true;
+    reportFeedback("Отправляем обращение защищённым соединением…");
+    try {
+      const result = await apiRequest("/api/reports", { method: "POST", body: JSON.stringify(payload) });
+      if (version !== authContextVersion) return;
+      form.reset();
+      reportFeedback("✓ Обращение принято. Номер: " + result.id + ". Статус: " + (result.status || "new") + ". Спасибо, что помогаете поддерживать безопасную среду.");
+    } catch (error) {
+      if (version === authContextVersion) reportFeedback("Не удалось отправить обращение: " + error.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   const adminFeedback = message => { const el = $("#adminFeedback"); if (el) el.textContent = message; };
   const adminNode = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
   const formatAdminDate = value => { if (!value) return "Без срока"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU"); };
