@@ -66,6 +66,9 @@ def audit_finance_integrity(
         raise ValueError("invalid_audit_input")
     if not isinstance(generation_jobs, list) or not isinstance(provider_cost_events, list):
         raise ValueError("invalid_audit_input")
+    check_holds = credit_holds is not None
+    check_lots = credit_lots is not None
+    check_allocations = hold_allocations is not None
     credit_holds = [] if credit_holds is None else credit_holds
     credit_lots = [] if credit_lots is None else credit_lots
     hold_allocations = [] if hold_allocations is None else hold_allocations
@@ -166,7 +169,7 @@ def audit_finance_integrity(
         except (ValueError, TypeError):
             findings.append(_finding("invalid_credit_lot", "critical"))
 
-    for owner, totals in lot_totals.items():
+    for owner, totals in lot_totals.items() if check_lots else ():
         wallet = wallets.get(owner)
         if wallet is None:
             findings.append(_finding("lot_wallet_snapshot_missing", "warning", user_id=owner))
@@ -195,7 +198,7 @@ def audit_finance_integrity(
     lot_held_allocations: dict[str, int] = defaultdict(int)
     seen_allocations: set[str] = set()
     seen_hold_lots: set[tuple[str, str]] = set()
-    for allocation in hold_allocations:
+    for allocation in hold_allocations if check_allocations else ():
         try:
             if not isinstance(allocation, dict):
                 raise ValueError("invalid_allocation")
@@ -228,7 +231,7 @@ def audit_finance_integrity(
         except (ValueError, TypeError):
             findings.append(_finding("invalid_hold_allocation", "critical"))
 
-    for hold_id, hold in hold_map.items():
+    for hold_id, hold in hold_map.items() if check_holds and check_allocations else ():
         expected_state = hold["status"]
         totals = allocation_sums.get((hold_id, expected_state), {})
         actual = totals.get(expected_state, 0)
@@ -238,7 +241,7 @@ def audit_finance_integrity(
             if allocation_sums.get((hold_id, other_state), {}).get(other_state, 0):
                 findings.append(_finding("hold_allocation_status_mismatch", "critical", user_id=hold["user_id"], hold_id=hold_id))
 
-    for lot_id, lot in lot_map.items():
+    for lot_id, lot in lot_map.items() if check_lots and check_allocations else ():
         if lot_held_allocations.get(lot_id, 0) != lot["reserved_credits"]:
             findings.append(_finding("lot_allocation_total_mismatch", "critical", user_id=lot["user_id"], lot_id=lot_id))
 
@@ -247,7 +250,7 @@ def audit_finance_integrity(
             findings.append(_finding("invalid_wallet_snapshot", "critical", user_id=owner))
             continue
         available, reserved = wallet.get("available_credits"), wallet.get("reserved_credits")
-        if _integer(reserved):
+        if check_holds and _integer(reserved):
             held_total = sum(h["amount"] for h in hold_map.values() if h["user_id"] == owner and h["status"] == "held")
             if held_total != reserved:
                 findings.append(_finding("wallet_hold_total_mismatch", "critical", user_id=owner))
