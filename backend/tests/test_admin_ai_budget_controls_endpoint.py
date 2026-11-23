@@ -96,3 +96,17 @@ def test_budget_change_fails_closed_when_audit_is_unavailable(monkeypatch):
         assert response.status_code == 503
     finally:
         app.dependency_overrides.clear()
+
+
+def test_provider_budget_rejects_gemini_for_admin(monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: "event")
+    monkeypatch.setattr(main, "update_provider_budget", lambda *a, **k: (_ for _ in ()).throw(ValueError("unsupported_ai_provider")))
+    client = _client(ADMIN)
+    try:
+        response = client.put("/api/admin/ai/budget/provider", json={
+            "provider": "gemini", "enabled": True, "daily_budget_usd": "1.5"
+        })
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
