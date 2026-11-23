@@ -47,6 +47,9 @@ def audit_finance_integrity(
     wallets: dict[str, dict[str, Any]],
     generation_jobs: list[dict[str, Any]],
     provider_cost_events: list[dict[str, Any]],
+    credit_holds: list[dict[str, Any]] | None = None,
+    credit_lots: list[dict[str, Any]] | None = None,
+    hold_allocations: list[dict[str, Any]] | None = None,
     opening_balances: dict[str, tuple[int, int]] | None = None,
     complete: bool = False,
 ) -> dict[str, Any]:
@@ -62,6 +65,11 @@ def audit_finance_integrity(
     if not isinstance(ledger_entries, list) or not isinstance(wallets, dict):
         raise ValueError("invalid_audit_input")
     if not isinstance(generation_jobs, list) or not isinstance(provider_cost_events, list):
+        raise ValueError("invalid_audit_input")
+    credit_holds = [] if credit_holds is None else credit_holds
+    credit_lots = [] if credit_lots is None else credit_lots
+    hold_allocations = [] if hold_allocations is None else hold_allocations
+    if not all(isinstance(rows, list) for rows in (credit_holds, credit_lots, hold_allocations)):
         raise ValueError("invalid_audit_input")
     if not isinstance(complete, bool):
         raise ValueError("invalid_completeness_flag")
@@ -131,6 +139,118 @@ def audit_finance_integrity(
     for user_id in wallets:
         if user_id not in ledger_by_user:
             findings.append(_finding("ledger_history_missing", "warning", user_id=user_id))
+
+    # Reconcile source-separated lots, holds and their allocations. These
+    # checks are intentionally independent of the aggregate wallet/ledger checks.
+    lot_map: dict[str, dict[str, Any]] = {}
+    lot_totals: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
+    for lot in credit_lots:
+        try:
+            if not isinstance(lot, dict):
+                raise ValueError("invalid_lot")
+            lot_id, owner = lot.get("lot_id"), lot.get("user_id")
+            amounts = [lot.get("granted_credits"), lot.get("available_credits"), lot.get("reserved_credits")]
+            if not isinstance(lot_id, str) or not lot_id or not isinstance(owner, str) or not owner:
+                raise ValueError("invalid_lot_identity")
+            if any(not _integer(value) or value < 0 for value in amounts) or amounts[0] <= 0:
+                raise ValueError("invalid_lot_amount")
+            if amounts[1] + amounts[2] > amounts[0]:
+                findings.append(_finding("lot_balance_exceeds_grant", "critical", user_id=owner, lot_id=lot_id))
+            if lot_id in lot_map:
+                findings.append(_finding("duplicate_credit_lot", "critical", user_id=owner, lot_id=lot_id))
+            lot_map[lot_id] = lot
+            totals = lot_totals[owner]
+            totals[0] += amounts[1]
+            totals[1] += amounts[2]
+            totals[2] += amounts[0]
+        except (ValueError, TypeError):
+            findings.append(_finding("invalid_credit_lot", "critical"))
+
+    for owner, totals in lot_totals.items():
+        wallet = wallets.get(owner)
+        if wallet is None:
+            findings.append(_finding("lot_wallet_snapshot_missing", "warning", user_id=owner))
+            continue
+        available, reserved = wallet.get("available_credits"), wallet.get("reserved_credits")
+        if _integer(available) and _integer(reserved) and (totals[0], totals[1]) != (available, reserved):
+            findings.append(_finding("lot_wallet_projection_mismatch", "critical", user_id=owner))
+
+    hold_map: dict[str, dict[str, Any]] = {}
+    for hold in credit_holds:
+        try:
+            if not isinstance(hold, dict):
+                raise ValueError("invalid_hold")
+            hold_id, owner, amount, state = hold.get("hold_id"), hold.get("user_id"), hold.get("amount"), hold.get("status")
+            if not isinstance(hold_id, str) or not hold_id or not isinstance(owner, str) or not owner:
+                raise ValueError("invalid_hold_identity")
+            if not _integer(amount) or amount <= 0 or state not in {"held", "captured", "released"}:
+                raise ValueError("invalid_hold_amount_or_status")
+            if hold_id in hold_map:
+                findings.append(_finding("duplicate_credit_hold", "critical", user_id=owner, hold_id=hold_id))
+            hold_map[hold_id] = hold
+        except (ValueError, TypeError):
+            findings.append(_finding("invalid_credit_hold", "critical"))
+
+    allocation_sums: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {"held": 0, "captured": 0, "released": 0})
+    lot_held_allocations: dict[str, int] = defaultdict(int)
+    seen_allocations: set[str] = set()
+    seen_hold_lots: set[tuple[str, str]] = set()
+    for allocation in hold_allocations:
+        try:
+            if not isinstance(allocation, dict):
+                raise ValueError("invalid_allocation")
+            allocation_id, owner = allocation.get("allocation_id"), allocation.get("user_id")
+            hold_id, lot_id = allocation.get("hold_id"), allocation.get("lot_id")
+            amount, state = allocation.get("amount"), allocation.get("status")
+            if (not isinstance(allocation_id, str) or not allocation_id
+                or not isinstance(owner, str) or not owner
+                or not isinstance(hold_id, str) or not isinstance(lot_id, str)
+                or not _integer(amount) or amount <= 0
+                or state not in {"held", "captured", "released"}):
+                raise ValueError("invalid_allocation_fields")
+            if allocation_id in seen_allocations:
+                findings.append(_finding("duplicate_hold_allocation", "critical", user_id=owner))
+            seen_allocations.add(allocation_id)
+            pair = (hold_id, lot_id)
+            if pair in seen_hold_lots:
+                findings.append(_finding("duplicate_hold_lot_allocation", "critical", user_id=owner, hold_id=hold_id))
+            seen_hold_lots.add(pair)
+            hold = hold_map.get(hold_id)
+            lot = lot_map.get(lot_id)
+            if hold is None or lot is None:
+                findings.append(_finding("orphan_hold_allocation", "critical", user_id=owner, hold_id=hold_id, lot_id=lot_id))
+                continue
+            if hold.get("user_id") != owner or lot.get("user_id") != owner:
+                findings.append(_finding("hold_allocation_owner_mismatch", "critical", user_id=owner, hold_id=hold_id, lot_id=lot_id))
+            allocation_sums[(hold_id, state)][state] += amount
+            if state == "held":
+                lot_held_allocations[lot_id] += amount
+        except (ValueError, TypeError):
+            findings.append(_finding("invalid_hold_allocation", "critical"))
+
+    for hold_id, hold in hold_map.items():
+        expected_state = hold["status"]
+        totals = allocation_sums.get((hold_id, expected_state), {})
+        actual = totals.get(expected_state, 0)
+        if actual != hold["amount"]:
+            findings.append(_finding("hold_allocation_total_mismatch", "critical", user_id=hold["user_id"], hold_id=hold_id))
+        for other_state in {"held", "captured", "released"} - {expected_state}:
+            if allocation_sums.get((hold_id, other_state), {}).get(other_state, 0):
+                findings.append(_finding("hold_allocation_status_mismatch", "critical", user_id=hold["user_id"], hold_id=hold_id))
+
+    for lot_id, lot in lot_map.items():
+        if lot_held_allocations.get(lot_id, 0) != lot["reserved_credits"]:
+            findings.append(_finding("lot_allocation_total_mismatch", "critical", user_id=lot["user_id"], lot_id=lot_id))
+
+    for owner, wallet in wallets.items():
+        if not isinstance(wallet, dict):
+            findings.append(_finding("invalid_wallet_snapshot", "critical", user_id=owner))
+            continue
+        available, reserved = wallet.get("available_credits"), wallet.get("reserved_credits")
+        if _integer(reserved):
+            held_total = sum(h["amount"] for h in hold_map.values() if h["user_id"] == owner and h["status"] == "held")
+            if held_total != reserved:
+                findings.append(_finding("wallet_hold_total_mismatch", "critical", user_id=owner))
 
     job_map: dict[str, dict[str, Any]] = {}
     for job in generation_jobs:
@@ -222,6 +342,9 @@ def audit_finance_integrity(
             "wallets": len(wallets),
             "generation_jobs": len(generation_jobs),
             "provider_cost_events": len(provider_cost_events),
+            "credit_holds": len(credit_holds),
+            "credit_lots": len(credit_lots),
+            "hold_allocations": len(hold_allocations),
         },
         "findings": findings,
     }
