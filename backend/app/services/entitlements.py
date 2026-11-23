@@ -179,10 +179,10 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             "select": "feature_key,reserved_units,status,period_start",
             "user_id": f"eq.{user_id}",
             "status": "in.(reserved,completed)",
-            "limit": "10000",
+            "limit": "10001",
         },
     )
-    if not isinstance(reservations, list) or any(not isinstance(x, dict) for x in reservations):
+    if not isinstance(reservations, list) or len(reservations) > 10000 or any(not isinstance(x, dict) for x in reservations):
         raise EntitlementsUnavailable("Quota usage query returned invalid data.")
 
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
