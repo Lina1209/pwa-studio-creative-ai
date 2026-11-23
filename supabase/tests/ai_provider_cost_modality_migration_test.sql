@@ -11,6 +11,8 @@ declare
   v_vision_request_2 uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a105';
   v_text_request_3 uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a106';
   v_vision_request_3 uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a107';
+  v_admission_request uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a108';
+  v_admission_result jsonb;
   v_result jsonb;
   v_count integer;
   v_state text;
@@ -18,6 +20,21 @@ declare
   v_failed boolean;
 begin
   insert into auth.users(id) values (v_user) on conflict (id) do nothing;
+
+  -- The versioned distributed admission RPC accepts Vision as a distinct operation.
+  v_admission_result := public.reserve_ai_request(
+    v_user, v_admission_request, 'vision', 10, 2, 16, 100, 2000, 1200
+  );
+  if coalesce((v_admission_result ->> 'admitted')::boolean, false) is not true then
+    raise exception 'Vision admission endpoint should be recognized: %', v_admission_result;
+  end if;
+  if not exists (
+    select 1 from public.ai_request_admission_reservations
+     where request_id = v_admission_request and endpoint = 'vision' and state = 'reserved'
+  ) then
+    raise exception 'Vision admission reservation was not recorded';
+  end if;
+  perform public.finish_ai_request(v_user, v_admission_request, 'completed');
 
   if not has_function_privilege('service_role',
        'public.reserve_ai_provider_cost_v2(uuid,uuid,text,text,numeric,text)', 'EXECUTE')
