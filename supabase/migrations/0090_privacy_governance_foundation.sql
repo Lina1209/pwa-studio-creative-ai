@@ -185,7 +185,10 @@ begin
   if p_operation = 'vision' and p_consent_event_id is null then
     raise exception 'Vision transfer audit requires a consent event' using errcode = '22023';
   end if;
-  if p_operation = 'vision' and not exists (
+  if p_operation = 'vision' and p_correlation_id is null then
+    raise exception 'Vision transfer audit requires a correlation ID' using errcode = '22023';
+  end if;
+  if p_operation = 'vision' and p_outcome = 'attempted' and not exists (
     select 1
       from public.privacy_consent_events e
      where e.id = p_consent_event_id
@@ -200,6 +203,29 @@ begin
        )
   ) then
     raise exception 'Current Vision consent is missing or withdrawn' using errcode = '22023';
+  end if;
+  if p_operation = 'vision' and p_outcome <> 'attempted' and not exists (
+    select 1
+      from public.ai_data_transfer_events attempt
+      join public.privacy_consent_events consent
+        on consent.id = attempt.consent_event_id
+       and consent.user_id = attempt.user_id
+     where attempt.user_id = p_user_id
+       and attempt.operation = 'vision'
+       and attempt.outcome = 'attempted'
+       and attempt.consent_event_id = p_consent_event_id
+       and attempt.correlation_id = p_correlation_id
+       and consent.consent_scope = 'vision_deepseek'
+       and consent.action = 'accepted'
+       and not exists (
+         select 1 from public.privacy_consent_events withdrawn
+          where withdrawn.user_id = p_user_id
+            and withdrawn.consent_scope = 'vision_deepseek'
+            and withdrawn.action = 'withdrawn'
+            and (withdrawn.occurred_at, withdrawn.id) <= (attempt.occurred_at, attempt.id)
+       )
+  ) then
+    raise exception 'Vision transfer outcome has no consented attempt' using errcode = '22023';
   end if;
   if p_operation = 'text' and p_consent_event_id is not null then
     raise exception 'Text transfer must not reference Vision consent' using errcode = '22023';
