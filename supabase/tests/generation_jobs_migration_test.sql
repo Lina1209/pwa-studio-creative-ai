@@ -3921,6 +3921,7 @@ select 'finance operation request lifecycle checks passed' as result;
 \ir ../migrations/0049_ai_daily_admission_limits.sql
 \ir ../migrations/0059_ai_monthly_admission_limits.sql
 \ir ../migrations/0089_vision_ai_admission_endpoint.sql
+\ir ../migrations/0090_privacy_governance_foundation.sql
 \ir ../migrations/0060_plan_approval_and_assignment_foundation.sql
 \ir ../migrations/0061_plan_approval_assignment_rpcs.sql
 \ir ../migrations/0062_plan_approval_audit_atomicity.sql
