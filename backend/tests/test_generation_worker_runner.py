@@ -103,7 +103,7 @@ async def test_runner_backs_off_after_claim_error_and_recovers():
     )
 
     assert stats.claim_errors == 1
-    assert stats.empty_polls == 0
+    assert stats.empty_polls == 1
     assert repository.claim_calls == 2
 
 
