@@ -14,7 +14,7 @@ USER = UUID("11111111-1111-4111-8111-111111111111")
 ORDER = UUID("22222222-2222-4222-8222-222222222222")
 IDEMPOTENCY = UUID("33333333-3333-4333-8333-333333333333")
 EVENT = UUID("44444444-4444-4444-8444-444444444444")
-SETTINGS = Settings(supabase_url="https://example.test", supabase_service_role_key="server-secret")
+SETTINGS = Settings(supabase_url="https://example.test", supabase_service_role_key="server-secret", payment_provider_runtime_enabled=True)
 
 
 def test_create_payment_order_calls_server_rpc_with_minor_units(monkeypatch):
