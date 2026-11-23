@@ -64,6 +64,12 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/generation_jobs_migration_test.sql
+      - name: Verify administrative audit resource allowlist and append-only journal
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/admin_audit_migration_test.sql
+
       - name: Verify payment order idempotency and merchant reference integrity
         env:
           PGPASSWORD: postgres
