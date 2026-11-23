@@ -6,17 +6,13 @@ import httpx
 from fastapi import HTTPException
 
 from app.core.config import Settings
+from app.services.supabase_rest import supabase_headers
 
 
 def _request(settings: Settings, method: str, *, params=None, payload=None, prefer="return=representation"):
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Profile storage is not configured.")
-    headers = {
-        "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-        "Content-Type": "application/json",
-        "Prefer": prefer,
-    }
+    headers = supabase_headers(settings, prefer=prefer)
     try:
         response = httpx.request(
             method, f"{settings.supabase_url.rstrip('/')}/rest/v1/user_profiles",
