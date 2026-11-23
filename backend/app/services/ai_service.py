@@ -70,6 +70,7 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
         "api_key": api_key,
         "timeout": 90,
         "max_retries": 1,
+        "max_tokens": settings.ai_max_output_tokens,
     }
     if settings.ai_provider.lower() == "ollama":
         completion_options["api_base"] = settings.ollama_api_base.rstrip("/")
