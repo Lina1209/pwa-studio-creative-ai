@@ -85,6 +85,7 @@ from app.services.generation_jobs import (
     GenerationPricingQuoteConflictError,
     get_generation_job,
     create_scene_generation_job,
+    create_plan_credited_generation_job,
     store_pricing_quote,
 )
 
@@ -329,38 +330,51 @@ def create_scene_image_job(
     check_content(payload.prompt)
     if payload.negative_prompt:
         check_content(payload.negative_prompt)
+    if not isinstance(payload.quote_snapshot, dict):
+        raise HTTPException(status_code=422, detail="A valid server-issued pricing quote is required.")
     request_snapshot = {
         "prompt": payload.prompt,
         "negative_prompt": payload.negative_prompt,
         "width": payload.width,
         "height": payload.height,
         "seed": payload.seed,
+        "quantity": 1,
     }
-    canonical_request = json.dumps(
-        {"scene_id": str(scene_id), "job_type": "image_generation", "provider": provider, "model": model, "request": request_snapshot},
-        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-    )
-    request_hash = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    request_hash = canonical_request_hash(request_snapshot)
     try:
         owner_id = UUID(user.user_id)
-        result = create_scene_generation_job(
-            settings, user_id=owner_id, studio_scene_id=scene_id,
+        result = create_plan_credited_generation_job(
+            settings, user_id=owner_id, project_id=None, studio_scene_id=scene_id,
             job_type="image_generation", provider=provider, model=model,
             idempotency_key=idempotency_key, request_hash=request_hash,
-            request_snapshot=request_snapshot,
+            request_snapshot=request_snapshot, quote_snapshot=payload.quote_snapshot,
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="The sign-in identity is invalid.") from exc
     except GenerationJobsNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail="Image generation jobs are not configured.") from exc
     except GenerationJobsServiceError as exc:
-        raise HTTPException(status_code=502, detail="Could not create the image generation job.") from exc
+        raise HTTPException(status_code=409, detail="The quote, plan, credits, or quota could not be admitted for this request.") from exc
     return {
         "job_id": str(result.job_id),
-        "event_id": str(result.event_id) if result.event_id else None,
+        "event_id": str(result.event_id),
+        "hold_id": str(result.hold_id),
         "scene_id": str(scene_id),
         "status": "queued",
         "created": result.created,
+        "replayed": result.replayed,
+        "available_credits": result.available_credits,
+        "reserved_credits": result.reserved_credits,
+        "quota_reservations": [
+            {
+                "feature_key": item.feature_key,
+                "limit": item.feature_limit,
+                "used": item.used_units,
+                "remaining": item.remaining_units,
+                "status": item.status,
+            }
+            for item in result.quota_reservations
+        ],
     }
 
 @app.get(f"{settings.api_prefix}/credits/wallet", response_model=CreditWalletResponse)
