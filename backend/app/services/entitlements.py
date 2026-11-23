@@ -75,7 +75,6 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
         {
             "select": "id,user_id,approved_plan_version_id,starts_at,ends_at,created_at",
             "user_id": f"eq.{user_id}",
-            "starts_at": f"lte.{now_text}",
             "ends_at": f"gt.{now_text}",
             "order": "starts_at.desc,id.desc",
             "limit": "1001",
@@ -106,9 +105,20 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
         if assignment_id and assignment_id not in latest_event_by_assignment:
             latest_event_by_assignment[assignment_id] = event.get("event_type")
 
+    def _assignment_is_current(item: dict[str, Any]) -> bool:
+        try:
+            starts_at = datetime.fromisoformat(str(item["starts_at"]).replace("Z", "+00:00"))
+            ends_at = datetime.fromisoformat(str(item["ends_at"]).replace("Z", "+00:00"))
+            if starts_at.tzinfo is None or ends_at.tzinfo is None:
+                raise ValueError("Plan assignment timestamps must include a timezone.")
+            return starts_at <= now < ends_at
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EntitlementsUnavailable("Plan assignment timestamps are invalid.") from exc
+
     activated = [
         item for item in assignments
         if latest_event_by_assignment.get(str(item.get("id"))) == "activated"
+        and _assignment_is_current(item)
     ]
     pending = [
         item for item in assignments
