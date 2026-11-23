@@ -1,5 +1,6 @@
 """Authenticated API for private one-to-one conversations."""
 from uuid import UUID, uuid4
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -9,7 +10,10 @@ from app.services.auth import StudioUser, get_current_user
 from app.services.direct_messaging import (
     DirectMessagingUnavailable, create_conversation, list_conversations,
     read_messages, send_message, mark_read,
+    create_message_notification, list_user_notifications, mark_user_notification_read,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/messages/direct", tags=["private-messaging"])
 settings = get_settings()
@@ -74,6 +78,11 @@ def post_conversation_message(conversation_id: UUID, payload: DirectMessageCreat
                                body, payload.idempotency_key)
         if message is None:
             raise HTTPException(status_code=404, detail="Диалог не найден.")
+        try:
+            create_message_notification(settings, message)
+        except DirectMessagingUnavailable:
+            # Saving the message is primary; notification persistence is best-effort.
+            logger.warning("Direct message saved but notification persistence failed.")
         return {"message": message}
     except DirectMessagingUnavailable:
         _unavailable()
@@ -84,6 +93,25 @@ def mark_conversation_read(conversation_id: UUID, user: StudioUser = Depends(get
     try:
         if not mark_read(settings, conversation_id, UUID(user.user_id)):
             raise HTTPException(status_code=404, detail="Диалог не найден.")
+        return {"status": "read"}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.get("/notifications")
+def get_my_direct_notifications(user: StudioUser = Depends(get_current_user)):
+    try:
+        return {"notifications": list_user_notifications(settings, UUID(user.user_id))}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.patch("/notifications/{notification_id}/read")
+def mark_direct_notification_read(notification_id: UUID,
+                                  user: StudioUser = Depends(get_current_user)):
+    try:
+        if not mark_user_notification_read(settings, notification_id, UUID(user.user_id)):
+            raise HTTPException(status_code=404, detail="Уведомление не найдено.")
         return {"status": "read"}
     except DirectMessagingUnavailable:
         _unavailable()

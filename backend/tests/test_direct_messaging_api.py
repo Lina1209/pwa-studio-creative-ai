@@ -101,3 +101,57 @@ def test_mark_read_is_scoped_to_verified_user(monkeypatch):
         f"/api/messages/direct/conversations/{CONVERSATION}/read")
     assert response.status_code == 200
     assert captured == {"conversation_id": UUID(CONVERSATION), "user_id": UUID(OWNER)}
+
+
+def test_message_notification_is_attempted_after_successful_send(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "send_message", lambda *args, **kwargs: {
+        "message_id": "m1", "conversation_id": CONVERSATION,
+        "sender_user_id": OWNER, "body": "hello"})
+    monkeypatch.setattr(api, "create_message_notification",
+                        lambda settings, message: captured.update(message=message))
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).post(
+        f"/api/messages/direct/conversations/{CONVERSATION}/messages",
+        json={"body": "hello", "idempotency_key": KEY})
+    assert response.status_code == 201
+    assert captured["message"]["message_id"] == "m1"
+
+
+def test_notification_failure_does_not_hide_successful_message(monkeypatch):
+    import app.api.direct_messaging as api
+    from app.services.direct_messaging import DirectMessagingUnavailable
+    monkeypatch.setattr(api, "send_message", lambda *args, **kwargs: {
+        "message_id": "m1", "conversation_id": CONVERSATION,
+        "sender_user_id": OWNER, "body": "hello"})
+    def fail(*args, **kwargs):
+        raise DirectMessagingUnavailable("notification unavailable")
+    monkeypatch.setattr(api, "create_message_notification", fail)
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).post(
+        f"/api/messages/direct/conversations/{CONVERSATION}/messages",
+        json={"body": "hello", "idempotency_key": KEY})
+    assert response.status_code == 201
+
+
+def test_notification_list_is_scoped_to_authenticated_user(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "list_user_notifications", lambda settings, user_id:
+                        captured.update(user_id=user_id) or [])
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).get(
+        "/api/messages/direct/notifications")
+    assert response.status_code == 200
+    assert captured["user_id"] == UUID(OWNER)
+
+
+def test_notification_read_is_scoped_to_authenticated_user(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "mark_user_notification_read",
+                        lambda settings, notification_id, user_id:
+                        captured.update(notification_id=notification_id, user_id=user_id) or 1)
+    notification_id = "44444444-4444-4444-8444-444444444444"
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).patch(
+        f"/api/messages/direct/notifications/{notification_id}/read")
+    assert response.status_code == 200
+    assert captured == {"notification_id": UUID(notification_id), "user_id": UUID(OWNER)}
