@@ -89,6 +89,7 @@ from app.services.generation_jobs import (
 )
 
 from app.services.pricing_drafts import PricingDraftUnavailable, create_draft, list_drafts
+from app.services.plan_drafts import PlanDraftUnavailable, create_plan_draft, list_plan_drafts
 from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
 
 settings = get_settings()
@@ -1625,3 +1626,63 @@ def _safe_live_pricing_version():
     except PricingError:
         return None
 
+
+
+class PlanCatalogDraftCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    plan_code: str = Field(min_length=3,max_length=41,pattern="^[a-z][a-z0-9_]{2,40}$")
+    plan_version: int = Field(ge=1,le=100000)
+    display_name: str = Field(min_length=1,max_length=80)
+    billing_period: str = Field(pattern="^(week|month)$")
+    period_days: int = Field(ge=7,le=30)
+    credits_per_period: int = Field(gt=0,le=1000000000)
+    price_minor: int | None = Field(default=None,ge=0,le=1000000000)
+    currency: str | None = Field(default=None,pattern="^[A-Z]{3}$")
+    limits: dict = Field(default_factory=dict)
+    features: list[str] = Field(default_factory=list,max_length=50)
+
+@app.get(f"{settings.api_prefix}/admin/plans/drafts")
+def admin_list_plan_drafts(user: StudioUser = Depends(require_permission("admin.plans.drafts.manage"))):
+    try:
+        rows=list_plan_drafts(settings)
+        _audit_admin_read(user,resource_type="plan_catalog_draft",reason="Admin viewed subscription plan drafts")
+        return {"drafts":rows,"activation_enabled":False,"checkout_enabled":False}
+    except PlanDraftUnavailable:
+        raise HTTPException(status_code=503,detail="Хранилище тарифных планов временно недоступно.")
+
+@app.post(f"{settings.api_prefix}/admin/plans/drafts",status_code=201)
+def admin_create_plan_draft(payload: PlanCatalogDraftCreate,user: StudioUser = Depends(require_permission("admin.plans.drafts.manage"))):
+    if payload.period_days != (7 if payload.billing_period == "week" else 30):
+        raise HTTPException(status_code=422,detail="Период должен составлять 7 дней для недели или 30 дней для месяца.")
+    if (payload.price_minor is None) != (payload.currency is None):
+        raise HTTPException(status_code=422,detail="Цена и валюта должны задаваться вместе либо оставаться незаданными.")
+    if payload.plan_code == "free" and payload.price_minor not in (None,0):
+        raise HTTPException(status_code=422,detail="Бесплатный план не может иметь ненулевую цену.")
+    allowed_limits={"max_parallel_jobs","max_video_seconds","max_resolution","daily_generation_jobs","monthly_generation_jobs"}
+    if set(payload.limits)-allowed_limits:
+        raise HTTPException(status_code=422,detail="Указан неизвестный лимит тарифа.")
+    for key,value in payload.limits.items():
+        if key == "max_resolution":
+            if not isinstance(value,str) or value not in {"480p","720p","1080p","4k"}:
+                raise HTTPException(status_code=422,detail="Недопустимое разрешение.")
+        elif isinstance(value,bool) or not isinstance(value,int) or not 0 <= value <= 100000:
+            raise HTTPException(status_code=422,detail="Значения лимитов должны быть неотрицательными целыми числами.")
+    if any(not isinstance(item,str) or not item.strip() or len(item)>120 for item in payload.features):
+        raise HTTPException(status_code=422,detail="Описание возможностей тарифа некорректно.")
+    data={"plan_code":payload.plan_code,"plan_version":payload.plan_version,
+        "display_name":payload.display_name.strip(),"billing_period":payload.billing_period,
+        "period_days":payload.period_days,"credits_per_period":payload.credits_per_period,
+        "price_minor":payload.price_minor,"currency":payload.currency,
+        "limits_json":payload.limits,"features_json":[x.strip() for x in payload.features]}
+    try:
+        row=create_plan_draft(settings,payload=data,actor_id=UUID(user.user_id))
+        try:
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.access",outcome="allowed",
+                resource_type="plan_catalog_draft",resource_id=UUID(row["id"]),
+                reason=f"Created inactive plan draft {payload.plan_code} v{payload.plan_version}")
+        except AdminAuditUnavailable:
+            logger.error("Plan draft saved but audit event could not be persisted.")
+            raise HTTPException(status_code=503,detail="Черновик сохранён, но журнал аудита недоступен. Проверьте список перед повторной отправкой.")
+        return {"draft":row,"credits_granted":False,"checkout_enabled":False}
+    except PlanDraftUnavailable:
+        raise HTTPException(status_code=503,detail="Не удалось сохранить черновик тарифного плана.")
