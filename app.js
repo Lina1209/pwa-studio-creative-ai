@@ -42,6 +42,7 @@
     adminUiAuthorized = false;
     if (adminPanel) adminPanel.hidden = true;
     const user = session && session.user;
+    const profileEditor = $("#creatorProfileEditor"); if (profileEditor) profileEditor.hidden = !user;
     authGate.hidden = true;
     $("#openLogin").hidden = !!user;
     $("#openSignup").hidden = !!user;
@@ -94,6 +95,8 @@
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
+        if (typeof loadMyCreatorProfile === "function") loadMyCreatorProfile();
+        if (typeof loadDirectConversations === "function") loadDirectConversations();
         if (typeof loadDirectConversations === "function") loadDirectConversations();
         if (typeof loadMyCreatorProfile === "function") loadMyCreatorProfile();
         if (typeof loadMyModerationAppeals === "function") loadMyModerationAppeals();
