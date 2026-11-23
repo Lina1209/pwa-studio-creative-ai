@@ -74,3 +74,8 @@ The combined backend service verifies the HMAC-signed quote and canonical reques
 This is a server-side admission primitive, not a live generation endpoint. Existing job/worker feature flags remain disabled by default. No pricing catalog has been activated, no plan has been activated for real users, no credits have been granted to real users, and no provider execution or production migration has been started.
 
 The disposable PostgreSQL migration integration suite now includes plan/assignment fixtures and checks atomic admission, daily/monthly reservation, over-quota rollback of job/outbox/credit hold, and quota lifecycle resolution on success. CI must complete against the latest branch SHA before this foundation is treated as verified.
+
+
+## Plan dimensions intentionally not yet enforced
+
+The plan draft schema also permits `max_parallel_jobs`, `daily_generation_jobs`, `monthly_generation_jobs`, `max_video_seconds`, and `max_resolution`. These are not yet part of the combined admission RPC. They must not be presented as enforced product limits until their semantics are added to the same transaction and covered by integration tests. In particular, maximum video duration and resolution require validated request fields and should be checked against the immutable approved plan snapshot before job creation.
