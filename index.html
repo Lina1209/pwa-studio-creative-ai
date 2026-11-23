@@ -318,6 +318,25 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <div id="pricingDraftList" class="assistant-messages" aria-live="polite"></div>
           </section>
 
+          <section class="admin-module" id="adminPlanDraftModule" aria-labelledby="adminPlanDraftHeading">
+            <div class="panel-heading"><div><div class="eyebrow">SUBSCRIPTION PLANS</div><h3 id="adminPlanDraftHeading">Тарифные планы · черновики</h3><p>Создавайте версии Free, Creator и Studio Pro. Пока это только проекты условий: кредиты не начисляются, оплата не включается.</p></div><button class="secondary-button" id="refreshPlanDrafts" type="button">↻ Обновить</button></div>
+            <p id="planDraftStatus" class="helper-text" role="status" aria-live="polite">Публикация, начисления и checkout отключены.</p>
+            <form id="planDraftForm" class="finance-queue-controls">
+              <label>Код плана<input id="planDraftCode" required pattern="[a-z][a-z0-9_]{2,40}" maxlength="41" placeholder="free / creator / studio_pro"></label>
+              <label>Версия<input id="planDraftVersion" type="number" min="1" max="100000" value="1" required></label>
+              <label>Название<input id="planDraftName" maxlength="80" required placeholder="Creator"></label>
+              <label>Период<select id="planDraftPeriod"><option value="month">Месяц · 30 дней</option><option value="week">Неделя · 7 дней</option></select></label>
+              <label>Кредиты за период<input id="planDraftCredits" type="number" min="1" max="1000000000" required placeholder="1500"></label>
+              <label>Цена в минимальных единицах валюты<input id="planDraftPrice" type="number" min="0" max="1000000000" placeholder="Оставить пустым до расчёта"></label>
+              <label>Валюта<input id="planDraftCurrency" maxlength="3" pattern="[A-Z]{3}" placeholder="USD / KZT"></label>
+              <label>Лимиты · JSON<textarea id="planDraftLimits" rows="4" maxlength="8000">{}</textarea></label>
+              <label>Возможности · JSON-массив строк<textarea id="planDraftFeatures" rows="4" maxlength="8000">[]</textarea></label>
+              <button class="primary-button" type="submit">Сохранить план-черновик</button>
+            </form>
+            <div id="planDraftList" class="assistant-messages" aria-live="polite"></div>
+          </section>
+
+
 
           <p id="adminAnalyticsStatus" class="helper-text" role="status" aria-live="polite">Загрузка статистики…</p>
           <div class="owner-metrics">
