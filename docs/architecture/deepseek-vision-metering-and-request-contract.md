@@ -69,6 +69,17 @@ Do not assume that provider usage exposes a separate image-token count. Total pr
 The existing `ask_ai` implementation and `ai_cost_admission` service are text-only. Their message schema and byte estimator must not be widened casually to accept multimodal blocks. Implement Vision through a separate typed service that shares the same atomic budget RPC after the reservation estimator has been extended and covered by tests. This document is a design checkpoint, not authorization to make a paid request, configure a key, deploy, or enable the feature.
 
 
-## Implemented estimator checkpoint (2026-11-23)
+## Modality-aware cost admission checkpoint (2026-11-23)
 
-The backend now includes a pure `estimate_worst_case_vision_cost` function and unit tests. It accepts text-only canonical messages plus exactly one already-validated image count, applies the documented 1,024 image-token bound, uses the DeepSeek Flash peak cache-miss input/output prices and the 25% safety margin, and rejects Pro/unknown model configurations. It does not make network calls or reserve funds. The existing text-only reservation RPC does not yet record request modality; therefore no Vision request may use the current text reservation path. A reviewed database migration and dedicated typed Vision service must add modality-aware reservation/settlement before any provider call is permitted.
+Implemented on the integration branch:
+
+- The pure `estimate_worst_case_vision_cost` estimator accepts canonical text messages and exactly one validated image count, applies the 1,024 image-token bound, peak DeepSeek Flash rates and the 25% safety margin, and rejects Pro/unknown models.
+- Migration `0088_ai_provider_cost_request_modality.sql` adds an immutable `request_modality` column (`text` or `vision`) to the synchronous provider reservation ledger. Existing rows are classified as `text`; historical costs are not rewritten.
+- Versioned service-role-only RPCs `reserve_ai_provider_cost_v2` and `settle_ai_provider_cost_v2` bind each reservation and settlement to the same modality. Legacy RPC signatures remain as text-only wrappers for compatibility.
+- Text and Vision reservations take the same global policy-row lock and provider budget-row lock. Global daily spend, provider daily spend and outstanding exposure include both modalities; no separate Vision budget can bypass the shared ceiling.
+- Request modality is checked during idempotent reservation replay, checked again at settlement, and protected by a database trigger against mutation.
+- The backend exposes a typed `reserve_ai_provider_vision_cost` admission helper. It performs no provider request; a dedicated Vision transport/service, image consent flow and feature-flagged endpoint remain out of scope.
+
+Unit tests cover text and Vision reservation metadata, shared RPC usage, modality-bound settlement and fail-closed mismatch handling. A transactional PostgreSQL test script covers shared-budget denial, idempotency conflict, modality immutability and settlement binding; it must run in CI before this migration is considered validated.
+
+This checkpoint does not authorize a paid provider call, production migration, key configuration, deployment or feature enablement. Vision remains unavailable until the complete typed request path and its integration tests are reviewed.
