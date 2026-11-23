@@ -2605,6 +2605,7 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   visionFileInput?.addEventListener("change", () => {
+    if (visionConsentInput) visionConsentInput.checked = false;
     const file = visionFileInput.files?.[0];
     if (assistantVisionPreviewUrl) URL.revokeObjectURL(assistantVisionPreviewUrl);
     assistantVisionPreviewUrl = null;
@@ -2624,6 +2625,10 @@ const movieHistoryStyle = document.createElement("style");
     refreshVisionAnalyzeButton();
   });
   visionConsentInput?.addEventListener("change", refreshVisionAnalyzeButton);
+  $("#assistantVisionPrompt")?.addEventListener("input", () => {
+    if (visionConsentInput) visionConsentInput.checked = false;
+    refreshVisionAnalyzeButton();
+  });
   visionAnalyzeButton?.addEventListener("click", async () => {
     const file = visionFileInput?.files?.[0];
     if (!file || !visionConsentInput?.checked || visionRequestPending) return;
