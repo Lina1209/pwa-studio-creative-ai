@@ -1924,7 +1924,6 @@ const movieHistoryStyle = document.createElement("style");
   };
   const saveVisualAssetToCloud=async(item,files)=>{
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return item;
-    const uploaded=[];
     const assertOwner=()=>{if(authSession?.user?.id!==userId)throw new Error("Аккаунт изменился во время синхронизации.");};
     try{
       for(let i=0;i<files.length;i++){
@@ -1941,7 +1940,7 @@ const movieHistoryStyle = document.createElement("style");
         const storagePath=userId+"/"+item.id+"/"+ref.id+"-"+uploadToken+"."+ext;
         const {error}=await supabaseClient.storage.from(cloudVisualBucket).upload(storagePath,file,{contentType:file.type,upsert:false});
         if(error)throw error;
-        uploaded.push(storagePath);ref.storagePath=storagePath;
+        ref.storagePath=storagePath;
         assertOwner();
       }
       assertOwner();
