@@ -62,7 +62,7 @@ end; $$;
 
 create or replace function public.review_direct_message_report(p_report_id uuid,p_reviewer_user_id uuid,p_status text)
 returns boolean language plpgsql security definer set search_path=''
-as $
+as $$
 begin
  if p_report_id is null or p_reviewer_user_id is null or p_status not in ('reviewing','resolved','dismissed') then
  raise exception 'invalid report review state' using errcode='22023'; end if;
@@ -71,7 +71,7 @@ begin
  reviewed_by=case when p_status in ('resolved','dismissed') then p_reviewer_user_id else null end
  where id=p_report_id;
  return found;
-end; $;
+end; $$;
 
 create or replace function public.create_direct_moderation_appeal(p_user_id uuid,p_reason text)
 returns uuid language plpgsql security definer set search_path=''
@@ -106,7 +106,7 @@ begin
    end if;
  end if;
  return true;
-end; $;
+end; $$;
 
 create or replace function public.enforce_direct_message_safety()
 returns trigger language plpgsql security definer set search_path=''
