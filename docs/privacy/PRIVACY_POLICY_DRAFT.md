@@ -108,3 +108,14 @@ Material changes to purposes, providers, data categories, transfer countries or 
 - [ ] Obtain counsel sign-off and record the approved version/date.
 
 **Release gate:** Until all items above are complete, this document remains an internal draft and Vision must remain disabled.
+
+## Research references for counsel (checked 23 November 2026)
+
+These are starting points, not a complete legal analysis and not a substitute for current local-language legislation or API-specific contractual documents:
+
+- DeepSeek Privacy Policy (last updated 10 February 2026): https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html
+- DeepSeek Terms of Use (last updated 27 March 2026): https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html
+- Kazakhstan Law on Personal Data and Their Protection, Article 16 cross-border transfers (official Adilet publication; verify current consolidated text and amendments): https://old.adilet.zan.kz/eng/docs/Z1300000094
+- Kazakhstan government personal-data protection recommendations: https://www.gov.kz/uploads/2023/2/17/c06d0fc1fb31b7fe5b66a762a73417c7_original.2052451.pdf
+
+Important distinction: DeepSeek's published consumer-service Privacy Policy says it does not cover personal-data processing for end users of downstream applications built with its open-platform services; it directs the developer operating the application to disclose its own policy. Therefore, this draft does not treat that consumer policy as proof of the API's exact retention, processing location, deletion or model-improvement terms. Obtain and review the API-specific agreement and any data-processing addendum directly.
