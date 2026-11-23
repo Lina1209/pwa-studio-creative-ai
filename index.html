@@ -419,12 +419,14 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <div id="directModerationReports" class="assistant-messages"></div>
             <h4>Апелляции пользователей</h4><div id="directModerationAppeals" class="assistant-messages"></div>
             <form id="directModerationActionForm" class="finance-queue-controls">
-              <label>ID пользователя<input id="moderationTargetUserId" required maxlength="36" placeholder="UUID пользователя"></label>\n              <button class="secondary-button" id="loadModerationHistory" type="button">История санкций</button>
+              <label>ID пользователя<input id="moderationTargetUserId" required maxlength="36" placeholder="UUID пользователя"></label>
+              <button class="secondary-button" id="loadModerationHistory" type="button">История санкций</button>
               <label>Действие<select id="moderationAction"><option value="warn">Предупреждение</option><option value="mute">Временное ограничение</option><option value="ban">Блокировка сообщений</option><option value="unmute">Снять ограничение</option><option value="unban">Снять блокировку</option></select></label>
               <label>Срок, часов<input id="moderationDuration" type="number" min="1" max="8760" placeholder="Пусто — бессрочно"></label>
               <label>Причина<textarea id="moderationReason" rows="2" maxlength="500" required></textarea></label>
               <button class="primary-button" type="submit">Применить действие</button>
             </form>
+            <div id="directModerationHistory" class="assistant-messages" aria-live="polite"></div>
           </section>
           <section class="admin-module" id="adminPricingDraftModule" aria-labelledby="adminPricingDraftHeading">
             <div class="panel-heading"><div><div class="eyebrow">PRICING CONTROL</div><h3 id="adminPricingDraftHeading">Тарифы и лимиты · черновики</h3><p>Сохраняйте проверяемые версии тарифов. Черновики не меняют действующие цены и не включают оплату.</p></div><button class="secondary-button" id="refreshPricingDrafts" type="button">↻ Обновить</button></div>

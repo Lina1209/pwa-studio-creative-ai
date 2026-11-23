@@ -816,7 +816,8 @@ const movieHistoryStyle = document.createElement("style");
       if(status)status.textContent="Жалоб: "+(reportData.reports||[]).length+" · апелляций: "+(appealData.appeals||[]).length+".";
     } catch(error){if(status)status.textContent=error.message;}
   };
-  $("#refreshDirectModeration")?.addEventListener("click",loadDirectModerationConsole);\n  $("#loadModerationHistory")?.addEventListener("click",async()=>{
+  $("#refreshDirectModeration")?.addEventListener("click",loadDirectModerationConsole);
+  $("#loadModerationHistory")?.addEventListener("click",async()=>{
     const userId=$("#moderationTargetUserId").value.trim();const box=$("#directModerationHistory");
     if(!userId){if(box)box.textContent="Сначала укажите ID пользователя.";return;}
     try{const data=await apiRequest("/api/messages/direct/admin/users/"+encodeURIComponent(userId)+"/history");
