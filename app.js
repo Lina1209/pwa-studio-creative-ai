@@ -39,6 +39,9 @@
       const notificationList = $("#notificationList"); if (notificationList) notificationList.replaceChildren();
       const notificationBadge = $("#notificationUnread"); if (notificationBadge) notificationBadge.hidden = true;
       const messagesPanel = $("#messagesPanel"); if (messagesPanel) messagesPanel.hidden = true;
+      const communityPanel = $("#communityPanel"); if (communityPanel) communityPanel.hidden = true;
+      const communityResults = $("#communityResults"); if (communityResults) communityResults.replaceChildren();
+      const communityPublicProfile = $("#communityPublicProfile"); if (communityPublicProfile) { communityPublicProfile.hidden = true; communityPublicProfile.replaceChildren(); }
       const conversationList = $("#conversationList"); if (conversationList) conversationList.replaceChildren();
       conversationsCache = [];
       const directMessageList = $("#directMessageList"); if (directMessageList) directMessageList.replaceChildren();
@@ -103,7 +106,7 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
+      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof loadCommunityProfile === "function") loadCommunityProfile(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
   }
@@ -257,6 +260,121 @@ const movieHistoryStyle = document.createElement("style");
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
     return data;
   };
+
+
+  const communityFeedback = message => { const el=$("#communityProfileFeedback"); if(el)el.textContent=message; };
+  const loadCommunityProfile = async () => {
+    const version=authContextVersion,userId=authSession?.user?.id;
+    const panel=$("#communityPanel");
+    if(!panel)return;
+    panel.hidden=!userId;
+    if(!userId)return;
+    try{
+      const profile=await apiRequest("/api/community/profile");
+      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      $("#communityDisplayName").value=profile.display_name||"";
+      $("#communityUsername").value=profile.username||"";
+      $("#communityBio").value=profile.bio||"";
+      $("#communityPublic").checked=profile.visibility==="public";
+      $("#communityListed").checked=!!profile.show_in_directory;
+      communityFeedback("Профиль загружен. Управляйте публичностью в настройках ниже.");
+    }catch(error){if(version===authContextVersion)communityFeedback("Не удалось загрузить профиль: "+error.message);}
+  };
+  $("#communityProfileForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();
+    if(!authSession?.user)return;
+    const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
+    const version=authContextVersion;
+    const payload={
+      display_name:$("#communityDisplayName").value.trim(),
+      username:$("#communityUsername").value.trim().toLowerCase(),
+      bio:$("#communityBio").value.trim(),
+      visibility:$("#communityPublic").checked?"public":"private",
+      show_in_directory:$("#communityListed").checked
+    };
+    button.disabled=true;communityFeedback("Сохраняем настройки профиля…");
+    try{
+      const saved=await apiRequest("/api/community/profile",{method:"PATCH",body:JSON.stringify(payload)});
+      if(version!==authContextVersion||authSession?.user?.id!==saved.user_id)return;
+      $("#communityUsername").value=saved.username;
+      communityFeedback("✓ Карточка сохранена. "+(saved.visibility==="public"&&saved.show_in_directory?"Она доступна в каталоге.":"Профиль не показывается в каталоге."));
+    }catch(error){if(version===authContextVersion)communityFeedback("Не удалось сохранить профиль: "+error.message);}
+    finally{button.disabled=false;}
+  });
+  const renderCommunityResults = profiles => {
+    const list=$("#communityResults");if(!list)return;
+    list.replaceChildren();
+    if(!profiles.length){list.append(adminNode("div","admin-empty","По этому запросу авторы не найдены."));return;}
+    profiles.forEach(profile=>{
+      const card=adminNode("article","community-user-card");
+      const avatar=adminNode("div","community-user-avatar",(profile.display_name||"?").trim().charAt(0).toUpperCase());
+      const details=adminNode("div","community-user-details");
+      details.append(adminNode("b","",profile.display_name||"Автор"));
+      details.append(adminNode("small","","@"+profile.username));
+      if(profile.bio)details.append(adminNode("p","",profile.bio));
+      const actions=adminNode("div","community-user-actions");
+      const view=adminNode("button","secondary-button","Профиль");view.type="button";
+      view.addEventListener("click",()=>openCommunityProfile(profile.user_id));
+      const message=adminNode("button","primary-button","Написать");message.type="button";
+      message.addEventListener("click",()=>{
+        $("#messageRecipientId").value=profile.user_id;
+        $("#messageFirstText").focus();
+        $("#messagesPanel").hidden=false;
+        $("#messagesPanel").scrollIntoView({behavior:"smooth",block:"start"});
+        messagesFeedback("Получатель выбран: @"+profile.username+". Напишите первое сообщение.");
+      });
+      actions.append(view,message);card.append(avatar,details,actions);list.append(card);
+    });
+  };
+  const searchCommunity = async () => {
+    if(!authSession?.user)return;
+    const q=$("#communitySearchInput").value.trim();
+    if(q.length<2){$("#communityResults").replaceChildren(adminNode("div","admin-empty","Введите не менее 2 символов."));return;}
+    const version=authContextVersion,userId=authSession.user.id;
+    $("#communityResults").replaceChildren(adminNode("div","admin-empty","Ищем авторов…"));
+    try{
+      const profiles=await apiRequest("/api/community/users?q="+encodeURIComponent(q));
+      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      renderCommunityResults(profiles);
+    }catch(error){if(version===authContextVersion)$("#communityResults").replaceChildren(adminNode("div","admin-empty","Поиск недоступен: "+error.message));}
+  };
+  const openCommunityProfile = async profileUserId => {
+    const version=authContextVersion,userId=authSession?.user?.id;
+    if(!userId)return;
+    const box=$("#communityPublicProfile");
+    box.hidden=false;box.replaceChildren(adminNode("div","admin-empty","Загружаем карточку автора…"));
+    try{
+      const profile=await apiRequest("/api/community/profiles/"+encodeURIComponent(profileUserId));
+      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      box.replaceChildren();
+      const head=adminNode("div","community-profile-card");
+      head.append(adminNode("div","community-user-avatar community-user-avatar-large",(profile.display_name||"?").trim().charAt(0).toUpperCase()));
+      const info=adminNode("div","community-user-details");
+      info.append(adminNode("b","",profile.display_name||"Автор"));
+      info.append(adminNode("small","","@"+profile.username));
+      info.append(adminNode("p","",profile.bio||"Автор пока не добавил описание."));
+      head.append(info);box.append(head);
+      const actions=adminNode("div","community-user-actions");
+      const message=adminNode("button","primary-button","Начать диалог");message.type="button";
+      message.addEventListener("click",()=>{
+        $("#messageRecipientId").value=profile.user_id;
+        $("#messageFirstText").focus();
+        $("#messagesPanel").hidden=false;
+        $("#messagesPanel").scrollIntoView({behavior:"smooth",block:"start"});
+        messagesFeedback("Карточка @"+profile.username+" открыта. Напишите первое сообщение.");
+      });
+      const report=adminNode("button","secondary-button","Пожаловаться");report.type="button";
+      report.addEventListener("click",()=>{
+        $("#reportUserId").value=profile.user_id;
+        $("#reportPanel").scrollIntoView({behavior:"smooth",block:"start"});
+        $("#reportDescription").focus();
+      });
+      actions.append(message,report);box.append(actions);
+    }catch(error){if(version===authContextVersion)box.replaceChildren(adminNode("div","admin-empty","Карточка недоступна: "+error.message));}
+  };
+  $("#communitySearchButton")?.addEventListener("click",searchCommunity);
+  $("#communitySearchInput")?.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();searchCommunity();}});
+  $("#communityRefresh")?.addEventListener("click",()=>{loadCommunityProfile();searchCommunity();});
 
   const notificationFeedback = message => { const el = $("#notificationFeedback"); if (el) el.textContent = message; };
   const renderNotifications = notifications => {
