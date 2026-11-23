@@ -208,6 +208,10 @@ def get_generation_job_result_asset(
         raise GenerationJobsServiceError("The generation result service returned an invalid status.")
     if path is not None and (not isinstance(path, str) or len(path) > 1024):
         raise GenerationJobsServiceError("The generation result path is invalid.")
+    if status == "succeeded" and (not path or not digest):
+        raise GenerationJobsServiceError("A successful generation job is missing its result locator.")
+    if (path is None) != (digest is None):
+        raise GenerationJobsServiceError("The generation result locator and checksum must be stored together.")
     if digest is not None and (
         not isinstance(digest, str) or len(digest) != 64
         or any(char not in "0123456789abcdef" for char in digest)
