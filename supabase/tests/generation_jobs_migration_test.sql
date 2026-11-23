@@ -5146,6 +5146,7 @@ $plan_feature_allowlist_test$;
 -- Owner-scoped cancellation request RPC (0085).
 \ir ../migrations/0085_generation_job_cancellation_requests.sql
 \ir ../migrations/0086_generation_worker_cancellation_handshake.sql
+\ir ../migrations/0087_generation_cancellation_backend_bridge.sql
 
 do $generation_cancellation_rpc_security_test$
 declare
@@ -5413,7 +5414,20 @@ begin
   if not v_ack or v_status <> 'cancelled' or v_hold_status <> 'released' or v_count <> 1 then
     raise exception 'Reconciled provider result was not cancelled and settled exactly once';
   end if;
-end;
+
+  -- The service-role bridge derives the same owner scope from the verified
+  -- backend identity argument; a different owner receives not-found.
+  begin
+    perform * from public.request_generation_job_cancellation_for_owner(
+      v_job.job_id, '11111111-1111-4111-8111-111111111111'
+    );
+    raise exception 'Backend bridge allowed a different owner to cancel the job';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+  perform * from public.request_generation_job_cancellation_for_owner(
+    v_job.job_id, '22222222-2222-4222-8222-222222222222'
+  );
 $generation_worker_cancellation_handshake_test$;
 
 select 'generation worker cancellation handshake checks passed' as result;
