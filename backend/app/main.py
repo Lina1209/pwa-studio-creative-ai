@@ -664,7 +664,7 @@ def admin_update_ai_global_budget(
 @app.put(f"{settings.api_prefix}/admin/ai/budget/provider")
 def admin_update_ai_provider_budget(
     payload: AdminAIProviderBudgetUpdate,
-    user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
+    user: StudioUser = Depends(require_permission("admin.ai.budget.manage")),
 ):
     _audit_ai_budget_change(user, reason=f"Requested {payload.provider} daily AI USD budget change: enabled={payload.enabled}, daily={payload.daily_budget_usd}")
     try:
