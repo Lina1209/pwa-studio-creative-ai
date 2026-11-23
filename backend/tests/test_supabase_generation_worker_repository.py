@@ -39,6 +39,7 @@ async def test_claim_parses_single_job_and_uses_service_key_only_as_apikey():
             "request_snapshot": {"prompt": "test"},
             "attempt_count": 1,
             "max_attempts": 3,
+            "job_status": "running",
         }])
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -47,9 +48,34 @@ async def test_claim_parses_single_job_and_uses_service_key_only_as_apikey():
 
     assert isinstance(job, ClaimedImageJob)
     assert job.request_snapshot == {"prompt": "test"}
-    assert seen["url"].endswith("/rpc/claim_next_generation_job")
+    assert job.job_status == "running"
+    assert seen["url"].endswith("/rpc/claim_next_generation_job_v2")
     assert seen["headers"]["apikey"] == "sb_secret_test"
     assert "authorization" not in seen["headers"]
+
+
+@pytest.mark.asyncio
+async def test_claim_parses_reclaimed_cancellation_job_status():
+    def handler(request):
+        return httpx.Response(200, json=[{
+            "job_id": "22222222-2222-4222-8222-222222222222",
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "job_type": "image_generation",
+            "provider": "fake",
+            "model": "fake-v1",
+            "request_snapshot": {"prompt": "reconcile"},
+            "attempt_count": 2,
+            "max_attempts": 3,
+            "job_status": "cancel_requested",
+        }])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        job = await repository.claim_next("worker-recovery", 120)
+
+    assert job is not None
+    assert job.job_status == "cancel_requested"
+    assert job.attempt_count == 2
 
 
 @pytest.mark.asyncio
