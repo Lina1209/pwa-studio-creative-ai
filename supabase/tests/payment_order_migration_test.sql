@@ -128,3 +128,59 @@ begin
   end if;
 end;
 $payment_success_event_idempotency_test$;
+
+
+-- Mutable execution state cannot alter immutable purchase facts or skip transitions.
+do $payment_fulfillment_execution_state_test$
+declare
+  v_order_id uuid;
+  v_rejected boolean := false;
+  v_status text;
+begin
+  select id into v_order_id from public.payment_orders
+   where merchant_reference = 'test-merchant-ref-001';
+
+  begin
+    update public.payment_fulfillment_outbox
+       set status = 'completed', completed_at = now()
+     where payment_order_id = v_order_id;
+  exception when check_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Fulfillment skipped directly from queued to completed';
+  end if;
+
+  v_rejected := false;
+  begin
+    update public.payment_fulfillment_outbox
+       set amount_minor = 1
+     where payment_order_id = v_order_id;
+  exception when sqlstate '55000' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Immutable payment amount was changed in fulfillment handoff';
+  end if;
+
+  update public.payment_fulfillment_outbox
+     set status = 'processing',
+         attempt_count = 1,
+         locked_at = now(),
+         lock_token = 'bbbbbbbb-0000-4000-8000-000000000001'
+   where payment_order_id = v_order_id;
+
+  update public.payment_fulfillment_outbox
+     set status = 'completed',
+         locked_at = null,
+         lock_token = null,
+         completed_at = now()
+   where payment_order_id = v_order_id;
+
+  select status into v_status from public.payment_fulfillment_outbox
+   where payment_order_id = v_order_id;
+  if v_status <> 'completed' then
+    raise exception 'Valid processing-to-completed transition failed';
+  end if;
+end;
+$payment_fulfillment_execution_state_test$;
