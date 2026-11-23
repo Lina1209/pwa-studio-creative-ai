@@ -88,7 +88,9 @@ from app.services.generation_jobs import (
     store_pricing_quote,
 )
 
-from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message\n\nsettings = get_settings()
+from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
+
+settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
@@ -1465,8 +1467,11 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         "Return only the finished prompt."
     )
     request = (
-        f"Purpose: {payload.purpose}\nOutput language: {payload.language}\n"
-        f"Visual style: {payload.style or 'Choose a fitting style'}\n"
+        f"Purpose: {payload.purpose}
+Output language: {payload.language}
+"
+        f"Visual style: {payload.style or 'Choose a fitting style'}
+"
         f"User idea: {payload.idea}"
     )
     result = _run_admitted_ai("prompts", user.user_id, lambda: ask_ai(settings, [
@@ -1476,7 +1481,9 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
     record_ai_usage(settings, user_id=user.user_id, request_id=getattr(result, "request_id", uuid4()), endpoint="prompts",
                     provider=settings.ai_provider, result=result)
     return PromptResponse(prompt=result.text, provider=settings.ai_provider, model=result.actual_model)
-\n\n
+
+
+
 class SupportTicketCreate(BaseModel):
     model_config = {"extra": "forbid"}
     subject: str = Field(min_length=3, max_length=160)
@@ -1565,12 +1572,8 @@ def admin_support_update_status(ticket_id: UUID, payload: SupportStatusUpdate, u
         ticket=get_ticket(settings,ticket_id)
         if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
         # Status transitions are explicit; closed/resolved tickets may be reopened by an administrator.
-        import httpx
-        key=settings.supabase_service_role_key
-        headers={"apikey":key,"Authorization":f"Bearer {key}","Content-Type":"application/json"} if key and key.startswith("eyJ") else {"apikey":key or "","Content-Type":"application/json"}
-        with httpx.Client(timeout=8.0) as client:
-            response=client.patch(f"{settings.supabase_url.rstrip('/')}/rest/v1/support_tickets",params={"id":f"eq.{ticket_id}"},json={"status":payload.status,"updated_at":"now()"},headers=headers)
-            response.raise_for_status()
+        from app.services.support_inbox import update_ticket_status
+        update_ticket_status(settings,ticket_id,payload.status)
         record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.view",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason=f"Admin changed ticket status to {payload.status}")
         return {"status":payload.status}
     except SupportUnavailable: _support_error()
