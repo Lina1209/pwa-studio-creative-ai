@@ -25,6 +25,7 @@ This document records a source-repository review only. It is not evidence of whi
 3. `0002_storage_and_moderation.sql` and `0005_cloud_projects_and_storage.sql` both manage the `studio-media` bucket and similarly named Storage policies. Their bucket size limits and MIME allow-lists differ. The last migration applied can therefore change the effective bucket configuration.
 4. `0010_direct_message_notifications.sql` changes only the notification type constraint and must not be applied before the notifications table exists.
 5. No live schema, migration ledger, production data, or Storage bucket settings were queried during this audit.
+6. There is also a concrete Storage policy overlap: `0002_storage_and_moderation.sql` creates the four user-owned object policies for both `studio-media` and `studio-exports`. Later, `0005_cloud_projects_and_storage.sql` drops those same policy names and recreates them for `studio-media` only. If both files were applied in that order, user-level access policies for `studio-exports` would no longer be present. This may be intentional if exports are server-only, but it conflicts with the earlier migration's explicit user access design and must be decided before changing production. The bucket's size/MIME configuration also depends on which overlapping migration ran last.
 
 ## Safe next procedure
 
