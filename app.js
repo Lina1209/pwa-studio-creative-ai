@@ -60,6 +60,7 @@
       const accountEmail = $("#accountEmail"); if (accountEmail) accountEmail.textContent = user.email || "Адрес почты не указан";
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "C";
       const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Пользователь";
+      reportFeedback("Вы вошли в аккаунт. Опишите проблему и отправьте обращение модерации.");
       $("#accountLogin").hidden = true; $("#accountLogout").hidden = false;
       const guestNav = $("#guestSpaceNav"); if (guestNav) guestNav.hidden = true;
       const topAvatar = $(".top-avatar");
@@ -73,6 +74,7 @@
       const accountEmail = $("#accountEmail"); if (accountEmail) accountEmail.textContent = "Войдите или зарегистрируйтесь, чтобы открыть личное пространство.";
       const accountAvatar = $("#accountAvatar"); if (accountAvatar) accountAvatar.textContent = "✦";
       const accountRole = $("#accountRole"); if (accountRole) accountRole.textContent = "Гость";
+      reportFeedback("Для отправки обращения войдите в аккаунт.");
       $("#accountLogin").hidden = false; $("#accountLogout").hidden = true;
       const guestNav = $("#guestSpaceNav"); if (guestNav) guestNav.hidden = false;
       const panel = $("#adminPanel"); if (panel) panel.hidden = true;
