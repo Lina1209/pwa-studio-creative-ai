@@ -145,7 +145,12 @@ def audit_finance_integrity(
         event_id, job_id = event.get("event_id"), event.get("job_id")
         operation_key, provider = event.get("operation_key"), event.get("provider")
         usage_id, source = event.get("provider_usage_id"), event.get("cost_source")
-        if event_id is None or job_id not in job_map or not isinstance(operation_key, str) or not operation_key or not isinstance(provider, str) or not provider:
+        if (
+            not _integer(event_id) or event_id < 1
+            or not isinstance(job_id, str) or job_id not in job_map
+            or not isinstance(operation_key, str) or not operation_key
+            or not isinstance(provider, str) or not provider
+        ):
             findings.append(_finding("orphan_or_invalid_provider_cost_event", "critical"))
             continue
         if event_id in seen_event_ids:
