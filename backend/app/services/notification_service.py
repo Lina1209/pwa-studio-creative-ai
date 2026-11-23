@@ -3,18 +3,14 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from app.core.config import Settings
+from app.services.supabase_rest import supabase_headers
 
 
 def _request(settings: Settings, method: str, *, params=None, payload=None):
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Notification storage is not configured.")
     base = settings.supabase_url.rstrip("/")
-    headers = {
-        "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }
+    headers = supabase_headers(settings)
     try:
         response = httpx.request(method, f"{base}/rest/v1/user_notifications",
             headers=headers, params=params, json=payload, timeout=10.0)
