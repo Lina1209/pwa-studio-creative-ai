@@ -61,7 +61,7 @@ def _provider_credentials(settings: Settings) -> tuple[str, str | None]:
 
 def _usage_value(usage, name: str) -> int | None:
     value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
-    return value if isinstance(value, int) and value >= 0 else None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def ask_ai(
