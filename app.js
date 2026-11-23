@@ -389,7 +389,24 @@ const movieHistoryStyle = document.createElement("style");
         const own=message.sender_id===userId;
         const item=adminNode("article","direct-message"+(own?" is-own":""));
         item.append(adminNode("p","",message.body||""));
-        item.append(adminNode("time","",formatAdminDate(message.created_at)+(message.read_at&&own?" · Прочитано":"")));
+        item.append(adminNode("time","",formatAdminDate(message.created_at)+(message.edited_at?" · Изменено":"")+(message.read_at&&own?" · Прочитано":"")));
+        if(own){
+          const actions=adminNode("div","direct-message-actions");
+          const edit=adminNode("button","message-action","Изменить");edit.type="button";
+          edit.addEventListener("click",async()=>{
+            const next=window.prompt("Изменить сообщение:",message.body||"");
+            if(next===null||!next.trim()||next.trim()===message.body)return;
+            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"PATCH",body:JSON.stringify({body:next.trim()})});loadConversationMessages(threadId);}
+            catch(error){messagesFeedback("Не удалось изменить сообщение: "+error.message);}
+          });
+          const remove=adminNode("button","message-action is-danger","Удалить у себя");remove.type="button";
+          remove.addEventListener("click",async()=>{
+            if(!window.confirm("Скрыть это сообщение только в вашей переписке? У собеседника оно останется."))return;
+            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"DELETE"});loadConversationMessages(threadId);}
+            catch(error){messagesFeedback("Не удалось удалить сообщение: "+error.message);}
+          });
+          actions.append(edit,remove);item.append(actions);
+        }
         list.append(item);
       });
       list.scrollTop=list.scrollHeight;
@@ -403,9 +420,23 @@ const movieHistoryStyle = document.createElement("style");
     activeMessageThreadId=threadId;activeMessagePartnerId=partnerId;
     $("#conversationTitle").textContent="Диалог с пользователем "+partnerId;
     $("#directMessageForm").hidden=false;
+    const blockButton=$("#blockConversationUser");if(blockButton){blockButton.hidden=false;blockButton.textContent="Заблокировать";blockButton.disabled=false;}
     renderConversations(conversationsCache);
     loadConversationMessages(threadId);
   };
+  $("#blockConversationUser")?.addEventListener("click",async()=>{
+    if(!activeMessagePartnerId||!authSession?.user)return;
+    if(!window.confirm("Заблокировать пользователя? Он не сможет отправлять вам сообщения, и вы не сможете писать ему."))return;
+    const button=$("#blockConversationUser"),version=authContextVersion;
+    button.disabled=true;
+    try{
+      await apiRequest("/api/blocks",{method:"POST",body:JSON.stringify({user_id:activeMessagePartnerId})});
+      if(version!==authContextVersion)return;
+      $("#directMessageForm").hidden=true;
+      messagesFeedback("Пользователь заблокирован. Переписка сохранена, новые сообщения между вами недоступны.");
+      button.textContent="Заблокирован";
+    }catch(error){messagesFeedback("Не удалось заблокировать пользователя: "+error.message);button.disabled=false;}
+  });
   $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
   $("#newConversationForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
