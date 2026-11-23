@@ -169,6 +169,7 @@ class SceneImageJobRequest(BaseModel):
     width: int = Field(default=1024, ge=256, le=2048)
     height: int = Field(default=1024, ge=256, le=2048)
     seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
+    quote_snapshot: dict | None = Field(default=None)
 
     @field_validator("width", "height")
     @classmethod
