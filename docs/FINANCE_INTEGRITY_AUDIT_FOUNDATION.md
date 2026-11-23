@@ -8,7 +8,7 @@ Status: **isolated implementation foundation; not production-connected**.
 
 The evaluator currently checks:
 
-- credit-ledger transition continuity per user, ordered by `created_at` and `entry_id`;
+- credit-ledger transition continuity per user, ordered by the ledger identity sequence (`entry_id`). The identity is assigned at insert time after the wallet row is locked; `created_at` is transaction-start time and is not a safe concurrency ordering key;
 - non-negative recorded balances and agreement between the latest ledger balance and a supplied wallet snapshot;
 - whether the opening balance is explicitly supplied (otherwise the result is a warning, not a clean pass);
 - provider cost event references to supplied generation jobs;
