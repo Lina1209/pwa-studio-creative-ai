@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, MovieCharacterReference, SceneImageJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
+from app.schemas import ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, MovieCharacterReference, SceneImageJobRequest, VideoGenerationJobRequest, AudioGenerationJobRequest, SpeechGenerationJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai
 from app.services.ai_cost_admission import AIProviderBudgetRejected, AIProviderBudgetUnavailable
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
@@ -375,6 +375,104 @@ def create_scene_image_job(
             for item in result.quota_reservations
         ],
     }
+
+
+def _submit_project_generation_job(
+    *, project_id: UUID, job_type: str, provider_setting: str | None,
+    model_setting: str | None, request_snapshot: dict, quote_snapshot: dict | None,
+    idempotency_key: str, user: StudioUser,
+):
+    if not settings.generation_jobs_enabled:
+        raise HTTPException(status_code=503, detail="Generation jobs are not enabled yet.")
+    if not settings.generation_job_worker_ready:
+        raise HTTPException(status_code=503, detail="Generation is unavailable until the background worker is ready.")
+    provider = (provider_setting or "").strip()
+    model = (model_setting or "").strip()
+    if not provider or not model:
+        raise HTTPException(status_code=503, detail=f"{job_type} provider and model are not configured.")
+    if not isinstance(quote_snapshot, dict):
+        raise HTTPException(status_code=422, detail="A valid server-issued pricing quote is required.")
+    request_hash = canonical_request_hash(request_snapshot)
+    try:
+        result = create_plan_credited_generation_job(
+            settings, user_id=UUID(user.user_id), project_id=project_id,
+            studio_scene_id=None, job_type=job_type, provider=provider, model=model,
+            idempotency_key=idempotency_key, request_hash=request_hash,
+            request_snapshot=request_snapshot, quote_snapshot=quote_snapshot,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="The sign-in identity is invalid.") from exc
+    except GenerationJobsNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail="Generation jobs are not configured.") from exc
+    except GenerationJobsServiceError as exc:
+        raise HTTPException(status_code=409, detail="The quote, plan, credits, or quota could not be admitted for this request.") from exc
+    return {
+        "job_id": str(result.job_id), "event_id": str(result.event_id),
+        "hold_id": str(result.hold_id), "project_id": str(project_id),
+        "job_type": job_type, "status": "queued", "created": result.created,
+        "replayed": result.replayed, "available_credits": result.available_credits,
+        "reserved_credits": result.reserved_credits,
+        "quota_reservations": [
+            {"feature_key": item.feature_key, "limit": item.feature_limit,
+             "used": item.used_units, "remaining": item.remaining_units,
+             "status": item.status}
+            for item in result.quota_reservations
+        ],
+    }
+
+
+@app.post(f"{settings.api_prefix}/projects/{{project_id}}/video-jobs", status_code=202)
+def create_video_generation_job(
+    project_id: UUID, payload: VideoGenerationJobRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
+    user: StudioUser = Depends(get_current_user),
+):
+    check_content(payload.prompt)
+    return _submit_project_generation_job(
+        project_id=project_id, job_type="video_generation",
+        provider_setting=settings.video_generation_provider,
+        model_setting=settings.video_generation_model,
+        request_snapshot={"prompt": payload.prompt, "duration_seconds": payload.duration_seconds,
+                          "resolution": payload.resolution, "quantity": 1},
+        quote_snapshot=payload.quote_snapshot, idempotency_key=idempotency_key, user=user,
+    )
+
+
+@app.post(f"{settings.api_prefix}/projects/{{project_id}}/audio-jobs", status_code=202)
+def create_audio_generation_job(
+    project_id: UUID, payload: AudioGenerationJobRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
+    user: StudioUser = Depends(get_current_user),
+):
+    check_content(payload.prompt)
+    return _submit_project_generation_job(
+        project_id=project_id, job_type="audio_generation",
+        provider_setting=settings.audio_generation_provider,
+        model_setting=settings.audio_generation_model,
+        request_snapshot={"prompt": payload.prompt, "duration_seconds": payload.duration_seconds,
+                          "format": payload.format, "quantity": 1},
+        quote_snapshot=payload.quote_snapshot, idempotency_key=idempotency_key, user=user,
+    )
+
+
+@app.post(f"{settings.api_prefix}/projects/{{project_id}}/speech-jobs", status_code=202)
+def create_speech_generation_job(
+    project_id: UUID, payload: SpeechGenerationJobRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
+    user: StudioUser = Depends(get_current_user),
+):
+    check_content(payload.text)
+    if payload.voice:
+        check_content(payload.voice)
+    return _submit_project_generation_job(
+        project_id=project_id, job_type="speech_generation",
+        provider_setting=settings.speech_generation_provider,
+        model_setting=settings.speech_generation_model,
+        request_snapshot={"text": payload.text, "voice": payload.voice,
+                          "language": payload.language, "quantity": 1},
+        quote_snapshot=payload.quote_snapshot, idempotency_key=idempotency_key, user=user,
+    )
+
 
 @app.get(f"{settings.api_prefix}/credits/wallet", response_model=CreditWalletResponse)
 def get_my_credit_wallet(
