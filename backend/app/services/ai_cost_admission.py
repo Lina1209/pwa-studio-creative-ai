@@ -35,6 +35,7 @@ class AIProviderBudgetRejected(RuntimeError):
 class AIProviderCostReservation:
     request_id: UUID
     reserved_cost_usd: Decimal
+    request_modality: str = "text"
 
 
 def _headers(settings: Settings) -> dict[str, str]:
@@ -80,16 +81,23 @@ def estimate_worst_case_cost(
     return input_bytes, max(reserved, MONEY_QUANTUM)
 
 
-def reserve_ai_provider_cost(
-    settings: Settings, *, user_id: UUID, request_id: UUID, messages: list[dict[str, str]]
+def _reserve_estimated_ai_provider_cost(
+    settings: Settings,
+    *,
+    user_id: UUID,
+    request_id: UUID,
+    reserved: Decimal,
+    request_modality: str,
 ) -> AIProviderCostReservation:
-    _, reserved = estimate_worst_case_cost(settings, messages)
-    result = _rpc(settings, "reserve_ai_provider_cost", {
+    if request_modality not in {"text", "vision"}:
+        raise AIProviderBudgetRejected("unsupported_request_modality")
+    result = _rpc(settings, "reserve_ai_provider_cost_v2", {
         "p_request_id": str(request_id),
         "p_user_id": str(user_id),
         "p_provider": settings.ai_provider,
         "p_model": settings.ai_model,
         "p_reserved_cost_usd": format(reserved, "f"),
+        "p_request_modality": request_modality,
     })
     if not isinstance(result, dict) or not isinstance(result.get("admitted"), bool):
         raise AIProviderBudgetUnavailable("AI provider cost control returned an invalid response.")
@@ -102,7 +110,43 @@ def reserve_ai_provider_cost(
         }:
             reason = "budget_limited"
         raise AIProviderBudgetRejected(reason)
-    return AIProviderCostReservation(request_id=request_id, reserved_cost_usd=reserved)
+    returned_modality = result.get("request_modality")
+    if returned_modality is not None and returned_modality != request_modality:
+        raise AIProviderBudgetUnavailable("AI provider cost control returned a modality mismatch.")
+    return AIProviderCostReservation(
+        request_id=request_id,
+        reserved_cost_usd=reserved,
+        request_modality=request_modality,
+    )
+
+
+def reserve_ai_provider_cost(
+    settings: Settings, *, user_id: UUID, request_id: UUID, messages: list[dict[str, str]]
+) -> AIProviderCostReservation:
+    """Reserve a text-only request in the shared modality-aware USD budget."""
+    _, reserved = estimate_worst_case_cost(settings, messages)
+    return _reserve_estimated_ai_provider_cost(
+        settings, user_id=user_id, request_id=request_id,
+        reserved=reserved, request_modality="text",
+    )
+
+
+def reserve_ai_provider_vision_cost(
+    settings: Settings,
+    *,
+    user_id: UUID,
+    request_id: UUID,
+    text_messages: list[dict[str, str]],
+    image_count: int = 1,
+) -> AIProviderCostReservation:
+    """Reserve one validated Vision image against the same shared USD budget."""
+    _, _, reserved = estimate_worst_case_vision_cost(
+        settings, text_messages, image_count=image_count,
+    )
+    return _reserve_estimated_ai_provider_cost(
+        settings, user_id=user_id, request_id=request_id,
+        reserved=reserved, request_modality="vision",
+    )
 
 
 def estimate_actual_cost(
@@ -135,10 +179,11 @@ def settle_ai_provider_cost(
     )
     payload = {
         "p_request_id": str(reservation.request_id),
+        "p_request_modality": reservation.request_modality,
         "p_actual_estimated_cost_usd": format(estimate, "f") if estimate is not None else None,
         "p_cost_source": "server_peak_price_estimate" if estimate is not None else None,
     }
-    result = _rpc(settings, "settle_ai_provider_cost", payload)
+    result = _rpc(settings, "settle_ai_provider_cost_v2", payload)
     if result is not True:
         raise AIProviderBudgetUnavailable("AI provider cost reservation could not be settled.")
     return estimate
@@ -147,8 +192,9 @@ def settle_ai_provider_cost(
 def mark_ai_provider_cost_unknown(
     settings: Settings, reservation: AIProviderCostReservation
 ) -> None:
-    result = _rpc(settings, "settle_ai_provider_cost", {
+    result = _rpc(settings, "settle_ai_provider_cost_v2", {
         "p_request_id": str(reservation.request_id),
+        "p_request_modality": reservation.request_modality,
         "p_actual_estimated_cost_usd": None,
         "p_cost_source": None,
     })
