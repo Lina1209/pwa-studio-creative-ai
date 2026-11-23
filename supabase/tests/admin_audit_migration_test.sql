@@ -14,6 +14,7 @@ $roles$;
 \i supabase/migrations/0080_admin_audit_resource_allowlist_alignment.sql
 \i supabase/migrations/0081_admin_support_mutation_audit_actions.sql
 \i supabase/migrations/0082_admin_finance_role_audit_actions.sql
+\i supabase/migrations/0083_finance_and_catalog_admin_audit_actions.sql
 
 do $admin_audit_resource_allowlist_test$
 declare
@@ -81,5 +82,36 @@ begin
     'Test finance role revoke completion'
   );
   if v_id is null then raise exception 'Finance role revoke audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.finance.request.create', 'requested', 'credit_wallet', v_resource, null,
+    'Test finance request creation intent'
+  );
+  if v_id is null then raise exception 'Finance request creation audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.finance.request.decide', 'executed', 'payment', v_resource, null,
+    'Test finance request decision completion'
+  );
+  if v_id is null then raise exception 'Finance request decision audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.finance.request.cancel', 'requested', 'payment', v_resource, null,
+    'Test finance request cancellation intent'
+  );
+  if v_id is null then raise exception 'Finance request cancellation audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.pricing.draft.create', 'requested', 'pricing_catalog_draft', null, null,
+    'Test pricing draft creation intent'
+  );
+  if v_id is null then raise exception 'Pricing draft creation audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.plan.draft.create', 'executed', 'plan_catalog_draft', v_resource, null,
+    'Test plan draft creation completion'
+  );
+  if v_id is null then raise exception 'Plan draft creation audit action was not recorded'; end if;
+
 end;
 $admin_audit_resource_allowlist_test$;
