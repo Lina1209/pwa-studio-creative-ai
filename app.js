@@ -3537,6 +3537,7 @@ const movieHistoryStyle = document.createElement("style");
       apiStatus.textContent = "API доступен · " + data.service + " · " + data.ai_provider + " · ключ настроен: " + (data.ai_configured ? "да" : "нет") + ".";
       const visionPanel = $("#assistantVisionPanel"); if (visionPanel) visionPanel.hidden = data.vision_analysis_enabled !== true;
     } catch (error) {
+      const visionPanel = $("#assistantVisionPanel"); if (visionPanel) visionPanel.hidden = true;
       apiStatus.textContent = error.message;
     }
   };
