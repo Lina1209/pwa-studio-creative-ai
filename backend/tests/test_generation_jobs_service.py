@@ -578,3 +578,61 @@ def test_request_generation_job_cancellation_remains_disabled_by_default(monkeyp
         generation_jobs.request_generation_job_cancellation(
             Settings(), user_id=USER_ID, job_id=JOB_ID
         )
+
+
+def test_get_generation_job_result_asset_filters_owner_and_validates_checksum(monkeypatch):
+    calls = []
+    row = {
+        "status": "succeeded",
+        "result_storage_path": f"{USER_ID}/generated/{JOB_ID}.png",
+        "result_sha256": "a" * 64,
+    }
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(FakeResponse([row]), calls),
+    )
+
+    asset = generation_jobs.get_generation_job_result_asset(
+        configured_settings(), user_id=USER_ID, job_id=JOB_ID
+    )
+
+    assert asset.status == "succeeded"
+    assert asset.result_storage_path == row["result_storage_path"]
+    assert asset.result_sha256 == "a" * 64
+    method, url, params, headers = calls[0]
+    assert method == "GET"
+    assert params["id"] == f"eq.{JOB_ID}"
+    assert params["user_id"] == f"eq.{USER_ID}"
+    assert params["select"] == "status,result_storage_path,result_sha256"
+    assert headers["apikey"] == "sb_secret_test_key"
+
+
+def test_get_generation_job_result_asset_returns_none_for_other_owner(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(FakeResponse([]), calls),
+    )
+    assert generation_jobs.get_generation_job_result_asset(
+        configured_settings(), user_id=USER_ID, job_id=JOB_ID
+    ) is None
+
+
+@pytest.mark.parametrize("bad_digest", ["A" * 64, "z" * 64, "short", None])
+def test_get_generation_job_result_asset_rejects_invalid_checksum(monkeypatch, bad_digest):
+    calls = []
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(FakeResponse([{
+            "status": "succeeded",
+            "result_storage_path": f"{USER_ID}/generated/{JOB_ID}.png",
+            "result_sha256": bad_digest,
+        }]), calls),
+    )
+    with pytest.raises(generation_jobs.GenerationJobsServiceError):
+        generation_jobs.get_generation_job_result_asset(
+            configured_settings(), user_id=USER_ID, job_id=JOB_ID
+        )
