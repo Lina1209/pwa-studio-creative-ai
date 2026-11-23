@@ -202,6 +202,7 @@ def health():
         "environment": settings.app_env,
         "ai_provider": provider,
         "ai_configured": ai_configured,
+        "vision_analysis_enabled": bool(settings.vision_input_enabled and settings.ai_model == "deepseek-flash" and settings.deepseek_api_key and settings.supabase_url and settings.supabase_service_role_key),
         "ai_capacity": settings.ai_max_concurrent_requests,
         "authentication_configured": bool(settings.supabase_url),
         "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
