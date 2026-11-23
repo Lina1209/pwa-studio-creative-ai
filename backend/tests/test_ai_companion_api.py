@@ -426,7 +426,10 @@ def test_vision_analysis_rejects_invalid_image_before_admission(monkeypatch):
         lambda value: (_ for _ in ()).throw(VisionInputError("invalid image")),
     )
     calls = []
-    monkeypatch.setattr(main, "_run_admitted_ai", lambda *args: calls.append(args))
+    def run(operation, user_id, call):
+        calls.append((operation, user_id))
+        return call()
+    monkeypatch.setattr(main, "_run_admitted_ai", run)
     client = _client()
     try:
         response = client.post("/api/vision/analyze", json={
@@ -435,6 +438,6 @@ def test_vision_analysis_rejects_invalid_image_before_admission(monkeypatch):
             "consent_to_deepseek": True,
         })
         assert response.status_code == 422
-        assert calls == []
+        assert calls == [("vision", USER.user_id)]
     finally:
         app.dependency_overrides.clear()
