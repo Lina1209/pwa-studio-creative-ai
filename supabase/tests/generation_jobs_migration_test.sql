@@ -42,12 +42,17 @@ create table storage.objects (
 create or replace function storage.foldername(object_name text)
 returns text[]
 language sql immutable
-as $$
+as $
   select case
     when position('/' in trim(both '/' from object_name)) = 0 then array[]::text[]
     else (string_to_array(trim(both '/' from object_name), '/'))[1:array_length(string_to_array(trim(both '/' from object_name), '/'), 1) - 1]
   end
-$$;
+$;
+
+create or replace function storage.extension(object_name text)
+returns text
+language sql immutable
+as $ select lower(regexp_replace(object_name, '^.*\\.', '')) $;
 
 \ir ../migrations/0005_cloud_projects_and_storage.sql
 \ir ../migrations/0007_enforce_project_owner_integrity.sql
@@ -3915,6 +3920,69 @@ select 'finance operation request lifecycle checks passed' as result;
 \ir ../migrations/0067_atomic_plan_credited_generation.sql
 \ir ../migrations/0068_resolve_plan_quotas_with_job_lifecycle.sql
 \ir ../migrations/0069_enforce_generation_job_and_video_plan_limits.sql
+\ir ../migrations/0070_private_character_reference_storage.sql
+\ir ../migrations/0071_character_visual_asset_metadata.sql
+
+-- Verify private bucket settings, metadata RLS, and account isolation.
+do $visual_asset_migration_test$
+declare
+  v_policy_count integer;
+begin
+  if not exists (
+    select 1 from storage.buckets
+    where id = 'character-references'
+      and public = false
+      and file_size_limit = 8388608
+      and allowed_mime_types = array['image/png','image/jpeg','image/webp']::text[]
+  ) then
+    raise exception 'Character reference bucket privacy or upload constraints are incorrect';
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.character_visual_assets'::regclass) then
+    raise exception 'Character visual asset metadata table must enforce RLS';
+  end if;
+  select count(*) into v_policy_count
+    from pg_policies
+   where schemaname = 'public'
+     and tablename = 'character_visual_assets'
+     and roles @> array['authenticated']::name[];
+  if v_policy_count <> 4 then
+    raise exception 'Expected four authenticated owner-scoped metadata policies';
+  end if;
+  if has_table_privilege('anon','public.character_visual_assets','select') then
+    raise exception 'Anonymous users must not receive visual asset metadata access';
+  end if;
+end;
+$visual_asset_migration_test$;
+
+insert into auth.users(id) values
+  ('abababab-abab-4bab-8bab-abababababab'),
+  ('cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd')
+on conflict (id) do nothing;
+grant select, insert, update, delete on storage.objects to authenticated;
+set role authenticated;
+select set_config('request.jwt.claim.sub','abababab-abab-4bab-8bab-abababababab',false);
+insert into public.character_visual_assets(user_id,asset_id,asset)
+values ('abababab-abab-4bab-8bab-abababababab','visual-owner-test',
+        '{"id":"visual-owner-test","name":"Private test"}'::jsonb);
+do $visual_asset_rls_test$
+begin
+  if (select count(*) from public.character_visual_assets) <> 1 then
+    raise exception 'Authenticated owner cannot read their own visual asset';
+  end if;
+  begin
+    insert into public.character_visual_assets(user_id,asset_id,asset)
+    values ('cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd','visual-cross-user-test',
+            '{"id":"visual-cross-user-test"}'::jsonb);
+    raise exception 'Cross-user visual asset insert unexpectedly succeeded';
+  exception when insufficient_privilege then
+    null;
+  end;
+end;
+$visual_asset_rls_test$;
+reset role;
+delete from public.character_visual_assets
+where asset_id = 'visual-owner-test';
+
 
 insert into public.plan_catalog_drafts(
   id, plan_code, plan_version, display_name, billing_period, period_days,
