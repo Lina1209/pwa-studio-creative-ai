@@ -1866,7 +1866,7 @@ const movieHistoryStyle = document.createElement("style");
       if(error)throw error;
       const cloudById=new Map();
       const tombstones=new Set();
-      let invalidRows=0,missingImages=0;
+      let invalidRows=0,missingImages=0,unmigratedLocalAssets=0;
       for(const row of (data||[])){
         const id=row?.asset_id,asset=row?.asset;
         const refs=asset?.referenceImages;
@@ -1886,15 +1886,30 @@ const movieHistoryStyle = document.createElement("style");
       for(const localItem of readVisualLibrary()){
         if(!isCurrentSync())return;
         if(tombstones.has(localItem.id)||cloudById.has(localItem.id))continue;
+        if(typeof localItem.id!=="string"||!localItem.id.length||
+          (localItem.referenceImages!==undefined&&!Array.isArray(localItem.referenceImages))){
+          unmigratedLocalAssets++;continue;
+        }
+        const refs=localItem.referenceImages||[];
         const blobs=[];
-        for(const ref of (Array.isArray(localItem.referenceImages)?localItem.referenceImages:[])){
+        let canMigrate=true;
+        for(const ref of refs){
+          if(!ref||typeof ref!=="object"||Array.isArray(ref)||typeof ref.id!=="string"||!ref.id.length){
+            canMigrate=false;break;
+          }
           if(ref.storagePath){
-            if(!ref.storagePath.startsWith(userId+"/"))throw new Error("Обнаружен путь к чужому облачному объекту.");
+            if(typeof ref.storagePath!=="string"||!ref.storagePath.startsWith(userId+"/"))throw new Error("Обнаружен путь к чужому облачному объекту.");
             blobs.push(null);continue;
           }
           const blob=await getVisualRefImage(ref.id,userId);
-          blobs.push(blob||null);
+          if(!blob){
+            missingImages++;canMigrate=false;break;
+          }
+          blobs.push(blob);
         }
+        // Never publish metadata for a local-only asset when one of its images
+        // is missing: that would create a cloud reference with no backing object.
+        if(!canMigrate){unmigratedLocalAssets++;continue;}
         const migrated=await saveVisualAssetToCloud(localItem,blobs);
         if(!isCurrentSync())return;
         cloudById.set(migrated.id,migrated);
@@ -1932,8 +1947,8 @@ const movieHistoryStyle = document.createElement("style");
       if(!isCurrentSync())return;
       // Never replace the device library with an incomplete cloud snapshot.
       // Malformed rows may represent valid local work that must remain recoverable.
-      if(invalidRows){
-        $("#promptSaveFeedback").textContent="Синхронизация частичная: обнаружены повреждённые облачные записи — "+invalidRows+". Локальная библиотека сохранена без перезаписи; остальные изображения проверены.";
+      if(invalidRows||unmigratedLocalAssets){
+        $("#promptSaveFeedback").textContent="Синхронизация частичная: повреждённых облачных записей — "+invalidRows+", локальных материалов, которые не удалось безопасно перенести, — "+unmigratedLocalAssets+". Локальная библиотека сохранена без перезаписи; недоступных изображений — "+missingImages+".";
         return;
       }
       localStorage.setItem(visualLibraryKey(),JSON.stringify(activeItems));
