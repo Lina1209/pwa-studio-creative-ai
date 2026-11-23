@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     ai_max_concurrent_requests_per_user: int = Field(default=2, ge=1, le=16)
     ai_max_global_concurrent_requests: int = Field(default=16, ge=1, le=128)
     deepseek_api_key: str | None = None
+    # Vision remains opt-in and unavailable until consent UX and policy review are complete.
+    vision_input_enabled: bool = False
 
     # Payment provider adapters remain disabled until a concrete provider is reviewed.
     payment_provider_runtime_enabled: bool = False
