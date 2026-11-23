@@ -16,7 +16,7 @@ create index if not exists user_notifications_unread_idx
 alter table public.user_notifications enable row level security;
 revoke all on public.user_notifications from anon, authenticated;
 grant select on public.user_notifications to authenticated;
-grant all on public.user_notifications to service_role;
+grant select, insert, update on public.user_notifications to service_role;
 drop policy if exists "Users read own notifications" on public.user_notifications;
 create policy "Users read own notifications" on public.user_notifications
   for select to authenticated using (auth.uid() = user_id);
