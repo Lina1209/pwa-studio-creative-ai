@@ -229,9 +229,17 @@ revoke all on function public.reserve_ai_provider_cost_v2(uuid, uuid, text, text
   from public, anon, authenticated;
 revoke all on function public.reserve_ai_provider_cost(uuid, uuid, text, text, numeric)
   from public, anon, authenticated;
+revoke all on function public.settle_ai_provider_cost_v2(uuid, text, numeric, text)
+  from public, anon, authenticated;
+revoke all on function public.settle_ai_provider_cost(uuid, numeric, text)
+  from public, anon, authenticated;
 grant execute on function public.reserve_ai_provider_cost_v2(uuid, uuid, text, text, numeric, text)
   to service_role;
 grant execute on function public.reserve_ai_provider_cost(uuid, uuid, text, text, numeric)
+  to service_role;
+grant execute on function public.settle_ai_provider_cost_v2(uuid, text, numeric, text)
+  to service_role;
+grant execute on function public.settle_ai_provider_cost(uuid, numeric, text)
   to service_role;
 
 comment on column public.ai_provider_cost_reservations.request_modality is
