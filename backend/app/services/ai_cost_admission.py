@@ -154,3 +154,55 @@ def mark_ai_provider_cost_unknown(
     })
     if result is not True:
         raise AIProviderBudgetUnavailable("AI provider cost reservation could not be marked unknown.")
+
+
+def estimate_worst_case_vision_cost(
+    settings: Settings,
+    text_messages: list[dict[str, str]],
+    *,
+    image_count: int = 1,
+) -> tuple[int, int, Decimal]:
+    """Estimate a fail-closed Vision reservation without contacting any provider.
+
+    The browser never supplies token counts. Text is serialized canonically and bounded
+    by the existing byte limit; image tokens use DeepSeek's documented 1,024-token
+    per-image upper bound. This is an estimator only: the Vision RPC/ledger path must
+    be added separately before a paid Vision request can be enabled.
+    """
+    if settings.ai_provider != "deepseek" or settings.ai_model != "deepseek-flash":
+        raise AIProviderBudgetUnavailable(
+            "Vision cost admission is approved only for DeepSeek Flash."
+        )
+    if isinstance(image_count, bool) or not isinstance(image_count, int) or image_count != 1:
+        raise AIProviderBudgetRejected("vision_image_count_limit")
+
+    import json
+
+    if not isinstance(text_messages, list) or not text_messages:
+        raise AIProviderBudgetRejected("input_size_limit")
+    for message in text_messages:
+        if (
+            not isinstance(message, dict)
+            or set(message) != {"role", "content"}
+            or not isinstance(message.get("role"), str)
+            or not isinstance(message.get("content"), str)
+        ):
+            raise AIProviderBudgetRejected("input_size_limit")
+
+    serialized = json.dumps(
+        text_messages, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    text_input_bytes = len(serialized)
+    if text_input_bytes < 1 or text_input_bytes > settings.ai_max_input_bytes:
+        raise AIProviderBudgetRejected("input_size_limit")
+
+    image_tokens = 1024 * image_count
+    input_rate, output_rate = PRICE_USD_PER_MILLION[("deepseek", "deepseek-flash")]
+    raw = (
+        Decimal(text_input_bytes + image_tokens) * input_rate
+        + Decimal(settings.ai_max_output_tokens) * output_rate
+    ) / Decimal(1_000_000)
+    reserved = (raw * SAFETY_MULTIPLIER).quantize(
+        MONEY_QUANTUM, rounding=ROUND_CEILING
+    )
+    return text_input_bytes, image_tokens, max(reserved, MONEY_QUANTUM)
