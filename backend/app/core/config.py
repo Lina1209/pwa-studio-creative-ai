@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # Only DeepSeek and Google Gemini are supported. DeepSeek remains the default.
-    ai_provider: Literal["deepseek", "gemini"] = "deepseek"
+    ai_provider: Literal["deepseek"] = "deepseek"
     ai_model: str = "deepseek-flash"
     ai_max_concurrent_requests: int = Field(default=4, ge=1, le=32)
     ai_queue_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
@@ -79,7 +79,6 @@ class Settings(BaseSettings):
     def validate_ai_provider_model(self):
         allowed_models = {
             "deepseek": {"deepseek-flash", "deepseek-v4-pro"},
-            "gemini": {"gemini-3.1-flash-lite"},
         }
         if self.ai_model not in allowed_models[self.ai_provider]:
             raise ValueError("AI_MODEL is not allowed for the selected AI_PROVIDER.")
