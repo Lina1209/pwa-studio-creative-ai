@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     pricing_quote_signing_secret: str | None = None
     # Empty catalog means pricing is unavailable; configure only approved server-side rules.
     pricing_catalog_json: str = '{"version":"unconfigured","rules":[]}'
+    # No automatic free-credit grants unless an enabled DB policy is explicitly selected.
+    free_entitlement_policy_code: str | None = None
     # Keep submission disabled until a durable dispatcher and worker are deployed.
     generation_job_worker_ready: bool = False
     # Runtime remains off until real provider and private storage adapters are deployed.
@@ -74,6 +76,15 @@ class Settings(BaseSettings):
         if self.ai_model not in allowed_models[self.ai_provider]:
             raise ValueError("AI_MODEL is not allowed for the selected AI_PROVIDER.")
         return self
+
+    @field_validator("free_entitlement_policy_code")
+    @classmethod
+    def validate_free_entitlement_policy_code(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        if len(value) > 64 or not value[0].islower() or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789_" for ch in value):
+            raise ValueError("FREE_ENTITLEMENT_POLICY_CODE must be a lowercase policy code.")
+        return value
 
     @field_validator("generation_storage_bucket")
     @classmethod
