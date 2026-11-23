@@ -261,6 +261,59 @@ begin
 end;
 $$;
 
+
+create or replace function public.activate_due_payment_plan_assignments(
+  p_batch_size integer default 50
+)
+returns integer
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $
+declare
+  v_assignment record;
+  v_activated integer := 0;
+begin
+  if p_batch_size is null or p_batch_size < 1 or p_batch_size > 500 then
+    raise exception 'activation batch size is outside allowed bounds'
+      using errcode = '22023';
+  end if;
+
+  for v_assignment in
+    select a.id, a.user_id, a.source_reference
+      from public.user_plan_assignments a
+      join lateral (
+        select e.event_type
+          from public.user_plan_assignment_events e
+         where e.assignment_id = a.id
+         order by e.occurred_at desc, e.id desc
+         limit 1
+      ) latest_event on latest_event.event_type = 'scheduled'
+     where a.assignment_source = 'verified_payment'
+       and a.starts_at <= now()
+       and a.ends_at > now()
+     order by a.starts_at, a.id
+     for update of a skip locked
+     limit p_batch_size
+  loop
+    insert into public.user_plan_assignment_events(
+      assignment_id, user_id, event_type, actor_user_id, actor_type,
+      event_key, reason, metadata
+    ) values (
+      v_assignment.id, v_assignment.user_id, 'activated', null, 'system',
+      'due-activated:' || md5(v_assignment.source_reference),
+      'Scheduled paid plan period has started',
+      jsonb_build_object('source_reference', v_assignment.source_reference)
+    ) on conflict (assignment_id, event_key) do nothing;
+    if found then
+      v_activated := v_activated + 1;
+    end if;
+  end loop;
+
+  return v_activated;
+end;
+$;
+
 -- A worker may no longer mark a payment completed without creating its entitlement.
 revoke all on function public.complete_payment_fulfillment(uuid,uuid)
   from public, anon, authenticated, service_role;
@@ -271,3 +324,11 @@ grant execute on function public.fulfill_payment_order(uuid,uuid)
 
 comment on function public.fulfill_payment_order(uuid,uuid) is
   'Service-role only. Validates the live worker lease, settled order and immutable approved purchase snapshot; creates exactly one credit lot or plan assignment and completes the outbox in the same transaction.';
+
+revoke all on function public.activate_due_payment_plan_assignments(integer)
+  from public, anon, authenticated;
+grant execute on function public.activate_due_payment_plan_assignments(integer)
+  to service_role;
+
+comment on function public.activate_due_payment_plan_assignments(integer) is
+  'Service-role only scheduled worker. Appends an immutable system activation event when a payment-backed scheduled plan period begins.';
