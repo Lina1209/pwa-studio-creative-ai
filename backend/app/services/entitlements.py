@@ -189,20 +189,28 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
     quotas: dict[str, dict[str, Any]] = {}
     for feature in sorted(_ENFORCED_DIMENSIONS | _NOT_YET_ENFORCED_DIMENSIONS):
         raw_limit = limits.get(feature)
-        if raw_limit is not None and (
-            isinstance(raw_limit, bool)
-            or not isinstance(raw_limit, (int, str))
-            or (isinstance(raw_limit, int) and raw_limit < 0)
-            or (isinstance(raw_limit, str) and not raw_limit.isdigit())
-        ):
-            raise EntitlementsUnavailable("Approved plan contains an invalid quota limit.")
-        limit = int(raw_limit) if raw_limit is not None else None
-        used = usage.get(feature, 0)
+        if feature == "max_resolution":
+            if raw_limit is not None and raw_limit not in {"480p", "720p", "1080p", "4k"}:
+                raise EntitlementsUnavailable("Approved plan contains an invalid resolution limit.")
+            limit = raw_limit
+            used = 0
+            remaining = None
+        else:
+            if raw_limit is not None and (
+                isinstance(raw_limit, bool)
+                or not isinstance(raw_limit, (int, str))
+                or (isinstance(raw_limit, int) and raw_limit < 0)
+                or (isinstance(raw_limit, str) and not raw_limit.isdigit())
+            ):
+                raise EntitlementsUnavailable("Approved plan contains an invalid quota limit.")
+            limit = int(raw_limit) if raw_limit is not None else None
+            used = usage.get(feature, 0)
+            remaining = max(limit - used, 0) if limit is not None else None
         enforced = feature in _ENFORCED_DIMENSIONS
         quotas[feature] = {
             "limit": limit,
             "used": used,
-            "remaining": max(limit - used, 0) if limit is not None else None,
+            "remaining": remaining,
             "enforced": enforced,
             "configured": limit is not None,
         }
