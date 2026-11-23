@@ -314,3 +314,16 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
 .notification-card>div{min-width:0}.notification-card b{font-size:12px}.notification-card p{margin:5px 0;font-size:12px;color:var(--text);overflow-wrap:anywhere}.notification-card small{font-size:10px;color:var(--muted)}
 .notification-card button{flex:0 0 auto;font-size:11px;padding:7px 10px}
 @media(max-width:600px){.notification-card{align-items:flex-start;flex-direction:column}.notification-card button{width:100%}}
+
+
+/* Private chat list enhancements */
+.direct-chat-tools{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin:.75rem 0}
+.direct-chat-tools input{flex:1 1 220px;min-width:0}
+#directUnreadCount{display:inline-flex;align-items:center;justify-content:center;padding:.35rem .65rem;border-radius:999px;background:var(--surface-soft,rgba(127,127,127,.12));font-size:.8rem;font-weight:700;white-space:nowrap}
+.direct-chat-row{display:flex;align-items:center;gap:.75rem;width:100%;min-width:0}
+.direct-chat-avatar{display:grid;place-items:center;flex:0 0 2.35rem;width:2.35rem;height:2.35rem;border-radius:50%;background:var(--accent-soft,rgba(120,120,255,.14));color:var(--accent,#7777dd);font-size:.75rem}
+.direct-chat-content{display:flex;flex:1;flex-direction:column;gap:.2rem;min-width:0;text-align:left}
+.direct-chat-content b,.direct-chat-content small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.direct-chat-unread{flex:0 0 auto;padding:.2rem .45rem;border-radius:999px;background:var(--accent,#6666cc);color:white;font-size:.68rem;font-weight:700}
+.messages-conversation-item.is-active{outline:2px solid var(--accent,#7777dd);outline-offset:-2px}
+@media(max-width:640px){.direct-chat-tools{align-items:stretch}.direct-chat-tools input{flex-basis:100%}#directUnreadCount{align-self:flex-start}}
