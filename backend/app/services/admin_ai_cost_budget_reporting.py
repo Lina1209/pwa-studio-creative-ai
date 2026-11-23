@@ -74,11 +74,11 @@ def get_admin_ai_cost_budget_report(settings: Settings) -> dict:
             )
             active_rows = _fetch_rows(
                 client, base + "/ai_provider_cost_reservations", headers,
-                {"select": "request_id,provider,model,status,reserved_cost_usd,actual_estimated_cost_usd,created_at", "status": "in.(reserved,unknown)"},
+                {"select": "request_id,provider,model,request_modality,status,reserved_cost_usd,actual_estimated_cost_usd,created_at", "status": "in.(reserved,unknown)"},
             )
             settled_rows = _fetch_rows(
                 client, base + "/ai_provider_cost_reservations", headers,
-                {"select": "provider,status,reserved_cost_usd,actual_estimated_cost_usd", "status": "eq.settled", "settled_at": f"gte.{day_start}"},
+                {"select": "provider,request_modality,status,reserved_cost_usd,actual_estimated_cost_usd", "status": "eq.settled", "settled_at": f"gte.{day_start}"},
             )
     except (httpx.HTTPError, ValueError, TypeError, OverflowError) as exc:
         raise AICostBudgetReportError("AI cost budget report could not be loaded safely.") from exc
@@ -128,6 +128,29 @@ def get_admin_ai_cost_budget_report(settings: Settings) -> dict:
             "status": status,
         })
 
+    by_modality = []
+    for modality in ("text", "vision"):
+        modality_settled = sum((
+            _decimal(row["actual_estimated_cost_usd"])
+            for row in settled_rows if row.get("request_modality") == modality
+        ), Decimal("0"))
+        modality_active = [
+            row for row in active_rows if row.get("request_modality") == modality
+        ]
+        modality_reserved = sum((
+            _decimal(row["reserved_cost_usd"]) for row in modality_active
+        ), Decimal("0"))
+        by_modality.append({
+            "request_modality": modality,
+            "settled_estimated_spend_usd": _money(modality_settled),
+            "outstanding_reserved_usd": _money(modality_reserved),
+            "committed_total_usd": _money(modality_settled + modality_reserved),
+            "active_reservations": len(modality_active),
+            "unknown_reservations": sum(
+                1 for row in modality_active if row.get("status") == "unknown"
+            ),
+        })
+
     global_committed = settled_global + active_global
     return {
         "date_utc": now.date().isoformat(),
@@ -139,8 +162,10 @@ def get_admin_ai_cost_budget_report(settings: Settings) -> dict:
         "global_remaining_usd": _money(max(Decimal("0"), global_budget - global_committed)),
         "max_outstanding_reserved_usd": _money(outstanding_cap),
         "providers": providers,
+        "by_modality": by_modality,
         "unknown_reservations": [
             {"request_id": row["request_id"], "provider": row["provider"], "model": row["model"],
+             "request_modality": row.get("request_modality", "text"),
              "reserved_cost_usd": _money(_decimal(row["reserved_cost_usd"])), "created_at": row["created_at"]}
             for row in active_rows if row.get("status") == "unknown"
         ],
