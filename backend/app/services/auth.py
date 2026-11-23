@@ -129,6 +129,7 @@ OWNER_CAPABILITIES = frozenset({
     "admin.finance.wallets.read",
     "admin.security.audit.read",
     "admin.platform.overview.read",
+    "admin.ai.budget.manage",
     "admin.finance.roles.manage",
     "admin.pricing.drafts.manage",
     "admin.plans.drafts.manage",
