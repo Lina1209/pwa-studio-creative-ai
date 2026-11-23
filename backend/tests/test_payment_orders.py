@@ -82,3 +82,51 @@ def test_webhook_rejects_unknown_normalized_event(monkeypatch):
             currency_code="KZT", provider_payment_id="pay-123",
         )
     assert called == []
+
+
+def test_credit_pack_order_uses_approved_version_rpc_and_no_client_price(monkeypatch):
+    version = UUID("55555555-5555-4555-8555-555555555555")
+    calls = []
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or [{
+        "payment_order_id": str(ORDER), "replayed": False,
+    }])
+    result = service.create_credit_pack_payment_order(
+        SETTINGS, user_id=USER, provider_code="examplepay",
+        merchant_reference="credit-pack-123", idempotency_key=IDEMPOTENCY,
+        credit_pack_version_id=version,
+    )
+    assert result == {"payment_order_id": ORDER, "replayed": False}
+    assert calls[0][0] == "create_credit_pack_payment_order"
+    assert calls[0][1]["p_credit_pack_version_id"] == str(version)
+    assert "p_amount_minor" not in calls[0][1]
+    assert "p_currency_code" not in calls[0][1]
+
+
+def test_subscription_order_uses_approved_plan_version_rpc(monkeypatch):
+    version = UUID("66666666-6666-4666-8666-666666666666")
+    calls = []
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or [{
+        "payment_order_id": str(ORDER), "replayed": True,
+    }])
+    result = service.create_subscription_payment_order(
+        SETTINGS, user_id=USER, provider_code="examplepay",
+        merchant_reference="subscription-123", idempotency_key=IDEMPOTENCY,
+        approved_plan_version_id=version, metadata={"source": "settings"},
+    )
+    assert result == {"payment_order_id": ORDER, "replayed": True}
+    assert calls[0][0] == "create_subscription_payment_order"
+    assert calls[0][1]["p_approved_plan_version_id"] == str(version)
+    assert calls[0][1]["p_metadata"] == {"source": "settings"}
+    assert "p_amount_minor" not in calls[0][1]
+
+
+def test_snapshot_purchase_rejects_non_uuid_product_version_before_rpc(monkeypatch):
+    called = []
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
+    with pytest.raises(ValueError):
+        service.create_credit_pack_payment_order(
+            SETTINGS, user_id=USER, provider_code="examplepay",
+            merchant_reference="credit-pack-123", idempotency_key=IDEMPOTENCY,
+            credit_pack_version_id="not-a-uuid",
+        )
+    assert called == []
