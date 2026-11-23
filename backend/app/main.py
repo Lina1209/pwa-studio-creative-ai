@@ -14,6 +14,7 @@ from app.services.moderation_service import create_user_report, list_user_report
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
+from app.services.diagnostics_service import inspect_supabase
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -67,6 +68,12 @@ def auth_me(user: StudioUser = Depends(get_current_user)):
 @app.get(f"{settings.api_prefix}/admin/me")
 def admin_me(user: StudioUser = Depends(require_admin)):
     return {"id": user.user_id, "email": user.email, "role": user.role, "access": "owner"}
+
+
+@app.get(f"{settings.api_prefix}/admin/diagnostics/supabase")
+def admin_supabase_diagnostics(user: StudioUser = Depends(require_admin)):
+    """Read-only storage connectivity check; never returns secrets or user data."""
+    return inspect_supabase(settings)
 
 
 
