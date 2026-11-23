@@ -196,7 +196,21 @@ Official references:
 9. Add opt-in creator showcase after moderation, takedown, licensing and privacy controls.
 10. Consider public voice library or marketplace only after identity, consent, creator rights and payment systems are mature.
 
-## 8. Acceptance criteria
+## 8. Cross-cutting capabilities not to forget
+
+These capabilities improve the whole studio and should be planned alongside the media modules:
+
+- **Project collaboration (later):** invite-only project spaces, owner/editor/commenter roles, review-only links with expiry, comments pinned to scenes or timeline timecodes, version history and clear ownership. Shared projects must be explicit; private-by-default remains the baseline.
+- **Prompt and workflow templates:** reusable prompt variables, prompt versions, style presets, storyboard templates, character bibles, export presets and starter projects. “Use template” must copy rather than mutate the original.
+- **Generation review:** compare variants side by side, mark favorites, rerun one scene, reuse settings, show the provider/model and cost estimate before generation, and preserve a clear job history.
+- **Exports and portability:** video MP4, audio WAV/MP3 where supported, subtitles SRT/VTT, still images PNG/JPEG/WebP, and a documented editable-project backup/export format. Validate actual codecs and file integrity rather than promising every format.
+- **Accessibility:** keyboard navigation, visible focus, screen-reader labels, reduced-motion support, captions, transcripts and accessible playback controls.
+- **Localization:** Russian, Kazakh and English UI and help content; generation language support must be shown per provider rather than assumed.
+- **Help centre and service status:** searchable guides, known issues, release notes, planned maintenance and an incident/status page. This reduces repetitive support tickets and gives users a trustworthy place to check outages.
+- **Quality feedback:** allow a user to rate a generation or report a failed job, but keep that separate from public likes and never publish private prompts or source material as part of a feedback event.
+- **Human-reviewed support AI:** later, an internal assistant may summarize a ticket, translate it or draft a reply. It must never send automatically, decide sanctions, expose AI Companion history or use support content with an external model without clear disclosure and an approved data flow.
+
+## 9. Acceptance criteria
 
 - All user projects and generated assets remain private until an explicit publication action.
 - Publishing one item does not publish the whole project or linked private assets.
