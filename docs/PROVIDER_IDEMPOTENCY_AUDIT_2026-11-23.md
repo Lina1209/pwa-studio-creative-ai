@@ -99,3 +99,17 @@ documented rotation semantics. No concrete provider, credentials, webhook
 route, or live payment runtime is enabled. The default runtime flag remains
 false. Do not add real secret values to repository files, CI logs, issue
 comments, or frontend build variables.
+
+
+## Central payment-provider bootstrap
+
+FastAPI now constructs one process-level payment adapter registry through
+`build_payment_provider_registry(settings)`. The factory accepts adapters
+only from trusted server code; request fields cannot register or select an
+adapter implementation. With the default runtime flag false, it always
+returns an empty disabled registry, even if adapters are passed. If an
+operator enables the runtime before a concrete adapter is registered in
+server code, startup fails closed rather than exposing a partially configured
+payment path. Enabling a real provider still requires a reviewed adapter,
+provider/account namespace, verified webhook route, and separate operational
+approval. No adapter is currently registered and payment runtime remains off.
