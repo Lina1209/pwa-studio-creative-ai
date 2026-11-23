@@ -1865,6 +1865,32 @@ const movieHistoryStyle = document.createElement("style");
           $("#promptSaveFeedback").textContent="Лист персонажа собран как готовый промпт. Проверьте детали и при необходимости сохраните его в библиотеку промптов.";
         });
         actions.append(sheet);
+        const pack=document.createElement("button");pack.type="button";pack.className="secondary-button";pack.textContent="Подготовить 6 референсов";
+        pack.addEventListener("click",()=>{
+          const identity=[
+            "CHARACTER IDENTITY LOCK — "+item.name,
+            "Core description: "+item.text,
+            "Face identity: "+(p.face||"derive from core description and keep identical in every image"),
+            "Profile: "+(p.profile||"same skull shape, nose, jawline and facial proportions as the portrait"),
+            "Body and silhouette: "+(p.fullBody||"consistent believable proportions, height and posture"),
+            "Wardrobe: "+(p.wardrobe||"one coherent outfit, identical construction and accessories in every view"),
+            "Palette: "+(p.palette||"consistent palette derived from the character description"),
+            "Expression direction: "+(p.expressions||"natural readable expressions, preserve facial identity"),
+            "Character essence: never change identity, apparent age, facial structure, hairstyle, body proportions, costume or accessories between references. No additional characters. Neutral uncluttered studio background. Production-quality concept art, clear anatomy, full details, no text, no watermark."
+          ].join("\n");
+          const views=[
+            ["01 — PORTRAIT FRONT","Create a straight-on head-and-shoulders portrait, neutral relaxed expression, face fully visible, centered framing, soft even studio light. Match the identity lock exactly."],
+            ["02 — SIDE PROFILE","Create a strict 90-degree side profile from head to upper chest. Clearly show forehead, nose, lips, chin, ear and head silhouette. This must be the exact same character as the portrait, not a redesign."],
+            ["03 — FULL BODY FRONT","Create a full-length front view from head to shoes, neutral standing pose, arms slightly separated from torso, natural proportions, entire silhouette visible with space around the feet."],
+            ["04 — FULL BODY BACK","Create a full-length rear view of the exact same character and outfit. Clearly show hairstyle from behind, garment construction, seams, layers, fastenings and accessories. Entire body and shoes visible."],
+            ["05 — EXPRESSION STUDY","Create a clean expression study with six evenly sized head-and-shoulders variations: neutral, joyful, concerned, surprised, sad and determined. Preserve identical facial structure and hairstyle in every expression."],
+            ["06 — COSTUME AND DETAILS","Create a design-detail reference showing the exact outfit in clear readable views, with close details of fabrics, textures, footwear, jewelry and signature accessories. Do not invent or alter costume elements."]
+          ];
+          const bundle=views.map(([title,direction])=>title+"\n"+identity+"\n\nSHOT INSTRUCTIONS: "+direction).join("\n\n"+"=".repeat(56)+"\n\n");
+          const output=$("#promptOutput");if(output){output.textContent="REFERENCE PACK — "+item.name+"\nSix separate prompts. Generate each view independently and use the same identity reference image whenever the image model supports reference images.\n\n"+bundle;output.setAttribute("contenteditable","true");output.focus();output.scrollIntoView({behavior:"smooth",block:"center"});}
+          $("#promptSaveFeedback").textContent="Подготовлены 6 самостоятельных промптов. Генерируйте виды отдельно и используйте один и тот же исходный референс для закрепления внешности. Изображения пока не создаются автоматически.";
+        });
+        actions.append(pack);
       }
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
         const next=readVisualLibrary();next.splice(index,1);localStorage.setItem(visualLibraryKey(),JSON.stringify(next));renderVisualLibrary();
