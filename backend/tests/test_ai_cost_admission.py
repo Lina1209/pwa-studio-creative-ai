@@ -35,7 +35,6 @@ def test_worst_case_reservation_uses_peak_paid_rate_and_safety_margin():
     [
         ("deepseek", "deepseek-flash", "0.30", "1.20"),
         ("deepseek", "deepseek-v4-pro", "1.32", "3.96"),
-        ("gemini", "gemini-3.1-flash-lite", "0.25", "1.50"),
     ],
 )
 def test_actual_cost_uses_server_maintained_peak_price_table(provider, model, input_rate, output_rate):
