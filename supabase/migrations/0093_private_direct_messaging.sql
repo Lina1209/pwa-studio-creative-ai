@@ -130,7 +130,7 @@ begin
     ) values (
         p_conversation_id, p_sender_user_id, v_body, p_idempotency_key
     )
-    on conflict (sender_user_id, idempotency_key) do nothing
+    on conflict on constraint direct_messages_sender_idempotency_unique do nothing
     returning * into v_message;
 
     if not found then
