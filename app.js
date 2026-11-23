@@ -553,7 +553,7 @@ const movieHistoryStyle = document.createElement("style");
     try {
       const data = await apiRequest("/api/admin/support/tickets/" + encodeURIComponent(ticketId));
       $("#adminSupportMessages").replaceChildren(...(data.messages || []).map(message => supportMessageNode(message, true)));
-      $("#adminSupportTicketMeta").textContent = data.ticket.subject + " · пользователь " + data.ticket.user_id + " · создано " + new Date(data.ticket.created_at).toLocaleString();
+      $("#adminSupportTicketMeta").textContent = data.ticket.subject + " · " + (supportCategoryLabels[data.ticket.category] || "Обращение") + " · пользователь " + data.ticket.user_id + " · создано " + new Date(data.ticket.created_at).toLocaleString();
       $("#adminSupportStatusSelect").value = data.ticket.status;
       box.hidden = false;
     } catch (error) { $("#adminSupportFeedback").textContent = error.message; if (box) box.hidden = true; }
