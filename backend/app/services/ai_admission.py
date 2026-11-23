@@ -55,6 +55,7 @@ def reserve_ai_request(
         "p_max_global_concurrent": settings.ai_max_global_concurrent_requests,
         "p_max_per_day": settings.ai_max_requests_per_day_per_user,
         "p_max_global_per_day": settings.ai_max_requests_per_day_global,
+        "p_max_per_month": settings.ai_max_requests_per_month_per_user,
     }
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -72,7 +73,7 @@ def reserve_ai_request(
         if isinstance(retry, bool) or not isinstance(retry, int):
             retry = 10
         raise AIAdmissionRejected(
-            reason if reason in {"rate_limited", "concurrency_limited", "global_concurrency_limited", "daily_user_limit", "daily_global_limit"} else "limited",
+            reason if reason in {"rate_limited", "concurrency_limited", "global_concurrency_limited", "daily_user_limit", "daily_global_limit", "monthly_user_limit"} else "limited",
             retry,
         )
     if data.get("duplicate") is True:
