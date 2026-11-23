@@ -16,6 +16,7 @@
   let financeUiAuthorized = false;
   let financeAccess = null;
   let activeAssistantConversationId = null;
+  let assistantVisionPreviewUrl = null;
   let lastAuthUserId = null;
   let authStateEventReceived = false;
   const setAuthMessage = (message, isError = false) => {
@@ -115,6 +116,13 @@
           $("#assistantHistoryList")?.replaceChildren();
           $("#assistantMessages")?.replaceChildren();
           const assistantInput = $("#assistantInput"); if (assistantInput) assistantInput.value = "";
+          const visionFile = $("#assistantVisionFile"); if (visionFile) visionFile.value = "";
+          const visionPreview = $("#assistantVisionPreview");
+          if (assistantVisionPreviewUrl) URL.revokeObjectURL(assistantVisionPreviewUrl);
+          assistantVisionPreviewUrl = null;
+          if (visionPreview) { visionPreview.removeAttribute("src"); visionPreview.hidden = true; }
+          const visionConsent = $("#assistantVisionConsent"); if (visionConsent) visionConsent.checked = false;
+          const visionResult = $("#assistantVisionResult"); if (visionResult) { visionResult.replaceChildren(); visionResult.hidden = true; }
           const promptIdea = $("#promptIdea"); if (promptIdea) promptIdea.value = "";
           $("#promptOutput")?.replaceChildren();
           const topic = $("#topic"); if (topic) topic.value = "";
@@ -2582,6 +2590,93 @@ const movieHistoryStyle = document.createElement("style");
   setTimeout(() => renderAssistantHistory(), 0);
 
 
+  // Vision is shown only when the backend explicitly reports the feature enabled.
+  const visionFileInput = $("#assistantVisionFile");
+  const visionConsentInput = $("#assistantVisionConsent");
+  const visionAnalyzeButton = $("#assistantVisionAnalyze");
+  const visionPreview = $("#assistantVisionPreview");
+  const visionStatus = $("#assistantVisionStatus");
+  const visionResult = $("#assistantVisionResult");
+  let visionRequestPending = false;
+  const refreshVisionAnalyzeButton = () => {
+    if (visionAnalyzeButton) {
+      visionAnalyzeButton.disabled = visionRequestPending ||
+        !visionFileInput?.files?.[0] || !visionConsentInput?.checked;
+    }
+  };
+  visionFileInput?.addEventListener("change", () => {
+    const file = visionFileInput.files?.[0];
+    if (assistantVisionPreviewUrl) URL.revokeObjectURL(assistantVisionPreviewUrl);
+    assistantVisionPreviewUrl = null;
+    if (visionPreview) { visionPreview.removeAttribute("src"); visionPreview.hidden = true; }
+    if (!file) { if (visionStatus) visionStatus.textContent = ""; refreshVisionAnalyzeButton(); return; }
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(file.type) || file.size < 1 || file.size > 5 * 1024 * 1024) {
+      visionFileInput.value = "";
+      if (visionStatus) visionStatus.textContent = "Выберите JPEG, PNG, WebP или статичный GIF размером не более 5 МБ.";
+      refreshVisionAnalyzeButton();
+      return;
+    }
+    assistantVisionPreviewUrl = URL.createObjectURL(file);
+    if (visionPreview) { visionPreview.src = assistantVisionPreviewUrl; visionPreview.hidden = false; }
+    if (visionStatus) visionStatus.textContent = "Изображение готово. Оно будет отправлено только после подтверждения согласия.";
+    if (visionResult) { visionResult.replaceChildren(); visionResult.hidden = true; }
+    refreshVisionAnalyzeButton();
+  });
+  visionConsentInput?.addEventListener("change", refreshVisionAnalyzeButton);
+  visionAnalyzeButton?.addEventListener("click", async () => {
+    const file = visionFileInput?.files?.[0];
+    if (!file || !visionConsentInput?.checked || visionRequestPending) return;
+    if (!authSession?.user) {
+      setAuthMode("signup");
+      setAuthMessage("Войдите или зарегистрируйтесь, чтобы анализировать изображения.");
+      return;
+    }
+    const requestUserId = authSession.user.id;
+    visionRequestPending = true;
+    refreshVisionAnalyzeButton();
+    if (visionStatus) visionStatus.textContent = "Проверяем изображение и отправляем его на анализ…";
+    try {
+      const imageDataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Не удалось прочитать выбранное изображение."));
+        reader.onload = () => typeof reader.result === "string"
+          ? resolve(reader.result) : reject(new Error("Не удалось подготовить изображение."));
+        reader.readAsDataURL(file);
+      });
+      if (authSession?.user?.id !== requestUserId) throw new Error("Сеанс аккаунта изменился. Повторите действие.");
+      const prompt = ($("#assistantVisionPrompt")?.value || "").trim() ||
+        "Опиши изображение и выдели важные детали для будущего видео.";
+      const response = await apiRequest("/api/vision/analyze", {
+        method: "POST",
+        body: JSON.stringify({
+          prompt,
+          image_data_url: imageDataUrl,
+          consent_to_deepseek: true
+        })
+      });
+      if (authSession?.user?.id !== requestUserId) return;
+      if (visionResult) {
+        visionResult.textContent = response.analysis;
+        visionResult.hidden = false;
+      }
+      if (visionStatus) visionStatus.textContent = "Анализ завершён. Исходное изображение не сохранялось в PWA Studio.";
+      visionFileInput.value = "";
+      visionConsentInput.checked = false;
+      if (assistantVisionPreviewUrl) URL.revokeObjectURL(assistantVisionPreviewUrl);
+      assistantVisionPreviewUrl = null;
+      if (visionPreview) { visionPreview.removeAttribute("src"); visionPreview.hidden = true; }
+    } catch (error) {
+      if (authSession?.user?.id === requestUserId && visionStatus) {
+        visionStatus.textContent = "Не удалось выполнить анализ: " + error.message;
+      }
+    } finally {
+      visionRequestPending = false;
+      refreshVisionAnalyzeButton();
+    }
+  });
+
+
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
   const movieVaultKey = (kind, userId = authSession?.user?.id || "guest") => "movie:" + kind + ":" + userId;
@@ -3440,6 +3535,7 @@ const movieHistoryStyle = document.createElement("style");
     try {
       const data = await apiRequest("/api/health");
       apiStatus.textContent = "API доступен · " + data.service + " · " + data.ai_provider + " · ключ настроен: " + (data.ai_configured ? "да" : "нет") + ".";
+      const visionPanel = $("#assistantVisionPanel"); if (visionPanel) visionPanel.hidden = data.vision_analysis_enabled !== true;
     } catch (error) {
       apiStatus.textContent = error.message;
     }
@@ -3477,6 +3573,7 @@ const movieHistoryStyle = document.createElement("style");
     else checkBackend();
   });
   $("#testBackend").addEventListener("click", checkBackend);
+  setTimeout(checkBackend, 1200);
 
   // A single account-scoped generation job is persisted locally so a page
   // refresh never loses the ability to inspect or request cancellation.
