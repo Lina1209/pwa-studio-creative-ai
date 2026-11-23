@@ -1416,9 +1416,13 @@ const movieHistoryStyle = document.createElement("style");
     else supportWidgetDialog?.setAttribute("open", "");
     if (authSession?.user) loadMySupportTickets();
   });
-  $("#supportWidgetClose")?.addEventListener("click", () => supportWidgetDialog?.close());
+  const closeSupportWidget = () => {
+    if (supportWidgetDialog?.close) supportWidgetDialog.close();
+    else supportWidgetDialog?.removeAttribute("open");
+  };
+  $("#supportWidgetClose")?.addEventListener("click", closeSupportWidget);
   supportWidgetDialog?.addEventListener("click", event => {
-    if (event.target === supportWidgetDialog) supportWidgetDialog.close();
+    if (event.target === supportWidgetDialog) closeSupportWidget();
   });
   $(".profile").addEventListener("click", () => navigate("account"));
   $("#topAvatar")?.addEventListener("click", () => navigate("account"));
