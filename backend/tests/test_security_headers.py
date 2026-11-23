@@ -61,3 +61,17 @@ def test_admin_put_preflight_rejects_untrusted_origin():
     )
     assert response.status_code == 400
     assert "Access-Control-Allow-Origin" not in response.headers
+
+def test_admin_patch_preflight_is_allowed_for_configured_frontend_origin():
+    client = TestClient(main.app)
+    response = client.options(
+        "/api/admin/support/tickets/33333333-3333-4333-8333-333333333333/status",
+        headers={
+            "Origin": "https://lina1209.github.io",
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "https://lina1209.github.io"
+    assert "PATCH" in response.headers["Access-Control-Allow-Methods"]
