@@ -5443,6 +5443,7 @@ begin
   perform * from public.request_generation_job_cancellation_for_owner(
     v_job.job_id, '22222222-2222-4222-8222-222222222222'
   );
+end;
 $generation_worker_cancellation_handshake_test$;
 
 select 'generation worker cancellation handshake checks passed' as result;
