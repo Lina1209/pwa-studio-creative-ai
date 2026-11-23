@@ -432,13 +432,23 @@ class PlanCreditedGenerationJobCreateResult:
 
 
 def _expected_plan_quota_features(job_type: str) -> tuple[str, ...]:
+    common = ("daily_generation_jobs", "monthly_generation_jobs", "max_parallel_jobs")
     mapping = {
-        "image_generation": ("daily_image_generations", "monthly_image_generations"),
-        "video_generation": ("daily_video_generations", "monthly_video_generations"),
-        "audio_generation": ("daily_audio_generations", "monthly_audio_generations"),
-        "speech_generation": ("daily_audio_generations", "monthly_audio_generations"),
+        "image_generation": (
+            "daily_image_generations", "monthly_image_generations", *common
+        ),
+        "video_generation": (
+            "daily_video_generations", "monthly_video_generations", *common
+        ),
+        "audio_generation": (
+            "daily_audio_generations", "monthly_audio_generations", *common
+        ),
+        "speech_generation": (
+            "daily_audio_generations", "monthly_audio_generations", *common
+        ),
         "ai_processing": (
-            "daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests"
+            "daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests",
+            *common,
         ),
     }
     try:
@@ -447,7 +457,6 @@ def _expected_plan_quota_features(job_type: str) -> tuple[str, ...]:
         raise GenerationJobsServiceError(
             "This generation type has no approved customer-plan quota mapping."
         ) from exc
-
 
 def create_plan_credited_generation_job(
     settings: Settings,
