@@ -316,10 +316,19 @@ class SupabaseGenerationJobRepository:
             raise WorkerRepositoryError("Generation job transition returned an invalid response.")
         return data
 
-    async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> bool:
-        return await self._boolean_rpc(
+    async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> str:
+        data = await self._rpc(
             "heartbeat_generation_job",
             {"p_job_id": str(job_id), "p_worker_id": worker_id, "p_lease_seconds": lease_seconds},
+        )
+        if data not in {"active", "cancel_requested", "terminal", "lease_lost"}:
+            raise WorkerRepositoryError("Generation job heartbeat returned an invalid state.")
+        return data
+
+    async def acknowledge_cancellation(self, job_id: UUID, worker_id: str) -> bool:
+        return await self._boolean_rpc(
+            "acknowledge_generation_job_cancellation",
+            {"p_job_id": str(job_id), "p_worker_id": worker_id},
         )
 
     async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool:
