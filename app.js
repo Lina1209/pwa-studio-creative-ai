@@ -1715,6 +1715,38 @@ const movieHistoryStyle = document.createElement("style");
   });
   setTimeout(() => renderPromptLibrary(), 0);
 
+  const promptOutput = $("#promptOutput");
+  const getPromptSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount || !promptOutput.contains(selection.anchorNode)) return null;
+    return { selection, range: selection.getRangeAt(0) };
+  };
+  $("#selectAllPrompt").addEventListener("click", () => {
+    const range=document.createRange(); range.selectNodeContents(promptOutput);
+    const selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    promptOutput.focus();
+  });
+  $("#copySelectedPrompt").addEventListener("click", async () => {
+    const selected=getPromptSelection();
+    const value=selected ? selected.selection.toString() : "";
+    if(!value){$("#promptSaveFeedback").textContent="Сначала выделите нужный фрагмент текста.";return;}
+    try{await navigator.clipboard.writeText(value);$("#promptSaveFeedback").textContent="Выделенный фрагмент скопирован ✓";}
+    catch{$("#promptSaveFeedback").textContent="Не удалось скопировать. Используйте стандартное копирование устройства.";}
+  });
+  const wrapPromptSelection = (before,after=before) => {
+    const selected=getPromptSelection();
+    if(!selected || selected.range.collapsed){$("#promptSaveFeedback").textContent="Выделите фрагмент промпта, который нужно оформить.";return;}
+    const value=selected.selection.toString();
+    const replacement=document.createTextNode(before+value+after);
+    selected.range.deleteContents(); selected.range.insertNode(replacement);
+    const next=document.createRange();next.selectNodeContents(replacement);
+    selected.selection.removeAllRanges();selected.selection.addRange(next);
+    promptOutput.focus();
+    $("#promptSaveFeedback").textContent="Фрагмент оформлен. Сохраните изменения, чтобы не потерять результат.";
+  };
+  $("#wrapBoldPrompt").addEventListener("click",()=>wrapPromptSelection("**"));
+  $("#wrapQuotePrompt").addEventListener("click",()=>wrapPromptSelection("> ",""));
+  $("#wrapCodePrompt").addEventListener("click",()=>wrapPromptSelection("`","`"));
   $("#copyPrompt").addEventListener("click", async () => {
     if (editingPromptRef) $("#promptLibraryFeedback").textContent = "Вы можете сначала сохранить изменения или отменить редактирование.";
 
