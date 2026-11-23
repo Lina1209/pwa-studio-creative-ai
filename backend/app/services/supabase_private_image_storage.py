@@ -297,6 +297,54 @@ class SupabasePrivateImageStorage:
             sha256_hex=calculate_sha256(payload),
         )
 
+    async def create_signed_download_url(
+        self,
+        *,
+        owner_id: UUID,
+        job_id: UUID,
+        object_path: str,
+        expected_sha256_hex: str,
+        expires_in: int = 60,
+    ) -> str:
+        """Issue a short-lived download URL only after owner/path/hash verification."""
+        if isinstance(expires_in, bool) or not 30 <= expires_in <= 300:
+            raise ValueError("Signed download lifetime must be between 30 and 300 seconds.")
+        verified = await self.verify_existing_image(
+            owner_id=owner_id, job_id=job_id, object_path=object_path
+        )
+        if (
+            not isinstance(expected_sha256_hex, str)
+            or len(expected_sha256_hex) != 64
+            or verified.sha256_hex != expected_sha256_hex
+        ):
+            raise GenerationResultStorageError("stored_object_checksum_mismatch")
+
+        encoded_bucket = quote(self._bucket, safe="")
+        encoded_path = self._encoded_path(object_path)
+        response = await self._request(
+            "POST",
+            f"{self._base_url}/object/sign/{encoded_bucket}/{encoded_path}",
+            json={"expiresIn": expires_in},
+        )
+        try:
+            signed_path = response.json().get("signedURL")
+            if not isinstance(signed_path, str):
+                raise ValueError("signedURL")
+            # Storage returns a path, never an arbitrary host. Reject absolute
+            # URLs and path traversal before composing the trusted project URL.
+            from urllib.parse import urlsplit
+            parsed = urlsplit(signed_path)
+            expected_prefix = f"/object/sign/{self._bucket}/"
+            if (
+                parsed.scheme or parsed.netloc or not parsed.path.startswith(expected_prefix)
+                or ".." in parsed.path.split("/")
+                or not parsed.query
+            ):
+                raise ValueError("signedURL")
+        except (ValueError, AttributeError) as exc:
+            raise SupabaseStorageAdapterError("storage_signed_url_invalid") from exc
+        return f"{self._base_url}{signed_path}"
+
     async def upload_image(
         self, *, owner_id: UUID, job_id: UUID, image_bytes: bytes, mime_type: str
     ) -> UploadedImageObject:
