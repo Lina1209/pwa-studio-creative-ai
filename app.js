@@ -300,6 +300,12 @@ const movieHistoryStyle = document.createElement("style");
       let data = {};
       try { data = await response.json(); } catch {}
       if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
+      // Automatically attach newly admitted generation jobs to the live monitor.
+      if (String(options.method || "GET").toUpperCase() === "POST" &&
+          data?.job_id && /\/(?:image|video|audio|speech)-jobs(?:\?|$)/.test(path)) {
+        try { window.PWAStudioGenerationJobs?.track(data); }
+        catch (trackingError) { console.warn("Generation job tracking:", trackingError); }
+      }
       return data;
     } catch (error) {
       if (error?.name === "AbortError") throw new Error("Сервер не ответил за 100 секунд. Попробуйте ещё раз.");
