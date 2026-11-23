@@ -116,3 +116,25 @@ class PaymentProviderAdapterRegistry:
     @property
     def provider_codes(self) -> tuple[str, ...]:
         return tuple(sorted(self._adapters))
+
+
+def build_payment_provider_registry(settings, *, adapters=(), secret_store=None):
+    """Build the one server-side payment adapter registry from trusted code.
+
+    Request data can never contribute adapters. The default runtime remains
+    disabled; setting the runtime flag without at least one concrete,
+    server-registered adapter is a startup configuration error.
+    """
+    if getattr(settings, "payment_provider_runtime_enabled", False) is not True:
+        return PaymentProviderAdapterRegistry()
+    configured_adapters = tuple(adapters)
+    if not configured_adapters:
+        raise PaymentProviderNotConfigured(
+            "Payment provider runtime cannot start without a concrete server adapter."
+        )
+    return PaymentProviderAdapterRegistry(
+        configured_adapters,
+        enabled=True,
+        settings=settings,
+        secret_store=secret_store,
+    )
