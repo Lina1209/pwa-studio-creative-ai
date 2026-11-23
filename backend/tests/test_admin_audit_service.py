@@ -77,3 +77,20 @@ def test_read_admin_audit_events_returns_canonical_reference_ids(monkeypatch):
     events = get_admin_audit_events(SETTINGS)
     assert events[0]["resource_id"] == str(RESOURCE)
     assert events[0]["correlation_id"] == str(CORRELATION)
+
+
+@pytest.mark.parametrize(
+    "resource_type",
+    ["credit_ledger", "pricing_catalog_draft", "plan_catalog_draft"],
+)
+def test_record_admin_audit_event_accepts_resource_types_used_by_admin_routes(monkeypatch, resource_type):
+    import app.services.admin_audit_service as service
+
+    captured = {}
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: captured.update(payload) or "audit-id")
+    result = record_admin_audit_event(
+        SETTINGS, actor_user_id=ACTOR, action="admin.access", outcome="allowed",
+        resource_type=resource_type,
+    )
+    assert result == "audit-id"
+    assert captured["p_resource_type"] == resource_type
