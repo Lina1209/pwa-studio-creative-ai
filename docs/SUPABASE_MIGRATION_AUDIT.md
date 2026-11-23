@@ -133,3 +133,28 @@ Do not create active paid plans, prices, credit allowances, payment webhooks, or
 - `0013_unified_credit_wallet.sql`: source-only wallet, ledger, and reservation lifecycle.
 - None of these files has been verified against the live migration ledger or executed on the connected Supabase project.
 - The two `0005` files and the `studio-exports` policy overlap remain the first migration-history blockers. Do not rename, reorder, or replay historical files based only on repository filenames.
+
+
+## Existing AI usage telemetry — source verification
+
+The repository contains `0003_ai_usage_metering.sql`, which defines the current `public.ai_usage` source schema:
+
+- identity: generated bigint `id` and unique UUID `request_id`;
+- owner and operation: `user_id` referencing `auth.users`, `endpoint` restricted to `chat` or `prompts`, and `provider`;
+- model and measured usage: `model`, nullable non-negative `input_tokens`, `output_tokens`, and `total_tokens`;
+- optional cost metadata: nullable non-negative `cost_usd numeric(20,10)` and nullable `cost_source`;
+- event time: `created_at timestamptz`;
+- indexes: `(user_id, created_at desc)` and `(created_at desc)`;
+- RLS enabled, with no anon/authenticated policies declared in this migration. The backend writes using its server-only Supabase service-role credential.
+
+The current backend path is `ask_ai()` → `AIResult` → `record_ai_usage()`, called after successful `/api/chat` and `/api/prompts` completions. LiteLLM usage fields are copied when present. Optional `response_cost` is read from LiteLLM hidden response metadata and labeled `litellm_response_cost`; it is a LiteLLM-calculated cost signal, **not proof of a provider invoice or a settled provider charge**. Missing token/cost data remains NULL. The telemetry insert is best-effort with a five-second HTTP timeout; failures do not fail the completed AI response and can therefore leave gaps.
+
+A new unit-test module covers the payload contract, NULL cost semantics, omission of prompt/response content, missing server credentials, and non-fatal/redacted telemetry failures. These are mocked tests and do not establish that the live table exists or that production inserts succeed.
+
+### Explicit limitations
+
+1. The current table only models chat and prompt token usage. It cannot yet represent image counts, generated video/audio duration, render time, storage, bandwidth, asynchronous job lifecycle, provider job IDs, or invoice reconciliation.
+2. It has no durable outbox/retry queue, so a transient Supabase outage may lose a telemetry event.
+3. It has no currency/status/price-reference columns. Do not reinterpret NULL cost as zero, and do not aggregate LiteLLM-calculated cost as invoice-confirmed spend.
+4. The live table definition, RLS policies, grants, row counts, retention, and migration ledger have not been queried. The migration file is source evidence only.
+5. No new telemetry migration is proposed until the live schema and migration history are reconciled. No SQL was applied.
