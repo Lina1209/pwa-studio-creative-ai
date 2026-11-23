@@ -113,7 +113,7 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
         "user_plan_assignment_events": [[
             {"id": 2, "assignment_id": ASSIGNMENT, "event_type": "activated", "occurred_at": "2026-11-01T00:00:00+00:00"},
         ]],
-        "approved_plan_versions": [{
+        "approved_plan_versions": [[{
             "id": PLAN,
             "plan_code": "creator",
             "plan_version": 3,
@@ -134,7 +134,7 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
                 "max_resolution": "1080p",
             },
             "features_json": ["image", "video", "audio", "ai"],
-        }],
+        }]],
         "plan_quota_reservations": [
             {"feature_key": "daily_image_generations", "reserved_units": 3,
              "status": "completed", "period_start": day_start.isoformat()},
@@ -200,7 +200,7 @@ def test_invalid_active_plan_snapshot_fails_closed(monkeypatch):
         "user_plan_assignment_events": [[
             {"id": 2, "assignment_id": ASSIGNMENT, "event_type": "activated", "occurred_at": "2026-11-01T00:00:00+00:00"},
         ]],
-        "approved_plan_versions": [],
+        "approved_plan_versions": [[]],
     }
     monkeypatch.setattr(
         entitlements.httpx, "Client",
