@@ -1869,9 +1869,17 @@ const movieHistoryStyle = document.createElement("style");
       let invalidRows=0,missingImages=0;
       for(const row of (data||[])){
         const id=row?.asset_id,asset=row?.asset;
-        if(typeof id!=="string"||!asset||asset.id!==id||!Array.isArray(asset.referenceImages||[])){invalidRows++;continue;}
+        const refs=asset?.referenceImages;
+        const validRefs=refs===undefined||(Array.isArray(refs)&&
+          refs.every(ref=>ref&&typeof ref==="object"&&!Array.isArray(ref)&&
+            typeof ref.id==="string"&&ref.id.length>0&&
+            (ref.storagePath===undefined||(typeof ref.storagePath==="string"&&ref.storagePath.length>0))&&
+            (ref.name===undefined||typeof ref.name==="string")&&
+            (ref.type===undefined||typeof ref.type==="string"))&&
+          new Set(refs.map(ref=>ref.id)).size===refs.length);
+        if(typeof id!=="string"||!id.length||!asset||typeof asset!=="object"||Array.isArray(asset)||asset.id!==id||!validRefs){invalidRows++;continue;}
         if(row.deleted_at){tombstones.add(id);continue;}
-        cloudById.set(id,asset);
+        cloudById.set(id,{...asset,referenceImages:refs||[]});
       }
       // Import legacy device-only entries once; cloud tombstones always win over stale local copies.
       if(!isCurrentSync())return;
