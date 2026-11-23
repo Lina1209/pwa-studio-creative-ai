@@ -10,6 +10,7 @@ from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
+from app.services.ai_rate_limit_service import consume_ai_request
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self
@@ -221,6 +222,8 @@ def unsuspend_user(payload: SuspensionRevokeRequest, user: StudioUser = Depends(
 def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
     ensure_user_not_suspended(settings, user.user_id, "assistant")
     check_content(payload.message)
+    if not consume_ai_request(settings, user_id=user.user_id, endpoint="chat"):
+        raise HTTPException(status_code=429, detail="AI request limit reached. Please try again shortly.")
     system = (
         "You are Studio AI Companion, a helpful creative assistant inside PWA Studio. "
         "Help users develop video ideas, scripts, scenes and prompts. Be clear and practical. "
@@ -249,6 +252,8 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
 def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
     ensure_user_not_suspended(settings, user.user_id, "assistant")
     check_content(payload.idea)
+    if not consume_ai_request(settings, user_id=user.user_id, endpoint="prompts"):
+        raise HTTPException(status_code=429, detail="AI request limit reached. Please try again shortly.")
     system = (
         "You are an expert prompt engineer for creative AI tools. "
         "Turn the user's idea into one detailed, coherent, production-ready prompt. "
