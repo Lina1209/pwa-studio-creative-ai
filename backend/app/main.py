@@ -1991,6 +1991,14 @@ def admin_approve_plan_draft(
 ):
     """Approve one immutable plan draft; this does not activate or grant credits."""
     try:
+        try:
+            record_admin_audit_event(
+                settings, actor_user_id=UUID(user.user_id), action="admin.plan.draft.approve",
+                outcome="requested", resource_type="tariff", resource_id=draft_id,
+                reason=f"Requested approval of plan draft: {payload.reason.strip()}",
+            )
+        except (AdminAuditUnavailable, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Журнал аудита недоступен; утверждение тарифа не выполнено.") from exc
         result = approve_plan_draft(
             settings, draft_id=draft_id, actor_id=UUID(user.user_id), reason=payload.reason.strip()
         )
@@ -2013,6 +2021,14 @@ def admin_create_pending_plan_assignment(
 ):
     """Create an inert pending plan assignment after owner authorization."""
     try:
+        try:
+            record_admin_audit_event(
+                settings, actor_user_id=UUID(user.user_id), action="admin.plan.assignment.create",
+                outcome="requested", resource_type="user", resource_id=payload.user_id,
+                reason=f"Requested pending plan assignment {payload.approved_plan_version_id}: {payload.reason.strip()}",
+            )
+        except (AdminAuditUnavailable, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Журнал аудита недоступен; назначение тарифа не создано.") from exc
         result = create_pending_assignment(
             settings,
             user_id=payload.user_id,
