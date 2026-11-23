@@ -16,6 +16,7 @@
   let assistantUserId = null;
   let activeMessageThreadId = null;
   let activeMessagePartnerId = null;
+  let conversationsCache = [];
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -39,6 +40,7 @@
       const notificationBadge = $("#notificationUnread"); if (notificationBadge) notificationBadge.hidden = true;
       const messagesPanel = $("#messagesPanel"); if (messagesPanel) messagesPanel.hidden = true;
       const conversationList = $("#conversationList"); if (conversationList) conversationList.replaceChildren();
+      conversationsCache = [];
       const directMessageList = $("#directMessageList"); if (directMessageList) directMessageList.replaceChildren();
       const directMessageForm = $("#directMessageForm"); if (directMessageForm) directMessageForm.hidden = true;
       const conversationTitle = $("#conversationTitle"); if (conversationTitle) conversationTitle.textContent = "Выберите диалог";
@@ -333,6 +335,7 @@ const movieHistoryStyle = document.createElement("style");
   const messagesFeedback = message => { const el = $("#messagesFeedback"); if (el) el.textContent = message; };
   const messagePartnerId = thread => thread.user_a_id === authSession?.user?.id ? thread.user_b_id : thread.user_a_id;
   const renderConversations = threads => {
+    conversationsCache = Array.isArray(threads) ? threads : [];
     const list = $("#conversationList"); if (!list) return;
     list.replaceChildren();
     if (!threads.length) { list.append(adminNode("div","admin-empty","Пока нет диалогов. Начните переписку с первого сообщения.")); return; }
@@ -400,7 +403,7 @@ const movieHistoryStyle = document.createElement("style");
     activeMessageThreadId=threadId;activeMessagePartnerId=partnerId;
     $("#conversationTitle").textContent="Диалог с пользователем "+partnerId;
     $("#directMessageForm").hidden=false;
-    renderConversations([...document.querySelectorAll(".conversation-button")].map(()=>({id:""})));
+    renderConversations(conversationsCache);
     loadConversationMessages(threadId);
   };
   $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
