@@ -748,12 +748,56 @@ const movieHistoryStyle = document.createElement("style");
   $("#refreshDirectNotifications")?.addEventListener("click", loadDirectNotifications);
 
   const directMessageNode = message => {
+    const own = message.sender_user_id === authSession?.user?.id;
     const node = document.createElement("article");
-    node.className = "assistant-message " + (message.sender_user_id === authSession?.user?.id ? "user-message" : "ai-message");
-    const body = document.createElement("div"); body.textContent = message.body || "";
+    node.className = "assistant-message " + (own ? "user-message" : "ai-message");
+    const body = document.createElement("div");
+    body.className = "direct-message-text";
+    body.textContent = message.deleted_at ? "Сообщение удалено" : (message.body || "");
     const meta = document.createElement("small");
-    meta.textContent = new Date(message.created_at).toLocaleString();
-    node.append(body, meta); return node;
+    meta.textContent = new Date(message.created_at).toLocaleString() +
+      (message.deleted_at ? " · удалено" : message.edited_at ? " · изменено" : "");
+    node.append(body, meta);
+    if (own && !message.deleted_at) {
+      const actions = document.createElement("div");
+      actions.className = "direct-message-actions";
+      const editable = Date.now() - new Date(message.created_at).getTime() <= 15 * 60 * 1000;
+      if (editable) {
+        const edit = document.createElement("button");
+        edit.type = "button"; edit.className = "secondary-button";
+        edit.textContent = "Изменить";
+        edit.addEventListener("click", async () => {
+          const next = prompt("Изменить сообщение:", message.body || "");
+          if (next === null || !next.trim() || next.trim() === message.body) return;
+          try {
+            await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(message.conversation_id) +
+              "/messages/" + encodeURIComponent(message.id), {method:"PATCH",body:JSON.stringify({body:next.trim()})});
+            await openDirectConversation(activeDirectConversationId, activeDirectPeerId);
+            await loadDirectConversations();
+          } catch (error) {
+            if ($("#directMessagesStatus")) $("#directMessagesStatus").textContent = error.message;
+          }
+        });
+        actions.append(edit);
+      }
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.className = "secondary-button";
+      remove.textContent = "Удалить";
+      remove.addEventListener("click", async () => {
+        if (!confirm("Удалить это сообщение? Оно исчезнет из переписки у обоих участников.")) return;
+        try {
+          await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(message.conversation_id) +
+            "/messages/" + encodeURIComponent(message.id), {method:"DELETE"});
+          await openDirectConversation(activeDirectConversationId, activeDirectPeerId);
+          await loadDirectConversations();
+        } catch (error) {
+          if ($("#directMessagesStatus")) $("#directMessagesStatus").textContent = error.message;
+        }
+      });
+      actions.append(remove);
+      node.append(actions);
+    }
+    return node;
   };
   const directConversationUnread = conversation => {
     const message=conversation.last_message;
