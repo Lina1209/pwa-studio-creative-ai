@@ -1836,22 +1836,26 @@ const movieHistoryStyle = document.createElement("style");
   const syncCloudVisualLibrary=async()=>{
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
     try{
-      const {data,error}=await supabaseClient.from("character_visual_assets").select("asset,deleted_at").eq("user_id",userId);
+      const {data,error}=await supabaseClient.from("character_visual_assets").select("asset_id,asset,deleted_at").eq("user_id",userId);
       if(error)throw error;
       const cloudById=new Map();
       const tombstones=new Set();
+      let invalidRows=0,missingImages=0;
       for(const row of (data||[])){
-        const id=row?.asset?.id;
-        if(typeof id!=="string")continue;
+        const id=row?.asset_id,asset=row?.asset;
+        if(typeof id!=="string"||!asset||asset.id!==id||!Array.isArray(asset.referenceImages||[])){invalidRows++;continue;}
         if(row.deleted_at){tombstones.add(id);continue;}
-        cloudById.set(id,row.asset);
+        cloudById.set(id,asset);
       }
       // Import legacy device-only entries once; cloud tombstones always win over stale local copies.
       for(const localItem of readVisualLibrary()){
         if(tombstones.has(localItem.id)||cloudById.has(localItem.id))continue;
         const blobs=[];
         for(const ref of (Array.isArray(localItem.referenceImages)?localItem.referenceImages:[])){
-          if(ref.storagePath){blobs.push(null);continue;}
+          if(ref.storagePath){
+            if(!ref.storagePath.startsWith(userId+"/"))throw new Error("Обнаружен путь к чужому облачному объекту.");
+            blobs.push(null);continue;
+          }
           const blob=await getVisualRefImage(ref.id,userId);
           blobs.push(blob||null);
         }
@@ -1862,14 +1866,17 @@ const movieHistoryStyle = document.createElement("style");
       for(const item of activeItems){
         for(const ref of (Array.isArray(item.referenceImages)?item.referenceImages:[])){
           if(!ref.storagePath)continue;
+          if(!ref.storagePath.startsWith(userId+"/")){missingImages++;continue;}
           const {data:blob,error:downloadError}=await supabaseClient.storage.from(cloudVisualBucket).download(ref.storagePath);
-          if(downloadError)continue;
+          if(downloadError||!blob){missingImages++;continue;}
           await saveVisualRefImage(ref.id,blob,userId);
         }
       }
       localStorage.setItem(visualLibraryKey(),JSON.stringify(activeItems));
       renderVisualLibrary();
-      $("#promptSaveFeedback").textContent="Облачная библиотека синхронизирована. Удалённые материалы не восстанавливаются со старых устройств.";
+      $("#promptSaveFeedback").textContent=invalidRows||missingImages
+        ? "Синхронизация завершена частично: пропущено записей — "+invalidRows+", недоступных изображений — "+missingImages+". Остальные материалы загружены."
+        : "Облачная библиотека синхронизирована. Удалённые материалы не восстанавливаются со старых устройств.";
     }catch(error){
       console.warn("Visual library cloud sync unavailable:",error);
       $("#promptSaveFeedback").textContent="Облачная синхронизация пока недоступна. Локальная библиотека сохранена без изменений.";
@@ -1881,7 +1888,11 @@ const movieHistoryStyle = document.createElement("style");
     try{
       for(let i=0;i<files.length;i++){
         const file=files[i],ref=item.referenceImages[i];
-        if(!file||ref.storagePath)continue;
+        if(ref.storagePath){
+          if(!ref.storagePath.startsWith(userId+"/"))throw new Error("Путь к референсу не принадлежит текущему аккаунту.");
+          continue;
+        }
+        if(!file)continue;
         const ext=file.type==="image/jpeg"?"jpg":file.type==="image/webp"?"webp":"png";
         const storagePath=userId+"/"+item.id+"/"+ref.id+"."+ext;
         const {error}=await supabaseClient.storage.from(cloudVisualBucket).upload(storagePath,file,{contentType:file.type,upsert:true});
@@ -1908,6 +1919,7 @@ const movieHistoryStyle = document.createElement("style");
     );
     if(markError)throw markError;
     const paths=(item?.referenceImages||[]).map(ref=>ref.storagePath).filter(Boolean);
+    if(paths.some(path=>!path.startsWith(userId+"/")))throw new Error("Отказано в удалении объекта вне текущего аккаунта.");
     if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error)throw error;}
   };
   const renderVisualLibrary = () => {
