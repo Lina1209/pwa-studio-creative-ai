@@ -148,15 +148,25 @@ def audit_finance_integrity(
             continue
         event_id, job_id = event.get("event_id"), event.get("job_id")
         operation_key, provider = event.get("operation_key"), event.get("provider")
+        model, event_user_id = event.get("model"), event.get("user_id")
         usage_id, source = event.get("provider_usage_id"), event.get("cost_source")
         if (
             not _integer(event_id) or event_id < 1
             or not isinstance(job_id, str) or job_id not in job_map
             or not isinstance(operation_key, str) or not operation_key
             or not isinstance(provider, str) or not provider
+            or not isinstance(model, str) or not model
+            or not isinstance(event_user_id, str) or not event_user_id
         ):
             findings.append(_finding("orphan_or_invalid_provider_cost_event", "critical"))
             continue
+        job = job_map[job_id]
+        if (
+            job.get("user_id") != event_user_id
+            or job.get("provider") != provider
+            or job.get("model") != model
+        ):
+            findings.append(_finding("provider_cost_job_identity_mismatch", "critical", job_id=job_id))
         if event_id in seen_event_ids:
             findings.append(_finding("duplicate_provider_cost_event_id", "critical", job_id=job_id))
         seen_event_ids.add(event_id)
