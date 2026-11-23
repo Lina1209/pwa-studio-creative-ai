@@ -1305,13 +1305,44 @@ const movieHistoryStyle = document.createElement("style");
     panel.append(head,list,note,back); panel.hidden=false; panel.removeAttribute("data-active-stage");
     requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
+  const renderCreativeDashboard = () => {
+    const list=$("#dashboardProjectList");
+    if(!list)return;
+    const projects=movieRead().slice(0,4);
+    const count=$("#dashboardProjectCount");
+    if(count)count.textContent=projects.length+" из "+movieRead().length;
+    list.replaceChildren();
+    if(!projects.length){
+      const empty=document.createElement("div"); empty.className="dashboard-empty";
+      const title=document.createElement("b"); title.textContent="Ваша первая история начнётся здесь";
+      const note=document.createElement("p"); note.textContent="Создайте проект в Миникиностудии — он появится в этом пространстве.";
+      const action=document.createElement("button"); action.type="button"; action.className="secondary-button"; action.textContent="Создать первый фильм →";
+      action.addEventListener("click",()=>navigate("movie"));
+      empty.append(title,note,action); list.append(empty);
+    }else{
+      projects.forEach(project=>{
+        const card=document.createElement("article"); card.className="dashboard-project";
+        const main=document.createElement("div"); main.className="dashboard-project-main";
+        const title=document.createElement("b"); title.textContent=project.name||"Без названия";
+        const meta=document.createElement("small"); meta.textContent=[project.genre||"Жанр не указан",movieProgress(project),"Изменён "+movieDate(project.updatedAt||project.createdAt)].join(" · ");
+        main.append(title,meta);
+        const state=document.createElement("span"); state.className="dashboard-save-state";
+        state.textContent=authSession?.user?"Статус облака — в мастерской":"Сохранено на этом устройстве";
+        const open=document.createElement("button"); open.type="button"; open.className="secondary-button"; open.textContent="Продолжить →";
+        open.addEventListener("click",()=>{activeMovieId=project.id;navigate("movie");setTimeout(()=>openMovieOverview(project.id),80);});
+        card.append(main,state,open); list.append(card);
+      });
+    }
+    const recent=$("#dashboardRecentLabel");
+    if(recent)recent.textContent=projects.length?"Недавно изменённые проекты":"Пока нет недавних проектов";
+  };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
     const projects=movieRead(); const count=$("#movieCount");
     if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
     if(!projects.length){
       list.innerHTML='<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
-      activeMovieId=null; updateMovieStageCards(); return;
+      activeMovieId=null; updateMovieStageCards(); renderCreativeDashboard(); return;
     }
     if(!projects.some(item=>item.id===activeMovieId))activeMovieId=projects[0].id;
     list.replaceChildren();
@@ -1438,6 +1469,7 @@ const movieHistoryStyle = document.createElement("style");
       card.append(toggle,panel); list.append(card);
     });
     updateMovieStageCards();
+    renderCreativeDashboard();
   };
   $("#movieStart").addEventListener("click",()=>{
     editingMovieId=null; $("#movieForm").reset();
