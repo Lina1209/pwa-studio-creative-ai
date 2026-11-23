@@ -93,3 +93,45 @@ def test_admin_audit_journal_rejects_timezone_free_cursor():
         assert response.status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+
+def test_admin_support_reply_records_a_specific_mutation_action(monkeypatch):
+    import app.main as main_module
+
+    actor = "22222222-2222-4222-8222-222222222222"
+    ticket_id = UUID("33333333-3333-4333-8333-333333333333")
+    captured = {}
+    monkeypatch.setattr(main_module, "get_ticket", lambda *a, **k: {"id": str(ticket_id)})
+    monkeypatch.setattr(main_module, "add_message", lambda *a, **k: None)
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: captured.update(k) or "audit-id")
+    client = _client_for(StudioUser(user_id=actor, email=None, role="admin"))
+    try:
+        response = client.post(f"/api/admin/support/tickets/{ticket_id}/messages", json={"message": "Ответ поддержки"})
+        assert response.status_code == 201
+        assert captured["action"] == "admin.support.reply"
+        assert captured["outcome"] == "executed"
+        assert captured["resource_id"] == ticket_id
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_support_status_change_records_a_specific_mutation_action(monkeypatch):
+    import app.main as main_module
+    import app.services.support_inbox as support_module
+
+    actor = "22222222-2222-4222-8222-222222222222"
+    ticket_id = UUID("33333333-3333-4333-8333-333333333333")
+    captured = {}
+    monkeypatch.setattr(main_module, "get_ticket", lambda *a, **k: {"id": str(ticket_id)})
+    monkeypatch.setattr(support_module, "update_ticket_status", lambda *a, **k: None)
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: captured.update(k) or "audit-id")
+    client = _client_for(StudioUser(user_id=actor, email=None, role="admin"))
+    try:
+        response = client.patch(f"/api/admin/support/tickets/{ticket_id}/status", json={"status": "resolved"})
+        assert response.status_code == 200
+        assert captured["action"] == "admin.support.status.changed"
+        assert captured["outcome"] == "executed"
+        assert captured["resource_id"] == ticket_id
+    finally:
+        app.dependency_overrides.clear()
