@@ -20,7 +20,7 @@ normalization function. It:
 - returns normalized MIME type, dimensions, byte length, and SHA-256 digest;
 - does not write to disk, object storage, logs, or browser-visible server secrets.
 
-The helper is connected to the authenticated `POST /api/vision/analyze` route. The route is protected by the `VISION_INPUT_ENABLED` server setting, which defaults to `false`; it returns 503 while disabled. No frontend upload/consent control is exposed yet, so the feature must remain disabled until that UI and privacy copy are implemented and reviewed.
+The helper is connected to the authenticated `POST /api/vision/analyze` route. The route is protected by the `VISION_INPUT_ENABLED` server setting, which defaults to `false`; it returns 503 while disabled. The frontend upload/preview and explicit consent panel are implemented and remain hidden unless health reports the capability enabled. A complete product privacy notice, provider retention disclosure and final policy/legal review are still required before enabling it.
 
 ## Required gates before provider integration
 
