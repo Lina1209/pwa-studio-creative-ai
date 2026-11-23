@@ -38,3 +38,23 @@ This document records a source-repository review only. It is not evidence of whi
 ## Current status
 
 This is a source review and a safety checklist only. No SQL has been executed against Supabase, no production data has been changed, and no Render deployment has been initiated.
+
+## Application security review (source review)
+
+Reviewed the notification, moderation, profile, messaging, authentication, request-schema, and API-route code on this branch.
+
+- User-facing notification reads and updates are scoped to the authenticated user's ID supplied by the server-side route dependency. The client does not submit an acting user ID for these operations.
+- Report creation derives `reporter_user_id` from the authenticated session. Report review, report listing, suspension creation/listing/revocation, and Supabase diagnostics are behind the server-side `require_admin` dependency. Moderator/audit actor IDs are derived from that authenticated admin.
+- Profile edits target the authenticated user's own ID. Public profile lookup returns only the explicitly selected public fields and requires both public visibility and directory listing for other users.
+- Conversation/message reads, read receipts, edits, deletion, and block-list operations derive the acting identity from the authenticated session. Message edit is sender-scoped; self-delete checks participant membership on both the read and write.
+- Suspension checks are performed before community messaging/search and assistant/prompt requests. Message sending checks blocks in either direction and applies a per-user recent-message limit.
+
+Items still requiring hardening or live verification:
+
+1. The in-process sequence used for the 20-messages-per-minute check is not atomic. Concurrent requests can pass the count check together. A database-backed atomic rate limiter (or an external rate-limit service) is preferable before opening messaging to a large public audience.
+2. The owner role supports a legacy email fallback when `OWNER_USER_ID` is unset. Production should be checked and configured with the immutable Supabase Auth user UUID; do not infer that the setting is already present from repository code.
+3. The suspension expiry field is currently accepted as a bounded string by the request schema. Validate it as a timezone-aware datetime before writing to the database, and reject past/invalid values according to a documented policy.
+4. The source review does not prove that the live database constraints, RLS policies, indexes, and Storage policies match the repository migrations. The duplicate `0005` version and overlapping export-bucket policies remain unresolved pending live schema/history inspection.
+5. No authenticated live integration tests were run against Supabase. The GitHub Actions suite validates mocked/unit behavior only.
+
+No production configuration, database schema, user data, or deployed service was changed during this review.
