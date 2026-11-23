@@ -4173,3 +4173,71 @@ begin
   end if;
 end;
 $plan_quota_atomic_admission_test$;
+
+
+-- A pending plan is not an entitlement, even when the account has credits.
+insert into public.user_plan_assignments(
+  id, user_id, approved_plan_version_id, assignment_source,
+  source_reference, idempotency_key, status, starts_at, ends_at, created_by
+) values (
+  '15151515-1515-4151-8151-151515151515',
+  '11111111-1111-4111-8111-111111111111',
+  '13131313-1313-4131-8131-131313131313',
+  'operator_grant', 'pending-only-fixture', 'pending-only-plan-001',
+  'pending', now() - interval '1 minute', now() + interval '30 days',
+  '22222222-2222-4222-8222-222222222222'
+);
+insert into public.user_plan_assignment_events(
+  assignment_id, user_id, event_type, actor_user_id, event_key, reason
+) values (
+  '15151515-1515-4151-8151-151515151515',
+  '11111111-1111-4111-8111-111111111111',
+  'created',
+  '22222222-2222-4222-8222-222222222222',
+  'created:pending-only-fixture',
+  'Pending assignment must not activate quota access'
+);
+select public.grant_user_credit_lot(
+  '11111111-1111-4111-8111-111111111111',
+  10, 'bonus', 'pending-plan-credit-test',
+  'pending-plan-credit-grant-001',
+  now() + interval '30 days',
+  '{"test_fixture":true}'::jsonb
+);
+
+do $pending_plan_is_not_active_test$
+declare
+  v_jobs_before integer;
+  v_jobs_after integer;
+  v_wallet_before bigint;
+  v_wallet_after bigint;
+begin
+  select count(*) into v_jobs_before from public.generation_jobs
+   where user_id = '11111111-1111-4111-8111-111111111111';
+  select available_credits into v_wallet_before from public.credit_wallets
+   where user_id = '11111111-1111-4111-8111-111111111111';
+
+  begin
+    perform * from public.create_plan_credited_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111',
+      null, null, 'image_generation', 'quota-test-provider', 'quota-test-model',
+      'pending-plan-must-not-admit',
+      repeat('f', 64),
+      '{"prompt":"pending plan should be denied","quantity":1}'::jsonb,
+      '{"amount":5,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      5
+    );
+    raise exception 'Pending plan unexpectedly admitted a generation job';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+
+  select count(*) into v_jobs_after from public.generation_jobs
+   where user_id = '11111111-1111-4111-8111-111111111111';
+  select available_credits into v_wallet_after from public.credit_wallets
+   where user_id = '11111111-1111-4111-8111-111111111111';
+  if v_jobs_after <> v_jobs_before or v_wallet_after <> v_wallet_before then
+    raise exception 'Pending-plan denial did not roll back job and credit reservation';
+  end if;
+end;
+$pending_plan_is_not_active_test$;
