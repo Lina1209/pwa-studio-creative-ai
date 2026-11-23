@@ -112,8 +112,9 @@ def _parse_assignment(row: object) -> FinanceRoleAssignment:
         valid_until = datetime.fromisoformat(str(valid_until_raw).replace("Z", "+00:00"))
         if valid_from.tzinfo is None or created_at.tzinfo is None or valid_until.tzinfo is None:
             raise ValueError("timezone missing")
-        if valid_until <= datetime.now(valid_until.tzinfo):
-            raise ValueError("assignment expired")
+        now = datetime.now(valid_until.tzinfo)
+        if valid_from > now or valid_until <= now or valid_until <= valid_from:
+            raise ValueError("assignment is not currently valid")
         return FinanceRoleAssignment(
             assignment_id=UUID(str(row["assignment_id"])),
             principal_id=UUID(str(row["principal_id"])),
