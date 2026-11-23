@@ -181,10 +181,15 @@ These are interface contracts for implementation planning, not a claim that corr
 5. Add cancellation/retry semantics and reconcile ambiguous provider outcomes.
 
 ### Increment 3 — asset shelf
+
+**Presentation foundation:** the Creative Control Center now has an explicitly empty asset-shelf panel with links to Media Library and neutral type labels for images, video, audio/music, and projects. This is navigation and expectation-setting only; it does not claim that assets exist or that upload/storage is implemented.
+
+Remaining implementation gates:
 1. Finish private media upload/list/delete UI.
 2. Add owner-scoped asset metadata and signed preview URLs.
 3. Link generated outputs to their source project and operation.
 4. Add reuse/download actions with server-side authorization.
+5. Replace the honest empty state only with assets returned by the verified storage/metadata layer.
 
 ### Increment 4 — cross-studio orchestration
 1. Introduce parent creative workflows composed of registered child operations.
