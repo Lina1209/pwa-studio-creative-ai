@@ -70,6 +70,12 @@ jobs:
         run: |
           psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/ai_provider_cost_modality_migration_test.sql
 
+      - name: Verify privacy consent, request intake, and AI transfer audit
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/privacy_governance_migration_test.sql
+
       - name: Verify administrative audit resource allowlist and append-only journal
         env:
           PGPASSWORD: postgres
