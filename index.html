@@ -307,6 +307,18 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             </div>
           </section>
 
+          <section class="admin-module" id="adminPricingDraftModule" aria-labelledby="adminPricingDraftHeading">
+            <div class="panel-heading"><div><div class="eyebrow">PRICING CONTROL</div><h3 id="adminPricingDraftHeading">Тарифы и лимиты · черновики</h3><p>Сохраняйте проверяемые версии тарифов. Черновики не меняют действующие цены и не включают оплату.</p></div><button class="secondary-button" id="refreshPricingDrafts" type="button">↻ Обновить</button></div>
+            <p id="pricingDraftStatus" class="helper-text" role="status" aria-live="polite">Действующий каталог не изменяется через этот раздел.</p>
+            <form id="pricingDraftForm" class="finance-queue-controls">
+              <label>Версия черновика<input id="pricingDraftVersion" minlength="1" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" required placeholder="например pilot-2026-01"></label>
+              <label>Правила тарифов · JSON<textarea id="pricingDraftRules" rows="8" maxlength="60000" required placeholder='[{"job_type":"scene_image","provider":"deepseek","model":"deepseek-flash","credits_per_unit":10,"unit_label":"image","min_quantity":1,"max_quantity":3,"max_provider_cost_usd_per_unit":"0.01"}]'></textarea></label>
+              <button class="primary-button" type="submit">Сохранить черновик</button>
+            </form>
+            <div id="pricingDraftList" class="assistant-messages" aria-live="polite"></div>
+          </section>
+
+
           <p id="adminAnalyticsStatus" class="helper-text" role="status" aria-live="polite">Загрузка статистики…</p>
           <div class="owner-metrics">
             <article><span>За всё время</span><strong id="adminTotalVisits">—</strong><small>Все учтённые просмотры</small></article>
