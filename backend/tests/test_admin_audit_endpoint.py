@@ -101,17 +101,17 @@ def test_admin_support_reply_records_a_specific_mutation_action(monkeypatch):
 
     actor = "22222222-2222-4222-8222-222222222222"
     ticket_id = UUID("33333333-3333-4333-8333-333333333333")
-    captured = {}
+    captured = []
     monkeypatch.setattr(main_module, "get_ticket", lambda *a, **k: {"id": str(ticket_id)})
     monkeypatch.setattr(main_module, "add_message", lambda *a, **k: None)
-    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: captured.update(k) or "audit-id")
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: captured.append(k) or "audit-id")
     client = _client_for(StudioUser(user_id=actor, email=None, role="admin"))
     try:
         response = client.post(f"/api/admin/support/tickets/{ticket_id}/messages", json={"message": "Ответ поддержки"})
         assert response.status_code == 201
-        assert captured["action"] == "admin.support.reply"
-        assert captured["outcome"] == "executed"
-        assert captured["resource_id"] == ticket_id
+        assert [event["outcome"] for event in captured] == ["requested", "executed"]
+        assert all(event["action"] == "admin.support.reply" for event in captured)
+        assert all(event["resource_id"] == ticket_id for event in captured)
     finally:
         app.dependency_overrides.clear()
 
@@ -122,16 +122,52 @@ def test_admin_support_status_change_records_a_specific_mutation_action(monkeypa
 
     actor = "22222222-2222-4222-8222-222222222222"
     ticket_id = UUID("33333333-3333-4333-8333-333333333333")
-    captured = {}
+    captured = []
     monkeypatch.setattr(main_module, "get_ticket", lambda *a, **k: {"id": str(ticket_id)})
     monkeypatch.setattr(support_module, "update_ticket_status", lambda *a, **k: None)
-    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: captured.update(k) or "audit-id")
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: captured.append(k) or "audit-id")
     client = _client_for(StudioUser(user_id=actor, email=None, role="admin"))
     try:
         response = client.patch(f"/api/admin/support/tickets/{ticket_id}/status", json={"status": "resolved"})
         assert response.status_code == 200
-        assert captured["action"] == "admin.support.status.changed"
-        assert captured["outcome"] == "executed"
-        assert captured["resource_id"] == ticket_id
+        assert [event["outcome"] for event in captured] == ["requested", "executed"]
+        assert all(event["action"] == "admin.support.status.changed" for event in captured)
+        assert all(event["resource_id"] == ticket_id for event in captured)
+    finally:
+        app.dependency_overrides.clear()
+
+
+
+def test_admin_support_reply_does_not_mutate_when_intent_audit_fails(monkeypatch):
+    import app.main as main_module
+    from app.services.admin_audit_service import AdminAuditUnavailable
+
+    actor = "22222222-2222-4222-8222-222222222222"
+    ticket_id = UUID("33333333-3333-4333-8333-333333333333")
+    mutations = []
+    monkeypatch.setattr(main_module, "get_ticket", lambda *a, **k: {"id": str(ticket_id)})
+    monkeypatch.setattr(main_module, "add_message", lambda *a, **k: mutations.append("message"))
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: (_ for _ in ()).throw(AdminAuditUnavailable("unavailable")))
+    client = _client_for(StudioUser(user_id=actor, email=None, role="admin"))
+    try:
+        response = client.post(f"/api/admin/support/tickets/{ticket_id}/messages", json={"message": "Ответ поддержки"})
+        assert response.status_code == 503
+        assert mutations == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_support_read_requires_explicit_capability(monkeypatch):
+    import app.main as main_module
+    import app.services.auth as auth_module
+
+    denied = []
+    monkeypatch.setattr(auth_module, "_record_denied_admin_access", lambda user, permission: denied.append(permission))
+    monkeypatch.setattr(main_module, "list_tickets", lambda *a, **k: [])
+    client = _client_for(StudioUser(user_id="22222222-2222-4222-8222-222222222222", email=None, role="creator"))
+    try:
+        response = client.get("/api/admin/support/tickets")
+        assert response.status_code == 403
+        assert denied == ["admin.support.read"]
     finally:
         app.dependency_overrides.clear()
