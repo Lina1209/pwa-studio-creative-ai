@@ -13,7 +13,7 @@ $roles$;
 \i supabase/migrations/0054_admin_audit_stable_cursor.sql
 \i supabase/migrations/0080_admin_audit_resource_allowlist_alignment.sql
 \i supabase/migrations/0081_admin_support_mutation_audit_actions.sql
-\\i supabase/migrations/0082_admin_finance_role_audit_actions.sql
+\i supabase/migrations/0082_admin_finance_role_audit_actions.sql
 
 do $admin_audit_resource_allowlist_test$
 declare
@@ -69,5 +69,17 @@ begin
     'Test support status audit action'
   );
   if v_id is null then raise exception 'Support status audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.finance.role.grant', 'requested', 'permission', v_resource, null,
+    'Test finance role grant intent'
+  );
+  if v_id is null then raise exception 'Finance role grant audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.finance.role.revoke', 'executed', 'permission', v_resource, null,
+    'Test finance role revoke completion'
+  );
+  if v_id is null then raise exception 'Finance role revoke audit action was not recorded'; end if;
 end;
 $admin_audit_resource_allowlist_test$;
