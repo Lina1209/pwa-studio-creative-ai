@@ -796,10 +796,12 @@ const movieHistoryStyle = document.createElement("style");
         const actions=document.createElement("div"); actions.className="messages-conversation-actions";
         const target=document.createElement("button"); target.type="button"; target.className="secondary-button"; target.textContent="Модерация пользователя";
         target.addEventListener("click",()=>{$("#moderationTargetUserId").value=report.target_user_id;$("#moderationReason").value="По результатам рассмотрения жалобы: "+report.category;$("#moderationTargetUserId").scrollIntoView({behavior:"smooth",block:"center"});});
+        const inspect=document.createElement("button");inspect.type="button";inspect.className="secondary-button";inspect.textContent="Показать сообщение";
+        inspect.addEventListener("click",async()=>{try{const detail=await apiRequest("/api/messages/direct/admin/reports/"+encodeURIComponent(report.id));const preview=document.createElement("p");preview.textContent="Сообщение: "+(detail.message?.body||"К жалобе не прикреплено доступное сообщение.");card.append(preview);}catch(e){if(status)status.textContent=e.message;}});
         const review=document.createElement("select"); [["reviewing","На проверке"],["resolved","Решена"],["dismissed","Отклонена"]].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;review.append(o);}); review.value=report.status;
         const save=document.createElement("button");save.type="button";save.className="secondary-button";save.textContent="Сохранить статус";
         save.addEventListener("click",async()=>{try{await apiRequest("/api/messages/direct/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:review.value})});await loadDirectModerationConsole();}catch(e){if(status)status.textContent=e.message;}});
-        actions.append(target,review,save);card.append(title,detail,actions);reports?.append(card);
+        actions.append(inspect,target,review,save);card.append(title,detail,actions);reports?.append(card);
       });
       const appeals=$("#directModerationAppeals");appeals?.replaceChildren();
       (appealData.appeals||[]).forEach(appeal=>{
