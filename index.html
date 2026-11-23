@@ -297,13 +297,13 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
 
           <section class="admin-module" id="adminSupportModule" aria-labelledby="adminSupportHeading">
             <div class="panel-heading"><div><div class="eyebrow">CUSTOMER CARE</div><h3 id="adminSupportHeading">Обращения пользователей</h3><p>Очередь поддержки и история переписки.</p></div><button class="secondary-button" id="refreshAdminSupport" type="button">↻ Обновить</button></div>
-            <p id="adminSupportStatus" class="helper-text" role="status" aria-live="polite">Очередь загружается только по запросу.</p>
+            <p id="adminSupportFeedback" class="helper-text" role="status" aria-live="polite">Очередь загружается только по запросу.</p>
             <div class="finance-queue-controls"><label>Обращение<select id="adminSupportTicketSelect"><option value="">Нет обращений</option></select></label></div>
             <div id="adminSupportConversation" hidden>
               <p id="adminSupportTicketMeta" class="helper-text"></p>
               <div id="adminSupportMessages" class="assistant-messages" aria-live="polite"></div>
               <form id="adminSupportReplyForm" class="finance-queue-controls"><label>Ответ пользователю<textarea id="adminSupportReply" maxlength="5000" rows="3" required></textarea></label><button class="primary-button" type="submit">Отправить ответ</button></form>
-              <div class="finance-queue-controls"><label>Статус<select id="adminSupportStatus"><option value="open">Открыто</option><option value="in_progress">В работе</option><option value="waiting_user">Ожидает ответа пользователя</option><option value="resolved">Решено</option><option value="closed">Закрыто</option></select></label><button class="secondary-button" id="saveAdminSupportStatus" type="button">Сохранить статус</button></div>
+              <div class="finance-queue-controls"><label>Статус<select id="adminSupportStatusSelect"><option value="open">Открыто</option><option value="in_progress">В работе</option><option value="waiting_user">Ожидает ответа пользователя</option><option value="resolved">Решено</option><option value="closed">Закрыто</option></select></label><button class="secondary-button" id="saveAdminSupportStatus" type="button">Сохранить статус</button></div>
             </div>
           </section>
 
