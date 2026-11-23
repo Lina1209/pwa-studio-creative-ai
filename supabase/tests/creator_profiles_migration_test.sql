@@ -54,7 +54,8 @@ on conflict do nothing;
 do $$
 declare
   v_username text;
-  v_conversation uuid;
+  v_visibility text;
+  v_discoverable boolean;
   v_rejected boolean := false;
 begin
   select username into v_username from public.profiles
@@ -64,8 +65,39 @@ begin
   end if;
   select username into v_username from public.profiles
     where id='99999999-9999-4999-8999-999999999999';
-  if v_username is null or v_username !~ '^creator_[0-9a-f]{8}$' then
+  if v_username is null or v_username !~ '^creator_[0-9a-f]{8}
+  if not exists(select 1 from pg_indexes where schemaname='public'
+      and indexname='profiles_username_lower_unique') then
+    raise exception 'case-insensitive username uniqueness index missing';
+  end if;
+  if not has_table_privilege('authenticated','public.profiles','select') then
+    raise exception 'existing own-profile select grant unexpectedly removed';
+  end if;
+  if not has_table_privilege('service_role','public.profiles','update') then
+    raise exception 'service role cannot update profiles';
+  end if;
+  update public.profiles set allow_direct_messages=false
+    where id='99999999-9999-4999-8999-999999999999';
+  begin
+    perform public.create_direct_conversation(
+      '88888888-8888-4888-8888-888888888888',
+      '99999999-9999-4999-8999-999999999999'
+    );
+  exception when insufficient_privilege then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'recipient message privacy preference was not enforced';
+  end if;
+end;
+$$;
+ then
     raise exception 'new profile username generation failed';
+  end if;
+  select profile_visibility, discoverable into v_visibility, v_discoverable
+    from public.profiles where id='99999999-9999-4999-8999-999999999999';
+  if v_visibility <> 'private' or v_discoverable is not false then
+    raise exception 'new profiles must be private and undiscoverable by default';
   end if;
   if not exists(select 1 from pg_indexes where schemaname='public'
       and indexname='profiles_username_lower_unique') then
