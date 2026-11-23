@@ -473,3 +473,37 @@ class FinanceOperationCancelRequest(BaseModel):
         if value.strip() != value:
             raise ValueError("Reason must not contain surrounding whitespace.")
         return value
+
+
+class PrivacyConsentChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consent_scope: Literal["privacy_notice", "vision_deepseek"]
+    action: Literal["accepted", "withdrawn"]
+    source: Literal["web_app", "account_settings"] = "web_app"
+
+
+class PrivacyRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_type: Literal["access", "export", "correction", "deletion"]
+    idempotency_key: UUID
+
+
+class PrivacyRequestItem(BaseModel):
+    id: UUID
+    request_type: Literal["access", "export", "correction", "deletion"]
+    status: Literal["submitted", "in_review", "completed", "rejected", "cancelled"]
+    created_at: datetime
+    updated_at: datetime | None = None
+    completed_at: datetime | None = None
+    duplicate: bool | None = None
+
+
+class PrivacyConsentStatusItem(BaseModel):
+    consent_scope: Literal["privacy_notice", "vision_deepseek"]
+    action: Literal["accepted", "withdrawn"]
+    policy_version: str
+    consent_version: str
+    occurred_at: datetime
+    event_id: UUID
