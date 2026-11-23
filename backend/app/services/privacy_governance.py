@@ -152,8 +152,8 @@ def record_ai_transfer_event(
         raise ValueError("Unsupported AI transfer identity.")
     if outcome not in {"attempted", "succeeded", "failed", "unknown"} or not model or len(model) > 100:
         raise ValueError("AI transfer metadata is invalid.")
-    if operation == "vision" and not isinstance(consent_event_id, UUID):
-        raise ValueError("Vision transfer requires a consent evidence ID.")
+    if operation == "vision" and (not isinstance(consent_event_id, UUID) or not isinstance(correlation_id, UUID)):
+        raise ValueError("Vision transfer requires consent evidence and a correlation ID.")
     result = _rpc(settings, "record_ai_data_transfer_event", {
         "p_user_id": str(user_id),
         "p_provider": provider,
