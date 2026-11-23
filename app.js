@@ -1786,7 +1786,7 @@ const movieHistoryStyle = document.createElement("style");
   });
   $("#composePromptBlocks").addEventListener("click",()=>{
     if(!promptBuilderBlocks.length){$("#promptSaveFeedback").textContent="Сначала добавьте хотя бы один блок.";return;}
-    const assembled=promptBuilderBlocks.map((block,index)=>"["+String(index+1).padStart(2,"0")+" · "+promptBlockLabels[block.type]+"]\\n"+block.text).join("\\n\\n");
+    const assembled=promptBuilderBlocks.map((block,index)=>"["+String(index+1).padStart(2,"0")+" · "+promptBlockLabels[block.type]+"]\n"+block.text).join("\n\n");
     const hasContent=promptOutput.textContent.trim()&&!promptOutput.textContent.startsWith("Здесь появится");
     if(hasContent&&!window.confirm("Заменить текущий текст промпта собранными блоками?"))return;
     promptOutput.textContent=assembled;promptOutput.contentEditable="true";promptOutput.focus();
