@@ -50,6 +50,14 @@ begin
   select action into v_action from public.get_privacy_consent_status(v_user)
    where consent_scope='vision_deepseek';
   if v_action <> 'withdrawn' then raise exception 'Vision withdrawal did not become current status'; end if;
+  v_failed := false;
+  begin
+    perform public.record_ai_data_transfer_event(
+      v_user,'deepseek','deepseek-flash','vision','attempted',v_consent,null
+    );
+  exception when sqlstate '22023' then v_failed := true;
+  end;
+  if not v_failed then raise exception 'withdrawn Vision consent was reused'; end if;
 
   v_request := public.create_privacy_request(v_user,'export',v_request_key);
   v_request_2 := public.create_privacy_request(v_user,'export',v_request_key);
