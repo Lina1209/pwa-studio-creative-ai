@@ -1467,11 +1467,8 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
         "Return only the finished prompt."
     )
     request = (
-        f"Purpose: {payload.purpose}
-Output language: {payload.language}
-"
-        f"Visual style: {payload.style or 'Choose a fitting style'}
-"
+        f"Purpose: {payload.purpose}\\nOutput language: {payload.language}\\n"
+        f"Visual style: {payload.style or 'Choose a fitting style'}\\n"
         f"User idea: {payload.idea}"
     )
     result = _run_admitted_ai("prompts", user.user_id, lambda: ask_ai(settings, [
