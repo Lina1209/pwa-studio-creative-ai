@@ -950,6 +950,44 @@ const movieHistoryStyle = document.createElement("style");
     $("#directEmojiToggle").setAttribute("aria-expanded",String(!emojiPicker.hidden));
   });
 
+  const directStickerSet=[
+    {emoji:"🌸✨",label:"Нежность"},{emoji:"💖",label:"Обнимаю"},{emoji:"🥰",label:"Любовь"},
+    {emoji:"🌷",label:"Для тебя"},{emoji:"☀️💛",label:"Хорошего дня"},{emoji:"🌙⭐",label:"Спокойной ночи"},
+    {emoji:"🎉🥳",label:"Ура!"},{emoji:"👏✨",label:"Браво"},{emoji:"🤗",label:"Объятия"},
+    {emoji:"☕🍪",label:"Перерыв"},{emoji:"🦋",label:"Лёгкость"},{emoji:"🌈",label:"Всё будет хорошо"},
+    {emoji:"🔥💪",label:"Супер!"},{emoji:"🙏💜",label:"Спасибо"},{emoji:"🐱💕",label:"Милота"},
+    {emoji:"🎨✨",label:"Творчества"}
+  ];
+  const stickerPicker=$("#directStickerPicker");
+  if(stickerPicker){
+    directStickerSet.forEach(sticker=>{
+      const button=document.createElement("button");
+      button.type="button";button.className="direct-sticker-button";
+      const art=document.createElement("span");art.textContent=sticker.emoji;
+      const label=document.createElement("small");label.textContent=sticker.label;
+      button.setAttribute("aria-label","Вставить стикер: "+sticker.label);
+      button.append(art,label);
+      button.addEventListener("click",()=>{
+        const input=$("#directMessageBody");if(!input)return;
+        const start=input.selectionStart??input.value.length,end=input.selectionEnd??input.value.length;
+        input.value=input.value.slice(0,start)+sticker.emoji+input.value.slice(end);
+        const cursor=start+sticker.emoji.length;input.focus();input.setSelectionRange(cursor,cursor);
+        input.dispatchEvent(new Event("input",{bubbles:true}));
+      });
+      stickerPicker.append(button);
+    });
+  }
+  $("#directStickerToggle")?.addEventListener("click",()=>{
+    if(!stickerPicker)return;
+    stickerPicker.hidden=!stickerPicker.hidden;
+    $("#directStickerToggle").setAttribute("aria-expanded",String(!stickerPicker.hidden));
+    if(emojiPicker && !stickerPicker.hidden){
+      emojiPicker.hidden=true;
+      $("#directEmojiToggle")?.setAttribute("aria-expanded","false");
+    }
+  });
+
+
   let directMessageRefreshTimer=null;
   let directMessageRefreshBusy=false;
   if(!directMessageRefreshTimer) directMessageRefreshTimer=window.setInterval(async()=>{
