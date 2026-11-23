@@ -747,13 +747,24 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#refreshDirectNotifications")?.addEventListener("click", loadDirectNotifications);
 
+  const directStickerArt = new Set([
+    "🌸✨","💖","🥰","🌷","☀️💛","🌙⭐","🎉🥳","👏✨",
+    "🤗","☕🍪","🦋","🌈","🔥💪","🙏💜","🐱💕","🎨✨"
+  ]);
   const directMessageNode = message => {
     const own = message.sender_user_id === authSession?.user?.id;
     const node = document.createElement("article");
     node.className = "assistant-message " + (own ? "user-message" : "ai-message");
     const body = document.createElement("div");
     body.className = "direct-message-text";
-    body.textContent = message.deleted_at ? "Сообщение удалено" : (message.body || "");
+    const messageBody = message.deleted_at ? "Сообщение удалено" : (message.body || "");
+    const isSticker = !message.deleted_at && directStickerArt.has(messageBody.trim());
+    if (isSticker) {
+      body.classList.add("direct-message-sticker");
+      body.setAttribute("role", "img");
+      body.setAttribute("aria-label", "Стикер");
+    }
+    body.textContent = messageBody;
     const meta = document.createElement("small");
     meta.textContent = new Date(message.created_at).toLocaleString() +
       (message.deleted_at ? " · удалено" : message.edited_at ? " · изменено" : "");
