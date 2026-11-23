@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     deepseek_api_key: str | None = None
     # Vision remains opt-in and unavailable until consent UX and policy review are complete.
     vision_input_enabled: bool = False
+    # Separate legal/privacy release gate; must be explicitly approved before Vision can start.
+    vision_privacy_review_approved: bool = False
 
     # Payment provider adapters remain disabled until a concrete provider is reviewed.
     payment_provider_runtime_enabled: bool = False
@@ -90,6 +92,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_vision_model_capability(self):
+        if self.vision_input_enabled and not self.vision_privacy_review_approved:
+            raise ValueError("VISION_INPUT_ENABLED requires explicit privacy/legal review approval.")
         if self.vision_input_enabled and self.ai_model != "deepseek-flash":
             raise ValueError("VISION_INPUT_ENABLED requires the DeepSeek Flash model.")
         return self
