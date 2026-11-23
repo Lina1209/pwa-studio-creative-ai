@@ -17,6 +17,7 @@ insert into auth.users(id) values ('11111111-1111-4111-8111-111111111111') on co
 \i supabase/migrations/0074_payment_fulfillment_execution_state.sql
 \i supabase/migrations/0075_payment_fulfillment_worker_leases.sql
 \i supabase/migrations/0076_payment_fulfillment_lease_hardening.sql
+\i supabase/migrations/0077_payment_purchase_snapshots.sql
 
 do $payment_order_merchant_reference_idempotency_test$
 declare
