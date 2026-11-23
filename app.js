@@ -1490,11 +1490,12 @@ const movieHistoryStyle = document.createElement("style");
     .prompt-version-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--muted)}
     .prompt-version-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
     .prompt-block-builder{margin:14px 0;padding:14px;border:1px solid rgba(170,140,255,.25);border-radius:14px;background:rgba(135,105,220,.06)}
+    .prompt-preset-row{display:flex;align-items:end;gap:9px;margin:12px 0}.prompt-preset-row>div{flex:1;min-width:0}.prompt-preset-row select{width:100%;min-height:42px;padding:9px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)}
     .prompt-block-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.prompt-block-list{display:grid;gap:8px;margin-top:10px}
     .prompt-builder-block{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:11px;border:1px solid var(--border);border-radius:11px;background:var(--surface)}
     .prompt-builder-block b{font-size:13px}.prompt-builder-block p{grid-column:1;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
     .prompt-builder-block button{grid-column:2;grid-row:1/3;align-self:center}
-    @media(max-width:520px){.prompt-block-controls button{flex:1}.prompt-builder-block{grid-template-columns:1fr}.prompt-builder-block p,.prompt-builder-block button{grid-column:1;grid-row:auto}.prompt-builder-block button{justify-self:start}}
+    @media(max-width:520px){.prompt-preset-row{align-items:stretch;flex-direction:column}.prompt-preset-row button{width:100%}.prompt-block-controls button{flex:1}.prompt-builder-block{grid-template-columns:1fr}.prompt-builder-block p,.prompt-builder-block button{grid-column:1;grid-row:auto}.prompt-builder-block button{justify-self:start}}
     .prompt-workbench,.prompt-fragments{margin:14px 0;padding:14px;border:1px solid rgba(170,140,255,.2);border-radius:14px;background:rgba(135,105,220,.045)}
     .prompt-workbench-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.prompt-workbench-head span,.prompt-variable-tools small{font-size:11px;color:var(--muted)}
     .prompt-workbench-action{display:flex;align-items:end}.prompt-workbench-action button{width:100%;min-height:42px}
@@ -1777,6 +1778,12 @@ const movieHistoryStyle = document.createElement("style");
       row.append(heading,content,remove);list.append(row);
     });
   };
+  $("#insertPromptPreset").addEventListener("click",()=>{
+    const preset=$("#promptPresetSelect").value;
+    if(!preset){$("#promptSaveFeedback").textContent="Выберите готовую настройку.";return;}
+    const field=$("#promptBlockText");field.value=field.value.trim()?field.value.trim()+" "+preset:preset;
+    field.focus();$("#promptSaveFeedback").textContent="Настройка добавлена в поле блока. Выберите тип и нажмите «Добавить блок».";
+  });
   $("#addPromptBlock").addEventListener("click",()=>{
     const type=$("#promptBlockType").value;const value=$("#promptBlockText").value.trim();
     if(!promptBlockLabels[type]||!value){$("#promptSaveFeedback").textContent="Выберите тип блока и заполните его содержание.";return;}
