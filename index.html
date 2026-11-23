@@ -132,6 +132,22 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
       <section class="view" id="view-create">
         <div class="page-heading"><div class="eyebrow">VIDEO WORKFLOW</div><h1>Создать <span class="gradient-text">видео</span></h1><p>Настройте будущий ролик. Сейчас мы подготовим рабочую форму и структуру процесса.</p></div>
         <div class="panel form-panel"><label for="topic">Тема или идея видео</label><textarea id="topic" rows="4" placeholder="Расскажите, о чём должно быть видео, какое настроение и впечатление оно должно передавать..."></textarea><div class="form-row"><div><label for="ratio">Формат кадра</label><select id="ratio"><option value="9:16">Вертикальный · 9:16</option><option value="16:9">Широкий · 16:9</option><option value="1:1">Квадрат · 1:1</option></select></div><div><label for="lang">Язык</label><select id="lang"><option value="ru">Русский</option><option value="en">English</option><option value="zh">中文</option></select></div><div><label for="style">Стиль видео</label><select id="style"><option>Кинематографичный</option><option>Документальный</option><option>Обучающий</option><option>Рекламный</option><option>Атмосферный</option></select></div></div><button class="primary-button" id="prepareIdea">✦ Подготовить идею</button><p class="helper-text" id="createFeedback">Генерация сценария и рендеринг подключаются на следующем этапе.</p></div>
+        <section class="panel generation-jobs-panel" id="generationJobsPanel" aria-labelledby="generationJobsTitle">
+          <div class="generation-jobs-heading">
+            <div><div class="eyebrow">GENERATION CONTROL</div><h2 id="generationJobsTitle">Задания генерации</h2><p class="helper-text">Здесь отображается состояние отправленной генерации. Если отменить её, система сначала проверит результат у обработчика и только затем завершит отмену.</p></div>
+            <span class="draft-badge" id="generationJobBadge">НЕТ ЗАДАНИЙ</span>
+          </div>
+          <div id="generationJobsEmpty" class="generation-jobs-empty" aria-live="polite">Пока нет активных заданий. После отправки генерации её состояние появится здесь.</div>
+          <div id="generationJobCard" class="generation-job-card" hidden>
+            <div class="generation-job-main">
+              <div><span class="generation-job-label">Текущее состояние</span><strong id="generationJobStatus">Ожидает</strong></div>
+              <span class="generation-job-id" id="generationJobId"></span>
+            </div>
+            <p class="helper-text" id="generationJobDetail" aria-live="polite"></p>
+            <div class="generation-job-actions"><button type="button" class="secondary-button" id="cancelGenerationJob">Отменить генерацию</button><button type="button" class="secondary-button" id="refreshGenerationJob">Обновить статус</button></div>
+          </div>
+          <p class="helper-text generation-job-feedback" id="generationJobFeedback" role="status" aria-live="polite"></p>
+        </section>
       </section>
 
       <section class="view" id="view-prompts">
