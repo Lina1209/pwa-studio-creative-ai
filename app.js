@@ -1493,7 +1493,7 @@ const movieHistoryStyle = document.createElement("style");
     .prompt-version-compare{margin:12px 0;padding:12px;border:1px solid rgba(170,140,255,.22);border-radius:12px;background:rgba(8,7,18,.18)}
     .prompt-version-compare-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .prompt-version-compare-pane{min-width:0}.prompt-version-compare-pane h4{margin:0 0 7px;font-size:12px;color:var(--muted)}
-    .prompt-version-compare-pane pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;margin:0;padding:10px;border-radius:8px;background:rgba(0,0,0,.16);font:12px/1.55 inherit}
+    .prompt-version-compare-pane pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;margin:0;padding:10px;border-radius:8px;background:rgba(0,0,0,.16);font-family:inherit;font-size:12px;line-height:1.55}
     .prompt-version-compare-pane pre span{display:block;padding:1px 4px;border-radius:3px}
     .prompt-version-compare-pane pre .diff-added{background:rgba(65,180,115,.18)}
     .prompt-version-compare-pane pre .diff-removed{background:rgba(220,90,90,.18)}
@@ -1567,8 +1567,8 @@ const movieHistoryStyle = document.createElement("style");
           info.append(date,excerpt);
           const compare = document.createElement("button"); compare.type = "button"; compare.className = "secondary-button"; compare.textContent = "Сравнить с текущей";
           compare.addEventListener("click", () => {
-            const oldLines = String(version.prompt || "").split("\\n");
-            const newLines = String(entry.prompt.prompt || "").split("\\n");
+            const oldLines = String(version.prompt || "").split("\n");
+            const newLines = String(entry.prompt.prompt || "").split("\n");
             const rows = oldLines.length * newLines.length <= 40000 ? (() => {
               const dp = Array.from({length:oldLines.length + 1}, () => new Uint16Array(newLines.length + 1));
               for (let a=oldLines.length-1;a>=0;a--) for (let b=newLines.length-1;b>=0;b--)
