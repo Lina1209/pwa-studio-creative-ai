@@ -95,6 +95,7 @@
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
         if (typeof loadDirectConversations === "function") loadDirectConversations();
+        if (typeof loadMyCreatorProfile === "function") loadMyCreatorProfile();
         if (typeof loadMyModerationAppeals === "function") loadMyModerationAppeals();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
         if (typeof syncCloudVisualLibrary === "function") syncCloudVisualLibrary();
@@ -748,6 +749,66 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#refreshDirectConversations")?.addEventListener("click", loadDirectConversations);
   $("#directConversationSearch")?.addEventListener("input",renderDirectConversationList);
+  const setProfileStatus=(message,isError=false)=>{
+    const node=$("#profileSaveStatus");if(node){node.textContent=message;node.classList.toggle("error-text",isError);}
+  };
+  const renderProfileIdentity=profile=>{
+    const label=profile.display_name||profile.username||"Creator";
+    if($("#accountName"))$("#accountName").textContent=label;
+    if($("#accountAvatar"))$("#accountAvatar").textContent=label.trim().charAt(0).toUpperCase()||"C";
+    if($(".profile .avatar"))$(".profile .avatar").textContent=label.trim().charAt(0).toUpperCase()||"C";
+    if($(".profile b"))$(".profile b").textContent=label;
+  };
+  const loadMyCreatorProfile=async()=>{
+    if(!authSession?.user)return;
+    try{
+      const data=await apiRequest("/api/profiles/me");const p=data.profile;
+      $("#creatorDisplayName").value=p.display_name||"";
+      $("#creatorUsername").value=p.username||"";
+      $("#creatorBio").value=p.bio||"";
+      $("#creatorProfileVisibility").value=p.profile_visibility||"public";
+      $("#creatorDiscoverable").checked=!!p.discoverable;
+      $("#creatorAllowMessages").checked=!!p.allow_direct_messages;
+      $("#creatorBioCount").textContent=String((p.bio||"").length);
+      renderProfileIdentity(p);setProfileStatus("Профиль загружен.");
+    }catch(error){setProfileStatus(error.message,true);}
+  };
+  $("#creatorBio")?.addEventListener("input",()=>{$("#creatorBioCount").textContent=String($("#creatorBio").value.length);});
+  $("#creatorProfileForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();if(!authSession?.user)return;
+    const payload={display_name:$("#creatorDisplayName").value.trim(),username:$("#creatorUsername").value.trim().toLowerCase(),
+      bio:$("#creatorBio").value,profile_visibility:$("#creatorProfileVisibility").value,
+      discoverable:$("#creatorDiscoverable").checked,allow_direct_messages:$("#creatorAllowMessages").checked};
+    setProfileStatus("Сохраняем профиль…");
+    try{const data=await apiRequest("/api/profiles/me",{method:"PATCH",body:JSON.stringify(payload)});
+      renderProfileIdentity(data.profile);setProfileStatus("Профиль успешно сохранён.");
+    }catch(error){setProfileStatus(error.message,true);}
+  });
+  $("#creatorDirectorySearchForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();const query=$("#creatorDirectoryQuery").value.trim();const box=$("#creatorDirectoryResults");
+    if(!box)return;box.textContent="Ищем авторов…";
+    try{
+      const data=await apiRequest("/api/profiles/search?q="+encodeURIComponent(query));
+      box.replaceChildren();
+      (data.profiles||[]).forEach(profile=>{
+        const card=document.createElement("article");card.className="creator-directory-card";
+        const avatar=document.createElement("span");avatar.className="direct-chat-avatar";avatar.textContent=(profile.display_name||profile.username||"C").charAt(0).toUpperCase();
+        const identity=document.createElement("span");identity.className="direct-chat-content";
+        const name=document.createElement("b");name.textContent=profile.display_name||profile.username;
+        const handle=document.createElement("small");handle.textContent="@"+profile.username;
+        const bio=document.createElement("small");bio.textContent=profile.bio||"Автор PWA Studio";
+        const button=document.createElement("button");button.type="button";button.className="secondary-button";button.textContent="Написать";
+        button.addEventListener("click",async()=>{
+          try{const created=await apiRequest("/api/messages/direct/conversations",{method:"POST",body:JSON.stringify({recipient_user_id:profile.id})});
+            await loadDirectConversations();await openDirectConversation(created.conversation_id,profile.id);
+          }catch(error){box.setAttribute("role","alert");box.textContent=error.message;}
+        });
+        identity.append(name,handle,bio);card.append(avatar,identity,button);box.append(card);
+      });
+      if(!data.profiles?.length)box.textContent="Публичных авторов с таким никнеймом не найдено.";
+    }catch(error){box.textContent=error.message;}
+  });
+
   const directEmojiSet=["😀","😃","😄","😁","😊","😍","🥰","😘","😉","😂","🤣","😎","🤔","😭","😡","👍","👎","👏","🙏","❤️","💙","✨","🔥","🎉","🌸","🌟","☀️","🌙","💡","🎬"];
   const emojiPicker=$("#directEmojiPicker");
   if(emojiPicker){

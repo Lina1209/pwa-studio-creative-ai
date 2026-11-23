@@ -377,6 +377,19 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
       <section class="view" id="view-account">
         <div class="page-heading"><div class="eyebrow">YOUR PRIVATE WORKSPACE</div><h1>Личный <span class="gradient-text">кабинет</span></h1><p>Ваш аккаунт, проекты и личные материалы. Каждый автор видит только своё пространство.</p></div>
         <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
+        <section class="panel creator-profile-editor" aria-labelledby="creatorProfileHeading">
+          <div class="panel-heading"><div><div class="eyebrow">CREATOR IDENTITY</div><h2 id="creatorProfileHeading">Моя публичная карточка</h2><p>Управляйте именем, никнеймом и тем, как другие авторы могут вас находить.</p></div><span id="profileSaveStatus" class="helper-text" role="status" aria-live="polite">Войдите, чтобы настроить профиль.</span></div>
+          <form id="creatorProfileForm" class="profile-edit-grid">
+            <label>Имя для отображения<input id="creatorDisplayName" maxlength="40" minlength="2" autocomplete="nickname" required></label>
+            <label>Уникальный никнейм<input id="creatorUsername" maxlength="24" minlength="3" pattern="[A-Za-z0-9_]+" autocomplete="off" required><small>3–24 символа: латинские буквы, цифры и _</small></label>
+            <label class="profile-bio-field">О себе<textarea id="creatorBio" rows="3" maxlength="160" placeholder="Расскажите о своём творчестве…"></textarea><small><span id="creatorBioCount">0</span>/160</small></label>
+            <label>Видимость профиля<select id="creatorProfileVisibility"><option value="public">Публичный</option><option value="private">Приватный</option></select></label>
+            <label class="profile-check"><input id="creatorDiscoverable" type="checkbox"> Показывать меня в поиске авторов</label>
+            <label class="profile-check"><input id="creatorAllowMessages" type="checkbox"> Разрешать новые личные сообщения</label>
+            <button class="primary-button" type="submit">Сохранить профиль</button>
+          </form>
+          <p class="helper-text">Электронная почта и внутренний ID не публикуются. Загрузка фотографий профиля будет подключена через защищённое хранилище.</p>
+        </section>
         <section class="panel account-plan-panel" id="myEntitlementsPanel" aria-labelledby="myEntitlementsHeading">
           <div class="panel-heading"><div><div class="eyebrow">YOUR PLAN & ACCESS</div><h2 id="myEntitlementsHeading">Мой тариф и возможности</h2><p id="myEntitlementsStatus" role="status" aria-live="polite">Войдите в аккаунт, чтобы проверить тариф и доступные инструменты.</p></div><button class="secondary-button" id="refreshMyEntitlements" type="button" hidden>↻ Обновить</button></div>
           <div id="myEntitlementsPlan" class="account-notice" hidden></div>
@@ -670,6 +683,15 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <button class="secondary-button" type="submit">Отправить апелляцию</button>
           </form>
           <div id="directModerationAppealHistory" class="assistant-messages" aria-live="polite"></div>
+      <section class="creator-directory panel" aria-labelledby="creatorDirectoryHeading">
+        <div class="panel-heading"><div><div class="eyebrow">CREATOR DIRECTORY</div><h3 id="creatorDirectoryHeading">Найти автора</h3><p>Поиск по публичному никнейму. Приватные профили не показываются.</p></div></div>
+        <form id="creatorDirectorySearchForm" class="direct-chat-tools">
+          <label class="sr-only" for="creatorDirectoryQuery">Никнейм автора</label>
+          <input id="creatorDirectoryQuery" type="search" minlength="2" maxlength="24" pattern="[A-Za-z0-9_]+" placeholder="Например, artist_01" autocomplete="off" required>
+          <button class="primary-button" type="submit">Найти</button>
+        </form>
+        <div id="creatorDirectoryResults" class="creator-directory-results" aria-live="polite"></div>
+      </section>
       <form id="directConversationCreateForm" class="finance-queue-controls">
         <label>Открыть диалог по ID пользователя<input id="directRecipientUserId" required maxlength="36" placeholder="UUID пользователя" autocomplete="off"></label>
         <button class="primary-button" type="submit">Начать диалог</button>

@@ -333,3 +333,19 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
 .direct-emoji-picker{display:flex;flex-wrap:wrap;gap:.25rem;padding:.6rem;border:1px solid var(--border-color,rgba(127,127,127,.25));border-radius:14px;background:var(--panel-bg,Canvas);max-width:100%;box-shadow:0 8px 28px rgba(0,0,0,.12)}
 .direct-emoji-button{min-width:2.35rem;min-height:2.35rem;border:0;border-radius:9px;background:transparent;font-size:1.25rem;cursor:pointer}
 .direct-emoji-button:hover,.direct-emoji-button:focus-visible{background:var(--surface-soft,rgba(127,127,127,.15));outline:2px solid var(--accent,#7777dd)}
+
+
+.creator-profile-editor{margin:1.25rem 0}
+.profile-edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;align-items:end}
+.profile-edit-grid label{display:flex;flex-direction:column;gap:.4rem;min-width:0}
+.profile-edit-grid input:not([type=checkbox]),.profile-edit-grid select,.profile-edit-grid textarea{width:100%;min-width:0}
+.profile-bio-field{grid-column:1/-1}
+.profile-check{display:flex!important;flex-direction:row!important;align-items:center;gap:.55rem!important}
+.profile-check input{width:1.1rem;height:1.1rem}
+.profile-edit-grid button{justify-self:start}
+.creator-directory{margin:.5rem 0 1rem}
+.creator-directory-results{display:grid;gap:.5rem}
+.creator-directory-card{display:flex;align-items:center;gap:.75rem;padding:.75rem;border:1px solid var(--border-color,rgba(127,127,127,.2));border-radius:14px;min-width:0}
+.creator-directory-card .direct-chat-content{flex:1}
+.creator-directory-card button{flex:0 0 auto}
+@media(max-width:640px){.profile-edit-grid{grid-template-columns:1fr}.profile-bio-field{grid-column:auto}.creator-directory-card{align-items:flex-start;flex-wrap:wrap}.creator-directory-card button{margin-left:3rem}}
