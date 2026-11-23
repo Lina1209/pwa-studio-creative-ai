@@ -229,7 +229,7 @@ def test_prompt_studio_uses_active_film_context(monkeypatch):
                 "storyboard": "Общий план берега, затем крупный план маяка.",
                 "characters": "Смотритель в тёмном плаще.",
                 "visual_continuity": [
-                    {"type": "character", "name": "Смотритель", "description": "Тот же пожилой мужчина с седой бородой, в длинном тёмно-синем плаще и круглых очках."},
+                    {"type": "character", "name": "Смотритель", "description": "Тот же пожилой мужчина с седой бородой, в длинном тёмно-синем плаще и круглых очках.", "passport": {"face": "Седая борода, серые глаза, морщины у глаз.", "profile": "Прямой нос, выраженный подбородок.", "fullBody": "Высокий, худощавый, слегка сутулый.", "wardrobe": "Длинный тёмно-синий плащ, круглые очки, кожаные перчатки.", "palette": "Индиго, серебро, графит.", "expressions": "Спокойствие, тревога, решимость."}},
                     {"type": "scene", "name": "Маяк", "description": "Белая каменная башня с красной крышей на скалистом берегу."},
                 ],
                 "voices": "Спокойный низкий голос.",
@@ -242,6 +242,8 @@ def test_prompt_studio_uses_active_film_context(monkeypatch):
         assert "Смотритель" in captured[1]["content"]
         assert "седой бородой" in captured[1]["content"]
         assert "красной крышей" in captured[1]["content"]
+        assert "серые глаза" in captured[1]["content"]
+        assert "Индиго, серебро, графит" in captured[1]["content"]
         assert "untrusted reference material" in captured[1]["content"]
     finally:
         app.dependency_overrides.clear()
