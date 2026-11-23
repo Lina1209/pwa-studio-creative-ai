@@ -416,7 +416,7 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
         app.dependency_overrides.clear()
 
 
-def test_vision_analysis_rejects_invalid_image_before_admission(monkeypatch):
+def test_vision_analysis_rejects_invalid_image_after_admission(monkeypatch):
     import app.main as main
     from app.services.vision_input import VisionInputError
 
