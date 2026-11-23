@@ -1,7 +1,7 @@
 -- Private support inbox. All reads/writes go through the authenticated API using service_role.
 create table if not exists public.support_tickets (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
   subject text not null check (char_length(subject) between 3 and 160),
   status text not null default 'open' check (status in ('open','in_progress','waiting_user','resolved','closed')),
   created_at timestamptz not null default now(),
@@ -17,7 +17,7 @@ grant select, insert, update on public.support_tickets to service_role;
 create table if not exists public.support_ticket_messages (
   id uuid primary key default gen_random_uuid(),
   ticket_id uuid not null references public.support_tickets(id) on delete cascade,
-  sender_user_id uuid not null,
+  sender_user_id uuid not null references auth.users(id) on delete restrict,
   sender_role text not null check (sender_role in ('user','admin')),
   body text not null check (char_length(body) between 1 and 5000),
   created_at timestamptz not null default now()
