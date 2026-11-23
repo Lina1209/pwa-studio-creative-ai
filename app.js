@@ -2002,10 +2002,41 @@ const movieHistoryStyle = document.createElement("style");
           try{
             const blob=await getVisualRefImage(ref.id,renderOwnerId||"guest");
             if(!blob||(authSession?.user?.id||null)!==renderOwnerId||!card.isConnected)return;
-            const image=document.createElement("img");image.alt="Референс персонажа "+item.name;image.loading="lazy";
+            const tile=document.createElement("div");tile.className="visual-reference-tile";
+            const image=document.createElement("img");image.alt="Референс материала "+item.name;image.loading="lazy";
             const objectUrl=URL.createObjectURL(blob);image.src=objectUrl;
             image.addEventListener("load",()=>URL.revokeObjectURL(objectUrl),{once:true});
-            image.addEventListener("error",()=>URL.revokeObjectURL(objectUrl),{once:true});gallery.append(image);
+            image.addEventListener("error",()=>URL.revokeObjectURL(objectUrl),{once:true});
+            const removeRef=document.createElement("button");removeRef.type="button";removeRef.className="secondary-button";removeRef.textContent="Удалить изображение";
+            removeRef.addEventListener("click",async()=>{
+              const ownerId=authSession?.user?.id||null,storageKey=visualLibraryKey();
+              const current=readVisualLibrary().find(entry=>entry.id===item.id);
+              const refNow=current?.referenceImages?.find(entry=>entry.id===ref.id);
+              if(!current||!refNow)return;
+              removeRef.disabled=true;
+              const nextAsset={...current,referenceImages:current.referenceImages.filter(entry=>entry.id!==ref.id),updatedAt:new Date().toISOString()};
+              const nextItems=readVisualLibrary().map(entry=>entry.id===current.id?nextAsset:entry);
+              try{
+                if(ownerId){
+                  if(refNow.storagePath&&!refNow.storagePath.startsWith(ownerId+"/"))throw new Error("Путь к изображению не принадлежит текущему аккаунту.");
+                  await saveVisualAssetToCloud(nextAsset,[]);
+                  if(authSession?.user?.id!==ownerId)throw new Error("Аккаунт изменился во время удаления.");
+                }
+                localStorage.setItem(storageKey,JSON.stringify(nextItems));
+                await deleteVisualRefImage(ref.id,ownerId||"guest");
+                if(ownerId&&refNow.storagePath){
+                  const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove([refNow.storagePath]);
+                  if(error)console.warn("Reference object cleanup deferred:",error);
+                }
+                $("#promptSaveFeedback").textContent="Изображение удалено из материала. Остальные референсы сохранены.";
+                renderVisualLibrary();
+              }catch(error){
+                console.warn("Single reference delete failed:",error);
+                $("#promptSaveFeedback").textContent="Не удалось подтвердить удаление изображения. Оно оставлено в библиотеке; повторите попытку.";
+                removeRef.disabled=false;
+              }
+            });
+            tile.append(image,removeRef);gallery.append(tile);
           }catch{}
         });
         card.append(gallery);
