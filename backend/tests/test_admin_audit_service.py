@@ -109,3 +109,19 @@ def test_record_admin_audit_event_accepts_explicit_support_mutation_actions(monk
     assert result == "audit-id"
     assert captured["p_action"] == action
     assert captured["p_outcome"] == "executed"
+
+
+@pytest.mark.parametrize("action", ["admin.finance.role.grant", "admin.finance.role.revoke"])
+@pytest.mark.parametrize("outcome", ["requested", "executed"])
+def test_record_admin_audit_event_accepts_finance_role_lifecycle_actions(monkeypatch, action, outcome):
+    import app.services.admin_audit_service as service
+
+    captured = {}
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: captured.update(payload) or "audit-id")
+    result = record_admin_audit_event(
+        SETTINGS, actor_user_id=ACTOR, action=action, outcome=outcome,
+        resource_type="permission", resource_id=RESOURCE,
+    )
+    assert result == "audit-id"
+    assert captured["p_action"] == action
+    assert captured["p_outcome"] == outcome
