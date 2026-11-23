@@ -25,11 +25,11 @@ Migration 0086 and the provider-neutral worker now add:
 - the worker does not locally cancel an in-flight provider call when cancellation is requested; it records the provider result and any available usage evidence before acknowledging;
 - ambiguous provider outcomes remain `cancellation_pending` and are not refunded.
 
-## Remaining recovery gap
+## Remaining rollout and provider gap
 
-The queue claim RPC does not yet reclaim expired `cancel_requested` leases. If a worker exits while the provider outcome is unknown, the job and credit hold remain safely pending, but automated reconciliation after lease expiry is not yet implemented. This is the next required step before considering the cancellation flow complete.
+The cancellation-aware claim RPC now reclaims expired `cancel_requested` leases without incrementing the generation attempt counter. The worker reads the durable provider journal and uses the provider's idempotency-key lookup to reconcile an existing operation; it never resubmits a reclaimed cancellation job. If lookup remains unknown or unavailable, the job and credit hold remain pending for another reconciliation attempt.
 
-No real DeepSeek adapter or cancellation endpoint has been registered or verified. Do not infer provider cancellation support from this generic worker protocol.
+No real DeepSeek adapter or cancellation endpoint has been registered or verified. Do not infer provider cancellation support from this generic worker protocol. The worker remains an injectable, feature-gated execution component; production runner activation and deployment are separate, approval-gated work.
 
 ## Required worker protocol
 
