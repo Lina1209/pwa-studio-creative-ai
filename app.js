@@ -1410,8 +1410,15 @@ const movieHistoryStyle = document.createElement("style");
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
   $("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
+  const supportWidgetDialog = $("#supportWidgetDialog");
   $("#supportLauncher")?.addEventListener("click", () => {
-    window.setTimeout(() => $("#supportUserPanel")?.scrollIntoView({behavior:"smooth",block:"start"}), 120);
+    if (supportWidgetDialog?.showModal) supportWidgetDialog.showModal();
+    else supportWidgetDialog?.setAttribute("open", "");
+    if (authSession?.user) loadMySupportTickets();
+  });
+  $("#supportWidgetClose")?.addEventListener("click", () => supportWidgetDialog?.close());
+  supportWidgetDialog?.addEventListener("click", event => {
+    if (event.target === supportWidgetDialog) supportWidgetDialog.close();
   });
   $(".profile").addEventListener("click", () => navigate("account"));
   $("#topAvatar")?.addEventListener("click", () => navigate("account"));
