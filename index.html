@@ -667,6 +667,20 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           </div>
           <div><b>Хранение проектов</b><span>Фильмы авторизованных пользователей синхронизируются с Supabase; гостевые черновики сохраняются локально в браузере.</span></div>
         </div>
+        <section class="panel privacy-center" aria-labelledby="privacyCenterTitle">
+          <div class="panel-heading"><div><div class="eyebrow">YOUR DATA & PRIVACY</div><h2 id="privacyCenterTitle">Конфиденциальность и персональные данные</h2></div></div>
+          <p class="helper-text">Здесь можно посмотреть сохранённые согласия, отозвать согласие на Vision и отправить запрос на доступ, экспорт или удаление данных. Отправка запроса регистрирует обращение, но сама по себе ещё не выполняет экспорт или удаление.</p>
+          <div class="backend-actions">
+            <button class="secondary-button" id="privacyRefresh" type="button">Обновить сведения</button>
+            <button class="secondary-button" id="privacyWithdrawVision" type="button">Отозвать согласие Vision</button>
+            <button class="secondary-button" id="privacyRequestAccess" type="button">Запросить доступ к данным</button>
+            <button class="secondary-button" id="privacyRequestExport" type="button">Запросить экспорт</button>
+            <button class="secondary-button" id="privacyRequestDeletion" type="button">Запросить удаление аккаунта и данных</button>
+          </div>
+          <div id="privacyCenterStatus" class="helper-text" role="status" aria-live="polite">Войдите в аккаунт, чтобы управлять запросами и согласиями.</div>
+          <div id="privacyConsentList" class="privacy-data-list"></div>
+          <div id="privacyRequestList" class="privacy-data-list"></div>
+        </section>
       </section>
 
       <footer class="site-footer">
