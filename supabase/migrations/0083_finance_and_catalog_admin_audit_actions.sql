@@ -1,4 +1,9 @@
 -- Add explicit audit actions for finance request lifecycle and catalog draft creation.
+alter table public.admin_audit_events drop constraint if exists admin_audit_events_resource_type_check;
+alter table public.admin_audit_events add constraint admin_audit_events_resource_type_check check (resource_type in (
+ 'platform','user','support_ticket','tariff','payment','credit_wallet','credit_ledger',
+ 'pricing_catalog_draft','plan_catalog_draft','finance_request','permission','security_setting'
+));
 alter table public.admin_audit_events drop constraint if exists admin_audit_events_action_check;
 alter table public.admin_audit_events add constraint admin_audit_events_action_check check (action in (
  'admin.access','admin.permission.denied','admin.user.view','admin.support.view',
