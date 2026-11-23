@@ -367,6 +367,7 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
     from app.services.vision_input import ValidatedVisionImage
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
     validated = ValidatedVisionImage(
         mime_type="image/png",
         data_url="data:image/png;base64,aGVsbG8gd29ybGQ=",
@@ -421,6 +422,7 @@ def test_vision_analysis_rejects_invalid_image_after_admission(monkeypatch):
     from app.services.vision_input import VisionInputError
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
     monkeypatch.setattr(
         main, "validate_vision_data_url",
         lambda value: (_ for _ in ()).throw(VisionInputError("invalid image")),
@@ -448,6 +450,8 @@ def test_health_exposes_vision_only_when_flag_and_server_credentials_are_present
     import app.main as main
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
     monkeypatch.setattr(main.settings, "ai_model", "deepseek-flash")
     monkeypatch.setattr(main.settings, "deepseek_api_key", "server-only-test-key")
     monkeypatch.setattr(main.settings, "supabase_url", "https://project.example.supabase.co")
@@ -456,6 +460,21 @@ def test_health_exposes_vision_only_when_flag_and_server_credentials_are_present
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["vision_analysis_enabled"] is True
+
+
+def test_health_keeps_vision_disabled_without_privacy_approval(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", False)
+    monkeypatch.setattr(main.settings, "ai_model", "deepseek-flash")
+    monkeypatch.setattr(main.settings, "deepseek_api_key", "server-only-test-key")
+    monkeypatch.setattr(main.settings, "supabase_url", "https://project.example.supabase.co")
+    monkeypatch.setattr(main.settings, "supabase_service_role_key", "server-only-test-service-key")
+    client = TestClient(app)
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["vision_analysis_enabled"] is False
 
 
 def test_health_keeps_vision_disabled_when_feature_flag_is_off(monkeypatch):
