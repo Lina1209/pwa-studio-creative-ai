@@ -148,7 +148,6 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
     assignment = activated[0]
     if (
         str(assignment.get("user_id")) != str(user_id)
-        or assignment.get("status") != "active"
         or not assignment.get("approved_plan_version_id")
     ):
         raise EntitlementsUnavailable("Active assignment failed ownership verification.")
