@@ -1797,7 +1797,7 @@ const movieHistoryStyle = document.createElement("style");
     $("#promptSaveFeedback").textContent="Шаблон добавлен. Заполните переменные или отредактируйте текст.";
   });
   $("#applyPromptVariables").addEventListener("click",()=>{
-    const values={};$("#promptVariableValues").value.split(/\\r?\\n/).forEach(line=>{const at=line.indexOf("=");if(at>0){const key=line.slice(0,at).trim().replace(/^\\{\\{|\\}\\}$/g,"");const value=line.slice(at+1).trim();if(/^[a-zA-Z0-9_]{1,40}$/.test(key)&&value)values[key]=value;}});
+    const values={};$("#promptVariableValues").value.split(/\r?\n/).forEach(line=>{const at=line.indexOf("=");if(at>0){const key=line.slice(0,at).trim().replace(/^\\{\\{|\\}\\}$/g,"");const value=line.slice(at+1).trim();if(/^[a-zA-Z0-9_]{1,40}$/.test(key)&&value)values[key]=value;}});
     let result=promptOutput.textContent;let count=0;
     Object.entries(values).forEach(([key,value])=>{const pattern=new RegExp("\\{\\{\\s*"+key+"\\s*\\}\\}","g");result=result.replace(pattern,()=>{count++;return value;});});
     promptOutput.textContent=result;promptOutput.contentEditable="true";
