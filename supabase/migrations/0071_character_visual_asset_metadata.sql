@@ -6,6 +6,7 @@ create table if not exists public.character_visual_assets (
   asset jsonb not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
   primary key (user_id, asset_id),
   constraint character_visual_assets_asset_object check (jsonb_typeof(asset) = 'object'),
   constraint character_visual_assets_asset_size check (octet_length(asset::text) <= 24000)
