@@ -240,6 +240,34 @@ def test_prompt_studio_uses_active_film_context(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_prompt_studio_uses_mode_specific_guidance(monkeypatch):
+    import app.main as main
+
+    captured = []
+    result = SimpleNamespace(text="A layered cinematic score.", actual_model="mode-test-model", request_id=None)
+
+    def ask(settings, messages, user_id):
+        captured.extend(messages)
+        return result
+
+    monkeypatch.setattr(main, "_run_admitted_ai", lambda operation, user_id, call: call())
+    monkeypatch.setattr(main, "ask_ai", ask)
+    monkeypatch.setattr(main, "record_ai_usage", lambda *args, **kwargs: None)
+
+    client = _client()
+    try:
+        response = client.post("/api/prompts", json={
+            "idea": "Тема одиночества в космосе.",
+            "purpose": "music",
+            "language": "Русский",
+        })
+        assert response.status_code == 200
+        assert "music-generation prompt" in captured[0]["content"]
+        assert "tempo" in captured[0]["content"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_prompt_studio_rejects_untrusted_project_context_fields():
     client = _client()
     try:
