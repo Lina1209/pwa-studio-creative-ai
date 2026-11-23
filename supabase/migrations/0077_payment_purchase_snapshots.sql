@@ -50,12 +50,13 @@ returns table(approved_credit_pack_version_id uuid, replayed boolean)
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $approve$
 declare
   v_existing public.approved_credit_pack_versions%rowtype;
   v_id uuid;
 begin
   if p_sku_code is null or p_sku_code !~ '^[a-z][a-z0-9_]{2,40}
+create table public.payment_order_purchase_items (
   payment_order_id uuid primary key
     references public.payment_orders(id) on delete restrict,
   user_id uuid not null references auth.users(id) on delete restrict,
@@ -292,6 +293,7 @@ comment on function public.create_subscription_payment_order(uuid,text,text,uuid
      or p_credits is null or p_credits <= 0 or p_credits > 1000000000000
      or p_price_minor is null or p_price_minor <= 0
      or p_currency is null or p_currency !~ '^[A-Z]{3}
+create table public.payment_order_purchase_items (
   payment_order_id uuid primary key
     references public.payment_orders(id) on delete restrict,
   user_id uuid not null references auth.users(id) on delete restrict,
@@ -313,6 +315,7 @@ comment on function public.create_subscription_payment_order(uuid,text,text,uuid
     (item_type = 'credit_pack'
       and approved_credit_pack_version_id is not null
       and approved_plan_version_id is null
+      and credit_validity_days is not null
       and credit_validity_days between 1 and 3650
       and plan_period_days is null)
     or
@@ -320,6 +323,7 @@ comment on function public.create_subscription_payment_order(uuid,text,text,uuid
       and approved_plan_version_id is not null
       and approved_credit_pack_version_id is null
       and credit_validity_days is null
+      and plan_period_days is not null
       and plan_period_days in (7,30))
   )
 );
@@ -568,7 +572,7 @@ comment on function public.create_subscription_payment_order(uuid,text,text,uuid
 
   return query select v_id, false;
 end;
-$;
+$approve$;
 
 revoke all on function public.approve_credit_pack_version(
   text,integer,text,bigint,bigint,text,integer,uuid,text
@@ -576,6 +580,12 @@ revoke all on function public.approve_credit_pack_version(
 grant execute on function public.approve_credit_pack_version(
   text,integer,text,bigint,bigint,text,integer,uuid,text
 ) to service_role;
+
+comment on function public.approve_credit_pack_version(
+  text,integer,text,bigint,bigint,text,integer,uuid,text
+) is
+  'Service-role only. Backend must verify administrator authorization before creating an immutable credit pack version; writes the admin audit event in the same transaction.';
+
 
 create table public.payment_order_purchase_items (
   payment_order_id uuid primary key
@@ -599,6 +609,7 @@ create table public.payment_order_purchase_items (
     (item_type = 'credit_pack'
       and approved_credit_pack_version_id is not null
       and approved_plan_version_id is null
+      and credit_validity_days is not null
       and credit_validity_days between 1 and 3650
       and plan_period_days is null)
     or
@@ -606,6 +617,7 @@ create table public.payment_order_purchase_items (
       and approved_plan_version_id is not null
       and approved_credit_pack_version_id is null
       and credit_validity_days is null
+      and plan_period_days is not null
       and plan_period_days in (7,30))
   )
 );
@@ -806,8 +818,3 @@ comment on function public.create_credit_pack_payment_order(uuid,text,text,uuid,
   'Service-role only. Creates an order priced from an approved immutable credit pack and binds its exact purchase snapshot atomically.';
 comment on function public.create_subscription_payment_order(uuid,text,text,uuid,uuid,jsonb) is
   'Service-role only. Creates an order priced from an approved immutable plan version and binds its exact purchase snapshot atomically.';
-
-comment on function public.approve_credit_pack_version(
-  text,integer,text,bigint,bigint,text,integer,uuid,text
-) is
-  'Service-role only. Backend must verify administrator authorization before creating an immutable credit pack version; writes the admin audit event in the same transaction.';
