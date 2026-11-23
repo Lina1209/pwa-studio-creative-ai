@@ -460,8 +460,6 @@ def audited_partial_refund_rows():
         "amount_minor": 25000, "currency_code": "KZT", "status": "pending_review",
         "created_at": "2026-11-23T10:02:00Z",
     }]
-    rows["credit_lots"][0]["available_credits"] = 850
-    rows["credit_lots"][0]["reserved_credits"] = 0
     return rows
 
 
