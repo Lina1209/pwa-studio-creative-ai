@@ -391,7 +391,7 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
         return call()
     def ask(settings, *, system_prompt, user_prompt, image, user_id):
         assert image is validated
-        assert user_id == USER.user_id
+        assert str(user_id) == USER.user_id
         assert "не идентифицируй" not in system_prompt.lower()
         assert user_prompt == "Опиши композицию."
         return result
