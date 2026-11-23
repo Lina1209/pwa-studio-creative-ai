@@ -4280,6 +4280,56 @@ begin
        where request_id = v_created.job_id and status = 'released') <> 6 then
     raise exception 'Terminal failure must release all AI and general quota dimensions';
   end if;
+
+  -- Replaying the original image request after its plan expires must return
+  -- the same job and existing quota records without reserving or charging again.
+  select available_credits into v_before_available
+    from public.credit_wallets
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  update public.user_plan_assignments
+     set ends_at = now() - interval '1 second'
+   where id = '14141414-1414-4141-8141-141414141414';
+
+  select * into v_created
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-quota-image-job-001',
+      repeat('a', 64),
+      '{"prompt":"atomic quota integration test","quantity":2}'::jsonb,
+      '{"amount":20,"quantity":2,"price_version":"test-v1"}'::jsonb,
+      20
+    );
+  if v_created.job_id <> v_job_id or v_created.created or not v_created.replayed then
+    raise exception 'Expired-plan replay did not return the original generation job';
+  end if;
+  if jsonb_array_length(v_created.quota_reservations) <> 5 then
+    raise exception 'Expired-plan replay did not return the original quota reservations';
+  end if;
+  select count(*) into v_reservations
+    from jsonb_array_elements(v_created.quota_reservations) as item(value)
+   where value ->> 'replayed' = 'true';
+  if v_reservations <> 5 then
+    raise exception 'Expired-plan replay did not mark all quota reservations as replayed';
+  end if;
+  select available_credits into v_after_available
+    from public.credit_wallets
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  if v_after_available <> v_before_available
+     or (select count(*) from public.generation_jobs
+          where user_id = '22222222-2222-4222-8222-222222222222'
+            and idempotency_key = 'plan-quota-image-job-001') <> 1
+     or (select count(*) from public.outbox_events
+          where aggregate_id = v_job_id and event_type = 'generation_job.created') <> 1 then
+    raise exception 'Expired-plan replay changed credits or duplicated job/outbox records';
+  end if;
+  update public.user_plan_assignments
+     set ends_at = now() + interval '30 days'
+   where id = '14141414-1414-4141-8141-141414141414';
 end;
 $plan_quota_atomic_admission_test$;
 
