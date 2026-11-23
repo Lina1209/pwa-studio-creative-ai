@@ -198,6 +198,60 @@ def test_prompt_studio_returns_finished_prompt_and_records_usage(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_prompt_studio_uses_active_film_context(monkeypatch):
+    import app.main as main
+
+    captured = []
+    result = SimpleNamespace(text="A coherent cinematic lighthouse scene.", actual_model="prompt-context-model", request_id=None)
+
+    def ask(settings, messages, user_id):
+        captured.extend(messages)
+        return result
+
+    monkeypatch.setattr(main, "_run_admitted_ai", lambda operation, user_id, call: call())
+    monkeypatch.setattr(main, "ask_ai", ask)
+    monkeypatch.setattr(main, "record_ai_usage", lambda *args, **kwargs: None)
+
+    client = _client()
+    try:
+        response = client.post("/api/prompts", json={
+            "idea": "Покажи приближение героя к маяку.",
+            "purpose": "video",
+            "language": "Русский",
+            "style": "Кинематографичный реализм",
+            "project_context": {
+                "title": "Тайна маяка",
+                "idea": "Смотритель получает загадочный сигнал.",
+                "genre": "Детектив",
+                "duration_minutes": 5,
+                "frame": "16:9",
+                "story": "Смотритель обнаруживает свет в тумане.",
+                "storyboard": "Общий план берега, затем крупный план маяка.",
+                "characters": "Смотритель в тёмном плаще.",
+                "voices": "Спокойный низкий голос.",
+                "edit": "Медленный монтаж, холодная цветовая гамма.",
+            },
+        })
+        assert response.status_code == 200
+        assert "Тайна маяка" in captured[1]["content"]
+        assert "Кинематографичный реализм" in captured[1]["content"]
+        assert "untrusted reference material" in captured[1]["content"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_prompt_studio_rejects_untrusted_project_context_fields():
+    client = _client()
+    try:
+        response = client.post("/api/prompts", json={
+            "idea": "Сцена у маяка.",
+            "project_context": {"title": "Маяк", "credits": 9999},
+        })
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_chat_and_prompt_studio_require_authentication(monkeypatch):
     import app.services.auth as auth
 
