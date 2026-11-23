@@ -78,7 +78,9 @@ create policy "Users read own reports" on public.user_reports
 -- Moderation state and audit history are server-only (service_role bypasses RLS).
 revoke all on public.user_suspensions from anon, authenticated;
 revoke all on public.admin_audit_log from anon, authenticated;
-grant all on public.user_reports, public.user_suspensions, public.admin_audit_log to service_role;
+grant all on public.user_reports, public.user_suspensions to service_role;
+grant select, insert on public.admin_audit_log to service_role;
+revoke update, delete, truncate on public.admin_audit_log from service_role;
 
 -- No user-supplied status, reviewer, moderator note, or audit mutation is permitted.
 comment on table public.user_reports is 'User-submitted moderation reports. Review fields are server-managed.';
