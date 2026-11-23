@@ -295,6 +295,9 @@ class SupabaseGenerationJobRepository:
             snapshot = row["request_snapshot"]
             if not isinstance(snapshot, dict):
                 raise TypeError("request_snapshot")
+            job_status = str(row.get("job_status", "running"))
+            if job_status not in {"running", "cancel_requested"}:
+                raise ValueError("job_status")
             return ClaimedImageJob(
                 job_id=UUID(str(row["job_id"])),
                 user_id=UUID(str(row["user_id"])),
@@ -304,7 +307,7 @@ class SupabaseGenerationJobRepository:
                 request_snapshot=snapshot,
                 attempt_count=int(row["attempt_count"]),
                 max_attempts=int(row["max_attempts"]),
-                job_status=str(row.get("job_status", "running")),
+                job_status=job_status,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise WorkerRepositoryError(
