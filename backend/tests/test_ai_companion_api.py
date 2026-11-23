@@ -350,6 +350,27 @@ def test_vision_analysis_is_disabled_by_default_and_never_calls_provider(monkeyp
         app.dependency_overrides.clear()
 
 
+def test_vision_analysis_stays_disabled_without_privacy_approval(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", False)
+    monkeypatch.setattr(
+        main, "ask_ai_vision",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider must not run")),
+    )
+    client = _client()
+    try:
+        response = client.post("/api/vision/analyze", json={
+            "prompt": "Опиши изображение.",
+            "image_data_url": "data:image/png;base64,aGVsbG8gd29ybGQ=",
+            "consent_to_deepseek": True,
+        })
+        assert response.status_code == 503
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_vision_analysis_requires_explicit_consent():
     client = _client()
     try:
@@ -450,7 +471,6 @@ def test_health_exposes_vision_only_when_flag_and_server_credentials_are_present
     import app.main as main
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
-    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
     monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
     monkeypatch.setattr(main.settings, "ai_model", "deepseek-flash")
     monkeypatch.setattr(main.settings, "deepseek_api_key", "server-only-test-key")
