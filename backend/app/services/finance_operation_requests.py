@@ -182,8 +182,20 @@ def read_finance_operation_request(settings: Settings, *, request_id: UUID) -> d
             "pending", "approved", "rejected", "cancelled"
         }:
             raise ValueError("unknown request type or state")
-        if parsed["request_id"] != request_id or not parsed["scope_key"]:
-            raise ValueError("mismatched request record")
+        if parsed["request_id"] != request_id:
+            raise ValueError("mismatched request identifier")
+        if parsed["scope_key"] != f"user:{parsed['target_user_id']}":
+            raise ValueError("request scope does not match target user")
+        if not parsed["amount"].is_finite() or parsed["amount"] <= 0:
+            raise ValueError("request amount is invalid")
+        currency = parsed["currency_code"]
+        if len(currency) != 3 or not currency.isascii() or not currency.isalpha() or currency != currency.upper():
+            raise ValueError("request currency is invalid")
+        if parsed["request_type"] == "credit_compensation":
+            if currency != "CRD" or parsed["amount"] != parsed["amount"].to_integral_value():
+                raise ValueError("credit compensation unit is invalid")
+        elif currency == "CRD":
+            raise ValueError("cash refund currency is invalid")
         return parsed
     except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
         raise FinanceRequestUnavailable("Finance request lookup returned malformed data.") from exc
