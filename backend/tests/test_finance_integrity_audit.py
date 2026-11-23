@@ -166,3 +166,48 @@ def test_provider_cost_owner_or_provider_mismatch_is_critical():
     report = audit(provider_cost_events=[cost_event(user_id="different-user")])
     assert report["status"] == "critical"
     assert any(item["code"] == "provider_cost_job_identity_mismatch" for item in report["findings"])
+
+
+def projection_rows():
+    return {
+        "credit_lots": [{
+            "lot_id": "lot-1", "user_id": USER, "granted_credits": 100,
+            "available_credits": 80, "reserved_credits": 20,
+        }],
+        "credit_holds": [{
+            "hold_id": "hold-1", "user_id": USER, "amount": 20, "status": "held",
+        }],
+        "hold_allocations": [{
+            "allocation_id": "allocation-1", "user_id": USER,
+            "hold_id": "hold-1", "lot_id": "lot-1", "amount": 20, "status": "held",
+        }],
+    }
+
+
+def test_consistent_lots_holds_and_allocations_are_healthy():
+    report = audit(**projection_rows())
+    assert report["status"] == "healthy"
+
+
+def test_lot_wallet_projection_mismatch_is_critical():
+    rows = projection_rows()
+    rows["credit_lots"][0]["available_credits"] = 79
+    report = audit(**rows)
+    assert report["status"] == "critical"
+    assert any(item["code"] == "lot_wallet_projection_mismatch" for item in report["findings"])
+
+
+def test_held_reservation_without_full_allocation_is_critical():
+    rows = projection_rows()
+    rows["hold_allocations"][0]["amount"] = 19
+    report = audit(**rows)
+    assert report["status"] == "critical"
+    assert any(item["code"] == "hold_allocation_total_mismatch" for item in report["findings"])
+
+
+def test_orphan_or_cross_owner_allocation_is_critical():
+    rows = projection_rows()
+    rows["hold_allocations"][0]["lot_id"] = "missing-lot"
+    report = audit(**rows)
+    assert report["status"] == "critical"
+    assert any(item["code"] == "orphan_hold_allocation" for item in report["findings"])
