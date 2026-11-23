@@ -1307,9 +1307,11 @@ const movieHistoryStyle = document.createElement("style");
     requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
   let dashboardActivityBusy = false;
+  let dashboardActivityPending = false;
   const renderDashboardActivity = async () => {
     const list = $("#dashboardActivityList");
-    if (!list || dashboardActivityBusy) return;
+    if (!list) return;
+    if (dashboardActivityBusy) { dashboardActivityPending = true; return; }
     dashboardActivityBusy = true;
     const requestUserId = authSession?.user?.id || null;
     const requestVersion = authContextVersion;
@@ -1375,6 +1377,7 @@ const movieHistoryStyle = document.createElement("style");
       console.warn("Dashboard activity could not be loaded:", error);
     } finally {
       dashboardActivityBusy = false;
+      if (dashboardActivityPending) { dashboardActivityPending = false; renderDashboardActivity(); }
     }
   };
   const renderCreativeDashboard = () => {
