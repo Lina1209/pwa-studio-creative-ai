@@ -122,3 +122,6 @@ Example response shape (values are illustrative):
   "credits_granted": false
 }
 ```
+
+
+The account page now calls this endpoint after authentication and on demand. It displays the active plan, feature access, daily/monthly usage and remaining quotas. If the account has no active assignment, the page explicitly reports that state; it does not assume or silently grant a Free plan. A quota dimension marked `enforced: false` is never presented as a live generation restriction.
