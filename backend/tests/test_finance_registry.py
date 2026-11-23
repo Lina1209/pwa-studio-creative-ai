@@ -159,3 +159,42 @@ def test_finance_auditor_can_read_scoped_requests_but_cannot_mutate(monkeypatch)
     assert "billing.refund.read" in grant.permissions
     assert "credit.compensation.request" not in grant.permissions
     assert "billing.refund.approve" not in grant.permissions
+
+@pytest.mark.parametrize(
+    "valid_from,valid_until",
+    [
+        (
+            datetime.now(timezone.utc) + timedelta(days=1),
+            datetime.now(timezone.utc) + timedelta(days=2),
+        ),
+        (
+            datetime.now(timezone.utc) - timedelta(days=2),
+            datetime.now(timezone.utc) - timedelta(days=1),
+        ),
+        (
+            datetime.now(timezone.utc),
+            datetime.now(timezone.utc) - timedelta(seconds=1),
+        ),
+    ],
+)
+def test_registry_rejects_assignments_outside_current_validity_window(
+    monkeypatch, valid_from, valid_until
+):
+    created = datetime.now(timezone.utc)
+    monkeypatch.setattr(registry, "_rpc", lambda *a, **k: [{
+        "assignment_id": str(ASSIGNMENT),
+        "principal_id": str(TARGET),
+        "role_code": "finance_operator",
+        "scope_key": "user:" + str(TARGET),
+        "valid_from": valid_from.isoformat(),
+        "valid_until": valid_until.isoformat(),
+        "granted_by": str(ACTOR),
+        "created_at": created.isoformat(),
+    }])
+
+    with pytest.raises(registry.FinanceRegistryUnavailable):
+        registry.list_active_finance_roles(
+            Settings(supabase_url="https://example.test", supabase_service_role_key="x"),
+            principal_id=TARGET,
+        )
+
