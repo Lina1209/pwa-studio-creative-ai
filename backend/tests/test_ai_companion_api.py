@@ -389,6 +389,8 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
     monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main.settings, "privacy_notice_version", "privacy-v1")
+    monkeypatch.setattr(main.settings, "vision_consent_version", "vision-v1")
     monkeypatch.setattr(main, "get_consent_status", lambda settings, user_id: [{"consent_scope": "vision_deepseek", "action": "accepted", "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}])
     validated = ValidatedVisionImage(
         mime_type="image/png",
@@ -445,6 +447,8 @@ def test_vision_analysis_rejects_invalid_image_after_admission(monkeypatch):
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
     monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main.settings, "privacy_notice_version", "privacy-v1")
+    monkeypatch.setattr(main.settings, "vision_consent_version", "vision-v1")
     monkeypatch.setattr(main, "get_consent_status", lambda settings, user_id: [{"consent_scope": "vision_deepseek", "action": "accepted", "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}])
     monkeypatch.setattr(
         main, "validate_vision_data_url",
@@ -474,6 +478,8 @@ def test_health_exposes_vision_only_when_flag_and_server_credentials_are_present
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
     monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main.settings, "privacy_notice_version", "privacy-v1")
+    monkeypatch.setattr(main.settings, "vision_consent_version", "vision-v1")
     monkeypatch.setattr(main, "get_consent_status", lambda settings, user_id: [{"consent_scope": "vision_deepseek", "action": "accepted", "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}])
     monkeypatch.setattr(main.settings, "ai_model", "deepseek-flash")
     monkeypatch.setattr(main.settings, "deepseek_api_key", "server-only-test-key")
