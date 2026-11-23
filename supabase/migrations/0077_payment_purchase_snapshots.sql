@@ -147,7 +147,7 @@ begin
     v_pack.sku_code, v_pack.sku_version, v_pack.display_name,
     v_pack.price_minor, v_pack.currency, v_pack.credits,
     v_pack.credit_validity_days, null
-  ) on conflict (payment_order_id) do nothing;
+  ) on conflict on constraint payment_order_purchase_items_pkey do nothing;
 
   select * into v_existing from public.payment_order_purchase_items
    where payment_order_id = v_order_id;
@@ -228,7 +228,7 @@ begin
     v_plan.plan_code, v_plan.plan_version, v_plan.display_name,
     v_plan.price_minor, v_plan.currency, v_plan.credits_per_period,
     null, v_plan.period_days
-  ) on conflict (payment_order_id) do nothing;
+  ) on conflict on constraint payment_order_purchase_items_pkey do nothing;
 
   select * into v_existing from public.payment_order_purchase_items
    where payment_order_id = v_order_id;
