@@ -691,16 +691,16 @@ const movieHistoryStyle = document.createElement("style");
     const badge=$("#directUnreadCount"); if(badge) badge.textContent=unread+" непрочитанных диалогов";
     list.replaceChildren();
     const filtered=directConversations.filter(conversation=>{
-      const haystack=[conversation.peer_user_id,conversation.last_message?.body].join(" ").toLocaleLowerCase();
+      const haystack=[conversation.peer_user_id,conversation.peer_username,conversation.peer_display_name,conversation.last_message?.body].join(" ").toLocaleLowerCase();
       return !query||haystack.includes(query);
     });
     filtered.forEach(conversation=>{
       const button=document.createElement("button");button.type="button";
       button.className="messages-conversation-item"+(conversation.id===activeDirectConversationId?" is-active":"");
       const row=document.createElement("span");row.className="direct-chat-row";
-      const avatar=document.createElement("span");avatar.className="direct-chat-avatar";avatar.setAttribute("aria-hidden","true");avatar.textContent="●";
+      const avatar=document.createElement("span");avatar.className="direct-chat-avatar";avatar.setAttribute("aria-hidden","true");avatar.textContent=(conversation.peer_display_name||conversation.peer_username||"●").trim().charAt(0).toUpperCase();
       const content=document.createElement("span");content.className="direct-chat-content";
-      const title=document.createElement("b");title.textContent="Пользователь "+(conversation.peer_user_id||"—");
+      const title=document.createElement("b");title.textContent=conversation.peer_display_name||("Пользователь "+(conversation.peer_user_id||"—"));
       const preview=document.createElement("small");preview.textContent=conversation.last_message?.body||"Пока нет сообщений";
       content.append(title,preview);row.append(avatar,content);
       if(directConversationUnread(conversation)){const dot=document.createElement("span");dot.className="direct-chat-unread";dot.textContent="Новое";row.append(dot);}
@@ -738,8 +738,8 @@ const movieHistoryStyle = document.createElement("style");
       const data = await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(conversationId));
       const history = $("#directMessageHistory"); if (history) history.replaceChildren(...(data.messages || []).map(directMessageNode));
       const view = $("#directConversationView"); if (view) view.hidden = false;
-      if ($("#directConversationTitle")) $("#directConversationTitle").textContent = "Личный диалог";
-      if ($("#directConversationMeta")) $("#directConversationMeta").textContent = "ID собеседника: " + (peerId || "скрыт");
+      if ($("#directConversationTitle")) { const peer=directConversations.find(item=>item.id===conversationId); $("#directConversationTitle").textContent=peer?.peer_display_name||("Личный диалог · @"+(peer?.peer_username||"")); }
+      if ($("#directConversationMeta")) { const peer=directConversations.find(item=>item.id===conversationId); $("#directConversationMeta").textContent=peer?.peer_username?"@"+peer.peer_username:"ID собеседника: "+(peerId||"скрыт"); }
       await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(conversationId) + "/read", {method:"PATCH"});
       const opened=directConversations.find(item=>item.id===conversationId); if(opened) opened.last_read_at=new Date().toISOString();
       renderDirectConversationList();

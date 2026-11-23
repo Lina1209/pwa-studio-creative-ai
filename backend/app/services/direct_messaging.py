@@ -87,12 +87,21 @@ def list_conversations(settings: Settings, user_id: UUID, *, limit: int = 50):
         })
         peer_ids = [row["user_id"] for row in participants
                     if row.get("user_id") and row["user_id"] != str(user_id)]
+        peer_profile = None
+        if peer_ids:
+            profiles = _request(settings, "GET", "profiles", params={
+                "select": "id,username,display_name",
+                "id": f"in.({','.join(peer_ids)})", "limit": "1",
+            })
+            peer_profile = profiles[0] if isinstance(profiles, list) and profiles else None
         latest = _request(settings, "GET", "direct_messages", params={
             "select": "id,sender_user_id,body,created_at", "conversation_id": f"eq.{conversation_id}",
             "order": "created_at.desc,id.desc", "limit": "1",
         })
         item = dict(conversations[0])
         item["peer_user_id"] = peer_ids[0] if peer_ids else None
+        item["peer_username"] = peer_profile.get("username") if peer_profile else None
+        item["peer_display_name"] = peer_profile.get("display_name") if peer_profile else None
         item["last_read_at"] = membership.get("last_read_at")
         item["last_message"] = latest[0] if isinstance(latest, list) and latest else None
         result.append(item)
