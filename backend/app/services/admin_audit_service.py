@@ -20,7 +20,11 @@ _ALLOWED_ACTIONS = {
     "admin.security.settings.changed",
 }
 _ALLOWED_OUTCOMES = {"allowed", "denied", "requested", "approved", "executed", "failed"}
-_ALLOWED_RESOURCES = {"platform", "user", "support_ticket", "tariff", "payment", "credit_wallet", "permission", "security_setting"}
+_ALLOWED_RESOURCES = {
+    "platform", "user", "support_ticket", "tariff", "payment",
+    "credit_wallet", "credit_ledger", "pricing_catalog_draft",
+    "plan_catalog_draft", "permission", "security_setting",
+}
 
 
 def _headers(settings: Settings) -> dict[str, str]:
