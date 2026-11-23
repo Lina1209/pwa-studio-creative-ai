@@ -360,7 +360,8 @@ begin
        j.status in ('running', 'cancel_requested')
        and j.lease_expires_at <= now()
      )
-     order by j.available_at, j.created_at, j.id
+     order by case when j.status = 'cancel_requested' then 0 else 1 end,
+              j.available_at, j.created_at, j.id
      for update skip locked
      limit 1
   ),
