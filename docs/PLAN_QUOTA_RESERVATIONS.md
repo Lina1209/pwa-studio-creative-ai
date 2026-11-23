@@ -38,3 +38,39 @@ Pending assignments do not count as active plans. The assignment base row remain
 The adapter is deliberately not called from current generation endpoints yet. Before wiring it in, the generation submission transaction must be reviewed so plan quota reservation, signed price quote verification, credit hold, durable job/outbox creation, and rollback/release semantics cannot leave partial reservations.
 
 No customer plan is activated, no free entitlement is enabled, no credits are granted, no provider is called, and no production migration or deployment is performed by this change.
+
+
+## Atomic generation admission and lifecycle integration
+
+Migrations `0067` and `0068` connect plan quotas to the existing lot-aware credit ledger and durable job/outbox boundary.
+
+The service-role-only RPC `create_plan_credited_generation_job_with_outbox` now composes, in one PostgreSQL transaction:
+
+1. Durable generation job creation.
+2. Transactional outbox event creation.
+3. Signed quote amount snapshot and lot-aware credit hold.
+4. All applicable plan quota reservations.
+
+If the plan is missing, any quota is exhausted, the wallet lacks credits, or any insert/constraint fails, PostgreSQL rolls back the complete submission. A retry with the same owner/idempotency key returns the original job, hold and quota reservations.
+
+Quota mapping:
+- Image jobs: daily + monthly image units.
+- Video jobs: daily + monthly video units.
+- Audio and speech jobs: daily + monthly audio units.
+- AI processing jobs: daily + monthly AI requests + one concurrent AI slot.
+- Media export is deliberately not admitted by this RPC until a separate quota policy exists.
+
+A request may reserve multiple quota dimensions. The reservation key is unique per user, request and feature dimension; each dimension also has its own deterministic idempotency key.
+
+A database trigger resolves reservations in the same transaction as terminal job state:
+- Successful jobs consume daily/monthly usage and release the temporary AI concurrency slot.
+- Failed, cancelled or expired jobs release all plan quota reservations.
+- Retry-wait jobs keep their reservations because the durable job remains admitted and may resume.
+
+The combined backend service verifies the HMAC-signed quote and canonical request hash before calling the atomic RPC. Client-supplied prices, limits, owner IDs or quota dimensions are not trusted.
+
+## Current activation boundary
+
+This is a server-side admission primitive, not a live generation endpoint. Existing job/worker feature flags remain disabled by default. No pricing catalog has been activated, no plan has been activated for real users, no credits have been granted to real users, and no provider execution or production migration has been started.
+
+The disposable PostgreSQL migration integration suite now includes plan/assignment fixtures and checks atomic admission, daily/monthly reservation, over-quota rollback of job/outbox/credit hold, and quota lifecycle resolution on success. CI must complete against the latest branch SHA before this foundation is treated as verified.
