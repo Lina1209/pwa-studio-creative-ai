@@ -92,7 +92,7 @@ def audit_finance_integrity(
 
     opening_balances = opening_balances or {}
     for user_id, entries in ledger_by_user.items():
-        entries.sort(key=lambda item: (item[0], item[1]))
+        # Identity IDs are allocated when the ledger insert occurs. Lifecycle RPCs\n        # serialize mutations on the wallet row, so ID order is the accounting order;\n        # created_at uses transaction-start time and can be misleading under concurrency.\n        entries.sort(key=lambda item: item[1])
         previous: tuple[int, int] | None = opening_balances.get(user_id)
         if previous is None and entries:
             first = entries[0][2]
