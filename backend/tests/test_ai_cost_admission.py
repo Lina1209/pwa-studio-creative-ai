@@ -108,3 +108,52 @@ def test_settlement_marks_unknown_when_usage_is_incomplete(monkeypatch):
     assert seen["name"] == "settle_ai_provider_cost"
     assert seen["payload"]["p_actual_estimated_cost_usd"] is None
     assert seen["payload"]["p_cost_source"] is None
+
+
+def test_vision_reservation_includes_documented_image_token_bound_and_peak_rates():
+    settings = make_settings()
+    messages = [{"role": "user", "content": "Describe this reference."}]
+    text_bytes, image_tokens, reserve = cost.estimate_worst_case_vision_cost(
+        settings, messages, image_count=1
+    )
+    assert text_bytes > 0
+    assert image_tokens == 1024
+    raw = (
+        Decimal(text_bytes + 1024) * Decimal("0.30")
+        + Decimal(2048) * Decimal("1.20")
+    ) / Decimal(1_000_000)
+    assert reserve >= raw * Decimal("1.25")
+
+
+def test_vision_estimator_rejects_pro_model_before_any_provider_call():
+    with pytest.raises(cost.AIProviderBudgetUnavailable):
+        cost.estimate_worst_case_vision_cost(
+            make_settings(ai_model="deepseek-v4-pro"),
+            [{"role": "user", "content": "Describe this."}],
+        )
+
+
+@pytest.mark.parametrize("image_count", [0, 2, -1, True, "1"])
+def test_vision_estimator_rejects_unapproved_image_count(image_count):
+    with pytest.raises(cost.AIProviderBudgetRejected) as error:
+        cost.estimate_worst_case_vision_cost(
+            make_settings(), [{"role": "user", "content": "Describe this."}],
+            image_count=image_count,
+        )
+    assert error.value.reason == "vision_image_count_limit"
+
+
+def test_vision_estimator_does_not_accept_multimodal_or_client_supplied_token_shapes():
+    with pytest.raises(cost.AIProviderBudgetRejected):
+        cost.estimate_worst_case_vision_cost(
+            make_settings(), [{"role": "user", "content": "x", "image_url": "https://example.com/a.png"}],
+        )
+
+
+def test_vision_text_input_obeys_existing_byte_limit():
+    with pytest.raises(cost.AIProviderBudgetRejected) as error:
+        cost.estimate_worst_case_vision_cost(
+            make_settings(ai_max_input_bytes=256),
+            [{"role": "user", "content": "x" * 300}],
+        )
+    assert error.value.reason == "input_size_limit"
