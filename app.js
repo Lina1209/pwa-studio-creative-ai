@@ -1321,18 +1321,25 @@ const movieHistoryStyle = document.createElement("style");
         detail: "Проект фильма · " + movieProgress(project),
         updatedAt: project.updatedAt || project.createdAt || null
       }));
+      let conversationHistoryUnavailable = false;
       if (requestUserId && supabaseClient) {
-        const { data, error } = await supabaseClient.from("assistant_conversations")
-          .select("id,title,updated_at").eq("user_id", requestUserId)
-          .order("updated_at", { ascending: false }).limit(5);
-        if (error) throw error;
-        if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
-        (data || []).forEach(conversation => items.push({
-          kind: "assistant", id: conversation.id,
-          title: conversation.title || "Новый диалог",
-          detail: "Разговор с AI Companion",
-          updatedAt: conversation.updated_at || null
-        }));
+        try {
+          const { data, error } = await supabaseClient.from("assistant_conversations")
+            .select("id,title,updated_at").eq("user_id", requestUserId)
+            .order("updated_at", { ascending: false }).limit(5);
+          if (error) throw error;
+          if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+          (data || []).forEach(conversation => items.push({
+            kind: "assistant", id: conversation.id,
+            title: conversation.title || "Новый диалог",
+            detail: "Разговор с AI Companion",
+            updatedAt: conversation.updated_at || null
+          }));
+        } catch (historyError) {
+          if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+          conversationHistoryUnavailable = true;
+          console.warn("Dashboard conversation history is unavailable:", historyError);
+        }
       }
       if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
       items.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
@@ -1340,7 +1347,9 @@ const movieHistoryStyle = document.createElement("style");
       if (!items.length) {
         const empty = document.createElement("div"); empty.className = "dashboard-empty";
         empty.textContent = requestUserId
-          ? "Здесь появятся ваши новые проекты и разговоры с AI Companion."
+          ? (conversationHistoryUnavailable
+            ? "История AI Companion пока недоступна. Создайте проект — он появится здесь."
+            : "Здесь появятся ваши новые проекты и разговоры с AI Companion.")
           : "Создайте проект — и здесь появится ваша недавняя активность.";
         list.append(empty); return;
       }
@@ -1368,13 +1377,18 @@ const movieHistoryStyle = document.createElement("style");
         });
         list.append(button);
       });
+      if (conversationHistoryUnavailable) {
+        const note = document.createElement("div"); note.className = "dashboard-empty";
+        note.textContent = "История AI Companion временно недоступна; ваши проекты показаны выше.";
+        list.append(note);
+      }
     } catch (error) {
       if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
       list.replaceChildren();
       const note = document.createElement("div"); note.className = "dashboard-empty";
-      note.textContent = "Не удалось загрузить историю разговоров. Ваши проекты остаются доступны в разделе «Мои проекты».";
+      note.textContent = "Не удалось обновить недавнюю активность. Попробуйте открыть Центр управления позже.";
       list.append(note);
-      console.warn("Dashboard activity could not be loaded:", error);
+      console.warn("Dashboard activity could not be rendered:", error);
     } finally {
       dashboardActivityBusy = false;
       if (dashboardActivityPending) { dashboardActivityPending = false; renderDashboardActivity(); }
