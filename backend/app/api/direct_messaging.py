@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.services.auth import StudioUser, get_current_user, require_permission
 from app.services.direct_messaging import (
     DirectMessagingUnavailable, create_conversation, list_conversations,
-    read_messages, send_message, mark_read,
+    read_messages, send_message, edit_message, delete_message, mark_read,
     create_message_notification, list_user_notifications, mark_user_notification_read,
     set_user_block, report_direct_message, list_admin_reports, get_admin_report_detail, list_admin_appeals,
     list_moderation_events, apply_user_moderation, update_report_status,
@@ -33,6 +33,11 @@ class DirectMessageCreate(BaseModel):
     model_config = {"extra": "forbid"}
     body: str = Field(min_length=1, max_length=5000)
     idempotency_key: UUID = Field(default_factory=uuid4)
+
+
+class DirectMessageUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    body: str = Field(min_length=1, max_length=5000)
 
 
 class DirectMessageReportCreate(BaseModel):
@@ -97,6 +102,35 @@ def post_conversation_message(conversation_id: UUID, payload: DirectMessageCreat
             # Saving the message is primary; notification persistence is best-effort.
             logger.warning("Direct message saved but notification persistence failed.")
         return {"message": message}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.patch("/conversations/{conversation_id}/messages/{message_id}")
+def patch_direct_message(conversation_id: UUID, message_id: UUID,
+                         payload: DirectMessageUpdate,
+                         user: StudioUser = Depends(get_current_user)):
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="Сообщение не может быть пустым.")
+    try:
+        updated = edit_message(settings, conversation_id, message_id,
+                               UUID(user.user_id), body)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Сообщение не найдено или срок редактирования истёк.")
+        return {"status": "updated"}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.delete("/conversations/{conversation_id}/messages/{message_id}")
+def remove_direct_message(conversation_id: UUID, message_id: UUID,
+                          user: StudioUser = Depends(get_current_user)):
+    try:
+        deleted = delete_message(settings, conversation_id, message_id, UUID(user.user_id))
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Сообщение не найдено.")
+        return {"status": "deleted"}
     except DirectMessagingUnavailable:
         _unavailable()
 
