@@ -185,3 +185,25 @@ def test_fail_payment_fulfillment_uses_fenced_retry_rpc(monkeypatch):
     assert result == "queued"
     assert calls[0][0] == "fail_payment_fulfillment"
     assert calls[0][1]["p_max_attempts"] == 5
+
+
+@pytest.mark.parametrize("malformed", [{}, [], None, 7])
+def test_fail_payment_fulfillment_rejects_malformed_rpc_response(monkeypatch, malformed):
+    fulfillment = UUID("77777777-7777-4777-8777-777777777777")
+    lease = UUID("88888888-8888-4888-8888-888888888888")
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: malformed)
+    with pytest.raises(service.PaymentOrderUnavailable):
+        service.fail_payment_fulfillment(
+            SETTINGS, fulfillment_id=fulfillment, lease_token=lease,
+            error_code="temporary_storage_error",
+        )
+
+
+def test_fulfill_payment_order_rejects_malformed_rpc_response(monkeypatch):
+    fulfillment = UUID("77777777-7777-4777-8777-777777777777")
+    lease = UUID("88888888-8888-4888-8888-888888888888")
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: {"unexpected": "object"})
+    with pytest.raises(service.PaymentOrderUnavailable):
+        service.fulfill_payment_order(
+            SETTINGS, fulfillment_id=fulfillment, lease_token=lease,
+        )
