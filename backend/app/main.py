@@ -1240,6 +1240,16 @@ def finance_request_create(
         user, request_type=payload.request_type, action="request",
         scope_key=target_scope,
     )
+    audit_action = "admin.finance.request.create"
+    audit_resource = "credit_wallet" if payload.request_type == "credit_compensation" else "payment"
+    try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action=audit_action,
+            outcome="requested", resource_type=audit_resource,
+            resource_id=payload.target_user_id, reason=f"Requested {payload.request_type}: {payload.reason}",
+        )
+    except (AdminAuditUnavailable, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Журнал аудита недоступен; финансовая заявка не создана.") from exc
     try:
         request_id = create_finance_operation_request(
             settings, requester_id=UUID(user.user_id),
@@ -1254,6 +1264,14 @@ def finance_request_create(
         raise HTTPException(status_code=503, detail="Finance request storage is not configured.") from exc
     except FinanceRequestUnavailable as exc:
         raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action=audit_action,
+            outcome="executed", resource_type=audit_resource, resource_id=request_id,
+            reason=f"Created {payload.request_type} request for target {payload.target_user_id}",
+        )
+    except (AdminAuditUnavailable, ValueError):
+        logger.error("Finance request created but completion audit could not be written.")
     try:
         current_request = read_finance_operation_request(settings, request_id=request_id)
     except FinanceRequestNotFound as exc:
@@ -1292,6 +1310,17 @@ def finance_request_decide(
         user, request_type=item["request_type"], action="approve",
         scope_key=item["scope_key"],
     )
+    audit_action = "admin.finance.request.decide"
+    audit_outcome = "requested"
+    try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action=audit_action,
+            outcome=audit_outcome,
+            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_id=request_id, reason=f"Requested finance decision {payload.decision}: {payload.reason}",
+        )
+    except (AdminAuditUnavailable, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Журнал аудита недоступен; решение не применено.") from exc
     try:
         decide_finance_operation_request(
             settings, request_id=request_id, actor_id=UUID(user.user_id),
@@ -1305,6 +1334,15 @@ def finance_request_decide(
         raise HTTPException(status_code=404, detail="Finance request was not found.") from exc
     except FinanceRequestUnavailable as exc:
         raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action=audit_action,
+            outcome="executed",
+            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_id=request_id, reason=f"Finance request decision completed: {payload.decision}",
+        )
+    except (AdminAuditUnavailable, ValueError):
+        logger.error("Finance request decision completed but completion audit could not be written.")
     response.headers["Cache-Control"] = "private, no-store"
     return {"request_id": str(request_id), "status": "approved" if payload.decision == "approve" else "rejected"}
 
@@ -1333,6 +1371,16 @@ def finance_request_cancel(
         user, request_type=item["request_type"], action="cancel",
         scope_key=item["scope_key"],
     )
+    audit_action = "admin.finance.request.cancel"
+    try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action=audit_action,
+            outcome="requested",
+            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_id=request_id, reason=f"Requested finance cancellation: {payload.reason}",
+        )
+    except (AdminAuditUnavailable, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Журнал аудита недоступен; отмена не выполнена.") from exc
     try:
         cancel_finance_operation_request(
             settings, request_id=request_id, actor_id=UUID(user.user_id),
@@ -1346,6 +1394,15 @@ def finance_request_cancel(
         raise HTTPException(status_code=404, detail="Finance request was not found.") from exc
     except FinanceRequestUnavailable as exc:
         raise HTTPException(status_code=503, detail="Finance request storage is temporarily unavailable.") from exc
+    try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action=audit_action,
+            outcome="executed",
+            resource_type="credit_wallet" if item["request_type"] == "credit_compensation" else "payment",
+            resource_id=request_id, reason="Finance request cancellation completed",
+        )
+    except (AdminAuditUnavailable, ValueError):
+        logger.error("Finance request cancellation completed but completion audit could not be written.")
     response.headers["Cache-Control"] = "private, no-store"
     return {"request_id": str(request_id), "status": "cancelled"}
 
@@ -1824,12 +1881,15 @@ def admin_create_pricing_draft(payload: PricingCatalogDraftCreate,user: StudioUs
                 raise HTTPException(status_code=422,detail="Тариф содержит неподдерживаемую модель.")
             if rule.max_provider_cost_usd_per_unit is None:
                 raise HTTPException(status_code=422,detail="Для каждого тарифа обязателен предел стоимости провайдера.")
+        try:
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.pricing.draft.create",outcome="requested",resource_type="pricing_catalog_draft",reason=f"Requested inactive pricing draft {validated.version}")
+        except (AdminAuditUnavailable, ValueError) as exc:
+            raise HTTPException(status_code=503,detail="Журнал аудита недоступен; черновик не сохранён.") from exc
         draft=create_draft(settings,version=validated.version,catalog=catalog_payload,actor_id=UUID(user.user_id))
         try:
-            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.access",outcome="allowed",resource_type="pricing_catalog_draft",resource_id=UUID(draft["id"]),reason=f"Created inactive tariff draft {validated.version}")
-        except AdminAuditUnavailable:
-            logger.error("Tariff draft was saved but its admin audit event could not be persisted.")
-            raise HTTPException(status_code=503,detail="Черновик сохранён, но журнал аудита недоступен. Проверьте список черновиков перед повторной отправкой.")
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.pricing.draft.create",outcome="executed",resource_type="pricing_catalog_draft",resource_id=UUID(draft["id"]),reason=f"Created inactive pricing draft {validated.version}")
+        except (AdminAuditUnavailable, ValueError):
+            logger.error("Pricing draft saved but completion audit could not be persisted.")
         return {"draft":draft,"live_pricing_changed":False}
     except PricingError as exc:
         raise HTTPException(status_code=422,detail=str(exc))
@@ -1892,14 +1952,18 @@ def admin_create_plan_draft(payload: PlanCatalogDraftCreate,user: StudioUser = D
         "price_minor":payload.price_minor,"currency":payload.currency,
         "limits_json":payload.limits,"features_json":[x.strip() for x in payload.features]}
     try:
+        try:
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.plan.draft.create",outcome="requested",
+                resource_type="plan_catalog_draft",reason=f"Requested inactive plan draft {payload.plan_code} v{payload.plan_version}")
+        except (AdminAuditUnavailable, ValueError) as exc:
+            raise HTTPException(status_code=503,detail="Журнал аудита недоступен; черновик не сохранён.") from exc
         row=create_plan_draft(settings,payload=data,actor_id=UUID(user.user_id))
         try:
-            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.access",outcome="allowed",
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.plan.draft.create",outcome="executed",
                 resource_type="plan_catalog_draft",resource_id=UUID(row["id"]),
                 reason=f"Created inactive plan draft {payload.plan_code} v{payload.plan_version}")
-        except AdminAuditUnavailable:
-            logger.error("Plan draft saved but audit event could not be persisted.")
-            raise HTTPException(status_code=503,detail="Черновик сохранён, но журнал аудита недоступен. Проверьте список перед повторной отправкой.")
+        except (AdminAuditUnavailable, ValueError):
+            logger.error("Plan draft saved but completion audit could not be persisted.")
         return {"draft":row,"credits_granted":False,"checkout_enabled":False}
     except PlanDraftUnavailable:
         raise HTTPException(status_code=503,detail="Не удалось сохранить черновик тарифного плана.")
