@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     generation_storage_timeout_seconds: float = Field(default=30.0, ge=1.0, le=180.0)
     image_generation_provider: str | None = None
     image_generation_model: str | None = None
+    video_generation_provider: str | None = None
+    video_generation_model: str | None = None
+    audio_generation_provider: str | None = None
+    audio_generation_model: str | None = None
+    speech_generation_provider: str | None = None
+    speech_generation_model: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
