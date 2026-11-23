@@ -10,14 +10,26 @@ Status: design baseline for implementation; not a claim that provider cancellati
 - Completion and cancellation race through one database row lock; exactly one terminal outcome wins.
 - Provider-side spend is recorded independently of whether the user receives a credit refund.
 
-## Current behavior
+## Implemented baseline
 
 Migration 0085 implements owner-scoped cancellation requests:
 - `queued` and `retry_wait` jobs become `cancelled` and release a held credit in the same transaction.
 - `running` jobs become `cancel_requested`; the lease and held credit are preserved.
 - repeated requests are idempotent; terminal jobs are immutable.
 
-The current worker heartbeat still returns a boolean and only renews `running` jobs. Therefore the worker cannot yet distinguish a cancellation request from a genuinely lost lease. Do not enable a worker path that interprets local coroutine cancellation as provider-stop confirmation.
+Migration 0086 and the provider-neutral worker now add:
+- structured heartbeat states: `active`, `cancel_requested`, `terminal`, and `lease_lost`;
+- lease renewal continues while the matching worker reconciles a cancellation request;
+- in-flight provider operations may journal their definitive acceptance/result/failure after cancellation was requested, while new provider submissions remain blocked;
+- a fenced acknowledgement requires the same worker's unexpired lease and either no provider-operation journal or a definitive `provider_failed` / `result_received` journal state;
+- the worker does not locally cancel an in-flight provider call when cancellation is requested; it records the provider result and any available usage evidence before acknowledging;
+- ambiguous provider outcomes remain `cancellation_pending` and are not refunded.
+
+## Remaining recovery gap
+
+The queue claim RPC does not yet reclaim expired `cancel_requested` leases. If a worker exits while the provider outcome is unknown, the job and credit hold remain safely pending, but automated reconciliation after lease expiry is not yet implemented. This is the next required step before considering the cancellation flow complete.
+
+No real DeepSeek adapter or cancellation endpoint has been registered or verified. Do not infer provider cancellation support from this generic worker protocol.
 
 ## Required worker protocol
 
