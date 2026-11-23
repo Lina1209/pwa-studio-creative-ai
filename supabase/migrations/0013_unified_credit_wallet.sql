@@ -29,7 +29,7 @@ create table if not exists public.credit_ledger (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   event_type text not null check (event_type in
-    ('grant', 'reserve', 'capture', 'release', 'adjustment')),
+    ('grant', 'reserve', 'capture', 'release', 'adjustment', 'reconciliation_required')),
   available_delta bigint not null default 0,
   reserved_delta bigint not null default 0,
   reservation_id uuid references public.credit_reservations(id),
@@ -59,7 +59,6 @@ revoke all on public.credit_wallets, public.credit_reservations, public.credit_l
 -- rewrite or delete historical ledger entries directly.
 grant select on public.credit_wallets, public.credit_reservations, public.credit_ledger
   to service_role;
-grant insert on public.credit_ledger to service_role;
 
 create or replace function public.grant_user_credits(
   p_user_id uuid,
@@ -219,10 +218,14 @@ begin
   if not found then raise exception 'Credit reservation not found'; end if;
 
   if v_reservation.status = 'settled' then
+    if v_reservation.captured_credits <> p_capture_amount then
+      raise exception 'Settled reservation replay used a different capture amount';
+    end if;
     return jsonb_build_object('status', 'already_settled',
       'captured_credits', v_reservation.captured_credits);
   end if;
-  if v_reservation.status <> 'reserved' or p_capture_amount > v_reservation.reserved_credits then
+  if v_reservation.status not in ('reserved', 'reconciliation_required')
+     or p_capture_amount > v_reservation.reserved_credits then
     raise exception 'Reservation cannot be settled with requested amount';
   end if;
 
@@ -279,7 +282,7 @@ begin
   if v_reservation.status = 'released' then
     return jsonb_build_object('status', 'already_released');
   end if;
-  if v_reservation.status <> 'reserved' then
+  if v_reservation.status not in ('reserved', 'reconciliation_required') then
     raise exception 'Reservation cannot be released from current status';
   end if;
 
