@@ -94,6 +94,8 @@ def test_service_calls_one_snapshot_rpc_and_returns_read_only_report(monkeypatch
     assert report["read_only"] is True
     assert report["snapshot_consistency"] == "single_statement"
     assert report["complete"] is True
+    assert report["checked"]["payment_orders"] == 0
+    assert report["checked"]["quota_events"] == 0
     assert FakeClient.last_request[0].endswith(
         "/rpc/get_finance_integrity_audit_snapshot"
     )
@@ -142,3 +144,31 @@ def test_service_rejects_snapshot_for_another_user(monkeypatch):
         pass
     else:
         raise AssertionError("foreign-user snapshot must be rejected")
+
+
+
+def test_service_accepts_one_over_limit_sentinel_and_reports_incomplete(monkeypatch):
+    payload = snapshot(complete=False, ledger_count=10001)
+    payload["ledger"] = [{
+        "entry_id": index + 1,
+        "user_id": str(USER_ID),
+        "operation_type": "grant" if index == 0 else "adjustment",
+        "operation_key": f"ledger-op-{index + 1:05d}",
+        "delta_available": 1 if index % 2 == 0 else -1,
+        "delta_reserved": 0,
+        "balance_available_after": 1 if index % 2 == 0 else 0,
+        "balance_reserved_after": 0,
+        "created_at": "2026-11-23T10:00:00Z",
+    } for index in range(10001)]
+    FakeClient.payload = payload
+    monkeypatch.setattr(service.httpx, "Client", FakeClient)
+    settings = SimpleNamespace(
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="service-key",
+    )
+
+    report = service.get_finance_integrity_audit(settings, user_id=USER_ID)
+
+    assert report["complete"] is False
+    assert report["status"] == "incomplete"
+    assert report["checked"]["ledger_entries"] == 10000
