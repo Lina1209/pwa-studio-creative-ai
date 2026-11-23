@@ -56,7 +56,7 @@ def list_messages(settings: Settings, ticket_id: UUID):
 def add_message(settings: Settings, ticket_id: UUID, user_id: UUID, role: str, body: str):
     _request(settings,"POST","support_ticket_messages",payload={"ticket_id":str(ticket_id),"sender_user_id":str(user_id),"sender_role":role,"body":body})
     _request(settings,"PATCH","support_tickets",params={"id":f"eq.{ticket_id}"},
-             payload={"last_message_at":"now()","updated_at":"now()",
+             payload={"last_message_at":datetime.now(timezone.utc).isoformat(),"updated_at":datetime.now(timezone.utc).isoformat(),
                       **({"status":"in_progress"} if role=="admin" else {"status":"waiting_user"})})
 
 def update_ticket_status(settings: Settings, ticket_id: UUID, status: str):
