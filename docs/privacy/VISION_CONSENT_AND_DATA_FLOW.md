@@ -47,7 +47,7 @@ The existing short checkbox copy in the UI is temporary, not final consent langu
 - If API-specific retention, location or model-improvement terms are unknown, keep the feature disabled.
 - Maintain a separate versioned consent text and timestamp/version record; do not store the image itself as evidence of consent.
 - Provide a clear route for withdrawal and privacy requests.
-- Keep the feature flag off until all launch gates in the privacy notice are approved.
+- Keep both VISION_INPUT_ENABLED and VISION_PRIVACY_REVIEW_APPROVED false until all launch gates in the privacy notice are approved.
 
 ## Unresolved decisions — verify from contracts/configuration, do not guess
 
@@ -70,4 +70,4 @@ The existing short checkbox copy in the UI is temporary, not final consent langu
 - [ ] Privacy request and withdrawal workflow tested.
 - [ ] Retention/deletion schedule implemented and tested.
 - [ ] Security/logging review completed.
-- [ ] Explicit release approval obtained before setting VISION_INPUT_ENABLED=true.
+- [ ] Explicit release approval obtained before setting VISION_PRIVACY_REVIEW_APPROVED=true and VISION_INPUT_ENABLED=true.
