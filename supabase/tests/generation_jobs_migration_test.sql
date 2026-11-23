@@ -3918,6 +3918,7 @@ select 'finance operation request lifecycle checks passed' as result;
 \ir ../migrations/0056_pricing_catalog_drafts.sql
 \ir ../migrations/0057_plan_catalog_drafts.sql
 \ir ../migrations/0058_seed_inactive_free_entitlement.sql
+\ir ../migrations/0049_ai_daily_admission_limits.sql
 \ir ../migrations/0059_ai_monthly_admission_limits.sql
 \ir ../migrations/0089_vision_ai_admission_endpoint.sql
 \ir ../migrations/0060_plan_approval_and_assignment_foundation.sql
