@@ -4446,6 +4446,102 @@ insert into public.user_plan_assignment_events(
    'Restore active test entitlement for later quota tests');
 
 
+-- Replacing an assignment must not detach an already admitted job from its
+-- original quota reservations. This models append-only lifecycle events only;
+-- no production replacement RPC is installed or invoked by this test.
+do $plan_replacement_inflight_job_test$
+declare
+  v_job record;
+  v_old_assignment_completed integer;
+  v_old_assignment_released integer;
+  v_new_assignment_reservations integer;
+begin
+  select * into v_job
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-replacement-inflight-job-001',
+      repeat('8', 64),
+      '{"prompt":"complete after plan replacement","quantity":1}'::jsonb,
+      '{"amount":10,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      10
+    );
+
+  if not v_job.created or v_job.replayed then
+    raise exception 'Expected a new job under the original plan assignment';
+  end if;
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values (
+    '19191919-1919-4191-8191-191919191919',
+    '22222222-2222-4222-8222-222222222222',
+    'expired',
+    '11111111-1111-4111-8111-111111111111',
+    'expired:plan-replacement-inflight-job-001',
+    'End original assignment while its admitted generation is running'
+  );
+
+  insert into public.user_plan_assignments(
+    id, user_id, approved_plan_version_id, assignment_source,
+    source_reference, idempotency_key, status, starts_at, ends_at, created_by
+  ) values (
+    '20202020-2020-4202-8202-202020202020',
+    '22222222-2222-4222-8222-222222222222',
+    '13131313-1313-4131-8131-131313131313',
+    'operator_grant', 'quota-replacement-successor',
+    'quota-replacement-successor-001',
+    'active', now() - interval '1 minute', now() + interval '30 days',
+    '11111111-1111-4111-8111-111111111111'
+  );
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values
+    ('20202020-2020-4202-8202-202020202020',
+     '22222222-2222-4222-8222-222222222222',
+     'created','11111111-1111-4111-8111-111111111111',
+     'created:quota-replacement-successor-001','Create successor assignment fixture'),
+    ('20202020-2020-4202-8202-202020202020',
+     '22222222-2222-4222-8222-222222222222',
+     'activated','11111111-1111-4111-8111-111111111111',
+     'activated:quota-replacement-successor-001','Activate successor assignment fixture');
+
+  update public.generation_jobs
+     set status = 'succeeded', completed_at = now(), updated_at = now()
+   where id = v_job.job_id;
+
+  select count(*) into v_old_assignment_completed
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and assignment_id = '19191919-1919-4191-8191-191919191919'
+     and status = 'completed';
+
+  select count(*) into v_old_assignment_released
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and assignment_id = '19191919-1919-4191-8191-191919191919'
+     and feature_key = 'max_parallel_jobs'
+     and status = 'released';
+
+  select count(*) into v_new_assignment_reservations
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and assignment_id = '20202020-2020-4202-8202-202020202020';
+
+  if v_old_assignment_completed <> 4
+     or v_old_assignment_released <> 1
+     or v_new_assignment_reservations <> 0 then
+    raise exception 'Plan replacement changed or detached the original job quota reservations';
+  end if;
+end;
+$plan_replacement_inflight_job_test$;
+
+
 -- A pending plan is not an entitlement, even when the account has credits.
 insert into public.user_plan_assignments(
   id, user_id, approved_plan_version_id, assignment_source,
