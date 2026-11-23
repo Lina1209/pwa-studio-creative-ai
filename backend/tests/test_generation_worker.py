@@ -18,6 +18,7 @@ from app.services.generation_worker import (
 )
 from app.services.image_generation import (
     ImageGenerationError,
+    ImageGenerationLookup,
     ImageGenerationResult,
     ImageProviderRegistry,
     ProviderUsage,
@@ -63,7 +64,7 @@ class FakeRepository:
         self.calls.append(("journal_read", args))
         if not self.journal_created:
             return None
-        return SimpleNamespace(state=self.journal_state)
+        return SimpleNamespace(state=self.journal_state, created=False, provider_request_id=None)
 
     async def begin_provider_operation(self, *args):
         self.calls.append(("journal_begin", args))
@@ -221,6 +222,45 @@ def make_worker(repo=None, provider=None, storage=None):
         storage=storage or FakeStorage(),
         heartbeat_interval_seconds=0.01,
     )
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_cancelled_job_looks_up_result_records_cost_and_acknowledges():
+    class LookupProvider(FakeProvider):
+        supports_lookup = True
+
+        async def lookup_by_idempotency_key(self, *, idempotency_key):
+            return ImageGenerationLookup(
+                status="succeeded",
+                result=ImageGenerationResult(
+                    image_bytes=IMAGE,
+                    mime_type="image/png",
+                    provider="fake",
+                    model="fake-v1",
+                    provider_request_id="provider-request-77",
+                    usage=ProviderUsage(
+                        cost_usd=Decimal("0.02"),
+                        cost_source="reported",
+                        provider_usage_id="usage-77",
+                    ),
+                ),
+                provider_request_id="provider-request-77",
+            )
+
+    repo = FakeRepository(journal_state="result_received")
+    provider = LookupProvider()
+    result = await make_worker(repo, provider).process(
+        make_job(job_status="cancel_requested")
+    )
+
+    assert result.outcome == "cancelled"
+    assert provider.idempotency_keys == []
+    names = [call[0] for call in repo.calls]
+    assert "journal_read" in names
+    assert "journal_begin" not in names
+    assert "provider_cost" in names
+    assert names.index("provider_cost") < names.index("cancel_ack")
+    assert "complete" not in names
 
 
 @pytest.mark.asyncio
