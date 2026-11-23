@@ -340,11 +340,6 @@ begin
     else 'cancelled'
   end;
 
-  if v_refund.status = 'submitted' and v_new_status = 'submitted' then
-    return query select v_event_id, false, 'submitted'::text;
-    return;
-  end if;
-
   update public.payment_refunds
      set status = v_new_status,
          provider_refund_id = coalesce(provider_refund_id, p_provider_refund_id),
