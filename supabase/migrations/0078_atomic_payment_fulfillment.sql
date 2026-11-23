@@ -312,7 +312,7 @@ begin
 
   return v_activated;
 end;
-$;
+$activate_due$;
 
 -- A worker may no longer mark a payment completed without creating its entitlement.
 revoke all on function public.complete_payment_fulfillment(uuid,uuid)
