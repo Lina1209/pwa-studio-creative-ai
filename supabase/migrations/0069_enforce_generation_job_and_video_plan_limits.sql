@@ -37,6 +37,7 @@ declare
   v_limit integer;
   v_used integer;
   v_reservation_id uuid;
+  v_required_feature text;
 begin
   if p_user_id is null or p_request_id is null
      or p_feature_key is null or p_feature_key not in (
@@ -139,6 +140,17 @@ begin
     raise exception 'active plan snapshot not found' using errcode = 'P0002';
   end if;
 
+  v_required_feature := case
+    when p_feature_key in ('daily_ai_requests','monthly_ai_requests','max_concurrent_ai_requests') then 'ai'
+    when p_feature_key in ('daily_image_generations','monthly_image_generations') then 'image'
+    when p_feature_key in ('daily_video_generations','monthly_video_generations') then 'video'
+    when p_feature_key in ('daily_audio_generations','monthly_audio_generations') then 'audio'
+    else null
+  end;
+  if v_required_feature is not null and not (v_plan.features_json ? v_required_feature) then
+    raise exception 'feature is not included in the active plan' using errcode = '42501';
+  end if;
+
   v_limit_text := v_plan.limits_json ->> p_feature_key;
   if v_limit_text is null or v_limit_text !~ '^[0-9]{1,9}$' then
     raise exception 'feature is not included in active plan' using errcode = '42501';
@@ -238,6 +250,7 @@ declare
   v_quote_quantity text;
   v_plan public.approved_plan_versions%rowtype;
   v_active_assignment_count integer;
+  v_required_feature text;
   v_video_seconds integer;
   v_max_video_seconds integer;
   v_video_resolution text;
@@ -274,95 +287,60 @@ begin
       using errcode = '22023';
   end if;
 
+  v_required_feature := case
+    when p_job_type = 'image_generation' then 'image'
+    when p_job_type = 'video_generation' then 'video'
+    when p_job_type in ('audio_generation','speech_generation') then 'audio'
+    when p_job_type = 'ai_processing' then 'ai'
+    else null
+  end;
+
+  select count(*)::integer into v_active_assignment_count
+    from public.user_plan_assignments a
+    join lateral (
+      select e.event_type
+        from public.user_plan_assignment_events e
+       where e.assignment_id = a.id
+       order by e.occurred_at desc, e.id desc
+       limit 1
+    ) latest_event on latest_event.event_type = 'activated'
+   where a.user_id = p_user_id
+     and a.starts_at <= now()
+     and a.ends_at > now();
+
+  if v_active_assignment_count = 0 then
+    raise exception 'no active plan assignment' using errcode = 'P0002';
+  elsif v_active_assignment_count <> 1 then
+    raise exception 'multiple active plan assignments; generation denied'
+      using errcode = '23514';
+  end if;
+
+  select apv.*
+    into v_plan
+    from public.user_plan_assignments a
+    join lateral (
+      select e.event_type
+        from public.user_plan_assignment_events e
+       where e.assignment_id = a.id
+       order by e.occurred_at desc, e.id desc
+       limit 1
+    ) latest_event on latest_event.event_type = 'activated'
+    join public.approved_plan_versions apv
+      on apv.id = a.approved_plan_version_id
+   where a.user_id = p_user_id
+     and a.starts_at <= now()
+     and a.ends_at > now()
+   limit 1;
+
+  if not (v_plan.features_json ? v_required_feature) then
+    raise exception 'feature is not included in the active plan'
+      using errcode = '42501';
+  end if;
+
   if p_job_type = 'video_generation' then
-    select count(*)::integer into v_active_assignment_count
-      from public.user_plan_assignments a
-      join lateral (
-        select e.event_type
-          from public.user_plan_assignment_events e
-         where e.assignment_id = a.id
-         order by e.occurred_at desc, e.id desc
-         limit 1
-      ) latest_event on latest_event.event_type = 'activated'
-     where a.user_id = p_user_id
-       and a.starts_at <= now()
-       and a.ends_at > now();
-
-    if v_active_assignment_count <> 1 then
-      raise exception 'Exactly one active plan is required for video generation'
-        using errcode = '42501';
-    end if;
-
-    select apv.*
-      into v_plan
-      from public.user_plan_assignments a
-      join lateral (
-        select e.event_type
-          from public.user_plan_assignment_events e
-         where e.assignment_id = a.id
-         order by e.occurred_at desc, e.id desc
-         limit 1
-      ) latest_event on latest_event.event_type = 'activated'
-      join public.approved_plan_versions apv
-        on apv.id = a.approved_plan_version_id
-     where a.user_id = p_user_id
-       and a.starts_at <= now()
-       and a.ends_at > now()
-     limit 1;
-
     v_max_video_seconds := nullif(v_plan.limits_json ->> 'max_video_seconds','')::integer;
     if v_max_video_seconds is not null then
-      if coalesce(p_request_snapshot ->> 'duration_seconds','') !~ '^[1-9][0-9]{0,5}
-
-  select * into v_job
-    from public.create_credited_generation_job_with_outbox(
-      p_user_id, p_project_id, p_studio_scene_id, p_job_type,
-      p_provider, p_model, p_idempotency_key, p_request_hash,
-      p_request_snapshot, p_quote_snapshot, p_credit_amount
-    );
-
-  foreach v_feature in array v_features loop
-    select * into v_quota
-      from public.reserve_plan_quota(
-        p_user_id,
-        v_job.job_id,
-        v_feature,
-        'quota:' || md5(p_idempotency_key) || ':' || v_feature,
-        case when v_feature in (
-        'max_concurrent_ai_requests','max_parallel_jobs',
-        'daily_generation_jobs','monthly_generation_jobs'
-      ) then 1 else v_units end
-      );
-
-    v_quota_results := v_quota_results || jsonb_build_array(jsonb_build_object(
-      'reservation_id', v_quota.reservation_id,
-      'feature_key', v_feature,
-      'feature_limit', v_quota.feature_limit,
-      'used_units', v_quota.used_units,
-      'remaining_units', v_quota.remaining_units,
-      'status', v_quota.status,
-      'replayed', v_quota.replayed
-    ));
-  end loop;
-
-  return query select v_job.job_id, v_job.event_id, v_job.hold_id,
-    v_job.available_credits, v_job.reserved_credits,
-    v_job.created, v_job.replayed, v_quota_results;
-end;
-$$;
-
-revoke all on function public.create_plan_credited_generation_job_with_outbox(
-  uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint
-) from public, anon, authenticated;
-grant execute on function public.create_plan_credited_generation_job_with_outbox(
-  uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint
-) to service_role;
-
-comment on function public.create_plan_credited_generation_job_with_outbox(
-  uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint
-) is
-  'Atomically creates a durable generation job, transactional outbox event, lot-aware credit hold, and all required customer-plan quota reservations. Any failed step rolls back the entire submission.';
- then
+      if coalesce(p_request_snapshot ->> 'duration_seconds','') !~ '^[1-9][0-9]{0,5}$' then
         raise exception 'Video duration must be a positive integer number of seconds'
           using errcode = '22023';
       end if;
