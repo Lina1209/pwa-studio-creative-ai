@@ -572,3 +572,68 @@ async def test_existing_result_verification_page_cap_is_retryable_not_corruption
 
     assert exc_info.value.error_code == "storage_verification_listing_limit_reached"
     assert exc_info.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_signed_download_url_requires_verified_owner_path_and_checksum():
+    def handler(request):
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        if request.method == "POST" and "/object/sign/studio-media/" in request.url.path:
+            assert json.loads(request.content) == {"expiresIn": 60}
+            return httpx.Response(200, json={
+                "signedURL": f"/object/sign/studio-media/{OWNER}/generated/{JOB}.png?token=temporary"
+            })
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        url = await storage.create_signed_download_url(
+            owner_id=OWNER, job_id=JOB,
+            object_path=f"{OWNER}/generated/{JOB}.png",
+            expected_sha256_hex=calculate_sha256(PNG),
+            expires_in=60,
+        )
+
+    assert url == (
+        "https://example.supabase.co/storage/v1/object/sign/studio-media/"
+        f"{OWNER}/generated/{JOB}.png?token=temporary"
+    )
+
+
+@pytest.mark.asyncio
+async def test_signed_download_url_rejects_checksum_mismatch_before_signing():
+    sign_calls = []
+
+    def handler(request):
+        if request.method == "GET" and request.url.path.endswith("/bucket/studio-media"):
+            return httpx.Response(200, json={"public": False})
+        if request.method == "POST" and request.url.path.endswith("/object/list/studio-media"):
+            return httpx.Response(200, json=[{
+                "name": f"{JOB}.png",
+                "metadata": {"size": len(PNG), "mimetype": "image/png"},
+            }])
+        if request.method == "GET" and "/object/authenticated/" in request.url.path:
+            return httpx.Response(200, content=PNG)
+        if request.method == "POST" and "/object/sign/" in request.url.path:
+            sign_calls.append(request)
+            return httpx.Response(200, json={"signedURL": "/object/sign/invalid?token=x"})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        storage = SupabasePrivateImageStorage(make_settings(), client)
+        with pytest.raises(GenerationResultStorageError):
+            await storage.create_signed_download_url(
+                owner_id=OWNER, job_id=JOB,
+                object_path=f"{OWNER}/generated/{JOB}.png",
+                expected_sha256_hex="0" * 64,
+            )
+
+    assert sign_calls == []
