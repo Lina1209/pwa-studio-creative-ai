@@ -411,3 +411,88 @@ def test_quota_reservation_for_another_assignment_owner_is_critical():
     report = audit(**rows)
     assert report["status"] == "critical"
     assert any(item["code"] == "plan_quota_assignment_mismatch" for item in report["findings"])
+
+
+def audited_partial_refund_rows():
+    rows = successful_payment_rows()
+    order_id = rows["payment_orders"][0]["id"]
+    refund_id = "66666666-6666-4666-8666-666666666666"
+    rows["payment_orders"][0]["status"] = "partially_refunded"
+    rows["payment_order_events"].append({
+        "id": "order-event-refund-1", "payment_order_id": order_id,
+        "event_type": "payment.partially_refunded",
+        "previous_status": "succeeded", "new_status": "partially_refunded",
+        "occurred_at": "2026-11-23T10:02:00Z",
+    })
+    rows["payment_refunds"] = [{
+        "id": refund_id, "payment_order_id": order_id, "user_id": USER,
+        "provider_code": "examplepay", "amount_minor": 25000, "currency_code": "KZT",
+        "idempotency_key": "refund-partial-001", "reason_code": "customer_request",
+        "status": "succeeded", "provider_refund_id": "provider-refund-001",
+        "requested_by": USER, "created_at": "2026-11-23T10:01:00Z",
+        "submitted_at": "2026-11-23T10:01:30Z", "settled_at": "2026-11-23T10:02:00Z",
+        "closed_at": None,
+    }]
+    rows["payment_refund_provider_events"] = [{
+        "id": "refund-provider-event-1", "provider_code": "examplepay",
+        "provider_event_id": "provider-refund-event-1", "refund_id": refund_id,
+        "event_type": "refund.succeeded", "payload_sha256": "d" * 64,
+        "amount_minor": 25000, "currency_code": "KZT",
+        "provider_refund_id": "provider-refund-001", "signature_verified": True,
+    }]
+    rows["payment_refund_events"] = [
+        {
+            "id": "refund-event-1", "refund_id": refund_id, "actor_type": "admin",
+            "event_type": "refund.requested", "previous_status": None,
+            "new_status": "requested", "event_key": "requested:refund-partial-001",
+            "occurred_at": "2026-11-23T10:01:00Z",
+        },
+        {
+            "id": "refund-event-2", "refund_id": refund_id, "actor_type": "provider",
+            "event_type": "refund.succeeded", "previous_status": "requested",
+            "new_status": "succeeded", "event_key": "provider-event:abc12345",
+            "occurred_at": "2026-11-23T10:02:00Z",
+        },
+    ]
+    rows["payment_refund_reconciliations"] = [{
+        "id": "refund-reconciliation-1", "refund_id": refund_id,
+        "payment_order_id": order_id, "user_id": USER, "purchase_type": "credit_pack",
+        "amount_minor": 25000, "currency_code": "KZT", "status": "pending_review",
+        "created_at": "2026-11-23T10:02:00Z",
+    }]
+    rows["credit_lots"][0]["available_credits"] = 850
+    rows["credit_lots"][0]["reserved_credits"] = 0
+    return rows
+
+
+def test_refund_amounts_and_verified_lifecycle_are_audited():
+    rows = audited_partial_refund_rows()
+    report = audit(**rows)
+    codes = {item["code"] for item in report["findings"]}
+    assert report["status"] == "warning"
+    assert "refund_entitlement_compensation_pending_review" in codes
+    assert "refund_amounts_not_auditable" not in codes
+    assert "refund_lifecycle_not_implemented" not in codes
+
+
+def test_refund_total_exceeding_order_amount_is_critical():
+    rows = audited_partial_refund_rows()
+    second = dict(rows["payment_refunds"][0])
+    second.update({
+        "id": "77777777-7777-4777-8777-777777777777",
+        "amount_minor": 80000,
+        "idempotency_key": "refund-second-001",
+        "provider_refund_id": "provider-refund-002",
+    })
+    rows["payment_refunds"].append(second)
+    report = audit(**rows)
+    assert report["status"] == "critical"
+    assert any(item["code"] == "payment_refund_total_exceeds_order" for item in report["findings"])
+
+
+def test_settled_refund_without_entitlement_reconciliation_is_critical():
+    rows = audited_partial_refund_rows()
+    rows["payment_refund_reconciliations"] = []
+    report = audit(**rows)
+    assert report["status"] == "critical"
+    assert any(item["code"] == "settled_refund_reconciliation_missing" for item in report["findings"])
