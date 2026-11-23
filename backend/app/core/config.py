@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     ai_max_global_concurrent_requests: int = Field(default=16, ge=1, le=128)
     deepseek_api_key: str | None = None
 
+    # Payment provider adapters remain disabled until a concrete provider is reviewed.
+    payment_provider_runtime_enabled: bool = False
+    payment_provider_mode: Literal["test", "live"] = "test"
+
     # Supabase Auth verifies user sessions. Never put the service-role key in the frontend.
     supabase_url: str | None = None
     # Server-only key; never expose to frontend or API responses.
