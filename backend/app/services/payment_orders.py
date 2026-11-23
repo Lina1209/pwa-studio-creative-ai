@@ -179,6 +179,91 @@ def create_subscription_payment_order(
     )
 
 
+
+def claim_payment_fulfillment(
+    settings: Settings, *, lease_seconds: int = 120, batch_size: int = 1,
+) -> list[dict]:
+    """Claim a bounded batch using database-issued fencing tokens."""
+    if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 15 <= lease_seconds <= 900:
+        raise ValueError("Payment fulfillment lease must be between 15 and 900 seconds.")
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 20:
+        raise ValueError("Payment fulfillment batch size must be between 1 and 20.")
+    result = _rpc(settings, "claim_payment_fulfillment", {
+        "p_lease_seconds": lease_seconds, "p_batch_size": batch_size,
+    })
+    if not isinstance(result, list):
+        raise PaymentOrderUnavailable("claim_payment_fulfillment RPC returned an invalid result.")
+    claimed = []
+    try:
+        for row in result:
+            if not isinstance(row, dict):
+                raise ValueError("invalid claim row")
+            claimed.append({
+                "fulfillment_id": UUID(str(row["fulfillment_id"])),
+                "payment_order_id": UUID(str(row["payment_order_id"])),
+                "user_id": UUID(str(row["user_id"])),
+                "provider_code": str(row["provider_code"]),
+                "amount_minor": int(row["amount_minor"]),
+                "currency_code": str(row["currency_code"]),
+                "attempt_count": int(row["attempt_count"]),
+                "lease_token": UUID(str(row["lease_token"])),
+                "lease_expires_at": str(row["lease_expires_at"]),
+            })
+    except (KeyError, ValueError, TypeError) as exc:
+        raise PaymentOrderUnavailable("claim_payment_fulfillment RPC returned malformed data.") from exc
+    return claimed
+
+
+def fulfill_payment_order(
+    settings: Settings, *, fulfillment_id: UUID, lease_token: UUID,
+) -> dict:
+    """Atomically create the purchase entitlement and complete its leased outbox item."""
+    if not isinstance(fulfillment_id, UUID) or not isinstance(lease_token, UUID):
+        raise ValueError("Fulfillment ID and database-issued lease token UUIDs are required.")
+    row = _one_row(_rpc(settings, "fulfill_payment_order", {
+        "p_fulfillment_id": str(fulfillment_id),
+        "p_lease_token": str(lease_token),
+    }), name="fulfill_payment_order")
+    try:
+        status = str(row["fulfillment_status"])
+        purchase_type = str(row["purchase_type"])
+        entitlement_reference = str(row["entitlement_reference"])
+        replayed = row["replayed"]
+        if status != "completed" or purchase_type not in {"credit_pack", "subscription"} or not isinstance(replayed, bool):
+            raise ValueError("invalid fulfillment result")
+        return {
+            "fulfillment_status": status,
+            "purchase_type": purchase_type,
+            "entitlement_reference": entitlement_reference,
+            "replayed": replayed,
+        }
+    except (KeyError, ValueError, TypeError) as exc:
+        raise PaymentOrderUnavailable("fulfill_payment_order RPC returned malformed data.") from exc
+
+
+def fail_payment_fulfillment(
+    settings: Settings, *, fulfillment_id: UUID, lease_token: UUID,
+    error_code: str, retry_after_seconds: int = 60,
+) -> str:
+    """Release a failed claim through the fenced retry RPC; never mutates outbox directly."""
+    if not isinstance(fulfillment_id, UUID) or not isinstance(lease_token, UUID):
+        raise ValueError("Fulfillment ID and lease token UUIDs are required.")
+    if not isinstance(error_code, str) or not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,80}", error_code):
+        raise ValueError("Payment fulfillment error code is invalid.")
+    if isinstance(retry_after_seconds, bool) or not isinstance(retry_after_seconds, int) or not 0 <= retry_after_seconds <= 86400:
+        raise ValueError("Payment fulfillment retry delay is invalid.")
+    result = _rpc(settings, "fail_payment_fulfillment", {
+        "p_fulfillment_id": str(fulfillment_id),
+        "p_lease_token": str(lease_token),
+        "p_error_code": error_code,
+        "p_retry_after_seconds": retry_after_seconds,
+        "p_max_attempts": 5,
+    })
+    if result not in {"queued", "manual_review", "lease_lost"}:
+        raise PaymentOrderUnavailable("fail_payment_fulfillment RPC returned an invalid result.")
+    return result
+
+
 def record_verified_provider_event(
     settings: Settings, *, provider_code: str, provider_event_id: str,
     payment_order_id: UUID, event_type: str, raw_body: bytes,
