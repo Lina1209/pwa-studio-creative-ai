@@ -63,7 +63,8 @@ def run_payment_fulfillment_batch(
                 summary["outcome_unknown"] += 1
                 item["status"] = "outcome_unknown"
             else:
-                summary[state] = summary.get(state, 0) + 1
+                counter = {"queued": "retry_queued", "manual_review": "manual_review", "lease_lost": "lease_lost"}[state]
+                summary[counter] += 1
                 item["status"] = state
             summary["items"].append(item)
             continue
