@@ -18,6 +18,7 @@ insert into auth.users(id) values ('11111111-1111-4111-8111-111111111111') on co
 \i supabase/migrations/0075_payment_fulfillment_worker_leases.sql
 \i supabase/migrations/0076_payment_fulfillment_lease_hardening.sql
 \i supabase/migrations/0077_payment_purchase_snapshots.sql
+\i supabase/migrations/0079_payment_provider_event_replay_hardening.sql
 
 do $payment_order_merchant_reference_idempotency_test$
 declare
@@ -132,6 +133,102 @@ begin
   end if;
 end;
 $payment_success_event_idempotency_test$;
+
+
+-- A replay must revalidate all separately supplied normalized payment facts.
+do $payment_provider_event_replay_hardening_test$
+declare
+  v_order_id uuid;
+  v_failed_order record;
+  v_rejected boolean;
+  v_event_count bigint;
+begin
+  select id into v_order_id
+    from public.payment_orders
+   where merchant_reference = 'test-merchant-ref-001';
+
+  v_rejected := false;
+  begin
+    perform * from public.record_verified_payment_provider_event(
+      'examplepay', 'provider-event-success-001', v_order_id,
+      'payment.succeeded', repeat('a', 64), 1251, 'KZT',
+      'provider-payment-001'
+    );
+  exception when check_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Replay accepted an amount inconsistent with the immutable order';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform * from public.record_verified_payment_provider_event(
+      'examplepay', 'provider-event-success-001', v_order_id,
+      'payment.succeeded', repeat('a', 64), 1250, 'USD',
+      'provider-payment-001'
+    );
+  exception when check_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Replay accepted a currency inconsistent with the immutable order';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform * from public.record_verified_payment_provider_event(
+      'examplepay', 'provider-event-success-001', v_order_id,
+      'payment.succeeded', repeat('a', 64), 1250, 'KZT',
+      'different-provider-payment-id'
+    );
+  exception when check_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Replay accepted a different provider payment identifier';
+  end if;
+
+  -- A terminal failure cannot later be upgraded to a success event.
+  select * into v_failed_order from public.create_payment_order(
+    '11111111-1111-4111-8111-111111111111',
+    'examplepay',
+    'test-merchant-ref-failed-003',
+    'aaaaaaaa-0000-4000-8000-000000000003',
+    1800,
+    'KZT',
+    'Terminal failure transition test',
+    '{"test_case":"terminal_failure"}'::jsonb
+  );
+  perform * from public.record_verified_payment_provider_event(
+    'examplepay', 'provider-event-failed-003',
+    v_failed_order.payment_order_id, 'payment.failed',
+    repeat('d', 64), 1800, 'KZT', 'provider-payment-failed-003'
+  );
+
+  v_rejected := false;
+  begin
+    perform * from public.record_verified_payment_provider_event(
+      'examplepay', 'provider-event-success-after-failure-003',
+      v_failed_order.payment_order_id, 'payment.succeeded',
+      repeat('e', 64), 1800, 'KZT', 'provider-payment-failed-003'
+    );
+  exception when sqlstate '55000' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Success event was accepted after a terminal failure';
+  end if;
+
+  select count(*) into v_event_count
+    from public.payment_provider_events
+   where provider_code = 'examplepay'
+     and provider_event_id = 'provider-event-success-after-failure-003';
+  if v_event_count <> 0 then
+    raise exception 'Rejected terminal transition left a persisted provider event';
+  end if;
+end;
+$payment_provider_event_replay_hardening_test$;
 
 
 -- Mutable execution state cannot alter immutable purchase facts or skip transitions.
