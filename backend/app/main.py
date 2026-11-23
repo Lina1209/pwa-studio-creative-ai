@@ -5,13 +5,14 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse)
+from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
+from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -107,6 +108,28 @@ def read_notification(notification_id: str, user: StudioUser = Depends(get_curre
 @app.post(f"{settings.api_prefix}/notifications/read-all")
 def read_all_notifications(user: StudioUser = Depends(get_current_user)):
     return mark_all_notifications_read(settings, user.user_id)
+
+
+@app.get(f"{settings.api_prefix}/conversations")
+def conversations(user: StudioUser = Depends(get_current_user)):
+    return list_conversations(settings, user.user_id)
+
+
+@app.get(f"{settings.api_prefix}/conversations/{{thread_id}}/messages")
+def conversation_messages(thread_id: str, user: StudioUser = Depends(get_current_user)):
+    return list_messages(settings, user.user_id, thread_id)
+
+
+@app.post(f"{settings.api_prefix}/conversations/{{recipient_id}}/messages", status_code=201)
+def create_direct_message(recipient_id: str, payload: DirectMessageCreateRequest,
+                          user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
+    return send_message(settings, user.user_id, recipient_id, payload.body)
+
+
+@app.post(f"{settings.api_prefix}/conversations/{{thread_id}}/read")
+def read_conversation(thread_id: str, user: StudioUser = Depends(get_current_user)):
+    return mark_conversation_read(settings, user.user_id, thread_id)
 
 
 @app.post(f"{settings.api_prefix}/admin/suspensions", response_model=SuspensionResponse, status_code=201)
