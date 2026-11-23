@@ -341,10 +341,13 @@ const movieHistoryStyle = document.createElement("style");
   const clearAssistantMessages = () => { if (assistantMessages) assistantMessages.replaceChildren(); };
   const loadAssistantMessages = async conversationId => {
     if (!supabaseClient || !authSession?.user || !conversationId) return;
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
     const { data, error } = await supabaseClient.from("assistant_messages")
       .select("id,role,content,created_at").eq("conversation_id", conversationId)
-      .eq("user_id", authSession.user.id).order("created_at", { ascending: true });
+      .eq("user_id", requestUserId).order("created_at", { ascending: true });
     if (error) throw error;
+    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
     clearAssistantMessages();
     (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
     activeAssistantConversationId = conversationId;
@@ -358,11 +361,14 @@ const movieHistoryStyle = document.createElement("style");
     }
     if (assistantHistoryBusy) return;
     assistantHistoryBusy = true; setAssistantStatus("Загружаем ваши диалоги…");
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
     try {
       const { data, error } = await supabaseClient.from("assistant_conversations")
-        .select("id,title,updated_at").eq("user_id", authSession.user.id)
+        .select("id,title,updated_at").eq("user_id", requestUserId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
+      if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
       assistantHistoryList.replaceChildren();
       (data || []).forEach(conversation => {
         const row = document.createElement("div"); row.className = "assistant-history-row";
