@@ -2218,18 +2218,31 @@ const movieHistoryStyle = document.createElement("style");
     const updated={...(existing||{}),id:assetId,type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),...(!passport?{passport:undefined}:{}),referenceImages:[...oldRefs,...newRefs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
     const next=existing?items.map(item=>item.id===assetId?updated:item):[updated,...items];
     const saveButton=$("#saveVisualAsset");saveButton.disabled=true;
+    let localImagesPrepared=false,cloudSaveAttempted=false;
     try{
       for(let i=0;i<files.length;i++){assertOwner();await saveVisualRefImage(newRefs[i].id,files[i],ownerId||"guest");}
+      localImagesPrepared=true;
       assertOwner();
-      if(ownerId)await saveVisualAssetToCloud(updated,files.map((file,index)=>({file,ref:newRefs[index]})));
+      if(ownerId){cloudSaveAttempted=true;await saveVisualAssetToCloud(updated,files.map((file,index)=>({file,ref:newRefs[index]})));}
       assertOwner();
       localStorage.setItem(storageKey,JSON.stringify(next));
     }catch(error){
-      if(!error?.tombstoneCommitted)await Promise.all(newRefs.map(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{})));
-      $("#promptSaveFeedback").textContent=ownerId
-        ?"Не удалось сохранить материал в облако или аккаунт изменился. Проверьте подключение и повторите попытку."
-        :"Не удалось сохранить материал. Проверьте свободное место браузера и доступность IndexedDB.";
-      console.warn("Visual asset save failed:",error);saveButton.disabled=false;return;
+      let preservedLocally=false;
+      // A cloud timeout can be ambiguous: the server may have committed the metadata.
+      // Keep prepared blobs and a local copy so a later sync can safely reconcile them.
+      if(cloudSaveAttempted&&localImagesPrepared&&(authSession?.user?.id||null)===ownerId){
+        try{localStorage.setItem(storageKey,JSON.stringify(next));preservedLocally=true;}
+        catch(localError){console.warn("Local fallback metadata write failed:",localError);}
+      }else if(!cloudSaveAttempted){
+        await Promise.all(newRefs.map(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{})));
+      }
+      $("#promptSaveFeedback").textContent=preservedLocally
+        ?"Облако временно недоступно. Материал и изображения сохранены на этом устройстве; синхронизация повторится при следующем входе или обновлении библиотеки."
+        :ownerId
+          ?"Не удалось подтвердить сохранение. Проверьте подключение и аккаунт; подготовленные файлы не удалены автоматически."
+          :"Не удалось сохранить материал. Проверьте свободное место браузера и доступность IndexedDB.";
+      console.warn("Visual asset save failed:",{error,localImagesPrepared,cloudSaveAttempted,preservedLocally});
+      saveButton.disabled=false;return;
     }
     saveButton.disabled=false;resetVisualAssetEditor();renderVisualLibrary();
     $("#promptSaveFeedback").textContent=ownerId
