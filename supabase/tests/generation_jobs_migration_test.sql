@@ -42,12 +42,12 @@ create table storage.objects (
 create or replace function storage.foldername(object_name text)
 returns text[]
 language sql immutable
-as $
+as $folder$ 
   select case
     when position('/' in trim(both '/' from object_name)) = 0 then array[]::text[]
     else (string_to_array(trim(both '/' from object_name), '/'))[1:array_length(string_to_array(trim(both '/' from object_name), '/'), 1) - 1]
   end
-$;
+$folder$;
 
 create or replace function storage.extension(object_name text)
 returns text
