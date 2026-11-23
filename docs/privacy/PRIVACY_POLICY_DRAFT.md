@@ -119,3 +119,10 @@ These are starting points, not a complete legal analysis and not a substitute fo
 - Kazakhstan government personal-data protection recommendations: https://www.gov.kz/uploads/2023/2/17/c06d0fc1fb31b7fe5b66a762a73417c7_original.2052451.pdf
 
 Important distinction: DeepSeek's published consumer-service Privacy Policy says it does not cover personal-data processing for end users of downstream applications built with its open-platform services; it directs the developer operating the application to disclose its own policy. Therefore, this draft does not treat that consumer policy as proof of the API's exact retention, processing location, deletion or model-improvement terms. Obtain and review the API-specific agreement and any data-processing addendum directly.
+
+## Current implementation status — do not overstate capabilities
+
+The integration branch contains authenticated privacy-consent and privacy-request endpoints. Consent decisions are versioned and append-only. A user can submit an access, export, correction or deletion request and view its intake status. **Submitting a request does not yet execute an export, erase an account or files, delete provider-held data, or complete a legal request.** A verified operator fulfillment workflow, deadlines and user notifications remain launch requirements.
+
+External AI transfer records contain only account UUID, provider/model identifiers, operation, outcome, consent-event reference, correlation ID and timestamp. They intentionally exclude prompts, images, base64 and provider payloads. These records are append-only and currently have no configured automatic retention/purge schedule. A retention period and legally reviewed anonymization/purge process must be set before publication.
+
