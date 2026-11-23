@@ -15,6 +15,7 @@ $roles$;
 \i supabase/migrations/0081_admin_support_mutation_audit_actions.sql
 \i supabase/migrations/0082_admin_finance_role_audit_actions.sql
 \i supabase/migrations/0083_finance_and_catalog_admin_audit_actions.sql
+\i supabase/migrations/0084_plan_approval_assignment_audit_intents.sql
 
 do $admin_audit_resource_allowlist_test$
 declare
@@ -106,6 +107,18 @@ begin
     'Test finance request cancellation intent'
   );
   if v_id is null then raise exception 'Finance request cancellation audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.plan.draft.approve', 'requested', 'tariff', v_resource, null,
+    'Test plan approval audit intent'
+  );
+  if v_id is null then raise exception 'Plan approval audit intent was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.plan.assignment.create', 'requested', 'user', v_resource, null,
+    'Test plan assignment audit intent'
+  );
+  if v_id is null then raise exception 'Plan assignment audit intent was not recorded'; end if;
 
   v_id := public.record_admin_audit_event(
     v_actor, 'admin.pricing.draft.create', 'requested', 'pricing_catalog_draft', null, null,
