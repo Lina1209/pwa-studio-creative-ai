@@ -3898,3 +3898,229 @@ $finance_operation_request_test$;
 
 select 'finance operation request lifecycle checks passed' as result;
 
+
+
+-- Customer-plan quota admission migrations and transactional job integration.
+\ir ../migrations/0056_pricing_catalog_drafts.sql
+\ir ../migrations/0057_plan_catalog_drafts.sql
+\ir ../migrations/0058_seed_inactive_free_entitlement.sql
+\ir ../migrations/0059_ai_monthly_admission_limits.sql
+\ir ../migrations/0060_plan_approval_and_assignment_foundation.sql
+\ir ../migrations/0061_plan_approval_assignment_rpcs.sql
+\ir ../migrations/0062_plan_approval_audit_atomicity.sql
+\ir ../migrations/0063_pending_assignment_audit_and_idempotency.sql
+\ir ../migrations/0064_atomic_plan_quota_reservations.sql
+\ir ../migrations/0065_plan_quota_window_semantics.sql
+\ir ../migrations/0066_plan_quota_rpc_only_privileges.sql
+\ir ../migrations/0067_atomic_plan_credited_generation.sql
+\ir ../migrations/0068_resolve_plan_quotas_with_job_lifecycle.sql
+
+insert into public.plan_catalog_drafts(
+  id, plan_code, plan_version, display_name, billing_period, period_days,
+  credits_per_period, limits_json, features_json, created_by
+) values (
+  '12121212-1212-4121-8121-121212121212',
+  'test_creator', 1, 'Test Creator', 'month', 30, 1000,
+  '{
+    "daily_ai_requests": 20,
+    "monthly_ai_requests": 200,
+    "max_concurrent_ai_requests": 2,
+    "daily_image_generations": 10,
+    "monthly_image_generations": 100,
+    "daily_video_generations": 5,
+    "monthly_video_generations": 40,
+    "daily_audio_generations": 10,
+    "monthly_audio_generations": 100
+  }'::jsonb,
+  '["image","video","audio","ai"]'::jsonb,
+  '11111111-1111-4111-8111-111111111111'
+);
+
+insert into public.approved_plan_versions(
+  id, source_draft_id, plan_code, plan_version, display_name,
+  billing_period, period_days, credits_per_period, limits_json,
+  features_json, approved_by, approval_reason
+) values (
+  '13131313-1313-4131-8131-131313131313',
+  '12121212-1212-4121-8121-121212121212',
+  'test_creator', 1, 'Test Creator', 'month', 30, 1000,
+  (select limits_json from public.plan_catalog_drafts
+    where id = '12121212-1212-4121-8121-121212121212'),
+  '["image","video","audio","ai"]'::jsonb,
+  '11111111-1111-4111-8111-111111111111',
+  'Approved fixture plan for integration testing'
+);
+
+insert into public.user_plan_assignments(
+  id, user_id, approved_plan_version_id, assignment_source,
+  source_reference, idempotency_key, status, starts_at, ends_at, created_by
+) values (
+  '14141414-1414-4141-8141-141414141414',
+  '22222222-2222-4222-8222-222222222222',
+  '13131313-1313-4131-8131-131313131313',
+  'operator_grant', 'test-fixture-plan', 'test-fixture-plan-001',
+  'pending', now() - interval '1 minute', now() + interval '30 days',
+  '11111111-1111-4111-8111-111111111111'
+);
+
+insert into public.user_plan_assignment_events(
+  assignment_id, user_id, event_type, actor_user_id, event_key, reason
+) values (
+  '14141414-1414-4141-8141-141414141414',
+  '22222222-2222-4222-8222-222222222222',
+  'activated',
+  '11111111-1111-4111-8111-111111111111',
+  'activated:fixture-plan-001',
+  'Test-only activation event for quota integration'
+);
+
+select public.grant_user_credit_lot(
+  '22222222-2222-4222-8222-222222222222',
+  1000, 'bonus', 'plan-quota-test-credit',
+  'plan-quota-fixture-grant-001',
+  now() + interval '30 days',
+  '{"test_fixture":true}'::jsonb
+);
+
+do $plan_quota_atomic_admission_test$
+declare
+  v_created record;
+  v_job_id uuid;
+  v_before_available bigint;
+  v_after_available bigint;
+  v_before_jobs integer;
+  v_after_jobs integer;
+  v_before_holds integer;
+  v_after_holds integer;
+  v_reservations integer;
+  v_completed integer;
+begin
+  select available_credits into v_before_available
+    from public.credit_wallets
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select count(*) into v_before_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select count(*) into v_before_holds from public.credit_holds
+   where user_id = '22222222-2222-4222-8222-222222222222';
+
+  select * into v_created
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-quota-image-job-001',
+      repeat('a', 64),
+      '{"prompt":"atomic quota integration test","quantity":2}'::jsonb,
+      '{"amount":20,"quantity":2,"price_version":"test-v1"}'::jsonb,
+      20
+    );
+
+  v_job_id := v_created.job_id;
+  if not v_created.created or v_created.replayed then
+    raise exception 'First plan-based generation admission was not a new job';
+  end if;
+  if jsonb_array_length(v_created.quota_reservations) <> 2 then
+    raise exception 'Image job must reserve both daily and monthly quotas';
+  end if;
+  if (select count(*) from public.plan_quota_reservations
+       where user_id = '22222222-2222-4222-8222-222222222222'
+         and request_id = v_job_id and status = 'reserved') <> 2 then
+    raise exception 'Plan quota reservations were not persisted with the job';
+  end if;
+  if (select count(*) from public.outbox_events
+       where aggregate_id = v_job_id and event_type = 'generation_job.created') <> 1 then
+    raise exception 'Atomic plan-based admission must create exactly one outbox event';
+  end if;
+
+  -- The daily image quota is 10; 2 units are already reserved.
+  -- A second 9-unit request must roll back its job, outbox and credit hold.
+  select count(*) into v_before_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select count(*) into v_before_holds from public.credit_holds
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select available_credits into v_before_available
+    from public.credit_wallets
+   where user_id = '22222222-2222-4222-8222-222222222222';
+
+  begin
+    perform * from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-quota-image-job-overflow',
+      repeat('b', 64),
+      '{"prompt":"must roll back","quantity":9}'::jsonb,
+      '{"amount":90,"quantity":9,"price_version":"test-v1"}'::jsonb,
+      90
+    );
+    raise exception 'Over-quota image job was unexpectedly admitted';
+  exception when sqlstate '54000' then
+    null;
+  end;
+
+  select count(*) into v_after_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select count(*) into v_after_holds from public.credit_holds
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  select available_credits into v_after_available
+    from public.credit_wallets
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  if v_after_jobs <> v_before_jobs or v_after_holds <> v_before_holds
+     or v_after_available <> v_before_available then
+    raise exception 'Quota denial did not roll back job, hold and wallet atomically';
+  end if;
+
+  update public.generation_jobs
+     set status = 'succeeded', completed_at = now(), updated_at = now()
+   where id = v_job_id;
+  select count(*) into v_completed from public.plan_quota_reservations
+   where request_id = v_job_id and status = 'completed';
+  if v_completed <> 2 then
+    raise exception 'Successful job did not consume daily and monthly plan quotas';
+  end if;
+  select count(*) into v_reservations from public.plan_quota_events
+   where reservation_id in (
+     select id from public.plan_quota_reservations where request_id = v_job_id
+   ) and event_type = 'completed';
+  if v_reservations <> 2 then
+    raise exception 'Successful job did not append both quota completion events';
+  end if;
+
+  -- AI request concurrency is a temporary hold and must be released on success.
+  select * into v_created
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      null,
+      'ai_processing',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-quota-ai-job-001',
+      repeat('c', 64),
+      '{"prompt":"AI quota test","quantity":1}'::jsonb,
+      '{"amount":5,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      5
+    );
+  if jsonb_array_length(v_created.quota_reservations) <> 3 then
+    raise exception 'AI request must reserve daily, monthly and concurrency dimensions';
+  end if;
+  update public.generation_jobs
+     set status = 'succeeded', completed_at = now(), updated_at = now()
+   where id = v_created.job_id;
+
+  if (select count(*) from public.plan_quota_reservations
+       where request_id = v_created.job_id and status = 'completed') <> 2
+     or (select count(*) from public.plan_quota_reservations
+       where request_id = v_created.job_id
+         and feature_key = 'max_concurrent_ai_requests'
+         and status = 'released') <> 1 then
+    raise exception 'AI success must consume period quotas and release concurrency';
+  end if;
+end;
+$plan_quota_atomic_admission_test$;
