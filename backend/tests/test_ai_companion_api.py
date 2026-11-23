@@ -341,7 +341,7 @@ def test_vision_analysis_is_disabled_by_default_and_never_calls_provider(monkeyp
     try:
         response = client.post("/api/vision/analyze", json={
             "prompt": "Опиши изображение.",
-            "image_data_url": "data:image/png;base64,aGVsbG8=",
+            "image_data_url": "data:image/png;base64,aGVsbG8gd29ybGQ=",
             "consent_to_deepseek": True,
         })
         assert response.status_code == 503
@@ -355,7 +355,7 @@ def test_vision_analysis_requires_explicit_consent():
     try:
         response = client.post("/api/vision/analyze", json={
             "prompt": "Опиши изображение.",
-            "image_data_url": "data:image/png;base64,aGVsbG8=",
+            "image_data_url": "data:image/png;base64,aGVsbG8gd29ybGQ=",
         })
         assert response.status_code == 422
     finally:
@@ -369,7 +369,7 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
     validated = ValidatedVisionImage(
         mime_type="image/png",
-        data_url="data:image/png;base64,aGVsbG8=",
+        data_url="data:image/png;base64,aGVsbG8gd29ybGQ=",
         byte_length=5,
         width=1,
         height=1,
@@ -434,7 +434,7 @@ def test_vision_analysis_rejects_invalid_image_after_admission(monkeypatch):
     try:
         response = client.post("/api/vision/analyze", json={
             "prompt": "Опиши изображение.",
-            "image_data_url": "data:image/png;base64,aGVsbG8=",
+            "image_data_url": "data:image/png;base64,aGVsbG8gd29ybGQ=",
             "consent_to_deepseek": True,
         })
         assert response.status_code == 422
