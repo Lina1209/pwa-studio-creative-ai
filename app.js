@@ -1935,8 +1935,11 @@ const movieHistoryStyle = document.createElement("style");
         }
         if(!file)continue;
         const ext=file.type==="image/jpeg"?"jpg":file.type==="image/webp"?"webp":"png";
-        const storagePath=userId+"/"+item.id+"/"+ref.id+"."+ext;
-        const {error}=await supabaseClient.storage.from(cloudVisualBucket).upload(storagePath,file,{contentType:file.type,upsert:true});
+        // Immutable per-upload paths prevent a failed metadata update from destroying
+        // the previously committed image at a stable path.
+        const uploadToken=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+        const storagePath=userId+"/"+item.id+"/"+ref.id+"-"+uploadToken+"."+ext;
+        const {error}=await supabaseClient.storage.from(cloudVisualBucket).upload(storagePath,file,{contentType:file.type,upsert:false});
         if(error)throw error;
         uploaded.push(storagePath);ref.storagePath=storagePath;
         assertOwner();
@@ -1947,9 +1950,8 @@ const movieHistoryStyle = document.createElement("style");
         {onConflict:"user_id,asset_id"}
       );
       if(error)throw error;
-      // The cloud write is committed for the captured owner. If the user switched
-      // accounts while the request was in flight, do not roll back that owner's
-      // uploaded objects; the caller will skip writing into the newly active account.
+      // The cloud write is committed for the captured owner. Keep older objects
+      // until a later safe garbage-collection pass; never risk deleting live refs.
       return item;
     }catch(error){
       if(uploaded.length)await supabaseClient.storage.from(cloudVisualBucket).remove(uploaded).catch(()=>{});
