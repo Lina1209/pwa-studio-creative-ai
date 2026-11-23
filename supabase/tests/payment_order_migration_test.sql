@@ -12,7 +12,7 @@ create table if not exists auth.users (id uuid primary key);
 insert into auth.users(id) values ('11111111-1111-4111-8111-111111111111') on conflict (id) do nothing;
 \i supabase/migrations/0052_payment_order_foundation.sql
 \i supabase/migrations/0053_payment_order_rpcs.sql
-\i supabase/migrations/0070_payment_order_merchant_reference_idempotency.sql
+\i supabase/migrations/0073_payment_order_merchant_reference_idempotency.sql
 \i supabase/migrations/0072_payment_fulfillment_outbox.sql
 
 do $payment_order_merchant_reference_idempotency_test$
