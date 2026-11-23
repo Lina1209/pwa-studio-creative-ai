@@ -11,13 +11,20 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import VisionAnalyzeRequest, VisionAnalyzeResponse, ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, MovieCharacterReference, SceneImageJobRequest, VideoGenerationJobRequest, AudioGenerationJobRequest, SpeechGenerationJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest
+from app.schemas import VisionAnalyzeRequest, VisionAnalyzeResponse, ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, MovieCharacterReference, SceneImageJobRequest, VideoGenerationJobRequest, AudioGenerationJobRequest, SpeechGenerationJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest, PrivacyConsentChangeRequest, PrivacyRequestCreate, PrivacyRequestItem, PrivacyConsentStatusItem
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai, ask_ai_vision
 from app.services.ai_cost_admission import AIProviderBudgetRejected, AIProviderBudgetUnavailable
 from app.services.vision_input import VisionInputError, validate_vision_data_url
 from app.services.auth import StudioUser, get_current_user, require_admin, require_permission
 from app.services.finance_authorization import FinanceAuthorizationDenied, require_finance_permission
 from app.services.content_safety import check_content
+from app.services.privacy_governance import (
+    PrivacyGovernanceUnavailable,
+    record_consent_event,
+    get_consent_status,
+    create_privacy_request,
+    list_privacy_requests,
+)
 from app.services.usage_service import record_ai_usage
 from app.services.ai_admission import (
     AIAdmissionRejected,
@@ -182,6 +189,100 @@ def analytics_record_visit(payload: SiteVisitRequest, response: Response):
 @app.get("/")
 def root():
     return {"name": settings.app_name, "status": "ok", "docs": "/docs"}
+
+
+@app.post(f"{settings.api_prefix}/privacy/consent")
+def change_privacy_consent(
+    payload: PrivacyConsentChangeRequest,
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Record a versioned consent decision; never accept client-supplied policy versions."""
+    if payload.action == "accepted":
+        if settings.privacy_notice_version == "unpublished":
+            raise HTTPException(status_code=503, detail="Политика конфиденциальности ещё не опубликована.")
+        if payload.consent_scope == "vision_deepseek":
+            if not (
+                settings.vision_input_enabled
+                and settings.vision_privacy_review_approved
+                and settings.vision_consent_version != "unpublished"
+            ):
+                raise HTTPException(status_code=503, detail="Согласие на анализ изображений пока недоступно.")
+            consent_version = settings.vision_consent_version
+        else:
+            consent_version = settings.privacy_notice_version
+    else:
+        consent_version = (
+            settings.vision_consent_version
+            if payload.consent_scope == "vision_deepseek"
+            else settings.privacy_notice_version
+        )
+    try:
+        event_id = record_consent_event(
+            settings,
+            user_id=UUID(user.user_id),
+            consent_scope=payload.consent_scope,
+            action=payload.action,
+            policy_version=settings.privacy_notice_version,
+            consent_version=consent_version,
+            source=payload.source,
+        )
+    except PrivacyGovernanceUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Сервис управления конфиденциальностью временно недоступен.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "event_id": event_id,
+        "consent_scope": payload.consent_scope,
+        "action": payload.action,
+        "policy_version": settings.privacy_notice_version,
+        "consent_version": consent_version,
+    }
+
+
+@app.get(f"{settings.api_prefix}/privacy/consent", response_model=list[PrivacyConsentStatusItem])
+def read_privacy_consent(
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    try:
+        result = get_consent_status(settings, user_id=UUID(user.user_id))
+    except PrivacyGovernanceUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Сервис управления конфиденциальностью временно недоступен.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return result
+
+
+@app.post(f"{settings.api_prefix}/privacy/requests", response_model=PrivacyRequestItem)
+def submit_privacy_request(
+    payload: PrivacyRequestCreate,
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Create an authenticated privacy request; submission does not execute export/deletion."""
+    try:
+        result = create_privacy_request(
+            settings,
+            user_id=UUID(user.user_id),
+            request_type=payload.request_type,
+            idempotency_key=payload.idempotency_key,
+        )
+    except PrivacyGovernanceUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Сервис запросов о персональных данных временно недоступен.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return result
+
+
+@app.get(f"{settings.api_prefix}/privacy/requests", response_model=list[PrivacyRequestItem])
+def read_privacy_requests(
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    try:
+        result = list_privacy_requests(settings, user_id=UUID(user.user_id))
+    except PrivacyGovernanceUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Сервис запросов о персональных данных временно недоступен.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return result
 
 
 @app.get(f"{settings.api_prefix}/health")
