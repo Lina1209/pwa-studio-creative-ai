@@ -125,6 +125,7 @@
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+        if (typeof syncCloudVisualLibrary === "function" && authSession?.user?.id === nextUserId) syncCloudVisualLibrary();
         if (typeof renderMovieProjects === "function") renderMovieProjects();
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
       }, 0);
@@ -1833,8 +1834,11 @@ const movieHistoryStyle = document.createElement("style");
     db.close();
   };
   const cloudVisualBucket="character-references";
+  let visualLibrarySyncSequence=0;
   const syncCloudVisualLibrary=async()=>{
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
+    const syncSequence=++visualLibrarySyncSequence;
+    const isCurrentSync=()=>authSession?.user?.id===userId&&syncSequence===visualLibrarySyncSequence;
     try{
       const {data,error}=await supabaseClient.from("character_visual_assets").select("asset_id,asset,deleted_at").eq("user_id",userId);
       if(error)throw error;
@@ -1848,7 +1852,9 @@ const movieHistoryStyle = document.createElement("style");
         cloudById.set(id,asset);
       }
       // Import legacy device-only entries once; cloud tombstones always win over stale local copies.
+      if(!isCurrentSync())return;
       for(const localItem of readVisualLibrary()){
+        if(!isCurrentSync())return;
         if(tombstones.has(localItem.id)||cloudById.has(localItem.id))continue;
         const blobs=[];
         for(const ref of (Array.isArray(localItem.referenceImages)?localItem.referenceImages:[])){
@@ -1860,24 +1866,29 @@ const movieHistoryStyle = document.createElement("style");
           blobs.push(blob||null);
         }
         const migrated=await saveVisualAssetToCloud(localItem,blobs);
+        if(!isCurrentSync())return;
         cloudById.set(migrated.id,migrated);
       }
       const activeItems=[...cloudById.values()].slice(0,100);
       for(const item of activeItems){
+        if(!isCurrentSync())return;
         for(const ref of (Array.isArray(item.referenceImages)?item.referenceImages:[])){
           if(!ref.storagePath)continue;
           if(!ref.storagePath.startsWith(userId+"/")){missingImages++;continue;}
           const {data:blob,error:downloadError}=await supabaseClient.storage.from(cloudVisualBucket).download(ref.storagePath);
           if(downloadError||!blob){missingImages++;continue;}
+          if(!isCurrentSync())return;
           await saveVisualRefImage(ref.id,blob,userId);
         }
       }
+      if(!isCurrentSync())return;
       localStorage.setItem(visualLibraryKey(),JSON.stringify(activeItems));
       renderVisualLibrary();
       $("#promptSaveFeedback").textContent=invalidRows||missingImages
         ? "Синхронизация завершена частично: пропущено записей — "+invalidRows+", недоступных изображений — "+missingImages+". Остальные материалы загружены."
         : "Облачная библиотека синхронизирована. Удалённые материалы не восстанавливаются со старых устройств.";
     }catch(error){
+      if(authSession?.user?.id!==userId||syncSequence!==visualLibrarySyncSequence)return;
       console.warn("Visual library cloud sync unavailable:",error);
       $("#promptSaveFeedback").textContent="Облачная синхронизация пока недоступна. Локальная библиотека сохранена без изменений.";
     }
@@ -1885,6 +1896,7 @@ const movieHistoryStyle = document.createElement("style");
   const saveVisualAssetToCloud=async(item,files)=>{
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return item;
     const uploaded=[];
+    const assertOwner=()=>{if(authSession?.user?.id!==userId)throw new Error("Аккаунт изменился во время синхронизации.");};
     try{
       for(let i=0;i<files.length;i++){
         const file=files[i],ref=item.referenceImages[i];
@@ -1898,12 +1910,15 @@ const movieHistoryStyle = document.createElement("style");
         const {error}=await supabaseClient.storage.from(cloudVisualBucket).upload(storagePath,file,{contentType:file.type,upsert:true});
         if(error)throw error;
         uploaded.push(storagePath);ref.storagePath=storagePath;
+        assertOwner();
       }
+      assertOwner();
       const {error}=await supabaseClient.from("character_visual_assets").upsert(
         {user_id:userId,asset_id:item.id,asset:item,updated_at:new Date().toISOString(),deleted_at:null},
         {onConflict:"user_id,asset_id"}
       );
       if(error)throw error;
+      assertOwner();
       return item;
     }catch(error){
       if(uploaded.length)await supabaseClient.storage.from(cloudVisualBucket).remove(uploaded).catch(()=>{});
