@@ -3504,7 +3504,8 @@ const movieHistoryStyle = document.createElement("style");
     detail: $("#generationJobDetail"),
     feedback: $("#generationJobFeedback"),
     cancel: $("#cancelGenerationJob"),
-    refresh: $("#refreshGenerationJob")
+    refresh: $("#refreshGenerationJob"),
+    openResult: $("#openGenerationResult")
   };
   const renderGenerationJob = (job) => {
     if (!generationJobElements.card) return;
@@ -3526,8 +3527,10 @@ const movieHistoryStyle = document.createElement("style");
             : "Состояние обновляется автоматически.";
     generationJobElements.detail.textContent = detail;
     generationJobElements.cancel.hidden = !["queued", "retry_wait", "running"].includes(status);
+    generationJobElements.openResult.hidden = status !== "succeeded";
     generationJobElements.cancel.disabled = generationJobBusy;
     generationJobElements.refresh.disabled = generationJobBusy;
+    generationJobElements.openResult.disabled = generationJobBusy;
   };
   const stopGenerationJobPolling = () => {
     if (generationJobPollTimer) clearInterval(generationJobPollTimer);
@@ -3591,7 +3594,34 @@ const movieHistoryStyle = document.createElement("style");
       await loadGenerationJobStatus(true);
     }
   };
+  const openTrackedGenerationResult = async () => {
+    if (!activeGenerationJobId || generationJobBusy) return;
+    const resultTab = window.open("about:blank", "_blank");
+    if (resultTab) resultTab.opener = null;
+    generationJobBusy = true;
+    generationJobElements.feedback.textContent = "Проверяем готовый файл и создаём временную ссылку…";
+    renderGenerationJob({id: activeGenerationJobId, status: "succeeded"});
+    try {
+      const result = await apiRequest("/api/jobs/" + encodeURIComponent(activeGenerationJobId) + "/result");
+      const target = new URL(result.signed_url);
+      if (target.protocol !== "https:" || !target.hostname || !Number.isInteger(result.expires_in) || result.expires_in > 300) {
+        throw new Error("Сервер вернул небезопасную ссылку на результат.");
+      }
+      if (resultTab) resultTab.location.replace(target.href);
+      else window.location.assign(target.href);
+      generationJobElements.feedback.textContent = "Временная ссылка действует " + result.expires_in + " секунд.";
+    } catch (error) {
+      if (resultTab) resultTab.close();
+      generationJobElements.feedback.textContent = error.message;
+    } finally {
+      generationJobBusy = false;
+      generationJobElements.openResult.disabled = false;
+      generationJobElements.refresh.disabled = false;
+      await loadGenerationJobStatus(true);
+    }
+  };
   generationJobElements.cancel?.addEventListener("click", cancelTrackedGenerationJob);
+  generationJobElements.openResult?.addEventListener("click", openTrackedGenerationResult);
   generationJobElements.refresh?.addEventListener("click", () => loadGenerationJobStatus(false));
   const restoreGenerationJobForCurrentUser = () => {
     stopGenerationJobPolling();
