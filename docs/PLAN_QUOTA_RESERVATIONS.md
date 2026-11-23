@@ -54,9 +54,9 @@ The service-role-only RPC `create_plan_credited_generation_job_with_outbox` now 
 If the plan is missing, any quota is exhausted, the wallet lacks credits, or any insert/constraint fails, PostgreSQL rolls back the complete submission. A retry with the same owner/idempotency key returns the original job, hold and quota reservations.
 
 Quota mapping:
-- Image jobs: daily + monthly image units.
-- Video jobs: daily + monthly video units.
-- Audio and speech jobs: daily + monthly audio units.
+- Image jobs: daily + monthly image units (the signed quote quantity is the number of image outputs).
+- Video jobs: one daily + monthly video generation per job; duration limits remain a separate future dimension.
+- Audio and speech jobs: one daily + monthly audio generation per job.
 - AI processing jobs: daily + monthly AI requests + one concurrent AI slot.
 - Media export is deliberately not admitted by this RPC until a separate quota policy exists.
 
