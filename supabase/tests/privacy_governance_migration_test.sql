@@ -12,6 +12,7 @@ declare
   v_correlation uuid := 'a31c7e5a-45a1-4bde-8b6c-8f7f95d7a904';
   v_race_correlation uuid := 'a31c7e5a-45a1-4bde-8b6c-8f7f95d7a905';
   v_action text;
+  v_count integer;
   v_failed boolean := false;
 begin
   insert into auth.users(id) values (v_user),(v_other) on conflict (id) do nothing;
