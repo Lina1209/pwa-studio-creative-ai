@@ -124,3 +124,62 @@ def mark_conversation_read(settings: Settings, user_id: str, thread_id: str):
         "read_at": "is.null", "select": "id",
     }, payload={"read_at": now})
     return {"updated": len(rows)}
+
+def block_user(settings: Settings, blocker_id: str, blocked_id: str):
+    _canonical_pair(blocker_id, blocked_id)
+    rows = _request(settings, "POST", "user_blocks",
+        params={"on_conflict": "blocker_id,blocked_id"},
+        payload={"blocker_id": blocker_id, "blocked_id": blocked_id},
+        prefer="resolution=ignore-duplicates,return=representation")
+    return {"blocked": True, "created": bool(rows)}
+
+
+def unblock_user(settings: Settings, blocker_id: str, blocked_id: str):
+    _canonical_pair(blocker_id, blocked_id)
+    _request(settings, "DELETE", "user_blocks", params={
+        "blocker_id": f"eq.{blocker_id}", "blocked_id": f"eq.{blocked_id}",
+    }, prefer="return=minimal")
+    return {"blocked": False}
+
+
+def list_blocked_users(settings: Settings, blocker_id: str):
+    return _request(settings, "GET", "user_blocks", params={
+        "select": "blocked_id,created_at", "blocker_id": f"eq.{blocker_id}",
+        "order": "created_at.desc", "limit": "200",
+    })
+
+
+def edit_message(settings: Settings, user_id: str, message_id: str, body: str):
+    if not body or not body.strip():
+        raise HTTPException(status_code=422, detail="Message text cannot be empty.")
+    try:
+        message_uuid = str(UUID(message_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="A valid message ID is required.") from exc
+    rows = _request(settings, "PATCH", "direct_messages", params={
+        "id": f"eq.{message_uuid}", "sender_id": f"eq.{user_id}",
+        "select": "id,thread_id,sender_id,recipient_id,body,read_at,created_at,edited_at",
+    }, payload={"body": body.strip(), "edited_at": datetime.now(timezone.utc).isoformat()})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Message not found or not editable.")
+    return rows[0]
+
+
+def delete_message_for_self(settings: Settings, user_id: str, message_id: str):
+    try:
+        message_uuid = str(UUID(message_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="A valid message ID is required.") from exc
+    # Determine which side of the conversation owns this message view.
+    rows = _request(settings, "GET", "direct_messages", params={
+        "select": "id,sender_id,recipient_id", "id": f"eq.{message_uuid}",
+        "or": f"(sender_id.eq.{user_id},recipient_id.eq.{user_id})", "limit": "1",
+    })
+    if not rows:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    column = "deleted_for_sender_at" if rows[0]["sender_id"] == user_id else "deleted_for_recipient_at"
+    _request(settings, "PATCH", "direct_messages", params={
+        "id": f"eq.{message_uuid}", "select": "id",
+    }, payload={column: datetime.now(timezone.utc).isoformat()})
+    return {"deleted_for_you": True}
+
