@@ -39,7 +39,7 @@ insert into auth.users(id) values('88888888-8888-4888-8888-888888888888')
 on conflict do nothing;
 insert into public.profiles(id,display_name)
 values('88888888-8888-4888-8888-888888888888','Existing Creator')
-on conflict(id) do update set username=null;
+on conflict(id) do update set display_name=excluded.display_name;
 
 \i supabase/migrations/0097_creator_profiles_and_discovery.sql
 
