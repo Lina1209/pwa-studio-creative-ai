@@ -1489,6 +1489,12 @@ const movieHistoryStyle = document.createElement("style");
     .prompt-version-history{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(135,105,220,.045)}
     .prompt-version-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--muted)}
     .prompt-version-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+    .prompt-block-builder{margin:14px 0;padding:14px;border:1px solid rgba(170,140,255,.25);border-radius:14px;background:rgba(135,105,220,.06)}
+    .prompt-block-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.prompt-block-list{display:grid;gap:8px;margin-top:10px}
+    .prompt-builder-block{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:11px;border:1px solid var(--border);border-radius:11px;background:var(--surface)}
+    .prompt-builder-block b{font-size:13px}.prompt-builder-block p{grid-column:1;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+    .prompt-builder-block button{grid-column:2;grid-row:1/3;align-self:center}
+    @media(max-width:520px){.prompt-block-controls button{flex:1}.prompt-builder-block{grid-template-columns:1fr}.prompt-builder-block p,.prompt-builder-block button{grid-column:1;grid-row:auto}.prompt-builder-block button{justify-self:start}}
     .prompt-workbench,.prompt-fragments{margin:14px 0;padding:14px;border:1px solid rgba(170,140,255,.2);border-radius:14px;background:rgba(135,105,220,.045)}
     .prompt-workbench-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.prompt-workbench-head span,.prompt-variable-tools small{font-size:11px;color:var(--muted)}
     .prompt-workbench-action{display:flex;align-items:end}.prompt-workbench-action button{width:100%;min-height:42px}
@@ -1758,6 +1764,36 @@ const movieHistoryStyle = document.createElement("style");
   $("#wrapBoldPrompt").addEventListener("click",()=>wrapPromptSelection("**"));
   $("#wrapQuotePrompt").addEventListener("click",()=>wrapPromptSelection("> ",""));
   $("#wrapCodePrompt").addEventListener("click",()=>wrapPromptSelection("`","`"));
+  const promptBlockLabels = {character:"Персонаж",scene:"Сцена и окружение",camera:"Камера и композиция",light:"Свет и цвет",style:"Визуальный стиль",sound:"Звук и музыка"};
+  let promptBuilderBlocks = [];
+  const renderPromptBuilderBlocks = () => {
+    const list=$("#promptBlockList");if(!list)return;list.replaceChildren();
+    if(!promptBuilderBlocks.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent="Добавьте один или несколько блоков. Их можно будет удалить до сборки промпта.";list.append(empty);return;}
+    promptBuilderBlocks.forEach((block,index)=>{
+      const row=document.createElement("article");row.className="prompt-builder-block";
+      const heading=document.createElement("b");heading.textContent=(index+1)+". "+promptBlockLabels[block.type];
+      const content=document.createElement("p");content.textContent=block.text;
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{promptBuilderBlocks.splice(index,1);renderPromptBuilderBlocks();});
+      row.append(heading,content,remove);list.append(row);
+    });
+  };
+  $("#addPromptBlock").addEventListener("click",()=>{
+    const type=$("#promptBlockType").value;const value=$("#promptBlockText").value.trim();
+    if(!promptBlockLabels[type]||!value){$("#promptSaveFeedback").textContent="Выберите тип блока и заполните его содержание.";return;}
+    if(promptBuilderBlocks.length>=20){$("#promptSaveFeedback").textContent="В одном конструкторе можно собрать не более 20 блоков.";return;}
+    promptBuilderBlocks.push({type,text:value.slice(0,1800)});
+    $("#promptBlockText").value="";renderPromptBuilderBlocks();$("#promptSaveFeedback").textContent="Блок добавлен в конструктор.";
+  });
+  $("#composePromptBlocks").addEventListener("click",()=>{
+    if(!promptBuilderBlocks.length){$("#promptSaveFeedback").textContent="Сначала добавьте хотя бы один блок.";return;}
+    const assembled=promptBuilderBlocks.map((block,index)=>"["+String(index+1).padStart(2,"0")+" · "+promptBlockLabels[block.type]+"]\\n"+block.text).join("\\n\\n");
+    const hasContent=promptOutput.textContent.trim()&&!promptOutput.textContent.startsWith("Здесь появится");
+    if(hasContent&&!window.confirm("Заменить текущий текст промпта собранными блоками?"))return;
+    promptOutput.textContent=assembled;promptOutput.contentEditable="true";promptOutput.focus();
+    $("#promptSaveFeedback").textContent="Готово: собрано блоков — "+promptBuilderBlocks.length+". Теперь промпт можно редактировать, копировать или сохранить в фильм.";
+  });
+  $("#clearPromptBlocks").addEventListener("click",()=>{promptBuilderBlocks=[];renderPromptBuilderBlocks();$("#promptSaveFeedback").textContent="Блоки конструктора очищены.";});
+  renderPromptBuilderBlocks();
   const promptTemplates = {
     cinematic: "Субъект: {{subject}}.\nЛокация: {{location}}.\nНастроение: {{mood}}.\nКинематографичная композиция, выразительная глубина кадра, естественное освещение, детализированные материалы, продуманная цветовая палитра. Камера: {{camera}}. Сохранить визуальную целостность и реалистичную физику.",
     character: "Персонаж: {{subject}}.\nВнешность и отличительные черты: {{appearance}}.\nОдежда и аксессуары: {{wardrobe}}.\nХарактер и манера движения: {{personality}}. Сохранять одинаковые черты лица, пропорции, причёску и одежду во всех кадрах. Не менять идентичность персонажа.",
