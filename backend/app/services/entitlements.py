@@ -1,0 +1,229 @@
+"""Read-only effective plan and capability resolver for authenticated studio users.
+
+Only a single time-valid active assignment can grant plan capabilities. Pending,
+scheduled, expired, revoked, or ambiguous assignments never grant access.
+"""
+from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID
+
+import httpx
+
+from app.core.config import Settings
+
+
+class EntitlementsUnavailable(RuntimeError):
+    pass
+
+
+# These dimensions are enforced by the atomic generation admission RPCs.
+_ENFORCED_DIMENSIONS = {
+    "daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests",
+    "daily_image_generations", "monthly_image_generations",
+    "daily_video_generations", "monthly_video_generations",
+    "daily_audio_generations", "monthly_audio_generations",
+}
+
+# These are draft-schema dimensions only. They are deliberately reported as
+# not enforced until they are included in the same transactional admission path.
+_NOT_YET_ENFORCED_DIMENSIONS = {
+    "max_parallel_jobs", "daily_generation_jobs", "monthly_generation_jobs",
+    "max_video_seconds", "max_resolution",
+}
+
+
+def _headers(settings: Settings) -> dict[str, str]:
+    key = settings.supabase_service_role_key
+    if not settings.supabase_url or not key:
+        raise EntitlementsUnavailable("Entitlements storage is not configured.")
+    headers = {"apikey": key, "Accept": "application/json"}
+    if key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
+def _get(settings: Settings, table: str, params: dict[str, str]) -> Any:
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            response = client.get(
+                f"{settings.supabase_url.rstrip('/')}/rest/v1/{table}",
+                params=params,
+                headers=_headers(settings),
+            )
+            response.raise_for_status()
+            return response.json() if response.content else []
+    except EntitlementsUnavailable:
+        raise
+    except Exception as exc:
+        raise EntitlementsUnavailable("Effective plan information is temporarily unavailable.") from exc
+
+
+def _utc_datetime(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str, Any]:
+    """Resolve only server-owned, active-plan facts and current quota usage."""
+    if not isinstance(user_id, UUID):
+        raise ValueError("Verified user UUID is required.")
+
+    now = datetime.now(timezone.utc)
+    now_text = _utc_datetime(now)
+    active = _get(
+        settings,
+        "user_plan_assignments",
+        {
+            "select": "id,user_id,approved_plan_version_id,status,starts_at,ends_at",
+            "user_id": f"eq.{user_id}",
+            "status": "eq.active",
+            "starts_at": f"lte.{now_text}",
+            "ends_at": f"gt.{now_text}",
+            "order": "starts_at.desc,id.desc",
+            "limit": "2",
+        },
+    )
+    if not isinstance(active, list) or len(active) > 2 or any(not isinstance(x, dict) for x in active):
+        raise EntitlementsUnavailable("Active plan assignment query returned invalid data.")
+
+    pending = _get(
+        settings,
+        "user_plan_assignments",
+        {
+            "select": "id,status,starts_at,ends_at",
+            "user_id": f"eq.{user_id}",
+            "status": "in.(pending,scheduled)",
+            "order": "created_at.desc,id.desc",
+            "limit": "1",
+        },
+    )
+    if not isinstance(pending, list) or any(not isinstance(x, dict) for x in pending):
+        raise EntitlementsUnavailable("Pending plan assignment query returned invalid data.")
+
+    if len(active) > 1:
+        return {
+            "status": "ambiguous_active_assignments",
+            "plan": None,
+            "features": [],
+            "quotas": {},
+            "pending_assignment_exists": bool(pending),
+            "capabilities_enabled": False,
+            "reason": "More than one active assignment exists; access is denied until reviewed.",
+        }
+
+    if not active:
+        return {
+            "status": "no_active_plan",
+            "plan": None,
+            "features": [],
+            "quotas": {},
+            "pending_assignment_exists": bool(pending),
+            "capabilities_enabled": False,
+            "reason": "No time-valid active plan assignment exists.",
+        }
+
+    assignment = active[0]
+    if (
+        str(assignment.get("user_id")) != str(user_id)
+        or assignment.get("status") != "active"
+        or not assignment.get("approved_plan_version_id")
+    ):
+        raise EntitlementsUnavailable("Active assignment failed ownership verification.")
+
+    approved_id = str(assignment["approved_plan_version_id"])
+    plans = _get(
+        settings,
+        "approved_plan_versions",
+        {
+            "select": "id,plan_code,plan_version,display_name,billing_period,period_days,credits_per_period,price_minor,currency,limits_json,features_json",
+            "id": f"eq.{approved_id}",
+            "limit": "1",
+        },
+    )
+    if not isinstance(plans, list) or len(plans) != 1 or not isinstance(plans[0], dict):
+        raise EntitlementsUnavailable("Approved plan snapshot could not be verified.")
+    plan = plans[0]
+    limits = plan.get("limits_json")
+    features = plan.get("features_json")
+    if str(plan.get("id")) != approved_id or not isinstance(limits, dict) or not isinstance(features, list):
+        raise EntitlementsUnavailable("Approved plan snapshot contains invalid data.")
+    if any(not isinstance(item, str) for item in features):
+        raise EntitlementsUnavailable("Approved plan features contain invalid data.")
+
+    reservations = _get(
+        settings,
+        "plan_quota_reservations",
+        {
+            "select": "feature_key,reserved_units,status,period_start",
+            "user_id": f"eq.{user_id}",
+            "assignment_id": f"eq.{assignment['id']}",
+            "status": "in.(reserved,completed)",
+            "limit": "10000",
+        },
+    )
+    if not isinstance(reservations, list) or any(not isinstance(x, dict) for x in reservations):
+        raise EntitlementsUnavailable("Quota usage query returned invalid data.")
+
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    usage: dict[str, int] = {}
+    for row in reservations:
+        feature = row.get("feature_key")
+        units = row.get("reserved_units")
+        status = row.get("status")
+        period = row.get("period_start")
+        if not isinstance(feature, str) or isinstance(units, bool) or not isinstance(units, int) or units < 1:
+            raise EntitlementsUnavailable("Quota usage row contains invalid values.")
+        if status not in {"reserved", "completed"}:
+            raise EntitlementsUnavailable("Quota usage row has an unexpected status.")
+        if feature == "max_concurrent_ai_requests":
+            if status == "reserved":
+                usage[feature] = usage.get(feature, 0) + units
+            continue
+        if not isinstance(period, str):
+            raise EntitlementsUnavailable("Quota usage row is missing its period start.")
+        if feature.startswith("daily_") and period == day_start.isoformat():
+            usage[feature] = usage.get(feature, 0) + units
+        elif feature.startswith("monthly_") and period == month_start.isoformat():
+            usage[feature] = usage.get(feature, 0) + units
+
+    quotas: dict[str, dict[str, Any]] = {}
+    for feature in sorted(_ENFORCED_DIMENSIONS | _NOT_YET_ENFORCED_DIMENSIONS):
+        raw_limit = limits.get(feature)
+        limit = raw_limit if isinstance(raw_limit, int) and not isinstance(raw_limit, bool) and raw_limit >= 0 else None
+        used = usage.get(feature, 0)
+        enforced = feature in _ENFORCED_DIMENSIONS
+        quotas[feature] = {
+            "limit": limit,
+            "used": used,
+            "remaining": max(limit - used, 0) if limit is not None else None,
+            "enforced": enforced,
+            "configured": limit is not None,
+        }
+
+    return {
+        "status": "active",
+        "plan": {
+            "id": approved_id,
+            "code": plan.get("plan_code"),
+            "version": plan.get("plan_version"),
+            "name": plan.get("display_name"),
+            "billing_period": plan.get("billing_period"),
+            "period_days": plan.get("period_days"),
+            "credits_per_period": plan.get("credits_per_period"),
+            "price_minor": plan.get("price_minor"),
+            "currency": plan.get("currency"),
+        },
+        "assignment": {
+            "id": str(assignment["id"]),
+            "starts_at": assignment.get("starts_at"),
+            "ends_at": assignment.get("ends_at"),
+        },
+        "features": features,
+        "quotas": quotas,
+        "pending_assignment_exists": bool(pending),
+        "capabilities_enabled": True,
+        "activation_enabled": False,
+        "checkout_enabled": False,
+        "credits_granted": False,
+        "generated_at": now_text,
+    }
