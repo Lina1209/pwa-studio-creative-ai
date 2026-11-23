@@ -1836,12 +1836,30 @@ const movieHistoryStyle = document.createElement("style");
   const syncCloudVisualLibrary=async()=>{
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
     try{
-      const {data,error}=await supabaseClient.from("character_visual_assets").select("asset").eq("user_id",userId);
+      const {data,error}=await supabaseClient.from("character_visual_assets").select("asset,deleted_at").eq("user_id",userId);
       if(error)throw error;
-      const local=readVisualLibrary(),byId=new Map(local.map(item=>[item.id,item]));
+      const cloudById=new Map();
+      const tombstones=new Set();
       for(const row of (data||[])){
-        const item=row?.asset;if(!item||typeof item.id!=="string")continue;
-        byId.set(item.id,item);
+        const id=row?.asset?.id;
+        if(typeof id!=="string")continue;
+        if(row.deleted_at){tombstones.add(id);continue;}
+        cloudById.set(id,row.asset);
+      }
+      // Import legacy device-only entries once; cloud tombstones always win over stale local copies.
+      for(const localItem of readVisualLibrary()){
+        if(tombstones.has(localItem.id)||cloudById.has(localItem.id))continue;
+        const blobs=[];
+        for(const ref of (Array.isArray(localItem.referenceImages)?localItem.referenceImages:[])){
+          if(ref.storagePath)continue;
+          const blob=await getVisualRefImage(ref.id,userId);
+          if(blob)blobs.push(blob);
+        }
+        const migrated=await saveVisualAssetToCloud(localItem,blobs);
+        cloudById.set(migrated.id,migrated);
+      }
+      const activeItems=[...cloudById.values()].slice(0,100);
+      for(const item of activeItems){
         for(const ref of (Array.isArray(item.referenceImages)?item.referenceImages:[])){
           if(!ref.storagePath)continue;
           const {data:blob,error:downloadError}=await supabaseClient.storage.from(cloudVisualBucket).download(ref.storagePath);
@@ -1849,13 +1867,12 @@ const movieHistoryStyle = document.createElement("style");
           await saveVisualRefImage(ref.id,blob,userId);
         }
       }
-      const merged=[...byId.values()].slice(0,100);
-      localStorage.setItem(visualLibraryKey(),JSON.stringify(merged));
+      localStorage.setItem(visualLibraryKey(),JSON.stringify(activeItems));
       renderVisualLibrary();
-      $("#promptSaveFeedback").textContent="Облачная библиотека синхронизирована с вашим аккаунтом.";
+      $("#promptSaveFeedback").textContent="Облачная библиотека синхронизирована. Удалённые материалы не восстанавливаются со старых устройств.";
     }catch(error){
       console.warn("Visual library cloud sync unavailable:",error);
-      $("#promptSaveFeedback").textContent="Облачная синхронизация пока недоступна. Локальная библиотека сохранена.";
+      $("#promptSaveFeedback").textContent="Облачная синхронизация пока недоступна. Локальная библиотека сохранена без изменений.";
     }
   };
   const saveVisualAssetToCloud=async(item,files)=>{
@@ -1871,7 +1888,7 @@ const movieHistoryStyle = document.createElement("style");
         uploaded.push(storagePath);ref.storagePath=storagePath;
       }
       const {error}=await supabaseClient.from("character_visual_assets").upsert(
-        {user_id:userId,asset_id:item.id,asset:item,updated_at:new Date().toISOString()},
+        {user_id:userId,asset_id:item.id,asset:item,updated_at:new Date().toISOString(),deleted_at:null},
         {onConflict:"user_id,asset_id"}
       );
       if(error)throw error;
@@ -1883,10 +1900,12 @@ const movieHistoryStyle = document.createElement("style");
   };
   const deleteVisualAssetFromCloud=async(item)=>{
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
+    const {error:markError}=await supabaseClient.from("character_visual_assets")
+      .update({deleted_at:new Date().toISOString(),updated_at:new Date().toISOString()})
+      .eq("user_id",userId).eq("asset_id",item.id);
+    if(markError)throw markError;
     const paths=(item?.referenceImages||[]).map(ref=>ref.storagePath).filter(Boolean);
     if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error)throw error;}
-    const {error}=await supabaseClient.from("character_visual_assets").delete().eq("user_id",userId).eq("asset_id",item.id);
-    if(error)throw error;
   };
   const renderVisualLibrary = () => {
     const list=$("#visualAssetList");if(!list)return;
@@ -1985,7 +2004,10 @@ const movieHistoryStyle = document.createElement("style");
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
         const next=readVisualLibrary();const removed=next.splice(index,1)[0];localStorage.setItem(visualLibraryKey(),JSON.stringify(next));
         (removed?.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
-        deleteVisualAssetFromCloud(removed).catch(error=>console.warn("Cloud asset delete failed:",error));renderVisualLibrary();
+        deleteVisualAssetFromCloud(removed).catch(error=>{
+          console.warn("Cloud asset delete failed:",error);
+          $("#promptSaveFeedback").textContent="Материал удалён с устройства, но облачную отметку удаления сохранить не удалось. Повторите синхронизацию позже.";
+        });renderVisualLibrary();
       });
       actions.append(insert,pin,remove);card.append(actions);list.append(card);
     });
