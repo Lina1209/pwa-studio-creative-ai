@@ -55,8 +55,15 @@ def get_current_user(
 
     email = claims.get("email")
     email = email.lower() if isinstance(email, str) else None
-    owner_email = (settings.owner_email or "").strip().lower()
-    role = "admin" if email and owner_email and email == owner_email else "creator"
+    owner_user_id = (settings.owner_user_id or "").strip()
+    if owner_user_id:
+        # A configured immutable Supabase UUID takes precedence over mutable email.
+        role = "admin" if user_id == owner_user_id else "creator"
+    else:
+        # Backward compatibility only. Set OWNER_USER_ID in production to avoid
+        # relying on an email claim for administrator identity.
+        owner_email = (settings.owner_email or "").strip().lower()
+        role = "admin" if email and owner_email and email == owner_email else "creator"
     return StudioUser(user_id=user_id, email=email, role=role)
 
 
