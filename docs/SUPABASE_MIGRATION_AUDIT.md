@@ -85,3 +85,8 @@ The API now calls a separate database RPC before sending requests to the configu
 - The fixed-window design can permit a burst around a window boundary; revisit with real abuse telemetry.
 
 Migration `0012_atomic_ai_rate_limit.sql` is source-only and has not been applied to Supabase. It must be reconciled with the live migration ledger and schema before rollout.
+
+
+## AI output-token ceiling
+
+The AI service now sends a server-controlled `max_tokens` value with every provider completion request. The setting is `AI_MAX_OUTPUT_TOKENS`, defaults to 2048, and is validated to remain between 256 and 8192. This bounds generated output tokens per request and makes the maximum output budget explicit in deployment configuration. It is not a full monetary cap: input tokens, model pricing, retries, and actual provider billing still require usage reconciliation and budget controls. The limit should be tuned against the selected DeepSeek model's supported parameters and the quality/length requirements of each studio workflow.
