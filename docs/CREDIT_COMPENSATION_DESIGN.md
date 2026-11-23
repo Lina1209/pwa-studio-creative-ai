@@ -97,3 +97,8 @@ A future migration and backend implementation must prove at least:
 ## 8. Activation gates
 
 No compensation RPC, admin endpoint, automatic compensation policy, payment-provider refund integration, scheduler, or production migration is created by this design document. Implementation remains blocked until the authorization model, lot-restoration/expiry policy, reason-code catalog, operator approval process, and user-facing terms are explicitly reviewed and approved.
+
+
+## Readback integrity checks
+
+The server validates finance-request readback snapshots as strictly as queue rows: request UUID must match the requested record, scope must equal `user:<target UUID>`, amount must be finite and positive, currency must be a canonical three-letter uppercase ASCII code, credit compensation must use whole `CRD` units, and cash refunds must not use `CRD`. Malformed database snapshots fail closed and are not exposed as trusted finance state.
