@@ -16,7 +16,14 @@ def teardown_function():
     app.dependency_overrides.clear()
 
 
-def test_entitlements_endpoint_requires_authenticated_user():
+def test_entitlements_endpoint_requires_authenticated_user(monkeypatch):
+    from app.core.config import Settings
+    from app.services import auth
+
+    monkeypatch.setattr(
+        auth, "get_settings",
+        lambda: Settings(supabase_url="https://example.supabase.co"),
+    )
     response = TestClient(app).get("/api/me/entitlements")
     assert response.status_code == 401
 
