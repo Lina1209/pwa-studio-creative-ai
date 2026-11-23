@@ -92,6 +92,7 @@ from app.services.pricing_drafts import PricingDraftUnavailable, create_draft, l
 from app.services.plan_drafts import PlanDraftUnavailable, create_plan_draft, list_plan_drafts
 from app.services.plan_operations import PlanOperationsUnavailable, approve_plan_draft, create_pending_assignment
 from app.services.initial_entitlement import EntitlementGrantUnavailable, grant_initial_free_entitlement
+from app.services.entitlements import EntitlementsUnavailable, resolve_user_entitlements
 from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
 
 settings = get_settings()
@@ -391,6 +392,31 @@ def get_my_credit_wallet(
         "ledger": snapshot.ledger,
         "lots": snapshot.lots,
         "allocations": snapshot.allocations,
+    }
+
+
+@app.get(f"{settings.api_prefix}/me/entitlements")
+def get_my_entitlements(
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Return the authenticated user's effective plan, features and current quota usage."""
+    try:
+        result = resolve_user_entitlements(settings, user_id=UUID(user.user_id))
+    except EntitlementsUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Информация о тарифе временно недоступна. Попробуйте позже.",
+        ) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        **result,
+        "user_id": user.user_id,
+        "operational_admission_limits_are_separate": True,
+        "note": (
+            "Тарифные квоты показываются отдельно от технических ограничений защиты API. "
+            "Параметры с enforced=false пока не участвуют в допуске к генерации."
+        ),
     }
 
 
