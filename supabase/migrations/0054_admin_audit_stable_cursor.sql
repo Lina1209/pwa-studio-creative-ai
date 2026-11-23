@@ -1,7 +1,6 @@
 -- Align the audit reader with the server's stable (timestamp, UUID) cursor.
--- Drop the earlier two-argument signature so PostgREST has one unambiguous RPC.
-revoke all on function public.read_admin_audit_events(timestamptz, integer)
-  from public, anon, authenticated, service_role;
+-- Migration 0036 already removes the earlier two-argument signature. Keep this
+-- drop idempotent for databases that may still have that legacy function.
 drop function if exists public.read_admin_audit_events(timestamptz, integer);
 
 create function public.read_admin_audit_events(
