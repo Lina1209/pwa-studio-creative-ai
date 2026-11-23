@@ -70,3 +70,13 @@ class SuspensionResponse(BaseModel):
 
 class SuspensionRevokeRequest(BaseModel):
     suspension_id: str = Field(min_length=36, max_length=36)
+
+
+class NotificationResponse(BaseModel):
+    id: str
+    type: str
+    title: str
+    body: str
+    data: dict = Field(default_factory=dict)
+    read_at: str | None = None
+    created_at: str
