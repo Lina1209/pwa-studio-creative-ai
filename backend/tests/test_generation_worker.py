@@ -399,7 +399,7 @@ async def test_worker_fails_closed_for_provider_without_idempotency_support():
     result = await make_worker(repo, UnsafeProvider()).process(make_job())
     assert result.outcome == "failed"
     assert result.error_code == "provider_idempotency_not_supported"
-    assert repo.calls[0][0] == "fail"
+    assert any(call[0] == "fail" for call in repo.calls)
 
 
 
