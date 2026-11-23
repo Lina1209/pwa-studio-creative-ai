@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         "https://lina1209.github.io"
     )
 
-    Only DeepSeek is supported; provider fallback is disabled.
+    # Only DeepSeek is supported; provider fallback is disabled.
     ai_provider: Literal["deepseek"] = "deepseek"
     ai_model: str = "deepseek-flash"
     ai_max_concurrent_requests: int = Field(default=4, ge=1, le=32)
