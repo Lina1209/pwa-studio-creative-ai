@@ -19,6 +19,7 @@
   let assistantVisionPreviewUrl = null;
   let lastAuthUserId = null;
   let authStateEventReceived = false;
+  let resetSupportUiForAccountChange = () => {};
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -112,6 +113,7 @@
           if (typeof renderVisualLibrary === "function") renderVisualLibrary();
           financeUiAuthorized = false; financeAccess = null;
           const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
+          resetSupportUiForAccountChange();
           activeAssistantConversationId = null;
           $("#assistantHistoryList")?.replaceChildren();
           $("#assistantMessages")?.replaceChildren();
@@ -1419,6 +1421,27 @@ const movieHistoryStyle = document.createElement("style");
   const closeSupportWidget = () => {
     if (supportWidgetDialog?.close) supportWidgetDialog.close();
     else supportWidgetDialog?.removeAttribute("open");
+  };
+  resetSupportUiForAccountChange = () => {
+    closeSupportWidget();
+    mySupportTickets = [];
+    adminSupportTickets = [];
+    selectedMySupportTicket = null;
+    selectedAdminSupportTicket = null;
+    $("#supportMyTicketSelect")?.replaceChildren();
+    $("#supportMyMessages")?.replaceChildren();
+    $("#supportMyConversation").hidden = true;
+    $("#supportUserReply") && ($("#supportUserReply").value = "");
+    $("#supportNewSubject") && ($("#supportNewSubject").value = "");
+    $("#supportNewMessage") && ($("#supportNewMessage").value = "");
+    if ($("#supportNewCategory")) $("#supportNewCategory").value = "general";
+    if ($("#supportIncludeContext")) $("#supportIncludeContext").checked = false;
+    if ($("#supportUserReplyForm")) $("#supportUserReplyForm").hidden = false;
+    if ($("#supportUserStatus")) $("#supportUserStatus").textContent = "Войдите в аккаунт, чтобы пользоваться поддержкой.";
+    $("#adminSupportTicketSelect")?.replaceChildren();
+    $("#adminSupportMessages")?.replaceChildren();
+    if ($("#adminSupportConversation")) $("#adminSupportConversation").hidden = true;
+    if ($("#adminSupportFeedback")) $("#adminSupportFeedback").textContent = "Очередь загружается только по запросу.";
   };
   $("#supportWidgetClose")?.addEventListener("click", closeSupportWidget);
   supportWidgetDialog?.addEventListener("click", event => {
