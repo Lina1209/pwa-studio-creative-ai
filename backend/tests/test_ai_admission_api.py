@@ -75,3 +75,18 @@ def test_admission_store_failure_fails_closed_without_ai_call(monkeypatch):
 
     assert error.value.status_code == 503
     assert called == []
+
+
+def test_monthly_limit_returns_clear_retryable_message(monkeypatch):
+    monkeypatch.setattr(
+        main, "reserve_ai_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AIAdmissionRejected("monthly_user_limit", 300)
+        ),
+    )
+    monkeypatch.setattr(main, "_run_ai", lambda *args: pytest.fail("provider must not run"))
+    with pytest.raises(HTTPException) as error:
+        main._run_admitted_ai("chat", str(uuid4()), lambda: None)
+    assert error.value.status_code == 429
+    assert "30 дней" in error.value.detail
+    assert error.value.headers["Retry-After"] == "300"
