@@ -281,7 +281,7 @@ class SupabaseGenerationJobRepository:
 
     async def claim_next(self, worker_id: str, lease_seconds: int = 180) -> ClaimedImageJob | None:
         data = await self._rpc(
-            "claim_next_generation_job",
+            "claim_next_generation_job_v2",
             {"p_worker_id": worker_id, "p_lease_seconds": lease_seconds},
         )
         if not isinstance(data, list) or len(data) > 1:
@@ -304,6 +304,7 @@ class SupabaseGenerationJobRepository:
                 request_snapshot=snapshot,
                 attempt_count=int(row["attempt_count"]),
                 max_attempts=int(row["max_attempts"]),
+                job_status=str(row.get("job_status", "running")),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise WorkerRepositoryError(
