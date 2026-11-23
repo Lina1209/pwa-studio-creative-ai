@@ -50,7 +50,7 @@ begin
  raise exception 'moderation target not found' using errcode='23503'; end if;
  if p_action in ('mute','ban') then
  insert into public.direct_user_moderation(user_id,status,reason,expires_at,created_by,updated_at)
- values(p_target_user_id,p_action,btrim(p_reason),p_expires_at,p_actor_user_id,now())
+ values(p_target_user_id,case when p_action='mute' then 'muted' else 'banned' end,btrim(p_reason),p_expires_at,p_actor_user_id,now())
  on conflict(user_id) do update set status=excluded.status,reason=excluded.reason,expires_at=excluded.expires_at,created_by=excluded.created_by,updated_at=now();
  elsif p_action in ('unmute','unban') then
  delete from public.direct_user_moderation where user_id=p_target_user_id;
