@@ -4406,3 +4406,83 @@ begin
   end if;
 end;
 $parallel_generation_limit_test$;
+
+
+-- Feature flags in the immutable approved snapshot are enforced independently
+-- of numeric quota configuration.
+insert into public.plan_catalog_drafts(
+  id, plan_code, plan_version, display_name, billing_period, period_days,
+  credits_per_period, limits_json, features_json, created_by
+) values (
+  '16161616-1616-4161-8161-161616161616',
+  'test_no_video', 1, 'Test No Video', 'month', 30, 1000,
+  (select limits_json from public.plan_catalog_drafts
+    where id = '12121212-1212-4121-8121-121212121212'),
+  '["image","audio","ai"]'::jsonb,
+  '11111111-1111-4111-8111-111111111111'
+);
+insert into public.approved_plan_versions(
+  id, source_draft_id, plan_code, plan_version, display_name,
+  billing_period, period_days, credits_per_period, limits_json,
+  features_json, approved_by, approval_reason
+) values (
+  '17171717-1717-4171-8171-171717171717',
+  '16161616-1616-4161-8161-161616161616',
+  'test_no_video', 1, 'Test No Video', 'month', 30, 1000,
+  (select limits_json from public.plan_catalog_drafts
+    where id = '16161616-1616-4161-8161-161616161616'),
+  '["image","audio","ai"]'::jsonb,
+  '11111111-1111-4111-8111-111111111111',
+  'Approved fixture without video capability'
+);
+insert into public.user_plan_assignments(
+  id, user_id, approved_plan_version_id, assignment_source,
+  source_reference, idempotency_key, status, starts_at, ends_at, created_by
+) values (
+  '18181818-1818-4181-8181-181818181818',
+  '11111111-1111-4111-8111-111111111111',
+  '17171717-1717-4171-8171-171717171717',
+  'operator_grant', 'test-no-video-assignment', 'test-no-video-assignment-001',
+  'pending', now() - interval '1 minute', now() + interval '30 days',
+  '22222222-2222-4222-8222-222222222222'
+);
+insert into public.user_plan_assignment_events(
+  assignment_id, user_id, event_type, actor_user_id, event_key, reason
+) values (
+  '18181818-1818-4181-8181-181818181818',
+  '11111111-1111-4111-8111-111111111111',
+  'activated',
+  '22222222-2222-4222-8222-222222222222',
+  'activated:test-no-video-assignment-001',
+  'Test fixture activation without video feature'
+);
+
+do $plan_feature_allowlist_test$
+declare
+  v_before_jobs integer;
+  v_after_jobs integer;
+  v_rejected boolean := false;
+begin
+  select count(*) into v_before_jobs from public.generation_jobs
+   where user_id = '11111111-1111-4111-8111-111111111111';
+  begin
+    perform * from public.create_plan_credited_generation_job_with_outbox(
+      '11111111-1111-4111-8111-111111111111', null, null,
+      'video_generation', 'quota-test-provider', 'quota-test-model',
+      'plan-feature-video-not-included', repeat('a',64),
+      '{"quantity":1,"duration_seconds":20,"resolution":"720p"}'::jsonb,
+      '{"amount":1,"quantity":1,"price_version":"test-v1"}'::jsonb, 1
+    );
+  exception when insufficient_privilege then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'A video job was admitted when the approved plan excludes video';
+  end if;
+  select count(*) into v_after_jobs from public.generation_jobs
+   where user_id = '11111111-1111-4111-8111-111111111111';
+  if v_after_jobs <> v_before_jobs then
+    raise exception 'Feature exclusion did not roll back generation admission';
+  end if;
+end;
+$plan_feature_allowlist_test$;
