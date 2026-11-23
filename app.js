@@ -101,7 +101,7 @@
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
         if (typeof loadMyCreatorProfile === "function") loadMyCreatorProfile();
         if (typeof loadDirectConversations === "function") loadDirectConversations();
-        if (typeof loadDirectConversations === "function") loadDirectConversations();
+        if (typeof loadDirectNotifications === "function") loadDirectNotifications();
         if (typeof loadMyCreatorProfile === "function") loadMyCreatorProfile();
         if (typeof loadMyModerationAppeals === "function") loadMyModerationAppeals();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
@@ -123,6 +123,8 @@
       lastAuthUserId = nextUserId;
       refreshAuthUI(session);
       setTimeout(() => {
+        if (typeof loadDirectConversations === "function") loadDirectConversations();
+        if (typeof loadDirectNotifications === "function") loadDirectNotifications();
         if (accountChanged) {
           // Never carry an editor draft or selected asset across account boundaries.
           if (typeof resetVisualAssetEditor === "function") resetVisualAssetEditor();
