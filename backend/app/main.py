@@ -1607,7 +1607,11 @@ def admin_create_pricing_draft(payload: PricingCatalogDraftCreate,user: StudioUs
             if rule.max_provider_cost_usd_per_unit is None:
                 raise HTTPException(status_code=422,detail="Для каждого тарифа обязателен предел стоимости провайдера.")
         draft=create_draft(settings,version=validated.version,catalog=catalog_payload,actor_id=UUID(user.user_id))
-        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.access",outcome="allowed",resource_type="pricing_catalog_draft",resource_id=UUID(draft["id"]),reason=f"Created inactive tariff draft {validated.version}")
+        try:
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.access",outcome="allowed",resource_type="pricing_catalog_draft",resource_id=UUID(draft["id"]),reason=f"Created inactive tariff draft {validated.version}")
+        except AdminAuditUnavailable:
+            logger.error("Tariff draft was saved but its admin audit event could not be persisted.")
+            raise HTTPException(status_code=503,detail="Черновик сохранён, но журнал аудита недоступен. Проверьте список черновиков перед повторной отправкой.")
         return {"draft":draft,"live_pricing_changed":False}
     except PricingError as exc:
         raise HTTPException(status_code=422,detail=str(exc))
