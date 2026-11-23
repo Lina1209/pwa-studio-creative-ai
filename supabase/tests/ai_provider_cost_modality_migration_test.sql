@@ -40,7 +40,7 @@ begin
     v_vision_request, v_user, 'deepseek', 'deepseek-flash', 0.60, 'vision'
   );
   if coalesce((v_result ->> 'admitted')::boolean, true) is not false
-     or v_result ->> 'reason' <> 'global_daily_budget_reached' then
+     or coalesce(v_result ->> 'reason', '') <> 'global_daily_budget_reached' then
     raise exception 'Vision reservation must share the text global budget: %', v_result;
   end if;
 
@@ -119,7 +119,7 @@ begin
     v_vision_request_2, v_user, 'deepseek', 'deepseek-flash', 0.60, 'vision'
   );
   if coalesce((v_result ->> 'admitted')::boolean, true) is not false
-     or v_result ->> 'reason' <> 'provider_daily_budget_reached' then
+     or coalesce(v_result ->> 'reason', '') <> 'provider_daily_budget_reached' then
     raise exception 'Vision reservation must share the provider daily budget: %', v_result;
   end if;
 
@@ -140,7 +140,7 @@ begin
     v_vision_request_3, v_user, 'deepseek', 'deepseek-flash', 0.20, 'vision'
   );
   if coalesce((v_result ->> 'admitted')::boolean, true) is not false
-     or v_result ->> 'reason' <> 'outstanding_exposure_limit' then
+     or coalesce(v_result ->> 'reason', '') <> 'outstanding_exposure_limit' then
     raise exception 'Vision reservation must share outstanding exposure cap: %', v_result;
   end if;
 end;
