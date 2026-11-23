@@ -25,6 +25,12 @@ Migration 0086 and the provider-neutral worker now add:
 - the worker does not locally cancel an in-flight provider call when cancellation is requested; it records the provider result and any available usage evidence before acknowledging;
 - ambiguous provider outcomes remain `cancellation_pending` and are not refunded.
 
+Migration 0087 and the API now expose `POST /api/jobs/{job_id}/cancel`:
+- the API uses the authenticated user's verified JWT subject as the owner identity;
+- a service-role-only bridge passes that trusted identity into the owner-scoped database RPC;
+- no owner ID is accepted from the browser request body;
+- jobs belonging to another user return the same not-found response as nonexistent jobs.
+
 ## Remaining rollout and provider gap
 
 The cancellation-aware claim RPC now reclaims expired `cancel_requested` leases without incrementing the generation attempt counter. The worker reads the durable provider journal and uses the provider's idempotency-key lookup to reconcile an existing operation; it never resubmits a reclaimed cancellation job. If lookup remains unknown or unavailable, the job and credit hold remain pending for another reconciliation attempt.
