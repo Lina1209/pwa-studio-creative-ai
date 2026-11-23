@@ -34,9 +34,10 @@ class FakeRepository:
     def __init__(
         self, *, heartbeat=True, complete=True, journal_created=True,
         journal_unknown=True, journal_failed=True, journal_state=None,
-        completion_replayed=False, budget_allowed=True,
+        completion_replayed=False, budget_allowed=True, heartbeat_states=None,
     ):
         self.heartbeat_result = heartbeat
+        self.heartbeat_states = list(heartbeat_states or [])
         self.complete_result = complete
         self.completion_replayed = completion_replayed
         self.journal_created = journal_created
@@ -48,7 +49,21 @@ class FakeRepository:
 
     async def heartbeat(self, *args):
         self.calls.append(("heartbeat", args))
+        if self.heartbeat_states:
+            return self.heartbeat_states.pop(0)
+        if isinstance(self.heartbeat_result, bool):
+            return "active" if self.heartbeat_result else "lease_lost"
         return self.heartbeat_result
+
+    async def acknowledge_cancellation(self, *args):
+        self.calls.append(("cancel_ack", args))
+        return True
+
+    async def get_provider_operation(self, *args):
+        self.calls.append(("journal_read", args))
+        if not self.journal_created:
+            return None
+        return SimpleNamespace(state=self.journal_state)
 
     async def begin_provider_operation(self, *args):
         self.calls.append(("journal_begin", args))
@@ -64,14 +79,19 @@ class FakeRepository:
 
     async def mark_provider_operation_unknown(self, *args):
         self.calls.append(("journal_unknown", args))
+        if self.journal_unknown_result:
+            self.journal_state = "unknown"
         return self.journal_unknown_result
 
     async def mark_provider_operation_failed(self, *args):
         self.calls.append(("journal_failed", args))
+        if self.journal_failed_result:
+            self.journal_state = "provider_failed"
         return self.journal_failed_result
 
     async def mark_provider_operation_result_received(self, *args):
         self.calls.append(("journal_result", args))
+        self.journal_state = "result_received"
         return True
 
     async def retry(self, *args):
@@ -201,6 +221,35 @@ def make_worker(repo=None, provider=None, storage=None):
         storage=storage or FakeStorage(),
         heartbeat_interval_seconds=0.01,
     )
+
+
+@pytest.mark.asyncio
+async def test_worker_acknowledges_cancel_before_provider_submission():
+    repo = FakeRepository(heartbeat_states=["cancel_requested"])
+    provider = FakeProvider()
+
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "cancelled"
+    assert provider.idempotency_keys == []
+    assert any(call[0] == "journal_failed" for call in repo.calls)
+    assert any(call[0] == "cancel_ack" for call in repo.calls)
+    assert not any(call[0] in {"budget_authorize", "complete"} for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_waits_for_inflight_provider_result_before_acknowledging_cancel():
+    repo = FakeRepository(heartbeat_states=["active", "cancel_requested"])
+    provider = FakeProvider()
+
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "cancelled"
+    assert provider.idempotency_keys == [str(JOB_ID)]
+    names = [call[0] for call in repo.calls]
+    assert names.index("journal_result") < names.index("cancel_ack")
+    assert "complete" not in names
+    assert "retry" not in names
 
 
 @pytest.mark.asyncio
