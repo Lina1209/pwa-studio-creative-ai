@@ -168,8 +168,20 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
               <div><label for="visualAssetType">Тип материала</label><select id="visualAssetType"><option value="character">Персонаж</option><option value="scene">Сцена / локация</option></select></div>
               <div><label for="visualAssetName">Название</label><input id="visualAssetName" maxlength="80" placeholder="Например, Хранительница леса"></div>
             </div>
-            <label for="visualAssetDescription">Описание образа или места</label>
-            <textarea id="visualAssetDescription" rows="3" maxlength="5000" placeholder="Внешность, одежда, характер, детали окружения, атмосфера, цветовая палитра…"></textarea>
+            <label for="visualAssetDescription">Общее описание и характер</label>
+            <textarea id="visualAssetDescription" rows="3" maxlength="5000" placeholder="Кто это? Характер, роль в истории, важные особенности…"></textarea>
+            <div id="characterPassportFields" class="character-passport-fields">
+              <div class="form-row">
+                <div><label for="passportFace">Лицо спереди</label><input id="passportFace" maxlength="600" placeholder="Форма лица, глаза, нос, особые черты"></div>
+                <div><label for="passportProfile">Профиль</label><input id="passportProfile" maxlength="600" placeholder="Профиль лица, силуэт головы"></div>
+              </div>
+              <label for="passportFullBody">Полный рост и телосложение</label><input id="passportFullBody" maxlength="600" placeholder="Рост, пропорции, осанка, силуэт">
+              <label for="passportWardrobe">Одежда и аксессуары</label><textarea id="passportWardrobe" rows="2" maxlength="800" placeholder="Основной костюм, обувь, украшения, предметы"></textarea>
+              <div class="form-row">
+                <div><label for="passportPalette">Палитра цветов</label><input id="passportPalette" maxlength="300" placeholder="Например: индиго, серебро, охра"></div>
+                <div><label for="passportExpressions">Выражения лица</label><input id="passportExpressions" maxlength="500" placeholder="Спокойствие, тревога, улыбка…"></div>
+              </div>
+            </div>
             <div class="prompt-block-controls"><button type="button" class="secondary-button" id="saveVisualAsset">＋ Сохранить в библиотеку</button></div>
             <div id="visualAssetList" class="prompt-visual-list" aria-live="polite"><p class="helper-text">Ваша библиотека пока пуста.</p></div>
             <p class="helper-text">Библиотека хранится отдельно от фильмов в этом браузере и разделяется по аккаунтам.</p>
