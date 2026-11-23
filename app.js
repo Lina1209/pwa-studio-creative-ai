@@ -2211,8 +2211,11 @@ const movieHistoryStyle = document.createElement("style");
           if(!stillOwner())throw new Error("Аккаунт изменился во время удаления.");
           const next=JSON.parse(localStorage.getItem(storageKey)||"[]").filter(asset=>asset.id!==removed.id);
           localStorage.setItem(storageKey,JSON.stringify(next));
-          (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{}));
-          $("#promptSaveFeedback").textContent="Материал удалён из библиотеки.";
+          const localCleanup=await Promise.allSettled((removed.referenceImages||[]).map(ref=>deleteVisualRefImage(ref.id,ownerId||"guest")));
+          const cleanupFailed=localCleanup.some(result=>result.status==="rejected");
+          $("#promptSaveFeedback").textContent=cleanupFailed
+            ?"Материал удалён из библиотеки, но часть локальных файлов не удалось очистить. Остальные данные сохранены; повторите очистку позже."
+            :"Материал удалён из библиотеки.";
           renderVisualLibrary();
         }catch(error){
           console.warn("Cloud asset delete failed:",error);
@@ -2220,8 +2223,11 @@ const movieHistoryStyle = document.createElement("style");
             try{
               const next=JSON.parse(localStorage.getItem(storageKey)||"[]").filter(asset=>asset.id!==removed.id);
               localStorage.setItem(storageKey,JSON.stringify(next));
-              (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{}));
-              $("#promptSaveFeedback").textContent="Материал удалён из библиотеки. Облачная запись помечена как удалённая, но часть файлов не удалось очистить; они не будут восстановлены при синхронизации.";
+              const localCleanup=await Promise.allSettled((removed.referenceImages||[]).map(ref=>deleteVisualRefImage(ref.id,ownerId||"guest")));
+              const cleanupFailed=localCleanup.some(result=>result.status==="rejected");
+              $("#promptSaveFeedback").textContent=cleanupFailed
+                ?"Материал удалён из библиотеки и помечен удалённым в облаке. Часть локальных файлов не удалось очистить; они не восстановятся при синхронизации."
+                :"Материал удалён из библиотеки и помечен удалённым в облаке. Не удалось очистить часть облачных файлов; они не восстановятся при синхронизации.";
               renderVisualLibrary();
               return;
             }catch(localError){console.warn("Local visual asset cleanup failed:",localError);}
