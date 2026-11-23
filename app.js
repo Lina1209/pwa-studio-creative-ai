@@ -298,6 +298,140 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
 
+
+  const supportStatusLabels = {open:"Открыто",in_progress:"В работе",waiting_user:"Ожидает ответа",resolved:"Решено",closed:"Закрыто"};
+  let mySupportTickets = [];
+  let adminSupportTickets = [];
+  let selectedMySupportTicket = null;
+  let selectedAdminSupportTicket = null;
+  const supportMessageNode = (message, adminView = false) => {
+    const row = document.createElement("article");
+    row.className = "assistant-message " + (message.sender_role === "admin" ? "ai-message" : "user-message");
+    const label = document.createElement("b");
+    label.textContent = (message.sender_role === "admin" ? "Поддержка" : "Вы") + " · " + new Date(message.created_at).toLocaleString();
+    const body = document.createElement("p");
+    body.textContent = message.body || "";
+    row.append(label, body);
+    return row;
+  };
+  const setSupportOptions = (select, tickets, emptyLabel) => {
+    if (!select) return;
+    select.replaceChildren();
+    const empty = document.createElement("option"); empty.value = ""; empty.textContent = tickets.length ? "Выберите обращение" : emptyLabel; select.append(empty);
+    tickets.forEach(ticket => {
+      const option = document.createElement("option");
+      option.value = ticket.id;
+      option.textContent = ticket.subject + " · " + (supportStatusLabels[ticket.status] || ticket.status);
+      select.append(option);
+    });
+  };
+  const loadMySupportTickets = async () => {
+    const status = $("#supportUserStatus");
+    if (!authSession?.user) { if (status) status.textContent = "Войдите в аккаунт, чтобы пользоваться поддержкой."; return; }
+    if (status) status.textContent = "Загружаем ваши обращения…";
+    try {
+      const data = await apiRequest("/api/support/tickets");
+      mySupportTickets = data.tickets || [];
+      setSupportOptions($("#supportMyTicketSelect"), mySupportTickets, "Пока нет обращений");
+      if (status) status.textContent = mySupportTickets.length ? "Ваши обращения загружены." : "Обращений пока нет. Можно создать первое выше.";
+      const conversation = $("#supportMyConversation");
+      if (conversation) conversation.hidden = true;
+      selectedMySupportTicket = null;
+    } catch (error) { if (status) status.textContent = error.message; }
+  };
+  const loadMySupportConversation = async ticketId => {
+    selectedMySupportTicket = ticketId || null;
+    const box = $("#supportMyConversation"), list = $("#supportMyMessages");
+    if (!ticketId) { if (box) box.hidden = true; return; }
+    try {
+      const data = await apiRequest("/api/support/tickets/" + encodeURIComponent(ticketId));
+      if (list) { list.replaceChildren(); (data.messages || []).forEach(message => list.append(supportMessageNode(message))); }
+      if (box) box.hidden = false;
+      const closed = ["resolved","closed"].includes(data.ticket?.status);
+      $("#supportUserReplyForm").hidden = closed;
+      $("#supportUserStatus").textContent = "Статус: " + (supportStatusLabels[data.ticket?.status] || data.ticket?.status || "—");
+    } catch (error) { $("#supportUserStatus").textContent = error.message; if (box) box.hidden = true; }
+  };
+  $("#supportCreateForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const status = $("#supportUserStatus");
+    if (!authSession?.user) { if (status) status.textContent = "Сначала войдите в аккаунт."; return; }
+    const button = event.submitter; if (button) button.disabled = true;
+    try {
+      await apiRequest("/api/support/tickets", {method:"POST",body:JSON.stringify({subject:$("#supportNewSubject").value,message:$("#supportNewMessage").value})});
+      $("#supportNewSubject").value = ""; $("#supportNewMessage").value = "";
+      if (status) status.textContent = "Обращение отправлено.";
+      await loadMySupportTickets();
+    } catch (error) { if (status) status.textContent = error.message; }
+    finally { if (button) button.disabled = false; }
+  });
+  $("#refreshMySupportTickets")?.addEventListener("click", loadMySupportTickets);
+  $("#supportMyTicketSelect")?.addEventListener("change", event => loadMySupportConversation(event.target.value));
+  $("#supportUserReplyForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!selectedMySupportTicket) return;
+    const button = event.submitter; if (button) button.disabled = true;
+    try {
+      await apiRequest("/api/support/tickets/" + encodeURIComponent(selectedMySupportTicket) + "/messages", {method:"POST",body:JSON.stringify({message:$("#supportUserReply").value})});
+      $("#supportUserReply").value = "";
+      await loadMySupportConversation(selectedMySupportTicket);
+      await loadMySupportTickets();
+    } catch (error) { $("#supportUserStatus").textContent = error.message; }
+    finally { if (button) button.disabled = false; }
+  });
+  const loadAdminSupportTickets = async () => {
+    const status = $("#adminSupportStatus");
+    if (!adminUiAuthorized) { if (status) status.textContent = "Нет доступа."; return; }
+    if (status) status.textContent = "Загружаем очередь обращений…";
+    try {
+      const data = await apiRequest("/api/admin/support/tickets");
+      adminSupportTickets = data.tickets || [];
+      setSupportOptions($("#adminSupportTicketSelect"), adminSupportTickets, "Новых обращений нет");
+      if (status) status.textContent = "Обращений в очереди: " + adminSupportTickets.length + ".";
+      $("#adminSupportConversation").hidden = true;
+      selectedAdminSupportTicket = null;
+    } catch (error) { if (status) status.textContent = error.message; }
+  };
+  const loadAdminSupportConversation = async ticketId => {
+    selectedAdminSupportTicket = ticketId || null;
+    const box = $("#adminSupportConversation");
+    if (!ticketId) { if (box) box.hidden = true; return; }
+    try {
+      const data = await apiRequest("/api/admin/support/tickets/" + encodeURIComponent(ticketId));
+      $("#adminSupportMessages").replaceChildren(...(data.messages || []).map(message => supportMessageNode(message, true)));
+      $("#adminSupportTicketMeta").textContent = data.ticket.subject + " · пользователь " + data.ticket.user_id + " · создано " + new Date(data.ticket.created_at).toLocaleString();
+      $("#adminSupportStatus").value = data.ticket.status;
+      box.hidden = false;
+    } catch (error) { $("#adminSupportStatus").textContent = error.message; if (box) box.hidden = true; }
+  };
+  $("#refreshAdminSupport")?.addEventListener("click", loadAdminSupportTickets);
+  $("#adminSupportTicketSelect")?.addEventListener("change", event => loadAdminSupportConversation(event.target.value));
+  $("#adminSupportReplyForm")?.addEventListener("submit", async event => {
+    event.preventDefault(); if (!selectedAdminSupportTicket) return;
+    const button = event.submitter; if (button) button.disabled = true;
+    try {
+      await apiRequest("/api/admin/support/tickets/" + encodeURIComponent(selectedAdminSupportTicket) + "/messages", {method:"POST",body:JSON.stringify({message:$("#adminSupportReply").value})});
+      $("#adminSupportReply").value = "";
+      await loadAdminSupportConversation(selectedAdminSupportTicket);
+      await loadAdminSupportTickets();
+      $("#adminSupportTicketSelect").value = selectedAdminSupportTicket;
+      await loadAdminSupportConversation(selectedAdminSupportTicket);
+      $("#adminSupportStatus").textContent = "Ответ отправлен.";
+    } catch (error) { $("#adminSupportStatus").textContent = error.message; }
+    finally { if (button) button.disabled = false; }
+  });
+  $("#saveAdminSupportStatus")?.addEventListener("click", async () => {
+    if (!selectedAdminSupportTicket) return;
+    try {
+      const status = $("#adminSupportStatus").value;
+      await apiRequest("/api/admin/support/tickets/" + encodeURIComponent(selectedAdminSupportTicket) + "/status", {method:"PATCH",body:JSON.stringify({status})});
+      await loadAdminSupportTickets();
+      $("#adminSupportTicketSelect").value = selectedAdminSupportTicket;
+      await loadAdminSupportConversation(selectedAdminSupportTicket);
+      $("#adminSupportStatus").textContent = "Статус сохранён.";
+    } catch (error) { $("#adminSupportStatus").textContent = error.message; }
+  });
+
   const loadFinanceAccess = async () => {
     const userId = authSession?.user?.id;
     const panel = $("#financePanel");
@@ -1007,6 +1141,7 @@ const movieHistoryStyle = document.createElement("style");
     $("#sidebar").classList.remove("open");
     window.location.hash = view === "home" ? "" : view;
     window.scrollTo({top:0,behavior:"smooth"});
+    if (view === "account" && authSession?.user) { loadMySupportTickets(); if (adminUiAuthorized) loadAdminSupportTickets(); }
   }
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
