@@ -63,7 +63,10 @@ def _active_assignment():
 def test_no_active_plan_does_not_promote_pending_assignment(monkeypatch):
     calls = []
     responses = {
-        "user_plan_assignments": [[]],
+        "user_plan_assignments": [[_active_assignment()]],
+        "user_plan_assignment_events": [[
+            {"id": 1, "assignment_id": ASSIGNMENT, "event_type": "created", "occurred_at": "2026-11-01T00:00:00+00:00"},
+        ]],
     }
     monkeypatch.setattr(
         entitlements.httpx, "Client",
@@ -75,7 +78,7 @@ def test_no_active_plan_does_not_promote_pending_assignment(monkeypatch):
     assert result["features"] == []
     assert result["capabilities_enabled"] is False
     assert result["pending_assignment_exists"] is True
-    assert [call[0] for call in calls] == ["user_plan_assignments"]
+    assert [call[0] for call in calls] == ["user_plan_assignments", "user_plan_assignment_events"]
 
 
 def test_multiple_active_assignments_fail_closed(monkeypatch):
