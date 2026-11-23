@@ -67,6 +67,13 @@ def send_message(settings: Settings, sender_id: str, recipient_id: str, body: st
     _canonical_pair(sender_id, recipient_id)
     if not body or not body.strip():
         raise HTTPException(status_code=422, detail="Message text cannot be empty.")
+    blocked = _request(settings, "GET", "user_blocks", params={
+        "select": "id",
+        "or": f"(and(blocker_id.eq.{sender_id},blocked_id.eq.{recipient_id}),and(blocker_id.eq.{recipient_id},blocked_id.eq.{sender_id}))",
+        "limit": "1",
+    })
+    if blocked:
+        raise HTTPException(status_code=403, detail="Messaging is unavailable for this user pair.")
     recent = _request(settings, "GET", "direct_messages", params={
         "select": "id", "sender_id": f"eq.{sender_id}",
         "created_at": f"gte.{(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()}",
