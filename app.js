@@ -2020,26 +2020,46 @@ const movieHistoryStyle = document.createElement("style");
               // Prevent an older in-flight cloud sync from restoring stale metadata locally.
               visualLibrarySyncSequence++;
               removeRef.disabled=true;
+              let metadataCommitted=false,localMetadataUpdated=false,localBlobRemoved=false,cloudObjectRemoved=false;
               try{
                 const nextAsset={...current,referenceImages:current.referenceImages.filter(entry=>entry.id!==ref.id),updatedAt:new Date().toISOString()};
                 const nextItems=readVisualLibrary().map(entry=>entry.id===current.id?nextAsset:entry);
                 if(ownerId){
                   if(refNow.storagePath&&!refNow.storagePath.startsWith(ownerId+"/"))throw new Error("Путь к изображению не принадлежит текущему аккаунту.");
                   await saveVisualAssetToCloud(nextAsset,[]);
-                  if(authSession?.user?.id!==ownerId)throw new Error("Аккаунт изменился во время удаления.");
+                  metadataCommitted=true;
+                  if(authSession?.user?.id!==ownerId)throw new Error("Аккаунт изменился после обновления облачной записи.");
+                }else{
+                  metadataCommitted=true;
                 }
                 localStorage.setItem(storageKey,JSON.stringify(nextItems));
+                localMetadataUpdated=true;
+                if(authSession?.user?.id!==(ownerId||null))throw new Error("Аккаунт изменился перед очисткой локального изображения.");
                 await deleteVisualRefImage(ref.id,ownerId||"guest");
+                localBlobRemoved=true;
                 if(ownerId&&refNow.storagePath){
+                  if(authSession?.user?.id!==ownerId)throw new Error("Аккаунт изменился перед очисткой облачного файла.");
                   const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove([refNow.storagePath]);
-                  if(error)console.warn("Reference object cleanup deferred:",error);
-                }
+                  if(error)throw error;
+                  cloudObjectRemoved=true;
+                }else cloudObjectRemoved=true;
                 $("#promptSaveFeedback").textContent="Изображение удалено из материала. Остальные референсы сохранены.";
                 renderVisualLibrary();
               }catch(error){
-                console.warn("Single reference delete failed:",error);
-                $("#promptSaveFeedback").textContent="Не удалось подтвердить удаление изображения. Оно оставлено в библиотеке; повторите попытку.";
-                removeRef.disabled=false;
+                console.warn("Single reference delete/cleanup status:",{error,metadataCommitted,localMetadataUpdated,localBlobRemoved,cloudObjectRemoved});
+                if(!metadataCommitted){
+                  $("#promptSaveFeedback").textContent="Не удалось обновить запись материала. Изображение осталось в библиотеке; повторите попытку.";
+                  removeRef.disabled=false;
+                }else{
+                  const pending=[];
+                  if(!localMetadataUpdated)pending.push("локальная запись");
+                  if(!localBlobRemoved)pending.push("локальный файл");
+                  if(ownerId&&refNow.storagePath&&!cloudObjectRemoved)pending.push("облачный файл");
+                  $("#promptSaveFeedback").textContent=pending.length
+                    ?"Изображение уже исключено из материала. Требует завершения очистка: "+pending.join(", ")+". Обновите библиотеку или войдите снова для синхронизации."
+                    :"Изображение удалено из материала.";
+                  if(localMetadataUpdated)renderVisualLibrary();
+                }
               }finally{
                 visualReferenceRemovalLocks.delete(removalKey);
               }
