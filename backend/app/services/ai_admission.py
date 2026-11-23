@@ -41,7 +41,7 @@ def _headers(settings: Settings) -> dict[str, str]:
 def reserve_ai_request(
     settings: Settings, *, user_id: UUID, endpoint: str
 ) -> AIAdmissionReservation:
-    if endpoint not in {"chat", "prompts", "movie_script", "movie_director", "movie_storyboard"}:
+    if endpoint not in {"chat", "prompts", "movie_script", "movie_director", "movie_storyboard", "vision"}:
         raise ValueError("Unsupported AI endpoint.")
     request_id = uuid4()
     headers = _headers(settings)
