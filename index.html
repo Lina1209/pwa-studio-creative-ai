@@ -25,7 +25,7 @@
 body.light .assistant-history-open,body.light .assistant-history-rename{color:#373149}
   .prompt-library{margin-top:22px}.prompt-library-list{display:grid;gap:12px;margin-top:14px}.prompt-library-card{border:1px solid rgba(160,145,205,.22);border-radius:14px;padding:14px;background:rgba(120,100,170,.05)}.prompt-library-preview{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;max-height:120px;overflow:hidden;margin:10px 0}.prompt-library-actions{display:flex;gap:8px;flex-wrap:wrap}.prompt-library-actions button{font-size:13px;padding:8px 12px}.prompt-library-danger{border-color:rgba(220,90,90,.35)}#promptOutput[contenteditable="true"]{outline:2px solid rgba(155,125,255,.55);border-radius:10px;padding:12px;min-height:140px;white-space:pre-wrap}
 
-.messages-center-layout{display:grid;grid-template-columns:minmax(220px,.75fr) minmax(0,1.5fr);gap:14px;margin-top:16px}.messages-conversation-list{display:grid;align-content:start;gap:8px}.messages-conversation-item{display:grid;gap:5px;text-align:left;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(130,110,180,.06);color:var(--text);cursor:pointer}.messages-conversation-item small{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.messages-conversation-view{min-width:0}.messages-conversation-actions{display:flex;gap:6px;flex-wrap:wrap}@media(max-width:760px){.messages-center-layout{grid-template-columns:1fr}.messages-conversation-list{grid-template-columns:1fr}}
+.direct-notifications{margin:14px 0;padding:12px}.direct-notifications .panel-heading{margin-bottom:8px}.direct-notifications .messages-conversation-item.is-unread{border-color:var(--accent,#8b7cf6);background:rgba(130,110,220,.12)}.direct-notifications .messages-conversation-item small{display:block}.messages-center-layout{display:grid;grid-template-columns:minmax(220px,.75fr) minmax(0,1.5fr);gap:14px;margin-top:16px}.messages-conversation-list{display:grid;align-content:start;gap:8px}.messages-conversation-item{display:grid;gap:5px;text-align:left;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(130,110,180,.06);color:var(--text);cursor:pointer}.messages-conversation-item small{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.messages-conversation-view{min-width:0}.messages-conversation-actions{display:flex;gap:6px;flex-wrap:wrap}@media(max-width:760px){.messages-center-layout{grid-template-columns:1fr}.messages-conversation-list{grid-template-columns:1fr}}
 </style></head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
@@ -678,6 +678,13 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="page-heading"><div class="eyebrow">PWA STUDIO · CHAT CENTER</div><h1>Центр <span class="gradient-text">сообщений</span></h1><p>Обращения и ответы команды в одном удобном пространстве.</p></div>
     <section class="panel messages-center-panel" id="directMessagesPanel" aria-labelledby="directMessagesHeading">
       <div class="panel-heading"><div><div class="eyebrow">PRIVATE CHAT</div><h2 id="directMessagesHeading">Личные сообщения</h2><p>Приватные диалоги между пользователями PWA Studio.</p></div><button class="secondary-button" id="refreshDirectConversations" type="button">↻ Обновить</button></div>
+      <section class="direct-notifications panel" aria-labelledby="directNotificationsHeading">
+        <div class="panel-heading">
+          <div><h3 id="directNotificationsHeading">Уведомления <span id="directNotificationCount" class="notification-count">0</span></h3><p class="helper-text">Новые личные сообщения и переход прямо к нужному диалогу.</p></div>
+          <button class="secondary-button" id="refreshDirectNotifications" type="button">↻ Обновить</button>
+        </div>
+        <div id="directNotificationList" class="messages-conversation-list" aria-live="polite"><p class="helper-text">Загрузка уведомлений…</p></div>
+      </section>
           <form id="directModerationAppealForm" class="finance-queue-controls">
             <label>Обжаловать ограничение личных сообщений<textarea id="directModerationAppealReason" rows="2" minlength="10" maxlength="2000" placeholder="Опишите, почему решение нужно пересмотреть"></textarea></label>
             <button class="secondary-button" type="submit">Отправить апелляцию</button>
