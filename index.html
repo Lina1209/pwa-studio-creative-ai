@@ -143,6 +143,15 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <button type="button" class="secondary-button" id="wrapQuotePrompt">Цитата</button>
             <button type="button" class="secondary-button" id="wrapCodePrompt">Блок кода</button>
           </div>
+          <section class="prompt-block-builder" aria-label="Конструктор промпта">
+            <div class="prompt-workbench-head"><b>Конструктор промпта</b><span>Соберите сцену из смысловых блоков</span></div>
+            <div class="form-row">
+              <div><label for="promptBlockType">Тип блока</label><select id="promptBlockType"><option value="character">Персонаж</option><option value="scene">Сцена и окружение</option><option value="camera">Камера и композиция</option><option value="light">Свет и цвет</option><option value="style">Визуальный стиль</option><option value="sound">Звук и музыка</option></select></div>
+              <div><label for="promptBlockText">Содержание блока</label><input id="promptBlockText" type="text" maxlength="1800" placeholder="Опишите нужные детали…"></div>
+            </div>
+            <div class="prompt-block-controls"><button type="button" class="secondary-button" id="addPromptBlock">＋ Добавить блок</button><button type="button" class="secondary-button" id="composePromptBlocks">Собрать промпт</button><button type="button" class="secondary-button" id="clearPromptBlocks">Очистить блоки</button></div>
+            <div id="promptBlockList" class="prompt-block-list" aria-live="polite"><p class="helper-text">Добавьте один или несколько блоков. Их можно будет удалить до сборки промпта.</p></div>
+          </section>
           <section class="prompt-workbench" aria-label="Шаблоны и переменные промпта">
             <div class="prompt-workbench-head"><b>Быстрый старт</b><span>Шаблоны и переменные</span></div>
             <div class="form-row">
