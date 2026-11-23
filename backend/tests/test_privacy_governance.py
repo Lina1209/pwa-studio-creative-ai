@@ -132,3 +132,55 @@ def test_privacy_request_schema_rejects_unknown_fields():
         assert response.status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+
+def test_ai_transfer_journal_is_written_before_and_after_provider_success(monkeypatch):
+    import app.main as main
+
+    events = []
+    monkeypatch.setattr(main, "reserve_ai_request", lambda *args, **kwargs: object())
+    monkeypatch.setattr(main, "finish_ai_request", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "record_ai_transfer_event", lambda settings, **kwargs: events.append(kwargs) or "event-id")
+    monkeypatch.setattr(main, "_run_ai", lambda operation, call: call())
+    result = main._run_admitted_ai(
+        "chat", USER.user_id,
+        lambda: type("Result", (), {"actual_model": "deepseek-flash"})(),
+    )
+    assert result.actual_model == "deepseek-flash"
+    assert [event["outcome"] for event in events] == ["attempted", "succeeded"]
+    assert events[0]["correlation_id"] == events[1]["correlation_id"]
+    assert events[0]["operation"] == "text"
+
+
+def test_ai_transfer_journal_records_unknown_when_provider_outcome_raises(monkeypatch):
+    import app.main as main
+
+    events = []
+    monkeypatch.setattr(main, "reserve_ai_request", lambda *args, **kwargs: object())
+    monkeypatch.setattr(main, "finish_ai_request", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "record_ai_transfer_event", lambda settings, **kwargs: events.append(kwargs) or "event-id")
+    monkeypatch.setattr(main, "_run_ai", lambda operation, call: (_ for _ in ()).throw(RuntimeError("provider outcome unknown")))
+    with pytest.raises(Exception):
+        main._run_admitted_ai("chat", USER.user_id, lambda: None)
+    assert [event["outcome"] for event in events] == ["attempted", "unknown"]
+
+
+def test_ai_transfer_journal_fails_closed_before_provider_call(monkeypatch):
+    import app.main as main
+
+    from app.services.privacy_governance import PrivacyGovernanceUnavailable
+
+    provider_calls = []
+    monkeypatch.setattr(main, "reserve_ai_request", lambda *args, **kwargs: object())
+    monkeypatch.setattr(main, "finish_ai_request", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        main, "record_ai_transfer_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(PrivacyGovernanceUnavailable("offline")),
+    )
+    monkeypatch.setattr(main, "_run_ai", lambda operation, call: provider_calls.append(True))
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        main._run_admitted_ai("chat", USER.user_id, lambda: None)
+    assert exc.value.status_code == 503
+    assert provider_calls == []
