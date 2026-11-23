@@ -5142,3 +5142,42 @@ begin
 end;
 $plan_feature_allowlist_test$;
 
+
+-- Owner-scoped cancellation request RPC (0085).
+\ir ../migrations/0085_generation_job_cancellation_requests.sql
+
+do $generation_cancellation_rpc_security_test$
+declare
+  v_rejected boolean := false;
+begin
+  if not has_function_privilege(
+       'authenticated',
+       'public.request_generation_job_cancellation(uuid)', 'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.request_generation_job_cancellation(uuid)', 'EXECUTE'
+     )
+     or has_function_privilege(
+       'public',
+       'public.request_generation_job_cancellation(uuid)', 'EXECUTE'
+     ) then
+    raise exception 'Cancellation RPC privileges are not restricted to authenticated users';
+  end if;
+
+  perform set_config('request.jwt.claim.sub', '', true);
+  begin
+    perform * from public.request_generation_job_cancellation(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    );
+    raise exception 'Unauthenticated cancellation request was accepted';
+  exception when sqlstate '28000' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Cancellation RPC did not reject a missing authenticated identity';
+  end if;
+end;
+$generation_cancellation_rpc_security_test$;
+
+select 'generation cancellation RPC security checks passed' as result;
