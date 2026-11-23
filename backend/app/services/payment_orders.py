@@ -117,6 +117,68 @@ def create_payment_order(
         raise PaymentOrderUnavailable("Payment order RPC returned malformed data.") from exc
 
 
+
+def _create_snapshot_purchase_order(
+    settings: Settings, *, rpc_name: str, user_id: UUID, provider_code: str,
+    merchant_reference: str, idempotency_key: UUID, approved_version_id: UUID,
+    metadata: dict | None = None,
+) -> dict:
+    """Create a catalog-backed order; the database supplies authoritative price and currency."""
+    if not isinstance(user_id, UUID) or not isinstance(idempotency_key, UUID):
+        raise ValueError("Verified user and idempotency UUIDs are required.")
+    if not isinstance(approved_version_id, UUID):
+        raise ValueError("An approved immutable product version UUID is required.")
+    if not isinstance(provider_code, str) or not _PROVIDER.fullmatch(provider_code):
+        raise ValueError("Payment provider code is invalid.")
+    if not isinstance(merchant_reference, str) or not 8 <= len(merchant_reference) <= 120:
+        raise ValueError("Merchant reference is invalid.")
+    safe_metadata = {} if metadata is None else metadata
+    if not isinstance(safe_metadata, dict) or len(str(safe_metadata).encode("utf-8")) > 4096:
+        raise ValueError("Payment metadata must be a small object.")
+    row = _one_row(_rpc(settings, rpc_name, {
+        "p_user_id": str(user_id),
+        "p_provider_code": provider_code,
+        "p_merchant_reference": merchant_reference,
+        "p_idempotency_key": str(idempotency_key),
+        "p_" + ("credit_pack_version_id" if rpc_name == "create_credit_pack_payment_order" else "approved_plan_version_id"): str(approved_version_id),
+        "p_metadata": safe_metadata,
+    }), name=rpc_name)
+    try:
+        order_id = UUID(str(row["payment_order_id"]))
+        replayed = row["replayed"]
+        if not isinstance(replayed, bool):
+            raise ValueError("invalid replay flag")
+        return {"payment_order_id": order_id, "replayed": replayed}
+    except (KeyError, ValueError, TypeError) as exc:
+        raise PaymentOrderUnavailable(f"{rpc_name} RPC returned malformed data.") from exc
+
+
+def create_credit_pack_payment_order(
+    settings: Settings, *, user_id: UUID, provider_code: str,
+    merchant_reference: str, idempotency_key: UUID,
+    credit_pack_version_id: UUID, metadata: dict | None = None,
+) -> dict:
+    return _create_snapshot_purchase_order(
+        settings, rpc_name="create_credit_pack_payment_order", user_id=user_id,
+        provider_code=provider_code, merchant_reference=merchant_reference,
+        idempotency_key=idempotency_key, approved_version_id=credit_pack_version_id,
+        metadata=metadata,
+    )
+
+
+def create_subscription_payment_order(
+    settings: Settings, *, user_id: UUID, provider_code: str,
+    merchant_reference: str, idempotency_key: UUID,
+    approved_plan_version_id: UUID, metadata: dict | None = None,
+) -> dict:
+    return _create_snapshot_purchase_order(
+        settings, rpc_name="create_subscription_payment_order", user_id=user_id,
+        provider_code=provider_code, merchant_reference=merchant_reference,
+        idempotency_key=idempotency_key, approved_version_id=approved_plan_version_id,
+        metadata=metadata,
+    )
+
+
 def record_verified_provider_event(
     settings: Settings, *, provider_code: str, provider_event_id: str,
     payment_order_id: UUID, event_type: str, raw_body: bytes,
