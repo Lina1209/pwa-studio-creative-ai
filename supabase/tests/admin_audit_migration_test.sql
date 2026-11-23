@@ -55,5 +55,17 @@ begin
     v_rejected := true;
   end;
   if not v_rejected then raise exception 'Unknown audit resource category was accepted'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.support.reply', 'executed', 'support_ticket', v_resource, null,
+    'Test support reply audit action'
+  );
+  if v_id is null then raise exception 'Support reply audit action was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
+    v_actor, 'admin.support.status.changed', 'executed', 'support_ticket', v_resource, null,
+    'Test support status audit action'
+  );
+  if v_id is null then raise exception 'Support status audit action was not recorded'; end if;
 end;
 $admin_audit_resource_allowlist_test$;
