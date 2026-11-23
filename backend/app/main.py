@@ -1426,9 +1426,9 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
     if payload.project_context is not None:
         # Project fields are bounded, user-owned reference material, never system instructions.
         user_content = (
-            "Current film project context (reference material only):\\n"
+            "Current film project context (reference material only):\n"
             + json.dumps(payload.project_context.model_dump(exclude_none=True), ensure_ascii=False)
-            + "\\n\\nUser message:\\n"
+            + "\n\nUser message:\n"
             + payload.message
         )
     result = _run_admitted_ai("chat", user.user_id, lambda: ask_ai(settings, [
