@@ -104,28 +104,6 @@ def test_empty_provider_response_is_rejected(monkeypatch):
         run_ai(settings(), [{"role": "user", "content": "hello"}])
 
 
-def test_gemini_uses_explicit_google_model_and_server_key(monkeypatch):
-    seen = {}
-
-    def fake_completion(**kwargs):
-        seen.update(kwargs)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="Gemini response"))],
-            usage={"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
-            model="gemini-3.1-flash-lite",
-        )
-
-    monkeypatch.setattr(ai_service, "completion", fake_completion)
-    result = run_ai(
-        settings(ai_provider="gemini", ai_model="gemini-3.1-flash-lite", gemini_api_key="google-secret"),
-        [{"role": "user", "content": "hello"}],
-    )
-
-    assert result.text == "Gemini response"
-    assert seen["model"] == "gemini/gemini-3.1-flash-lite"
-    assert seen["api_key"] == "google-secret"
-
-
 def test_output_token_limit_is_configurable_and_bounded(monkeypatch):
     seen = {}
 
@@ -153,6 +131,6 @@ def test_unsupported_provider_is_rejected_at_configuration_boundary():
         Settings(ai_provider="openai", ai_model="gpt-test")
 
 
-def test_provider_model_mismatch_is_rejected():
+def test_only_deepseek_provider_is_accepted():
     with pytest.raises(ValidationError):
-        Settings(ai_provider="gemini", ai_model="deepseek-flash", gemini_api_key="test")
+        Settings(ai_provider="gemini", ai_model="gemini-3.1-flash-lite", gemini_api_key="test")
