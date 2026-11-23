@@ -204,15 +204,6 @@ revoke all on function public.reserve_plan_quota(uuid,uuid,text,text,integer)
 grant execute on function public.reserve_plan_quota(uuid,uuid,text,text,integer)
   to service_role;
 
--- Allow one request to reserve multiple independent quota dimensions.
--- A generation request can consume daily + monthly usage and an AI concurrency slot.
-alter table public.plan_quota_reservations
-  drop constraint if exists plan_quota_reservations_user_id_request_id_key;
-
-alter table public.plan_quota_reservations
-  add constraint plan_quota_reservations_request_feature_unique
-  unique (user_id, request_id, feature_key);
-
 create or replace function public.create_plan_credited_generation_job_with_outbox(
   p_user_id uuid,
   p_project_id uuid,
