@@ -58,7 +58,7 @@ def list_user_reports(settings: Settings):
         "GET",
         "user_reports",
         params={
-            "select": "id,reporter_user_id,reported_user_id,category,description,content_reference,status,created_at",
+            "select": "id,reporter_user_id,reported_user_id,category,description,content_reference,status,moderator_note,created_at",
             "order": "created_at.desc",
             "limit": "100",
         },
