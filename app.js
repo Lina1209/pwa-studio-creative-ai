@@ -845,7 +845,8 @@ const movieHistoryStyle = document.createElement("style");
       (data.appeals||[]).forEach(appeal=>{const p=document.createElement("p");p.textContent="Апелляция · "+appeal.status+" · "+appeal.reason;box.append(p);});
     }catch(error){if($("#directModerationAppealHistory"))$("#directModerationAppealHistory").textContent=error.message;}
   };
-\n  const loadAdminPricingDrafts = async () => {
+
+  const loadAdminPricingDrafts = async () => {
     const status = $("#pricingDraftStatus");
     if (!adminUiAuthorized) { if (status) status.textContent = "Нет доступа."; return; }
     if (status) status.textContent = "Загружаем версии тарифов…";
