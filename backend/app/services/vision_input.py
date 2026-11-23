@@ -113,6 +113,7 @@ def validate_vision_data_url(
                 output = io.BytesIO()
                 normalized.save(output, format=output_format, **save_options)
                 clean_bytes = output.getvalue()
+                width, height = normalized.size
     except VisionInputError:
         raise
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError,
