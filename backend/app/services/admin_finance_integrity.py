@@ -64,7 +64,10 @@ def _validate_snapshot(raw: Any, user_id: UUID) -> dict[str, Any]:
     if complete and not expected_complete:
         raise ValueError("snapshot_claims_false_completeness")
     validated["complete"] = complete and expected_complete
-    validated["wallet"] = raw.get("wallet") if isinstance(raw.get("wallet"), dict) else {}
+    wallet = raw.get("wallet")
+    if not isinstance(wallet, dict):
+        raise ValueError("invalid_wallet_snapshot")
+    validated["wallet"] = wallet
     return validated
 
 
