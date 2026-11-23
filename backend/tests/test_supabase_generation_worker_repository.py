@@ -72,14 +72,40 @@ async def test_claim_rejects_ambiguous_or_incomplete_rows():
 
 
 @pytest.mark.asyncio
-async def test_transition_accepts_only_boolean_rpc_result():
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=True))
-    ) as client:
+async def test_heartbeat_parses_structured_worker_states_and_acknowledgement():
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if request.url.path.endswith("/rpc/heartbeat_generation_job"):
+            return httpx.Response(200, json="cancel_requested")
+        return httpx.Response(200, json=True)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         repository = SupabaseGenerationJobRepository(settings(), client)
-        assert await repository.heartbeat(
+        state = await repository.heartbeat(
             UUID("22222222-2222-4222-8222-222222222222"), "worker-a", 120
         )
+        acknowledged = await repository.acknowledge_cancellation(
+            UUID("22222222-2222-4222-8222-222222222222"), "worker-a"
+        )
+
+    assert state == "cancel_requested"
+    assert acknowledged is True
+    assert seen[0].endswith("/rpc/heartbeat_generation_job")
+    assert seen[1].endswith("/rpc/acknowledge_generation_job_cancellation")
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_rejects_unknown_state():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json="maybe"))
+    ) as client:
+        repository = SupabaseGenerationJobRepository(settings(), client)
+        with pytest.raises(WorkerRepositoryError):
+            await repository.heartbeat(
+                UUID("22222222-2222-4222-8222-222222222222"), "worker-a", 120
+            )
 
 
 def test_repository_fails_closed_without_server_credentials():
