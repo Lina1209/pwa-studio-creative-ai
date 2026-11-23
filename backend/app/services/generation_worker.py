@@ -54,6 +54,7 @@ class UploadedImageObject:
 class GenerationJobRepository(Protocol):
     async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> str: ...
     async def acknowledge_cancellation(self, job_id: UUID, worker_id: str) -> bool: ...
+    async def get_provider_operation(self, job_id: UUID): ...
     async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool: ...
     async def fail(self, job_id: UUID, worker_id: str, error_code: str) -> bool: ...
     async def complete_credited(self, job_id: UUID, worker_id: str, result_path: str, result_sha256: str): ...
@@ -164,6 +165,25 @@ class GenerationWorker:
             None if acknowledged else "provider_operation_not_reconciled",
         )
 
+    async def _acknowledge_cancellation_if_safe(
+        self, job_id: UUID, cancel_requested: asyncio.Event,
+        provider_cost_reconciled: bool,
+    ) -> WorkerResult | None:
+        if not await self._observe_cancellation(job_id, cancel_requested):
+            return None
+        if not provider_cost_reconciled:
+            try:
+                operation = await self.repository.get_provider_operation(job_id)
+            except Exception:
+                return WorkerResult(
+                    "cancellation_pending", "provider_operation_reconciliation_unavailable"
+                )
+            if operation is not None and operation.state != "provider_failed":
+                return WorkerResult(
+                    "cancellation_pending", "provider_operation_not_reconciled"
+                )
+        return await self._acknowledge_cancellation(job_id)
+
     async def _run_while_leased(self, awaitable, lost: asyncio.Event):
         operation = asyncio.create_task(awaitable)
         lease_lost = asyncio.create_task(lost.wait())
@@ -185,6 +205,7 @@ class GenerationWorker:
             return await self._terminal_failure(job, "invalid_attempt_metadata")
 
         cancel_requested = asyncio.Event()
+        provider_cost_reconciled = False
         try:
             request = ImageGenerationRequest(**job.request_snapshot)
             provider: ImageGenerationProvider = self.providers.get(job.provider)
@@ -210,6 +231,7 @@ class GenerationWorker:
                     # A definitive provider failure is reconciled. If the user
                     # requested cancellation, settle as cancelled, not failed.
                     if await self._observe_cancellation(job.job_id, cancel_requested):
+                        provider_cost_reconciled = True
                         return await self._acknowledge_cancellation(job.job_id)
                     return await self._terminal_failure(job, "provider_operation_failed")
                 if journal.created:
@@ -218,6 +240,7 @@ class GenerationWorker:
                             job.job_id, self.worker_id, "user_cancelled_before_submission"
                         )
                         if changed:
+                            provider_cost_reconciled = True
                             return await self._acknowledge_cancellation(job.job_id)
                         return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
                     # Budget admission is database-authoritative and happens
@@ -232,6 +255,7 @@ class GenerationWorker:
                                 job.job_id, self.worker_id, "user_cancelled_before_submission"
                             )
                             if changed:
+                                provider_cost_reconciled = True
                                 return await self._acknowledge_cancellation(job.job_id)
                             return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
                         changed = await self.repository.mark_provider_operation_failed(
@@ -376,6 +400,9 @@ class GenerationWorker:
                     if lost.is_set():
                         return WorkerResult("lease_lost", "lease_lost_after_cost_record")
 
+                # If the adapter has no usage contract, the absence remains
+                # explicitly unreported; it is not fabricated as zero cost.
+                provider_cost_reconciled = True
                 if await self._observe_cancellation(job.job_id, cancel_requested):
                     return await self._acknowledge_cancellation(job.job_id)
 
@@ -419,22 +446,38 @@ class GenerationWorker:
                 heartbeat.cancel()
                 await asyncio.gather(heartbeat, return_exceptions=True)
         except GenerationStorageAdapterError as exc:
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
             if exc.retryable:
                 return await self._schedule_retry(job, exc.error_code)
             return await self._terminal_failure(job, exc.error_code)
         except GenerationResultStorageError as exc:
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
             return await self._terminal_failure(job, exc.error_code)
         except ImageGenerationError as exc:
             if exc.error_code == "worker_lease_lost":
                 return WorkerResult("lease_lost", exc.error_code)
-            if cancel_requested.is_set():
-                return await self._acknowledge_cancellation(job.job_id)
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
             if exc.retryable:
                 return await self._schedule_retry(job, exc.error_code)
             return await self._terminal_failure(job, exc.error_code)
         except WorkerRepositoryError as exc:
-            if await self._observe_cancellation(job.job_id, cancel_requested):
-                return await self._acknowledge_cancellation(job.job_id)
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
             if exc.retryable:
                 return await self._schedule_retry(job, exc.error_code)
             return await self._terminal_failure(job, exc.error_code)
