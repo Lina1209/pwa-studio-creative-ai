@@ -29,11 +29,26 @@ class ChatProjectContext(BaseModel):
         return self
 
 
+class ChatTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=3000)
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1, max_length=12000)
     project_context: ChatProjectContext | None = None
+    history: list[ChatTurn] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def limit_total_chat_context(self):
+        total = sum(len(turn.content) for turn in self.history)
+        if total > 12000:
+            raise ValueError("Conversation history is too large.")
+        return self
 
 
 class ChatResponse(BaseModel):
