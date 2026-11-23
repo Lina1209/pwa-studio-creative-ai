@@ -120,9 +120,9 @@ begin
     raise exception 'invalid privacy consent event' using errcode = '22023';
   end if;
   insert into public.privacy_consent_events(
-    user_id,consent_scope,action,policy_version,consent_version,source,correlation_id
+    user_id,consent_scope,action,policy_version,consent_version,source,correlation_id,occurred_at
   ) values (
-    p_user_id,p_consent_scope,p_action,p_policy_version,p_consent_version,p_source,p_correlation_id
+    p_user_id,p_consent_scope,p_action,p_policy_version,p_consent_version,p_source,p_correlation_id,clock_timestamp()
   ) returning id into v_id;
   return v_id;
 end;
@@ -231,9 +231,9 @@ begin
     raise exception 'Text transfer must not reference Vision consent' using errcode = '22023';
   end if;
   insert into public.ai_data_transfer_events(
-    user_id,provider,model,operation,outcome,consent_event_id,correlation_id
+    user_id,provider,model,operation,outcome,consent_event_id,correlation_id,occurred_at
   ) values (
-    p_user_id,p_provider,p_model,p_operation,p_outcome,p_consent_event_id,p_correlation_id
+    p_user_id,p_provider,p_model,p_operation,p_outcome,p_consent_event_id,p_correlation_id,clock_timestamp()
   ) returning id into v_id;
   return v_id;
 end;
