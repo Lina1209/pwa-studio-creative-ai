@@ -449,6 +449,58 @@ const movieHistoryStyle = document.createElement("style");
 
   const supportStatusLabels = {open:"Открыто",in_progress:"В работе",waiting_user:"Ожидает ответа",resolved:"Решено",closed:"Закрыто"};
   const supportCategoryLabels = {general:"Общий вопрос",bug:"Ошибка",account:"Аккаунт",billing:"Тарифы и оплата",feature_request:"Предложение",feedback:"Отзыв",safety_privacy:"Безопасность"};
+
+  let notificationRefreshInFlight = false;
+  const loadMyNotifications = async () => {
+    if (!authSession?.user || notificationRefreshInFlight) return;
+    notificationRefreshInFlight = true;
+    const status = $("#notificationsStatus"), list = $("#notificationsList");
+    try {
+      const data = await apiRequest("/api/notifications", {cache:"no-store"});
+      const notifications = data.notifications || [];
+      const unread = Number(data.unread_count || 0);
+      const badge = $("#messagesUnreadBadge");
+      if (badge) { badge.textContent = unread > 99 ? "99+" : String(unread); badge.hidden = unread < 1; }
+      if (status) status.textContent = unread ? "Непрочитанных уведомлений: " + unread + "." : "Новых уведомлений нет.";
+      if (list) {
+        list.replaceChildren();
+        if (!notifications.length) {
+          const empty = document.createElement("p"); empty.className = "messages-list-empty";
+          empty.textContent = "Здесь появятся ответы команды и важные события."; list.append(empty);
+        }
+        notifications.forEach(notification => {
+          const card = document.createElement("article");
+          card.className = "notification-card" + (notification.read_at ? "" : " unread");
+          const content = document.createElement("div");
+          const title = document.createElement("b"); title.textContent = notification.title || "Уведомление";
+          const body = document.createElement("p"); body.textContent = notification.body || "";
+          const time = document.createElement("small"); time.textContent = new Date(notification.created_at).toLocaleString();
+          content.append(title, body, time); card.append(content);
+          if (!notification.read_at) {
+            const read = document.createElement("button"); read.type = "button"; read.className = "secondary-button"; read.textContent = "Прочитано";
+            read.addEventListener("click", async () => {
+              read.disabled = true;
+              try { await apiRequest("/api/notifications/" + encodeURIComponent(notification.id) + "/read", {method:"PATCH"}); await loadMyNotifications(); }
+              catch (error) { if (status) status.textContent = error.message; read.disabled = false; }
+            });
+            card.append(read);
+          }
+          if (notification.ticket_id) {
+            const open = document.createElement("button"); open.type = "button"; open.className = "secondary-button"; open.textContent = "Открыть обращение";
+            open.addEventListener("click", async () => {
+              navigate("messages"); await loadMySupportTickets();
+              const select = $("#supportMyTicketSelect");
+              if (select) { select.value = notification.ticket_id; await loadMySupportConversation(notification.ticket_id); }
+            });
+            card.append(open);
+          }
+          list.append(card);
+        });
+      }
+    } catch (error) { if (status) status.textContent = error.message; }
+    finally { notificationRefreshInFlight = false; }
+  };
+  $("#refreshNotifications")?.addEventListener("click", loadMyNotifications);
   let mySupportTickets = [];
   let adminSupportTickets = [];
   let selectedMySupportTicket = null;
@@ -1431,11 +1483,12 @@ const movieHistoryStyle = document.createElement("style");
     window.location.hash = view === "home" ? "" : view;
     window.scrollTo({top:0,behavior:"smooth"});
     if (view === "account" && authSession?.user) { loadMySupportTickets(); if (adminUiAuthorized) { loadAdminSupportTickets(); loadAdminPricingDrafts(); loadAdminPlanDrafts(); } }
-    if (view === "messages" && authSession?.user) loadMySupportTickets();
+    if (view === "messages" && authSession?.user) { loadMySupportTickets(); loadMyNotifications(); }
   }
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
   $("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
+  window.setInterval(() => { if (authSession?.user) loadMyNotifications(); }, 60000);
   $("#supportLauncher")?.addEventListener("click", () => {
     navigate("messages");
     if (authSession?.user) loadMySupportTickets();
@@ -1445,6 +1498,9 @@ const movieHistoryStyle = document.createElement("style");
     adminSupportTickets = [];
     selectedMySupportTicket = null;
     selectedAdminSupportTicket = null;
+    $("#messagesUnreadBadge") && ($("#messagesUnreadBadge").hidden = true);
+    $("#notificationsList")?.replaceChildren();
+    if ($("#notificationsStatus")) $("#notificationsStatus").textContent = "Войдите, чтобы получать уведомления.";
     $("#supportMyTicketSelect")?.replaceChildren();
     $("#supportMyMessages")?.replaceChildren();
     $("#supportMyConversation").hidden = true;

@@ -66,3 +66,23 @@ def test_support_ticket_context_rejects_unapproved_fields():
     client=client_for(StudioUser(user_id=OWNER,email=None,role="creator"))
     response=client.post("/api/support/tickets",json={"subject":"Help","message":"Please help","context":{"email":"private@example.com"}})
     assert response.status_code == 422
+
+
+def test_notifications_are_scoped_to_authenticated_user(monkeypatch):
+    import app.main as main
+    captured = {}
+    monkeypatch.setattr(main, "list_notifications", lambda settings, user_id, **kwargs:
+        captured.update(user_id=user_id) or [{"id":"n1","read_at":None}])
+    client = client_for(StudioUser(user_id=OWNER,email=None,role="creator"))
+    response = client.get("/api/notifications")
+    assert response.status_code == 200
+    assert captured["user_id"] == UUID(OWNER)
+    assert response.json()["unread_count"] == 1
+
+
+def test_user_cannot_mark_another_users_notification_read(monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main, "mark_notification_read", lambda *args: 0)
+    client = client_for(StudioUser(user_id=OWNER,email=None,role="creator"))
+    response = client.patch(f"/api/notifications/{TICKET}/read")
+    assert response.status_code == 404

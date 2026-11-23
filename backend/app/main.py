@@ -109,7 +109,7 @@ from app.services.plan_drafts import PlanDraftUnavailable, create_plan_draft, li
 from app.services.plan_operations import PlanOperationsUnavailable, approve_plan_draft, create_pending_assignment
 from app.services.initial_entitlement import EntitlementGrantUnavailable, grant_initial_free_entitlement
 from app.services.entitlements import EntitlementsUnavailable, resolve_user_entitlements
-from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
+from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message, create_notification, list_notifications, mark_notification_read
 
 settings = get_settings()
 # Payment providers are assembled only from trusted server code. With the
@@ -2094,6 +2094,28 @@ class SupportStatusUpdate(BaseModel):
     model_config = {"extra": "forbid"}
     status: str = Field(pattern="^(open|in_progress|waiting_user|resolved|closed)$")
 
+def _support_admin_recipient_ids() -> set[UUID]:
+    recipients = set()
+    for raw in (settings.owner_user_ids or "").split(","):
+        try:
+            recipients.add(UUID(raw.strip()))
+        except (ValueError, AttributeError):
+            continue
+    return recipients
+
+
+def _notify_support_activity(*, recipient_ids: set[UUID], actor_id: UUID, ticket_id: UUID,
+                             kind: str, title: str, body: str, event_key: str) -> None:
+    # A notification outage must not make a committed support message appear lost.
+    for recipient_id in recipient_ids - {actor_id}:
+        try:
+            create_notification(settings, recipient_user_id=recipient_id, actor_user_id=actor_id,
+                                ticket_id=ticket_id, kind=kind, title=title, body=body,
+                                dedupe_key=f"{event_key}:{recipient_id}")
+        except (SupportUnavailable, ValueError):
+            logger.exception("Support notification could not be persisted.")
+
+
 def _support_error():
     raise HTTPException(status_code=503, detail="Служба поддержки временно недоступна.")
 
@@ -2104,6 +2126,9 @@ def support_create_ticket(payload: SupportTicketCreate, user: StudioUser = Depen
     if len(subject)<3 or not body: raise HTTPException(status_code=422, detail="Тема и сообщение обязательны.")
     try:
         ticket=create_ticket(settings, UUID(user.user_id), subject, body, category=payload.category, context=payload.context.model_dump(exclude_none=True))
+        _notify_support_activity(recipient_ids=_support_admin_recipient_ids(), actor_id=UUID(user.user_id),
+            ticket_id=UUID(ticket["id"]), kind="support_ticket_new", title="Новое обращение",
+            body=subject, event_key=f"support-ticket:{ticket['id']}:created")
         return {"ticket":ticket}
     except SupportUnavailable: _support_error()
 
@@ -2129,8 +2154,31 @@ def support_reply_my_ticket(ticket_id: UUID, payload: SupportMessageCreate, user
         if ticket is None or ticket["user_id"] != user.user_id: raise HTTPException(status_code=404,detail="Обращение не найдено.")
         if ticket["status"] in ("resolved","closed"): raise HTTPException(status_code=409,detail="Обращение закрыто.")
         add_message(settings,ticket_id,UUID(user.user_id),"user",body)
+        event_id = uuid4()
+        _notify_support_activity(recipient_ids=_support_admin_recipient_ids(), actor_id=UUID(user.user_id),
+            ticket_id=ticket_id, kind="support_ticket_reply", title="Новое сообщение в поддержке",
+            body=ticket["subject"], event_key=f"support-ticket:{ticket_id}:user-reply:{event_id}")
         return {"status":"sent"}
     except SupportUnavailable: _support_error()
+
+@app.get(f"{settings.api_prefix}/notifications")
+def support_notification_list(user: StudioUser = Depends(get_current_user)):
+    try:
+        rows = list_notifications(settings, UUID(user.user_id), limit=50)
+        return {"notifications": rows, "unread_count": sum(1 for row in rows if row.get("read_at") is None)}
+    except SupportUnavailable:
+        _support_error()
+
+
+@app.patch(f"{settings.api_prefix}/notifications/{{notification_id}}/read")
+def support_notification_mark_read(notification_id: UUID, user: StudioUser = Depends(get_current_user)):
+    try:
+        if not mark_notification_read(settings, notification_id, UUID(user.user_id)):
+            raise HTTPException(status_code=404, detail="Уведомление не найдено.")
+        return {"status": "read"}
+    except SupportUnavailable:
+        _support_error()
+
 
 @app.get(f"{settings.api_prefix}/admin/support/tickets")
 def admin_support_list_tickets(user: StudioUser = Depends(require_permission("admin.support.read"))):
@@ -2160,6 +2208,10 @@ def admin_support_reply(ticket_id: UUID, payload: SupportMessageCreate, user: St
         # Persist intent before the irreversible support-message write.
         record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="requested",resource_type="support_ticket",resource_id=ticket_id,reason="Admin reply requested")
         add_message(settings,ticket_id,UUID(user.user_id),"admin",body)
+        event_id = uuid4()
+        _notify_support_activity(recipient_ids={UUID(ticket["user_id"])}, actor_id=UUID(user.user_id),
+            ticket_id=ticket_id, kind="support_ticket_reply", title="Ответ команды PWA Studio",
+            body=ticket["subject"], event_key=f"support-ticket:{ticket_id}:admin-reply:{event_id}")
         try:
             record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason="Admin reply persisted")
         except (AdminAuditUnavailable, ValueError):

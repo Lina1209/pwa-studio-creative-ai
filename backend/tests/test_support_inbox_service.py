@@ -105,3 +105,26 @@ def test_add_message_rejects_unknown_sender_role_before_network(monkeypatch):
         raise AssertionError("Unknown sender role was accepted")
 
     assert fake.calls == []
+
+
+def test_create_notification_uses_idempotent_rpc(monkeypatch):
+    import app.services.support_inbox as module
+    fake = FakeClient(["55555555-5555-4555-8555-555555555555"])
+    monkeypatch.setattr(module.httpx, "Client", lambda **kwargs: fake)
+    module.create_notification(settings(), recipient_user_id=USER, actor_user_id=UUID(TICKET),
+        ticket_id=UUID(TICKET), kind="support_ticket_new", title="New ticket",
+        body="Cannot save", dedupe_key="support-ticket-created-001")
+    assert fake.calls[0]["url"].endswith("/rpc/create_support_notification")
+    assert fake.calls[0]["json"]["p_recipient_user_id"] == str(USER)
+    assert fake.calls[0]["json"]["p_dedupe_key"] == "support-ticket-created-001"
+
+
+def test_mark_notification_read_is_scoped_to_recipient(monkeypatch):
+    import app.services.support_inbox as module
+    fake = FakeClient([{"id": TICKET}])
+    monkeypatch.setattr(module.httpx, "Client", lambda **kwargs: fake)
+    module.mark_notification_read(settings(), UUID(TICKET), USER)
+    call = fake.calls[0]
+    assert call["method"] == "PATCH"
+    assert call["params"]["recipient_user_id"] == f"eq.{USER}"
+    assert call["params"]["id"] == f"eq.{TICKET}"
