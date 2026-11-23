@@ -2,8 +2,8 @@
 alter table public.profiles
   add column if not exists username text,
   add column if not exists bio text not null default '',
-  add column if not exists profile_visibility text not null default 'public',
-  add column if not exists discoverable boolean not null default true,
+  add column if not exists profile_visibility text not null default 'private',
+  add column if not exists discoverable boolean not null default false,
   add column if not exists allow_direct_messages boolean not null default true;
 
 update public.profiles
