@@ -1070,11 +1070,22 @@ def admin_user_finance_integrity_audit(
         raise HTTPException(
             status_code=502, detail="Finance integrity audit is temporarily unavailable."
         ) from exc
-    _audit_admin_read(
-        user,
-        resource_type="credit_wallet",
-        reason="Viewed user finance integrity audit",
-    )
+    try:
+        record_admin_audit_event(
+            settings,
+            actor_user_id=UUID(user.user_id),
+            action="admin.user.view",
+            outcome="allowed",
+            resource_type="credit_wallet",
+            resource_id=target_user_id,
+            reason="Viewed user finance integrity audit",
+        )
+    except AdminAuditUnavailable as exc:
+        # Financial integrity data is not disclosed if the access cannot be audited.
+        raise HTTPException(
+            status_code=503,
+            detail="Financial access audit is temporarily unavailable.",
+        ) from exc
     response.headers["Cache-Control"] = "private, no-store"
     return report
 
