@@ -104,6 +104,9 @@
       refreshAuthUI(session);
       setTimeout(() => {
         if (accountChanged) {
+          // Never carry an editor draft or selected asset across account boundaries.
+          if (typeof resetVisualAssetEditor === "function") resetVisualAssetEditor();
+          if (typeof renderVisualLibrary === "function") renderVisualLibrary();
           financeUiAuthorized = false; financeAccess = null;
           const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
           activeAssistantConversationId = null;
