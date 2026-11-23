@@ -55,6 +55,10 @@ def snapshot(*, complete=True, ledger_count=0, ledger=None):
         "approved_plans": 0,
         "quota_reservations": 0,
         "quota_events": 0,
+        "payment_refunds": 0,
+        "payment_refund_provider_events": 0,
+        "payment_refund_events": 0,
+        "payment_refund_reconciliations": 0,
     }
     return {
         "user_id": str(USER_ID),
@@ -75,6 +79,10 @@ def snapshot(*, complete=True, ledger_count=0, ledger=None):
         "approved_plans": [],
         "quota_reservations": [],
         "quota_events": [],
+        "payment_refunds": [],
+        "payment_refund_provider_events": [],
+        "payment_refund_events": [],
+        "payment_refund_reconciliations": [],
         "counts": counts,
         "limits": limits,
         "complete": complete,
@@ -96,6 +104,7 @@ def test_service_calls_one_snapshot_rpc_and_returns_read_only_report(monkeypatch
     assert report["complete"] is True
     assert report["checked"]["payment_orders"] == 0
     assert report["checked"]["quota_events"] == 0
+    assert report["checked"]["payment_refunds"] == 0
     assert FakeClient.last_request[0].endswith(
         "/rpc/get_finance_integrity_audit_snapshot"
     )
