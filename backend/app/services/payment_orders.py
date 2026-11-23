@@ -259,7 +259,7 @@ def fail_payment_fulfillment(
         "p_retry_after_seconds": retry_after_seconds,
         "p_max_attempts": 5,
     })
-    if result not in {"queued", "manual_review", "lease_lost"}:
+    if not isinstance(result, str) or result not in {"queued", "manual_review", "lease_lost"}:
         raise PaymentOrderUnavailable("fail_payment_fulfillment RPC returned an invalid result.")
     return result
 
