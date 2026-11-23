@@ -187,3 +187,34 @@ def mark_user_notification_read(settings: Settings, notification_id: UUID, user_
         "read_at": "is.null",
     }, payload={"read_at": datetime.now(timezone.utc).isoformat()})
     return 1
+
+
+def set_user_block(settings: Settings, blocker_id: UUID, blocked_id: UUID, blocked: bool):
+    if blocker_id == blocked_id:
+        raise ValueError("A user cannot block themselves.")
+    rows = _request(settings, "POST", "rpc/set_direct_user_block", payload={
+        "p_blocker_user_id": str(blocker_id),
+        "p_blocked_user_id": str(blocked_id),
+        "p_blocked": blocked,
+    })
+    return rows
+
+
+def report_direct_message(settings: Settings, reporter_id: UUID, target_id: UUID,
+                          message_id: UUID | None, category: str, details: str = ""):
+    rows = _request(settings, "POST", "rpc/report_direct_message", payload={
+        "p_reporter_user_id": str(reporter_id),
+        "p_target_user_id": str(target_id),
+        "p_message_id": str(message_id) if message_id else None,
+        "p_category": category,
+        "p_details": details.strip()[:2000],
+    })
+    if isinstance(rows, str):
+        return rows
+    if isinstance(rows, list) and rows:
+        value = rows[0]
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            return value.get("report_direct_message") or value.get("id")
+    raise DirectMessagingUnavailable("Could not submit safety report.")

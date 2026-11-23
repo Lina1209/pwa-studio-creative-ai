@@ -155,3 +155,57 @@ def test_notification_read_is_scoped_to_authenticated_user(monkeypatch):
         f"/api/messages/direct/notifications/{notification_id}/read")
     assert response.status_code == 200
     assert captured == {"notification_id": UUID(notification_id), "user_id": UUID(OWNER)}
+
+
+
+def test_block_user_uses_authenticated_actor(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "set_user_block", lambda settings, blocker, blocked, value:
+                        captured.update(blocker=blocker, blocked=blocked, value=value))
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).put(
+        f"/api/messages/direct/users/{OTHER}/block")
+    assert response.status_code == 200
+    assert captured == {"blocker": UUID(OWNER), "blocked": UUID(OTHER), "value": True}
+
+
+def test_unblock_user_uses_authenticated_actor(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "set_user_block", lambda settings, blocker, blocked, value:
+                        captured.update(blocker=blocker, blocked=blocked, value=value))
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).delete(
+        f"/api/messages/direct/users/{OTHER}/block")
+    assert response.status_code == 200
+    assert captured == {"blocker": UUID(OWNER), "blocked": UUID(OTHER), "value": False}
+
+
+def test_user_cannot_block_self():
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).put(
+        f"/api/messages/direct/users/{OWNER}/block")
+    assert response.status_code == 422
+
+
+def test_report_uses_authenticated_reporter_and_validated_target(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "report_direct_message",
+                        lambda settings, reporter, target, message, category, details:
+                        captured.update(reporter=reporter, target=target, message=message,
+                                        category=category, details=details) or "report-1")
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).post(
+        "/api/messages/direct/reports",
+        json={"target_user_id": OTHER, "message_id": CONVERSATION,
+              "category": "harassment", "details": "Please review"})
+    assert response.status_code == 201
+    assert captured["reporter"] == UUID(OWNER)
+    assert captured["target"] == UUID(OTHER)
+    assert captured["category"] == "harassment"
+    assert captured["details"] == "Please review"
+
+
+def test_report_rejects_unknown_category():
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).post(
+        "/api/messages/direct/reports",
+        json={"target_user_id": OTHER, "category": "unknown"})
+    assert response.status_code == 422

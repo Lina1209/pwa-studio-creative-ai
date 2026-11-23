@@ -11,6 +11,7 @@ from app.services.direct_messaging import (
     DirectMessagingUnavailable, create_conversation, list_conversations,
     read_messages, send_message, mark_read,
     create_message_notification, list_user_notifications, mark_user_notification_read,
+    set_user_block, report_direct_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,14 @@ class DirectMessageCreate(BaseModel):
     model_config = {"extra": "forbid"}
     body: str = Field(min_length=1, max_length=5000)
     idempotency_key: UUID = Field(default_factory=uuid4)
+
+
+class DirectMessageReportCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    target_user_id: UUID
+    message_id: UUID | None = None
+    category: str = Field(pattern="^(spam|harassment|scam|threats|inappropriate|other)$")
+    details: str = Field(default="", max_length=2000)
 
 
 def _unavailable():
@@ -113,5 +122,46 @@ def mark_direct_notification_read(notification_id: UUID,
         if not mark_user_notification_read(settings, notification_id, UUID(user.user_id)):
             raise HTTPException(status_code=404, detail="Уведомление не найдено.")
         return {"status": "read"}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+
+@router.put("/users/{target_user_id}/block")
+def block_direct_user(target_user_id: UUID, user: StudioUser = Depends(get_current_user)):
+    actor_id = UUID(user.user_id)
+    if target_user_id == actor_id:
+        raise HTTPException(status_code=422, detail="Нельзя заблокировать самого себя.")
+    try:
+        set_user_block(settings, actor_id, target_user_id, True)
+        return {"status": "blocked"}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.delete("/users/{target_user_id}/block")
+def unblock_direct_user(target_user_id: UUID, user: StudioUser = Depends(get_current_user)):
+    actor_id = UUID(user.user_id)
+    if target_user_id == actor_id:
+        raise HTTPException(status_code=422, detail="Некорректный пользователь.")
+    try:
+        set_user_block(settings, actor_id, target_user_id, False)
+        return {"status": "unblocked"}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.post("/reports", status_code=201)
+def submit_direct_message_report(payload: DirectMessageReportCreate,
+                                 user: StudioUser = Depends(get_current_user)):
+    actor_id = UUID(user.user_id)
+    if payload.target_user_id == actor_id:
+        raise HTTPException(status_code=422, detail="Нельзя пожаловаться на самого себя.")
+    try:
+        report_id = report_direct_message(
+            settings, actor_id, payload.target_user_id, payload.message_id,
+            payload.category, payload.details,
+        )
+        return {"report_id": str(report_id)}
     except DirectMessagingUnavailable:
         _unavailable()
