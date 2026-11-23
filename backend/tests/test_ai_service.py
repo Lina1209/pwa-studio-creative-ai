@@ -134,3 +134,7 @@ def test_unsupported_provider_is_rejected_at_configuration_boundary():
 def test_only_deepseek_provider_is_accepted():
     with pytest.raises(ValidationError):
         Settings(ai_provider="gemini", ai_model="gemini-3.1-flash-lite")
+
+def test_billable_ai_retries_are_disabled_at_configuration_boundary():
+    with pytest.raises(ValidationError):
+        Settings(ai_max_retries=1)
