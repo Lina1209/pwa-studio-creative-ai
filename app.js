@@ -98,6 +98,8 @@
       authStateEventReceived = true;
       const nextUserId = session?.user?.id || null;
       const accountChanged = lastAuthUserId !== nextUserId;
+      // Invalidate any in-flight visual-library sync immediately, including logout.
+      if (accountChanged) visualLibrarySyncSequence++;
       lastAuthUserId = nextUserId;
       refreshAuthUI(session);
       setTimeout(() => {
