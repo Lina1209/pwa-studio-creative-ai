@@ -45,3 +45,27 @@ class ReportListItem(BaseModel):
     content_reference: str | None = None
     status: str
     created_at: str
+
+class ReportReviewRequest(BaseModel):
+    status: str = Field(pattern=r"^(reviewing|resolved|rejected)$")
+    moderator_note: str | None = Field(default=None, max_length=2000)
+
+
+class SuspensionCreateRequest(BaseModel):
+    user_id: str = Field(min_length=36, max_length=36)
+    reason: str = Field(min_length=5, max_length=1000)
+    scope: str = Field(default="platform", pattern=r"^(platform|assistant|community)$")
+    expires_at: str | None = Field(default=None, max_length=40)
+
+
+class SuspensionResponse(BaseModel):
+    id: str
+    user_id: str
+    reason: str
+    scope: str
+    expires_at: str | None = None
+    created_at: str
+
+
+class SuspensionRevokeRequest(BaseModel):
+    suspension_id: str = Field(min_length=36, max_length=36)
