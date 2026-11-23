@@ -90,6 +90,7 @@ from app.services.generation_jobs import (
 
 from app.services.pricing_drafts import PricingDraftUnavailable, create_draft, list_drafts
 from app.services.plan_drafts import PlanDraftUnavailable, create_plan_draft, list_plan_drafts
+from app.services.initial_entitlement import EntitlementGrantUnavailable, grant_initial_free_entitlement
 from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
 
 settings = get_settings()
@@ -367,9 +368,12 @@ def get_my_credit_wallet(
 ):
     """Read the authenticated user's wallet, active holds, and recent ledger."""
     try:
+        grant_initial_free_entitlement(settings, user_id=UUID(user.user_id))
         snapshot = get_credit_wallet_snapshot(
             settings, user_id=UUID(user.user_id), history_limit=50
         )
+    except EntitlementGrantUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Free entitlement is not ready. Please try again later.") from exc
     except CreditWalletNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Credit wallet is not configured yet.") from exc
     except CreditWalletUnavailable as exc:
