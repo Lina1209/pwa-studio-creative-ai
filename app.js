@@ -1828,9 +1828,13 @@ const movieHistoryStyle = document.createElement("style");
     const record=await new Promise((resolve,reject)=>{const request=db.transaction("images","readonly").objectStore("images").get(id);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     db.close();return record&&record.ownerId===ownerId?record.blob:null;
   };
-  const deleteVisualRefImage=async(id)=>{
+  const deleteVisualRefImage=async(id,ownerId)=>{
     const db=await openVisualRefDb();
-    await new Promise((resolve,reject)=>{const tx=db.transaction("images","readwrite");tx.objectStore("images").delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);
+      request.onsuccess=()=>{if(request.result&&request.result.ownerId===ownerId)store.delete(id);};
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });
     db.close();
   };
   const cloudVisualBucket="character-references";
@@ -2052,7 +2056,7 @@ const movieHistoryStyle = document.createElement("style");
           if(!stillOwner())throw new Error("Аккаунт изменился во время удаления.");
           const next=JSON.parse(localStorage.getItem(storageKey)||"[]").filter(asset=>asset.id!==removed.id);
           localStorage.setItem(storageKey,JSON.stringify(next));
-          (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
+          (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{}));
           $("#promptSaveFeedback").textContent="Материал удалён из библиотеки.";
           renderVisualLibrary();
         }catch(error){
@@ -2061,7 +2065,7 @@ const movieHistoryStyle = document.createElement("style");
             try{
               const next=JSON.parse(localStorage.getItem(storageKey)||"[]").filter(asset=>asset.id!==removed.id);
               localStorage.setItem(storageKey,JSON.stringify(next));
-              (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
+              (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{}));
               $("#promptSaveFeedback").textContent="Материал удалён из библиотеки. Облачная запись помечена как удалённая, но часть файлов не удалось очистить; они не будут восстановлены при синхронизации.";
               renderVisualLibrary();
               return;
@@ -2108,7 +2112,7 @@ const movieHistoryStyle = document.createElement("style");
       assertOwner();
       localStorage.setItem(storageKey,JSON.stringify(items));
     }catch(error){
-      await Promise.all(refs.map(ref=>deleteVisualRefImage(ref.id).catch(()=>{})));
+      await Promise.all(refs.map(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{})));
       $("#promptSaveFeedback").textContent=ownerId
         ?"Не удалось сохранить материал в облако или аккаунт изменился. Проверьте подключение и повторите попытку."
         :"Не удалось сохранить референсы. Проверьте свободное место браузера и доступность IndexedDB.";
