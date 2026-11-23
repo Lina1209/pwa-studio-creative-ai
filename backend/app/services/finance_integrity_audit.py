@@ -48,7 +48,7 @@ def audit_finance_integrity(
     generation_jobs: list[dict[str, Any]],
     provider_cost_events: list[dict[str, Any]],
     opening_balances: dict[str, tuple[int, int]] | None = None,
-    complete: bool = True,
+    complete: bool = False,
 ) -> dict[str, Any]:
     """Audit supplied snapshots; incomplete input can never produce healthy status.
 
