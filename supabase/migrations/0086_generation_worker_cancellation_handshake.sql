@@ -149,3 +149,157 @@ comment on function public.heartbeat_generation_job(uuid, text, integer) is
   'Returns active, cancel_requested, terminal, or lease_lost; renews only the matching unexpired worker lease.';
 comment on function public.acknowledge_generation_job_cancellation(uuid, text) is
   'Fenced worker acknowledgement. Cancels and releases credits only after no provider journal exists or its state is provider_failed/result_received.';
+
+
+-- Provider calls already in flight may finish after cancellation is requested.
+-- Permit the lease owner to journal their definitive outcome, but never to begin
+-- a new provider operation after the job has entered cancel_requested.
+create or replace function public.mark_generation_provider_operation_accepted(
+  p_job_id uuid,
+  p_worker_id text,
+  p_provider_request_id text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare v_updated integer;
+begin
+  if p_job_id is null
+     or p_worker_id is null or length(btrim(p_worker_id)) not between 1 and 120
+     or p_provider_request_id is null or length(p_provider_request_id) not between 1 and 500 then
+    raise exception 'Invalid provider acceptance metadata' using errcode = '22023';
+  end if;
+
+  update public.generation_provider_operations as op
+     set state = 'accepted',
+         provider_request_id = p_provider_request_id,
+         accepted_at = coalesce(accepted_at, now()),
+         last_checked_at = now(),
+         updated_at = now()
+    from public.generation_jobs as job
+   where op.job_id = p_job_id
+     and job.id = op.job_id
+     and job.status in ('running', 'cancel_requested')
+     and job.lease_owner = btrim(p_worker_id)
+     and job.lease_expires_at > now()
+     and op.state in ('submitting', 'unknown', 'accepted')
+     and (op.provider_request_id is null or op.provider_request_id = p_provider_request_id);
+
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+create or replace function public.mark_generation_provider_operation_unknown(
+  p_job_id uuid,
+  p_worker_id text,
+  p_error_code text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare v_updated integer;
+begin
+  if p_job_id is null
+     or p_worker_id is null or length(btrim(p_worker_id)) not between 1 and 120
+     or p_error_code is null or p_error_code !~ '^[a-z0-9_]{1,80}$' then
+    raise exception 'Invalid ambiguous provider operation metadata' using errcode = '22023';
+  end if;
+
+  update public.generation_provider_operations as op
+     set state = 'unknown',
+         last_error_code = p_error_code,
+         last_checked_at = now(),
+         updated_at = now()
+    from public.generation_jobs as job
+   where op.job_id = p_job_id
+     and job.id = op.job_id
+     and job.status in ('running', 'cancel_requested')
+     and job.lease_owner = btrim(p_worker_id)
+     and job.lease_expires_at > now()
+     and op.state in ('submitting', 'accepted', 'unknown');
+
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+create or replace function public.mark_generation_provider_operation_failed(
+  p_job_id uuid,
+  p_worker_id text,
+  p_error_code text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare v_updated integer;
+begin
+  if p_job_id is null
+     or p_worker_id is null or length(btrim(p_worker_id)) not between 1 and 120
+     or p_error_code is null or p_error_code !~ '^[a-z0-9_]{1,80}$' then
+    raise exception 'Invalid provider failure metadata' using errcode = '22023';
+  end if;
+
+  update public.generation_provider_operations as op
+     set state = 'provider_failed',
+         last_error_code = p_error_code,
+         last_checked_at = now(),
+         updated_at = now()
+    from public.generation_jobs as job
+   where op.job_id = p_job_id
+     and job.id = op.job_id
+     and job.status in ('running', 'cancel_requested')
+     and job.lease_owner = btrim(p_worker_id)
+     and job.lease_expires_at > now()
+     and op.state in ('submitting', 'accepted', 'unknown', 'provider_failed');
+
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+create or replace function public.mark_generation_provider_operation_result_received(
+  p_job_id uuid,
+  p_worker_id text,
+  p_provider_request_id text default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare v_updated integer;
+begin
+  if p_job_id is null
+     or p_worker_id is null or length(btrim(p_worker_id)) not between 1 and 120
+     or (p_provider_request_id is not null
+         and length(p_provider_request_id) not between 1 and 500) then
+    raise exception 'Invalid provider result metadata' using errcode = '22023';
+  end if;
+
+  update public.generation_provider_operations as op
+     set state = 'result_received',
+         provider_request_id = coalesce(op.provider_request_id, p_provider_request_id),
+         result_received_at = coalesce(result_received_at, now()),
+         last_checked_at = now(),
+         updated_at = now()
+    from public.generation_jobs as job
+   where op.job_id = p_job_id
+     and job.id = op.job_id
+     and job.status in ('running', 'cancel_requested')
+     and job.lease_owner = btrim(p_worker_id)
+     and job.lease_expires_at > now()
+     and op.state in ('submitting', 'accepted', 'unknown', 'result_received')
+     and (op.provider_request_id is null or p_provider_request_id is null
+          or op.provider_request_id = p_provider_request_id);
+
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
