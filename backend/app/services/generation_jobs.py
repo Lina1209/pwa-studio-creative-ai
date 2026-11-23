@@ -20,6 +20,10 @@ class GenerationPricingQuoteConflictError(GenerationJobsServiceError):
     """An idempotency key was already bound to a different quote request."""
 
 
+class GenerationJobNotFoundError(GenerationJobsServiceError):
+    """The requested job does not exist for the verified owner."""
+
+
 
 @dataclass(frozen=True)
 class GenerationJobCreateResult:
@@ -155,6 +159,76 @@ def get_generation_job(
     if len(data) != 1 or not isinstance(data[0], dict):
         raise GenerationJobsServiceError("The job status service returned an ambiguous response.")
     return data[0]
+
+
+@dataclass(frozen=True)
+class GenerationJobCancellationResult:
+    job_status: str
+    cancellation_action: str
+    replayed: bool
+
+
+def request_generation_job_cancellation(
+    settings: Settings, *, user_id: UUID, job_id: UUID
+) -> GenerationJobCancellationResult:
+    """Request cancellation using only a server-verified owner identity."""
+    if not settings.generation_jobs_enabled:
+        raise GenerationJobsNotConfiguredError(
+            "Generation jobs are not enabled on this server."
+        )
+    headers = _headers(settings)
+    payload = {"p_job_id": str(job_id), "p_user_id": str(user_id)}
+    url = (
+        f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/"
+        "request_generation_job_cancellation_for_owner"
+    )
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+    except GenerationJobsNotConfiguredError:
+        raise
+    except Exception as exc:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", "unavailable")
+        error_code = None
+        try:
+            error_code = response.json().get("code")
+        except Exception:
+            pass
+        if status_code == 404 or error_code == "P0002":
+            raise GenerationJobNotFoundError(
+                "Generation job was not found for the verified owner."
+            ) from exc
+        raise GenerationJobsServiceError(
+            f"Could not request generation cancellation (HTTP {status_code})."
+        ) from exc
+
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise GenerationJobsServiceError(
+            "The cancellation service returned an invalid response."
+        )
+    row = data[0]
+    try:
+        job_status = row["job_status"]
+        action = row["cancellation_action"]
+        replayed = row["replayed"]
+        if job_status not in {
+            "cancelled", "cancel_requested", "succeeded", "failed", "expired"
+        }:
+            raise ValueError("job_status")
+        if action not in {
+            "cancelled_immediately", "awaiting_worker_confirmation", "already_terminal"
+        }:
+            raise ValueError("cancellation_action")
+        if not isinstance(replayed, bool):
+            raise ValueError("replayed")
+        return GenerationJobCancellationResult(job_status, action, replayed)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GenerationJobsServiceError(
+            "The cancellation service returned incomplete or invalid metadata."
+        ) from exc
 
 
 def create_scene_generation_job(
