@@ -400,9 +400,9 @@ const movieHistoryStyle = document.createElement("style");
       const data = await apiRequest("/api/admin/support/tickets/" + encodeURIComponent(ticketId));
       $("#adminSupportMessages").replaceChildren(...(data.messages || []).map(message => supportMessageNode(message, true)));
       $("#adminSupportTicketMeta").textContent = data.ticket.subject + " · пользователь " + data.ticket.user_id + " · создано " + new Date(data.ticket.created_at).toLocaleString();
-      $("#adminSupportStatus").value = data.ticket.status;
+      $("#adminSupportStatusSelect").value = data.ticket.status;
       box.hidden = false;
-    } catch (error) { $("#adminSupportStatus").textContent = error.message; if (box) box.hidden = true; }
+    } catch (error) { $("#adminSupportFeedback").textContent = error.message; if (box) box.hidden = true; }
   };
   $("#refreshAdminSupport")?.addEventListener("click", loadAdminSupportTickets);
   $("#adminSupportTicketSelect")?.addEventListener("change", event => loadAdminSupportConversation(event.target.value));
@@ -416,20 +416,20 @@ const movieHistoryStyle = document.createElement("style");
       await loadAdminSupportTickets();
       $("#adminSupportTicketSelect").value = selectedAdminSupportTicket;
       await loadAdminSupportConversation(selectedAdminSupportTicket);
-      $("#adminSupportStatus").textContent = "Ответ отправлен.";
-    } catch (error) { $("#adminSupportStatus").textContent = error.message; }
+      $("#adminSupportFeedback").textContent = "Ответ отправлен.";
+    } catch (error) { $("#adminSupportFeedback").textContent = error.message; }
     finally { if (button) button.disabled = false; }
   });
   $("#saveAdminSupportStatus")?.addEventListener("click", async () => {
     if (!selectedAdminSupportTicket) return;
     try {
-      const status = $("#adminSupportStatus").value;
+      const status = $("#adminSupportStatusSelect").value;
       await apiRequest("/api/admin/support/tickets/" + encodeURIComponent(selectedAdminSupportTicket) + "/status", {method:"PATCH",body:JSON.stringify({status})});
       await loadAdminSupportTickets();
       $("#adminSupportTicketSelect").value = selectedAdminSupportTicket;
       await loadAdminSupportConversation(selectedAdminSupportTicket);
-      $("#adminSupportStatus").textContent = "Статус сохранён.";
-    } catch (error) { $("#adminSupportStatus").textContent = error.message; }
+      $("#adminSupportFeedback").textContent = "Статус сохранён.";
+    } catch (error) { $("#adminSupportFeedback").textContent = error.message; }
   });
 
   const loadFinanceAccess = async () => {
