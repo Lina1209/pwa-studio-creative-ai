@@ -637,6 +637,8 @@ def audit_finance_integrity(
             refunds_by_order: dict[str, list[dict[str, Any]]] = defaultdict(list)
             refund_idempotency: set[tuple[str, str]] = set()
             provider_refund_ids: set[tuple[str, str]] = set()
+            provider_refund_event_ids: set[tuple[str, str]] = set()
+            refund_event_keys: dict[str, set[str]] = defaultdict(set)
             refund_provider_events_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
             refund_events_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
             reconciliations_by_refund: dict[str, dict[str, Any]] = {}
@@ -664,6 +666,14 @@ def audit_finance_integrity(
                     findings.append(_finding("duplicate_payment_refund_idempotency_key", "critical", payment_order_id=oid))
                 refund_idempotency.add(identity)
                 provider_refund_id = refund.get("provider_refund_id")
+                submitted_at, settled_at, closed_at = refund.get("submitted_at"), refund.get("settled_at"), refund.get("closed_at")
+                if (
+                    (state == "requested" and (submitted_at or settled_at or closed_at))
+                    or (state == "submitted" and (not submitted_at or settled_at or closed_at))
+                    or (state == "succeeded" and (not settled_at or closed_at or not provider_refund_id))
+                    or (state in {"failed", "cancelled"} and (not closed_at or settled_at or not provider_refund_id))
+                ):
+                    findings.append(_finding("invalid_payment_refund_timestamps", "critical", refund_id=rid))
                 if provider_refund_id is not None:
                     provider_identity = (provider, provider_refund_id)
                     if provider_identity in provider_refund_ids:
@@ -690,6 +700,10 @@ def audit_finance_integrity(
                     or not isinstance(event.get("provider_event_id"), str) or not event.get("provider_event_id")):
                     findings.append(_finding("payment_refund_provider_event_mismatch", "critical", refund_id=rid if isinstance(rid, str) else None))
                     continue
+                event_identity = (event.get("provider_code"), event.get("provider_event_id"))
+                if event_identity in provider_refund_event_ids:
+                    findings.append(_finding("duplicate_payment_refund_provider_event", "critical", refund_id=rid))
+                provider_refund_event_ids.add(event_identity)
                 refund_provider_events_by_id[rid].append(event)
 
             for event in payment_refund_events:
@@ -700,6 +714,10 @@ def audit_finance_integrity(
                 if rid not in refunds_by_id:
                     findings.append(_finding("orphan_payment_refund_event", "critical", refund_id=rid))
                     continue
+                event_key = event.get("event_key")
+                if not isinstance(event_key, str) or not event_key or event_key in refund_event_keys[rid]:
+                    findings.append(_finding("duplicate_or_invalid_payment_refund_event_key", "critical", refund_id=rid))
+                refund_event_keys[rid].add(event_key if isinstance(event_key, str) else "")
                 refund_events_by_id[rid].append(event)
 
             for row in payment_refund_reconciliations:
@@ -714,7 +732,9 @@ def audit_finance_integrity(
                     or row.get("amount_minor") != refund.get("amount_minor")
                     or row.get("currency_code") != refund.get("currency_code")
                     or row.get("purchase_type") not in {"credit_pack", "subscription"}
-                    or row.get("status") not in {"pending_review", "manual_review", "compensated"}):
+                    or row.get("status") not in {"pending_review", "manual_review", "compensated"}
+                    or (row.get("status") == "pending_review" and (row.get("reviewed_at") or row.get("reviewed_by") or row.get("resolution_code")))
+                    or (row.get("status") in {"manual_review", "compensated"} and (not row.get("reviewed_at") or not row.get("reviewed_by") or not row.get("resolution_code")))):
                     findings.append(_finding("payment_refund_reconciliation_mismatch", "critical", refund_id=rid if isinstance(rid, str) else None))
                     continue
                 purchase = purchases.get(refund.get("payment_order_id"))
