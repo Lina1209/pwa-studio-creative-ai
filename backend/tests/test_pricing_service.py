@@ -125,3 +125,16 @@ def test_invalid_or_disabled_rule_fails_closed():
             operation_code=KEY[0], provider=KEY[1], model=KEY[2],
             catalog=_catalog(credits_per_usd=Decimal("0")),
         )
+
+
+def test_rule_rejects_boolean_version_and_unbounded_credit_limit():
+    with pytest.raises(PricingError, match="version"):
+        quote_ai_operation(
+            operation_code=KEY[0], provider=KEY[1], model=KEY[2],
+            catalog=_catalog(pricing_version=True),
+        )
+    with pytest.raises(PricingError, match="bounds"):
+        quote_ai_operation(
+            operation_code=KEY[0], provider=KEY[1], model=KEY[2],
+            catalog=_catalog(max_credits=100_000_001),
+        )
