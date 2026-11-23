@@ -22,7 +22,7 @@ as $function$
     where w.user_id = p_user_id
   ),
   ledger_source as (
-    select l.id, l.user_id, l.operation_type, l.delta_available,
+    select l.id, l.user_id, l.operation_type, l.operation_key, l.delta_available,
            l.delta_reserved, l.balance_available_after,
            l.balance_reserved_after, l.created_at
       from public.credit_ledger l
