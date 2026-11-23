@@ -66,3 +66,55 @@ def test_free_plan_cannot_have_paid_price(monkeypatch):
     payload.update({"plan_code":"free","price_minor":1000,"currency":"USD"})
     response=client_for(StudioUser(user_id=ADMIN,email=None,role="admin")).post("/api/admin/plans/drafts",json=payload)
     assert response.status_code==422
+
+
+@pytest.mark.parametrize(
+    "limit_key,value",
+    [
+        ("daily_ai_requests", 50),
+        ("monthly_ai_requests", 1000),
+        ("max_concurrent_ai_requests", 3),
+        ("daily_image_generations", 10),
+        ("monthly_image_generations", 200),
+        ("daily_video_generations", 2),
+        ("monthly_video_generations", 20),
+        ("daily_audio_generations", 15),
+        ("monthly_audio_generations", 300),
+    ],
+)
+def test_plan_accepts_explicit_server_quota_dimensions(monkeypatch, limit_key, value):
+    import app.main as main
+    captured = {}
+    monkeypatch.setattr(
+        main, "create_plan_draft",
+        lambda *a, **k: captured.update(payload=k["payload"]) or {"id": DRAFT},
+    )
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: "audit")
+    payload = valid_plan()
+    payload["limits"] = {limit_key: value}
+    response = client_for(
+        StudioUser(user_id=ADMIN, email=None, role="admin")
+    ).post("/api/admin/plans/drafts", json=payload)
+    assert response.status_code == 201
+    assert captured["payload"]["limits_json"][limit_key] == value
+
+
+@pytest.mark.parametrize(
+    "limit_key",
+    ["daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests",
+     "daily_image_generations", "monthly_image_generations",
+     "daily_video_generations", "monthly_video_generations",
+     "daily_audio_generations", "monthly_audio_generations"],
+)
+def test_plan_rejects_boolean_quota_values(monkeypatch, limit_key):
+    import app.main as main
+    monkeypatch.setattr(
+        main, "create_plan_draft",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not save")),
+    )
+    payload = valid_plan()
+    payload["limits"] = {limit_key: True}
+    response = client_for(
+        StudioUser(user_id=ADMIN, email=None, role="admin")
+    ).post("/api/admin/plans/drafts", json=payload)
+    assert response.status_code == 422
