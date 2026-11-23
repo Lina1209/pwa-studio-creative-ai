@@ -87,6 +87,17 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_image_generation_provider_capability(self):
+        provider = (self.image_generation_provider or "").strip().lower()
+        if provider == "deepseek":
+            raise ValueError(
+                "DeepSeek currently supports image input for vision analysis, "
+                "but its API model output modality is text; it cannot be used "
+                "as an image-generation provider."
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_payment_provider_mode(self):
         if self.payment_provider_mode == "live" and self.payment_provider_runtime_enabled is not True:
             raise ValueError(
