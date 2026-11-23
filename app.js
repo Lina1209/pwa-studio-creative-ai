@@ -1891,7 +1891,11 @@ const movieHistoryStyle = document.createElement("style");
         if(!isCurrentSync())return;
         cloudById.set(migrated.id,migrated);
       }
-      const activeItems=[...cloudById.values()].slice(0,100);
+      if(cloudById.size>100){
+        $("#promptSaveFeedback").textContent="В облаке обнаружено больше 100 активных материалов. Локальная библиотека не перезаписана, чтобы не скрыть записи. Обратитесь к администратору для проверки данных.";
+        return;
+      }
+      const activeItems=[...cloudById.values()];
       for(const item of activeItems){
         if(!isCurrentSync())return;
         for(const ref of (Array.isArray(item.referenceImages)?item.referenceImages:[])){
