@@ -79,3 +79,23 @@ A provider may be enabled for billable traffic only after:
 - an operator-approved per-provider cap and global budget are configured.
 
 Until then, mark the provider `disabled_for_billable_generation`. Generic worker safety logic and a stable internal UUID are not a substitute for provider-side idempotency.
+
+
+## Payment provider secret handling boundary (2026-11-23)
+
+The generic payment layer now provides a server-only environment secret resolver.
+Adapters may request only environment variable references matching
+`PAYMENT_PROVIDER_<IDENTIFIER>_SECRET`; secret values are not accepted from
+browser input, stored in the database, included in API responses, or included
+in resolver errors. Missing, blank, whitespace-padded, or invalid references
+fail closed.
+
+The hosting environment/secret manager remains the source of truth. Rotation
+is performed by replacing the secret in the hosting secret manager and
+restarting/redeploying the service according to the provider's overlap/rotation
+requirements. The generic layer does not assume that all providers support
+dual-secret rotation; a concrete adapter must implement the provider's
+documented rotation semantics. No concrete provider, credentials, webhook
+route, or live payment runtime is enabled. The default runtime flag remains
+false. Do not add real secret values to repository files, CI logs, issue
+comments, or frontend build variables.
