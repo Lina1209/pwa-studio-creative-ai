@@ -70,10 +70,10 @@ begin
     v_units := v_quote_quantity::integer;
   elsif p_job_type = 'video_generation' then
     v_features := array['daily_video_generations','monthly_video_generations'];
-    v_units := v_quote_quantity::integer;
+    v_units := 1;
   elsif p_job_type in ('audio_generation','speech_generation') then
     v_features := array['daily_audio_generations','monthly_audio_generations'];
-    v_units := v_quote_quantity::integer;
+    v_units := 1;
   else
     v_features := array[
       'daily_ai_requests','monthly_ai_requests','max_concurrent_ai_requests'
