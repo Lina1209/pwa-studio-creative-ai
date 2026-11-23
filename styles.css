@@ -273,3 +273,16 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
 .assistant-vision-status{font-size:11px;color:var(--muted)}
 .assistant-vision-result{white-space:pre-wrap;overflow-wrap:anywhere;padding:13px;border:1px solid rgba(160,145,205,.25);border-radius:12px;background:rgba(120,100,170,.08);font-size:13px;line-height:1.65}
 @media(max-width:560px){.assistant-vision-panel{padding:12px}.assistant-vision-actions{align-items:stretch}.assistant-vision-actions button{width:100%;justify-content:center}}
+
+
+/* Account privacy center */
+.privacy-center{margin-top:18px;display:grid;gap:12px;min-width:0}
+.privacy-center h2{margin:.25rem 0;font-size:clamp(1.15rem,3vw,1.55rem)}
+.privacy-center>p{max-width:850px;line-height:1.6}
+.privacy-center .backend-actions{display:flex;flex-wrap:wrap;gap:9px}
+.privacy-center .backend-actions button{min-height:42px}
+.privacy-data-list{display:grid;gap:6px;padding:12px;border:1px solid var(--border,rgba(160,145,205,.22));border-radius:12px;min-width:0}
+.privacy-data-list:empty{display:none}
+.privacy-data-list b{font-size:.85rem}
+.privacy-data-list p{margin:0;font-size:.78rem;line-height:1.55;color:var(--muted,#94a3b8);overflow-wrap:anywhere}
+@media(max-width:600px){.privacy-center .backend-actions{display:grid;grid-template-columns:1fr}.privacy-center .backend-actions button{width:100%}}
