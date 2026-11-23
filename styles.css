@@ -166,3 +166,27 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
 /* Private in-app notification center */
 .notification-panel{margin-top:22px;padding:22px}.notification-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.notification-heading h2{display:flex;align-items:center;gap:9px;margin:7px 0;font:700 20px Manrope}.notification-heading p{margin:0;color:var(--muted);font-size:11px;line-height:1.6}.notification-unread{display:inline-grid;place-items:center;min-width:23px;height:23px;padding:0 6px;border-radius:20px;background:#9b75f2;color:white;font:700 10px Manrope}.notification-actions{display:flex;gap:7px;flex-wrap:wrap}.notification-actions button{font-size:10px}.notification-list{display:grid;gap:9px;margin-top:16px}.notification-item{padding:14px 15px;border:1px solid var(--line);border-radius:11px;background:#100f20}.notification-item.is-unread{border-color:#a78aff65;background:linear-gradient(110deg,#8b6cf21a,#100f20 65%)}.notification-item-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.notification-item-heading b{font:700 12px Manrope}.notification-item-heading time{color:var(--muted);font-size:9px;white-space:nowrap}.notification-item-body{margin:9px 0;color:var(--text);font-size:11px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}.notification-read-button{padding:6px 9px;border:1px solid #a78aff55;border-radius:7px;background:#8b6cf21a;color:#d3c2ff;font-size:9px}.notification-read-label{color:var(--muted);font-size:9px}.notification-feedback{min-height:16px;margin:9px 0 0;color:var(--muted);font-size:10px;line-height:1.5}.notification-read-button:disabled,.notification-actions button:disabled{opacity:.5;cursor:wait}body.light .notification-item{background:#fff;border-color:#e4deef}body.light .notification-item.is-unread{background:#f5f0ff}
 @media(max-width:600px){.notification-panel{padding:16px}.notification-heading{display:block}.notification-actions{margin-top:13px}.notification-actions button{flex:1}.notification-item-heading{display:grid;gap:5px}}
+
+/* Private direct messages */
+.message-new-form{display:grid;grid-template-columns:1fr 1.3fr auto;align-items:end;gap:12px;padding:15px;margin:18px 0;border:1px solid var(--line);border-radius:12px;background:rgba(120,100,180,.07)}
+.message-new-form label{display:block;font-size:10px;color:var(--muted);margin-bottom:7px}
+.message-new-form input,.direct-message-form input{width:100%;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:rgba(10,9,22,.65);color:var(--text);font-size:12px}
+.messages-layout{display:grid;grid-template-columns:minmax(210px,.75fr) minmax(0,1.5fr);gap:14px;min-height:340px}
+.conversation-list-wrap,.conversation-chat{min-width:0;border:1px solid var(--line);border-radius:12px;padding:13px}
+.conversation-list-wrap h3{font-size:12px;margin:0 0 10px}
+.conversation-list{display:grid;gap:7px;max-height:430px;overflow:auto}
+.conversation-button{width:100%;text-align:left;padding:11px;border:1px solid var(--line);border-radius:9px;background:rgba(130,110,190,.06);color:var(--text)}
+.conversation-button[aria-current=true]{border-color:#a88cff;background:rgba(145,115,235,.15)}
+.conversation-button b,.conversation-button small{display:block;overflow-wrap:anywhere}
+.conversation-button b{font-size:10px}.conversation-button small{font-size:9px;color:var(--muted);margin-top:5px}
+.conversation-title{font-size:12px;font-weight:700;padding:2px 0 12px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.direct-message-list{display:flex;flex-direction:column;gap:9px;padding:13px 2px;min-height:250px;max-height:430px;overflow:auto}
+.direct-message{max-width:88%;align-self:flex-start;padding:10px 12px;border-radius:12px;background:rgba(130,110,190,.12);overflow-wrap:anywhere}
+.direct-message.is-own{align-self:flex-end;background:rgba(105,115,220,.2)}
+.direct-message p{white-space:pre-wrap;font-size:11px;line-height:1.55;margin:0}
+.direct-message time{display:block;text-align:right;font-size:8px;color:var(--muted);margin-top:5px}
+.direct-message-form{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
+.direct-message-form[hidden]{display:none}
+.direct-message-form .primary-button{flex:0 0 auto}
+@media(max-width:760px){.message-new-form{grid-template-columns:1fr}.messages-layout{grid-template-columns:1fr}.conversation-list{max-height:190px}.direct-message-list{min-height:190px;max-height:48vh}}
+body.light .message-new-form input,body.light .direct-message-form input{background:#f8f6fd;color:#28223c}
