@@ -38,6 +38,7 @@ create table storage.objects (
   bucket_id text not null references storage.buckets(id),
   name text not null
 );
+alter table storage.objects enable row level security;
 
 create or replace function storage.foldername(object_name text)
 returns text[]
@@ -3951,6 +3952,19 @@ begin
   if has_table_privilege('anon','public.character_visual_assets','select') then
     raise exception 'Anonymous users must not receive visual asset metadata access';
   end if;
+  select count(*) into v_policy_count
+    from pg_policies
+   where schemaname = 'storage'
+     and tablename = 'objects'
+     and policyname in (
+       'Users read own character references',
+       'Users upload own character references',
+       'Users update own character references',
+       'Users delete own character references'
+     );
+  if v_policy_count <> 4 then
+    raise exception 'Expected four owner-scoped storage object policies';
+  end if;
 end;
 $visual_asset_migration_test$;
 
@@ -3964,11 +3978,31 @@ select set_config('request.jwt.claim.sub','abababab-abab-4bab-8bab-abababababab'
 insert into public.character_visual_assets(user_id,asset_id,asset)
 values ('abababab-abab-4bab-8bab-abababababab','visual-owner-test',
         '{"id":"visual-owner-test","name":"Private test"}'::jsonb);
+insert into storage.objects(bucket_id,name)
+values ('character-references','abababab-abab-4bab-8bab-abababababab/visual-owner-test/ref.png');
 do $visual_asset_rls_test$
 begin
   if (select count(*) from public.character_visual_assets) <> 1 then
     raise exception 'Authenticated owner cannot read their own visual asset';
   end if;
+  if (select count(*) from storage.objects
+       where bucket_id = 'character-references') <> 1 then
+    raise exception 'Authenticated owner cannot read their own storage object';
+  end if;
+  begin
+    insert into storage.objects(bucket_id,name)
+    values ('character-references','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd/foreign/ref.png');
+    raise exception 'Cross-user storage object insert unexpectedly succeeded';
+  exception when insufficient_privilege then
+    null;
+  end;
+  begin
+    insert into storage.objects(bucket_id,name)
+    values ('character-references','abababab-abab-4bab-8bab-abababababab/visual-owner-test/ref.gif');
+    raise exception 'Unsupported storage extension unexpectedly succeeded';
+  exception when insufficient_privilege then
+    null;
+  end;
   begin
     insert into public.character_visual_assets(user_id,asset_id,asset)
     values ('cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd','visual-cross-user-test',
