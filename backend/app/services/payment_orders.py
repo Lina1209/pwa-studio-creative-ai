@@ -7,11 +7,16 @@ never grants credits and never treats browser redirects as payment evidence.
 import hashlib
 import re
 from typing import Any
+from collections.abc import Mapping
 from uuid import UUID
 
 import httpx
 
 from app.core.config import Settings
+from app.services.payment_provider_contracts import (
+    PaymentProviderWebhookAdapter,
+    VerifiedProviderEvent,
+)
 
 
 class PaymentOrderNotConfigured(RuntimeError):
@@ -265,40 +270,57 @@ def fail_payment_fulfillment(
 
 
 def record_verified_provider_event(
-    settings: Settings, *, provider_code: str, provider_event_id: str,
-    payment_order_id: UUID, event_type: str, raw_body: bytes,
-    signature_verified: bool, amount_minor: int, currency_code: str,
-    provider_payment_id: str,
+    settings: Settings, *, adapter: PaymentProviderWebhookAdapter,
+    raw_body: bytes, headers: Mapping[str, str],
 ) -> dict:
-    """Persist a normalized webhook event only after adapter-level signature verification."""
-    if signature_verified is not True:
-        raise ValueError("A provider signature must be verified before event ingestion.")
-    if not isinstance(provider_code, str) or not _PROVIDER.fullmatch(provider_code):
-        raise ValueError("Payment provider code is invalid.")
-    if not isinstance(provider_event_id, str) or not 1 <= len(provider_event_id) <= 240:
-        raise ValueError("Provider event identifier is invalid.")
-    if not isinstance(payment_order_id, UUID):
-        raise ValueError("Payment order UUID is required.")
-    if event_type not in _EVENT_TYPES:
-        raise ValueError("Unsupported normalized provider event type.")
+    """Verify a raw provider webhook through its adapter before persisting it.
+
+    A caller-supplied boolean is deliberately not accepted as proof of
+    verification. Only a configured provider-specific adapter may normalize
+    the authenticated payload. No concrete adapter or public webhook route is
+    enabled by this module.
+    """
     if not isinstance(raw_body, bytes) or not 1 <= len(raw_body) <= 1_000_000:
         raise ValueError("Raw webhook body is invalid.")
-    if isinstance(amount_minor, bool) or not isinstance(amount_minor, int) or amount_minor <= 0:
+    if not isinstance(headers, Mapping) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in headers.items()
+    ):
+        raise ValueError("Webhook headers are invalid.")
+
+    provider_code = getattr(adapter, "provider_code", None)
+    if not isinstance(provider_code, str) or not _PROVIDER.fullmatch(provider_code):
+        raise ValueError("Payment provider adapter identity is invalid.")
+
+    # Signature verification, timestamp/replay-window checks and payload
+    # normalization happen inside the provider-specific adapter. Any failure
+    # aborts before the privileged database RPC is called.
+    event = adapter.verify_webhook(raw_body=raw_body, headers=headers)
+    if type(event) is not VerifiedProviderEvent:
+        raise ValueError("Provider adapter did not return verified event facts.")
+
+    if not isinstance(event.provider_event_id, str) or not 1 <= len(event.provider_event_id) <= 240:
+        raise ValueError("Provider event identifier is invalid.")
+    if not isinstance(event.payment_order_id, UUID):
+        raise ValueError("Payment order UUID is required.")
+    if event.event_type not in _EVENT_TYPES:
+        raise ValueError("Unsupported normalized provider event type.")
+    if isinstance(event.amount_minor, bool) or not isinstance(event.amount_minor, int) or event.amount_minor <= 0:
         raise ValueError("Verified provider amount is invalid.")
-    if not isinstance(currency_code, str) or not _CURRENCY.fullmatch(currency_code):
+    if not isinstance(event.currency_code, str) or not _CURRENCY.fullmatch(event.currency_code):
         raise ValueError("Verified provider currency is invalid.")
-    if not isinstance(provider_payment_id, str) or not 1 <= len(provider_payment_id) <= 240:
+    if not isinstance(event.provider_payment_id, str) or not 1 <= len(event.provider_payment_id) <= 240:
         raise ValueError("Provider payment identifier is invalid.")
 
     row = _one_row(_rpc(settings, "record_verified_payment_provider_event", {
         "p_provider_code": provider_code,
-        "p_provider_event_id": provider_event_id,
-        "p_payment_order_id": str(payment_order_id),
-        "p_event_type": event_type,
+        "p_provider_event_id": event.provider_event_id,
+        "p_payment_order_id": str(event.payment_order_id),
+        "p_event_type": event.event_type,
         "p_payload_sha256": hashlib.sha256(raw_body).hexdigest(),
-        "p_amount_minor": amount_minor,
-        "p_currency_code": currency_code,
-        "p_provider_payment_id": provider_payment_id,
+        "p_amount_minor": event.amount_minor,
+        "p_currency_code": event.currency_code,
+        "p_provider_payment_id": event.provider_payment_id,
     }), name="record_verified_payment_provider_event")
     try:
         event_id = UUID(str(row["event_id"]))
