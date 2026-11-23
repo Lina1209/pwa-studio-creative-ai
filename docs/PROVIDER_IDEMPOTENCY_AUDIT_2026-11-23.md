@@ -50,6 +50,12 @@ The adapter must expose explicit capabilities, not a hand-written optimistic boo
 
 If any required property is unknown, set it to unsupported and keep automatic create retry disabled.
 
+### Webhook trust boundary in the application
+
+The payment-order service now accepts a provider-specific adapter contract rather than a caller-supplied `signature_verified=True` flag. The adapter receives the exact raw request bytes and headers, must verify the provider's cryptographic signature and timestamp/replay window, and only then returns a typed `VerifiedProviderEvent`. The service derives the persisted payload digest from those same raw bytes and takes amount, currency, event ID and provider payment ID only from the adapter's normalized result.
+
+This is an interface and fail-closed ingestion boundary, not a provider implementation. There is still no concrete adapter, secret configuration, webhook route or enabled payment flow. A fake adapter is used only in unit tests to verify the contract; it does not establish a real provider's signature semantics.
+
 ## 4. Safe execution policy
 
 - Persist the exact canonical request payload hash, operation key, provider/account/model and attempt state before network I/O.
