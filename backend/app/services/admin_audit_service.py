@@ -21,13 +21,16 @@ _ALLOWED_ACTIONS = {
     "admin.finance.request.create", "admin.finance.request.decide", "admin.finance.request.cancel",
     "admin.pricing.draft.create", "admin.plan.draft.create",
     "admin.plan.draft.approve", "admin.plan.assignment.create",
-    "admin.security.settings.changed",\n    "admin.direct_message.report.view", "admin.direct_message.moderation.action",\n    "admin.direct_message.appeal.review",
+    "admin.security.settings.changed",
+    "admin.direct_message.report.view", "admin.direct_message.moderation.action",
+    "admin.direct_message.appeal.review",
 }
 _ALLOWED_OUTCOMES = {"allowed", "denied", "requested", "approved", "executed", "failed"}
 _ALLOWED_RESOURCES = {
     "platform", "user", "support_ticket", "tariff", "payment",
     "credit_wallet", "credit_ledger", "finance_request", "pricing_catalog_draft",
-    "plan_catalog_draft", "permission", "security_setting",\n    "direct_message_report", "direct_moderation_appeal",
+    "plan_catalog_draft", "permission", "security_setting",
+    "direct_message_report", "direct_moderation_appeal",
 }
 
 

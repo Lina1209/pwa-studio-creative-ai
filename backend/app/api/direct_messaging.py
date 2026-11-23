@@ -11,10 +11,14 @@ from app.services.direct_messaging import (
     DirectMessagingUnavailable, create_conversation, list_conversations,
     read_messages, send_message, mark_read,
     create_message_notification, list_user_notifications, mark_user_notification_read,
-    set_user_block, report_direct_message, list_admin_reports, list_admin_appeals,\n    list_moderation_events, apply_user_moderation, update_report_status,\n    create_moderation_appeal, list_my_moderation_appeals, review_moderation_appeal,
+    set_user_block, report_direct_message, list_admin_reports, list_admin_appeals,
+    list_moderation_events, apply_user_moderation, update_report_status,
+    create_moderation_appeal, list_my_moderation_appeals, review_moderation_appeal,
 )
 
-from app.services.admin_audit_service import record_admin_audit_event, AdminAuditUnavailable\n\nlogger = logging.getLogger(__name__)
+from app.services.admin_audit_service import record_admin_audit_event, AdminAuditUnavailable
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/messages/direct", tags=["private-messaging"])
 settings = get_settings()
