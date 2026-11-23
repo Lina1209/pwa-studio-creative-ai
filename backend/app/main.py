@@ -1202,6 +1202,8 @@ def _run_admitted_ai(operation: str, user_id: str, call):
     except AIAdmissionRejected as exc:
         if exc.reason == "daily_user_limit":
             detail = "Вы достигли дневного лимита AI-запросов. Лимит обновится по скользящему 24-часовому окну."
+        elif exc.reason == "monthly_user_limit":
+            detail = "Вы достигли лимита AI-запросов за последние 30 дней. Попробуйте позже."
         elif exc.reason == "daily_global_limit":
             detail = "Дневной лимит AI-сервиса временно исчерпан. Попробуйте позже."
         else:
