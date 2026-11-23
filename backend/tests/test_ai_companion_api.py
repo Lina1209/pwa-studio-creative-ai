@@ -51,6 +51,66 @@ def test_chat_uses_authenticated_owner_and_records_usage(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_chat_accepts_bounded_active_project_context(monkeypatch):
+    import app.main as main
+
+    captured = []
+    result = SimpleNamespace(
+        text="Продолжим сцену у маяка.",
+        actual_model="companion-test-model",
+        request_id="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    )
+
+    def ask(settings, messages, user_id):
+        captured.extend(messages)
+        return result
+
+    monkeypatch.setattr(main, "_run_admitted_ai", lambda operation, user_id, call: call())
+    monkeypatch.setattr(main, "ask_ai", ask)
+    monkeypatch.setattr(main, "record_ai_usage", lambda *args, **kwargs: None)
+
+    client = _client()
+    try:
+        response = client.post("/api/chat", json={
+            "message": "Предложи следующий кадр.",
+            "project_context": {
+                "title": "Маяк",
+                "idea": "История о смотрителе маяка.",
+                "genre": "Драма",
+                "duration_minutes": 5,
+                "frame": "16:9",
+                "story": "Смотритель замечает сигнал в тумане.",
+                "storyboard": "Общий план берега, затем крупный план фонаря.",
+                "characters": "Смотритель, 60 лет.",
+                "voices": "",
+                "edit": "",
+            },
+        })
+        assert response.status_code == 200
+        assert "Маяк" in captured[1]["content"]
+        assert "Предложи следующий кадр." in captured[1]["content"]
+        assert "reference material" in captured[0]["content"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_rejects_oversized_or_untrusted_project_context():
+    client = _client()
+    try:
+        oversized = client.post("/api/chat", json={
+            "message": "Продолжим.",
+            "project_context": {"title": "Фильм", "story": "x" * 6001},
+        })
+        untrusted = client.post("/api/chat", json={
+            "message": "Привет",
+            "project_context": {"title": "Фильм", "user_id": USER.user_id},
+        })
+        assert oversized.status_code == 422
+        assert untrusted.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_prompt_studio_returns_finished_prompt_and_records_usage(monkeypatch):
     import app.main as main
 
