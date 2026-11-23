@@ -106,3 +106,13 @@ The admin finance panel now provides a separate, read-only, keyset-paginated cre
 Migration `0046_admin_credit_ledger_read.sql` adds a SECURITY DEFINER read RPC with service-role-only execution and a stable `(created_at, id)` cursor. The client cannot call the RPC directly or mutate ledger rows. The migration integration suite checks RPC privileges and rejects partial cursors; backend tests cover authorization, audit failure, cursor handling, malformed rows, and sanitized upstream failures.
 
 **Accounting boundary:** this journal records internal credit units only. It is not a fiat cashbook, payment processor transaction history, revenue statement, tax report, or profit calculation. No payment/refund processor is connected and no monetary settlement is enabled.
+
+
+## Dedicated AI budget mutation capability
+
+Reading platform overview and AI budget reports does not authorize changing spend controls.
+Global/provider budget updates and unknown-reservation reconciliation require the separate
+owner capability `admin.ai.budget.manage`. This capability is independently allowlisted
+server-side and is not implied by `admin.platform.overview.read`. All three mutation
+routes fail closed before their database RPC when the dedicated capability is absent;
+the denial is recorded through the administrative audit path on a best-effort basis.
