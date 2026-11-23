@@ -222,6 +222,7 @@ const movieHistoryStyle = document.createElement("style");
       const data = await apiRequest("/api/auth/me");
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       panel.hidden = data.role !== "admin";
+      if (data.role === "admin") loadAdminWorkspace();
     } catch { panel.hidden = true; }
   };
   const apiRequest = async (path, options = {}) => {
@@ -234,6 +235,93 @@ const movieHistoryStyle = document.createElement("style");
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
     return data;
   };
+
+  const adminFeedback = message => { const el = $("#adminFeedback"); if (el) el.textContent = message; };
+  const adminNode = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
+  const formatAdminDate = value => { if (!value) return "Без срока"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU"); };
+  const loadAdminWorkspace = async () => {
+    const reportsList = $("#adminReportsList"), suspensionsList = $("#adminSuspensionsList");
+    if (!authSession?.user || !$("#adminPanel") || $("#adminPanel").hidden) return;
+    adminFeedback("Обновляем данные модерации…");
+    if (reportsList) reportsList.replaceChildren(adminNode("div","admin-empty","Загружаем жалобы…"));
+    if (suspensionsList) suspensionsList.replaceChildren(adminNode("div","admin-empty","Загружаем ограничения…"));
+    const version = authContextVersion;
+    try {
+      const [reports, suspensions] = await Promise.all([
+        apiRequest("/api/admin/reports"),
+        apiRequest("/api/admin/suspensions")
+      ]);
+      if (version !== authContextVersion || !authSession?.user) return;
+      renderAdminReports(Array.isArray(reports) ? reports : []);
+      renderAdminSuspensions(Array.isArray(suspensions) ? suspensions : []);
+      adminFeedback("Данные обновлены. Действия модерации записываются в журнал.");
+    } catch (error) {
+      if (version !== authContextVersion) return;
+      adminFeedback("Не удалось загрузить данные: " + error.message);
+      if (reportsList) reportsList.replaceChildren(adminNode("div","admin-empty","Список жалоб временно недоступен."));
+      if (suspensionsList) suspensionsList.replaceChildren(adminNode("div","admin-empty","Список ограничений временно недоступен."));
+    }
+  };
+  const renderAdminReports = reports => {
+    const list = $("#adminReportsList"); if (!list) return;
+    $("#adminReportCount").textContent = String(reports.length);
+    list.replaceChildren();
+    if (!reports.length) { list.append(adminNode("div","admin-empty","Новых обращений нет.")); return; }
+    reports.forEach(report => {
+      const card = adminNode("article","admin-item");
+      const head = adminNode("div","admin-item-head");
+      head.append(adminNode("b","","Жалоба · " + (report.category || "Без категории")),adminNode("span","admin-status",report.status || "new"));
+      card.append(head);
+      card.append(adminNode("p","admin-item-meta","Создана: "+formatAdminDate(report.created_at)+" · Автор: "+(report.reporter_user_id || "не указан")));
+      if (report.reported_user_id) card.append(adminNode("p","admin-item-meta","Указанный пользователь: "+report.reported_user_id));
+      card.append(adminNode("p","admin-item-text",report.description || "Описание не указано."));
+      if (report.content_reference) card.append(adminNode("p","admin-item-meta","Ссылка/идентификатор материала: "+report.content_reference));
+      const note = document.createElement("textarea"); note.rows=2; note.maxLength=2000; note.placeholder="Заметка модератора (необязательно)"; note.value=report.moderator_note || ""; note.className="admin-note";
+      const actions = adminNode("div","admin-item-actions");
+      const status = document.createElement("select"); status.className="admin-status-select"; status.setAttribute("aria-label","Статус жалобы");
+      [["reviewing","На рассмотрении"],["resolved","Решена"],["rejected","Отклонена"]].forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;status.append(option);});
+      status.value=["reviewing","resolved","rejected"].includes(report.status)?report.status:"reviewing";
+      const save=adminNode("button","secondary-button","Сохранить решение");save.type="button";
+      save.addEventListener("click",async()=>{
+        save.disabled=true;
+        try { await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})}); adminFeedback("Решение по жалобе сохранено."); await loadAdminWorkspace(); }
+        catch(error){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}
+      });
+      actions.append(status,save); card.append(note,actions); list.append(card);
+    });
+  };
+  const renderAdminSuspensions = suspensions => {
+    const list=$("#adminSuspensionsList");if(!list)return;
+    $("#adminSuspensionCount").textContent=String(suspensions.length);
+    list.replaceChildren();
+    if(!suspensions.length){list.append(adminNode("div","admin-empty","Ограничений пока нет."));return;}
+    suspensions.forEach(item=>{
+      const card=adminNode("article","admin-item");
+      const head=adminNode("div","admin-item-head");
+      const scopeLabel={platform:"Вся платформа",assistant:"AI Companion",community:"Сообщество"}[item.scope]||item.scope;
+      head.append(adminNode("b","",scopeLabel),adminNode("span","admin-status",item.revoked_at?"Отменено":item.expires_at && new Date(item.expires_at)<=new Date()?"Истекло":"Активно"));
+      card.append(head,adminNode("p","admin-item-meta","Пользователь: "+item.user_id),adminNode("p","admin-item-text",item.reason||"Причина не указана"),adminNode("p","admin-item-meta","Создано: "+formatAdminDate(item.created_at)+" · До: "+formatAdminDate(item.expires_at)));
+      if(!item.revoked_at && (!item.expires_at || new Date(item.expires_at)>new Date())){
+        const revoke=adminNode("button","secondary-button","Отменить ограничение");revoke.type="button";
+        revoke.addEventListener("click",async()=>{if(!confirm("Отменить это ограничение доступа?"))return;revoke.disabled=true;try{await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});adminFeedback("Ограничение отменено.");await loadAdminWorkspace();}catch(error){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}});
+        card.append(revoke);
+      }
+      list.append(card);
+    });
+  };
+  $("#adminRefresh")?.addEventListener("click",loadAdminWorkspace);
+  $("#adminSuspensionForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();
+    const button=$("#adminSuspensionForm button[type=submit]");
+    const userId=$("#suspensionUserId").value.trim(), reason=$("#suspensionReason").value.trim(), expiry=$("#suspensionExpiry").value;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)){adminFeedback("Проверьте UUID пользователя — нужен полный идентификатор Supabase Auth.");return;}
+    if(authSession?.user?.id===userId){adminFeedback("Нельзя ограничить собственный аккаунт.");return;}
+    const payload={user_id:userId,reason,scope:$("#suspensionScope").value,expires_at:expiry?new Date(expiry).toISOString():null};
+    button.disabled=true;
+    try{await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});$("#adminSuspensionForm").reset();adminFeedback("Ограничение создано и записано в журнал.");await loadAdminWorkspace();}
+    catch(error){adminFeedback("Не удалось создать ограничение: "+error.message);}
+    finally{button.disabled=false;}
+  });
   if (authSession?.user) setTimeout(loadAccountRole, 0);
   const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
