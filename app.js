@@ -1819,23 +1819,39 @@ const movieHistoryStyle = document.createElement("style");
     request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error||new Error("Не удалось открыть хранилище"));
   });
   const saveVisualRefImage=async(id,blob,ownerId)=>{
+    if(typeof id!=="string"||!id||typeof ownerId!=="string"||!ownerId||!(blob instanceof Blob))throw new Error("Некорректные данные изображения или владельца.");
     const db=await openVisualRefDb();
-    await new Promise((resolve,reject)=>{const tx=db.transaction("images","readwrite");tx.objectStore("images").put({id,ownerId,blob,createdAt:new Date().toISOString()});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
-    db.close();
+    try{
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);
+        let conflict=false;
+        request.onsuccess=()=>{
+          if(request.result&&request.result.ownerId!==ownerId){conflict=true;tx.abort();return;}
+          store.put({id,ownerId,blob,createdAt:new Date().toISOString()});
+        };
+        request.onerror=()=>reject(request.error);
+        tx.oncomplete=resolve;
+        tx.onerror=()=>reject(conflict?new Error("Идентификатор изображения уже принадлежит другому аккаунту."):tx.error);
+        tx.onabort=()=>reject(conflict?new Error("Идентификатор изображения уже принадлежит другому аккаунту."):tx.error||new Error("Сохранение изображения отменено."));
+      });
+    }finally{db.close();}
   };
   const getVisualRefImage=async(id,ownerId)=>{
     const db=await openVisualRefDb();
-    const record=await new Promise((resolve,reject)=>{const request=db.transaction("images","readonly").objectStore("images").get(id);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
-    db.close();return record&&record.ownerId===ownerId?record.blob:null;
+    try{
+      const record=await new Promise((resolve,reject)=>{const request=db.transaction("images","readonly").objectStore("images").get(id);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+      return record&&record.ownerId===ownerId?record.blob:null;
+    }finally{db.close();}
   };
   const deleteVisualRefImage=async(id,ownerId)=>{
     const db=await openVisualRefDb();
-    await new Promise((resolve,reject)=>{
-      const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);
-      request.onsuccess=()=>{if(request.result&&request.result.ownerId===ownerId)store.delete(id);};
-      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
-    });
-    db.close();
+    try{
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);
+        request.onsuccess=()=>{if(request.result&&request.result.ownerId===ownerId)store.delete(id);};
+        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("Удаление изображения отменено."));
+      });
+    }finally{db.close();}
   };
   const cloudVisualBucket="character-references";
   let visualLibrarySyncSequence=0;
