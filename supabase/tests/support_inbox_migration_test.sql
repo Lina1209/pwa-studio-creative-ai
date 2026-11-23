@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 create extension if not exists pgcrypto;
 create schema if not exists auth;
-create table auth.users (id uuid primary key);
+create table if not exists auth.users (id uuid primary key);
 do $roles$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
