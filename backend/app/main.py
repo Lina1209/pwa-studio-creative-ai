@@ -641,7 +641,7 @@ def _audit_ai_budget_change(user: StudioUser, *, reason: str) -> None:
 @app.put(f"{settings.api_prefix}/admin/ai/budget/global")
 def admin_update_ai_global_budget(
     payload: AdminAIGlobalBudgetUpdate,
-    user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
+    user: StudioUser = Depends(require_permission("admin.ai.budget.manage")),
 ):
     if payload.max_outstanding_usd > payload.daily_budget_usd:
         raise HTTPException(status_code=422, detail="Outstanding exposure cannot exceed the global daily budget.")
