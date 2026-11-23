@@ -26,10 +26,7 @@ _ENFORCED_DIMENSIONS = {
     "max_video_seconds", "max_resolution",
 }
 
-# These are draft-schema dimensions only. They are deliberately reported as
-# not enforced until they are included in the same transactional admission path.
-_NOT_YET_ENFORCED_DIMENSIONS = {
-}
+# Every supported plan dimension is now connected to the transactional admission path.
 
 
 def _headers(settings: Settings) -> dict[str, str]:
@@ -221,7 +218,7 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             usage[feature] = usage.get(feature, 0) + units
 
     quotas: dict[str, dict[str, Any]] = {}
-    for feature in sorted(_ENFORCED_DIMENSIONS | _NOT_YET_ENFORCED_DIMENSIONS):
+    for feature in sorted(_ENFORCED_DIMENSIONS):
         raw_limit = limits.get(feature)
         if feature == "max_resolution":
             if raw_limit is not None and (not isinstance(raw_limit, str) or raw_limit not in {"480p", "720p", "1080p", "4k"}):
