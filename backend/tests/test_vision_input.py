@@ -29,7 +29,6 @@ def test_valid_still_images_are_normalized(image_format, expected_mime):
     assert result.height == 12
     assert result.byte_length > 0
     assert len(result.sha256_hex) == 64
-    assert result.data_url.startswith(expected_mime + ";") is False
     assert result.data_url.startswith(f"data:{expected_mime};base64,")
 
 
