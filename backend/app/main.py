@@ -2020,6 +2020,14 @@ def admin_create_pending_plan_assignment(
     user: StudioUser = Depends(require_permission("admin.plans.assign")),
 ):
     """Create an inert pending plan assignment after owner authorization."""
+    # Reject naive timestamps before writing an audit intent or calling the RPC.
+    if (
+        payload.starts_at.tzinfo is None
+        or payload.starts_at.utcoffset() is None
+        or payload.ends_at.tzinfo is None
+        or payload.ends_at.utcoffset() is None
+    ):
+        raise HTTPException(status_code=422, detail="Период назначения тарифа должен содержать часовой пояс.")
     try:
         try:
             record_admin_audit_event(
