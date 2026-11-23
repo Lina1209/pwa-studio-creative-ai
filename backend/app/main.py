@@ -1735,7 +1735,7 @@ def admin_support_reply(ticket_id: UUID, payload: SupportMessageCreate, user: St
         ticket=get_ticket(settings,ticket_id)
         if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
         add_message(settings,ticket_id,UUID(user.user_id),"admin",body)
-        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.view",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason="Admin replied to support ticket")
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason="Admin replied to support ticket")
         return {"status":"sent"}
     except SupportUnavailable: _support_error()
 
@@ -1747,7 +1747,7 @@ def admin_support_update_status(ticket_id: UUID, payload: SupportStatusUpdate, u
         # Status transitions are explicit; closed/resolved tickets may be reopened by an administrator.
         from app.services.support_inbox import update_ticket_status
         update_ticket_status(settings,ticket_id,payload.status)
-        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.view",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason=f"Admin changed ticket status to {payload.status}")
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.status.changed",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason=f"Admin changed ticket status to {payload.status}")
         return {"status":payload.status}
     except SupportUnavailable: _support_error()
     except HTTPException: raise
