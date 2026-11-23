@@ -154,3 +154,90 @@ def test_cancel_generation_job_fails_closed_when_jobs_disabled(monkeypatch):
         app.dependency_overrides.pop(get_current_user, None)
 
     assert response.status_code == 503
+
+
+def test_generation_result_download_is_owner_scoped_verified_and_short_lived(monkeypatch):
+    from types import SimpleNamespace
+
+    captured = {}
+
+    def read_asset(settings, **kwargs):
+        captured["lookup"] = kwargs
+        return SimpleNamespace(
+            status="succeeded",
+            result_storage_path="11111111-1111-4111-8111-111111111111/generated/66666666-6666-4666-8666-666666666666.png",
+            result_sha256="a" * 64,
+        )
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            captured["timeout"] = kwargs["timeout"]
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+
+    class FakeStorage:
+        def __init__(self, settings, client, **kwargs):
+            captured["storage_timeout"] = kwargs["timeout_seconds"]
+        async def create_signed_download_url(self, **kwargs):
+            captured["sign"] = kwargs
+            return "https://project.supabase.co/storage/v1/object/sign/studio-media/file.png?token=short"
+
+    monkeypatch.setattr(main_module, "settings", _settings(generation_storage_timeout_seconds=12))
+    monkeypatch.setattr(main_module, "get_generation_job_result_asset", read_asset)
+    monkeypatch.setattr(main_module, "SupabasePrivateImageStorage", FakeStorage)
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+    app.dependency_overrides[get_current_user] = _user
+    try:
+        response = TestClient(app).get("/api/jobs/66666666-6666-4666-8666-666666666666/result")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 200
+    assert response.json()["expires_in"] == 60
+    assert response.json()["signed_url"].startswith("https://project.supabase.co/")
+    assert response.headers["cache-control"] == "private, no-store"
+    assert captured["lookup"]["user_id"].hex == "11111111111141118111111111111111"
+    assert captured["sign"]["expected_sha256_hex"] == "a" * 64
+    assert captured["sign"]["expires_in"] == 60
+
+
+def test_generation_result_download_is_unavailable_until_job_succeeds(monkeypatch):
+    from types import SimpleNamespace
+
+    def read_asset(settings, **kwargs):
+        return SimpleNamespace(status="running", result_storage_path=None, result_sha256=None)
+
+    class UnexpectedStorage:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("Storage signing must not run before job success")
+
+    monkeypatch.setattr(main_module, "settings", _settings())
+    monkeypatch.setattr(main_module, "get_generation_job_result_asset", read_asset)
+    monkeypatch.setattr(main_module, "SupabasePrivateImageStorage", UnexpectedStorage)
+    app.dependency_overrides[get_current_user] = _user
+    try:
+        response = TestClient(app).get("/api/jobs/66666666-6666-4666-8666-666666666666/result")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 409
+
+
+def test_generation_result_download_hides_jobs_owned_by_another_user(monkeypatch):
+    from types import SimpleNamespace
+    from app.services.generation_jobs import GenerationJobNotFoundError
+
+    def read_asset(settings, **kwargs):
+        return None
+
+    monkeypatch.setattr(main_module, "settings", _settings())
+    monkeypatch.setattr(main_module, "get_generation_job_result_asset", read_asset)
+    app.dependency_overrides[get_current_user] = _user
+    try:
+        response = TestClient(app).get("/api/jobs/66666666-6666-4666-8666-666666666666/result")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 404
