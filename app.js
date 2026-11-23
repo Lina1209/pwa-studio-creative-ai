@@ -1905,11 +1905,13 @@ const movieHistoryStyle = document.createElement("style");
             blobs.push(null);continue;
           }
           const blob=await getVisualRefImage(ref.id,userId);
+          if(!isCurrentSync())return;
           if(!blob){
             missingImages++;canMigrate=false;break;
           }
           blobs.push(blob);
         }
+        if(!isCurrentSync())return;
         // Never publish metadata for a local-only asset when one of its images
         // is missing: that would create a cloud reference with no backing object.
         if(!canMigrate){unmigratedLocalAssets++;continue;}
