@@ -15,6 +15,16 @@ SNAPSHOT_LIMITS = {
     "allocations": 10000,
     "jobs": 10000,
     "provider_cost_events": 10000,
+    "payment_orders": 10000,
+    "payment_provider_events": 20000,
+    "payment_order_events": 20000,
+    "purchase_items": 10000,
+    "fulfillment_outbox": 10000,
+    "plan_assignments": 10000,
+    "plan_assignment_events": 20000,
+    "approved_plans": 10000,
+    "quota_reservations": 20000,
+    "quota_events": 40000,
 }
 
 
@@ -36,6 +46,16 @@ def _validate_snapshot(raw: Any, user_id: UUID) -> dict[str, Any]:
         "allocations": "hold_allocations",
         "jobs": "generation_jobs",
         "provider_cost_events": "provider_cost_events",
+        "payment_orders": "payment_orders",
+        "payment_provider_events": "payment_provider_events",
+        "payment_order_events": "payment_order_events",
+        "purchase_items": "purchase_items",
+        "fulfillment_outbox": "fulfillment_outbox",
+        "plan_assignments": "plan_assignments",
+        "plan_assignment_events": "plan_assignment_events",
+        "approved_plans": "approved_plans",
+        "quota_reservations": "quota_reservations",
+        "quota_events": "quota_events",
     }
     counts, limits = raw.get("counts"), raw.get("limits")
     if not isinstance(counts, dict) or not isinstance(limits, dict):
@@ -102,6 +122,16 @@ def get_finance_integrity_audit(settings: Settings, *, user_id: UUID) -> dict[st
             credit_holds=snapshot["credit_holds"],
             credit_lots=snapshot["credit_lots"],
             hold_allocations=snapshot["hold_allocations"],
+            payment_orders=snapshot["payment_orders"],
+            payment_provider_events=snapshot["payment_provider_events"],
+            payment_order_events=snapshot["payment_order_events"],
+            purchase_items=snapshot["purchase_items"],
+            fulfillment_outbox=snapshot["fulfillment_outbox"],
+            plan_assignments=snapshot["plan_assignments"],
+            plan_assignment_events=snapshot["plan_assignment_events"],
+            approved_plans=snapshot["approved_plans"],
+            quota_reservations=snapshot["quota_reservations"],
+            quota_events=snapshot["quota_events"],
             complete=snapshot["complete"],
         )
         if not wallet:
