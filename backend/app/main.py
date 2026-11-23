@@ -684,7 +684,7 @@ def admin_update_ai_provider_budget(
 @app.post(f"{settings.api_prefix}/admin/ai/budget/reservations/resolve")
 def admin_resolve_ai_budget_reservation(
     payload: AdminAIReservationResolution,
-    user: StudioUser = Depends(require_permission("admin.platform.overview.read")),
+    user: StudioUser = Depends(require_permission("admin.ai.budget.manage")),
 ):
     _audit_ai_budget_change(user, reason=f"Requested reconciliation of unknown AI reservation {payload.request_id}: {payload.resolution}; {payload.note.strip()}")
     try:
