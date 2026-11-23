@@ -1939,7 +1939,7 @@ const movieHistoryStyle = document.createElement("style");
     );
     if(markError)throw markError;
     assertOwner();
-    if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error)throw error;}
+    if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error){const cleanupError=new Error("Запись удалена из облачной библиотеки, но не все файлы удалось очистить.");cleanupError.tombstoneCommitted=true;throw cleanupError;}}
     assertOwner();
   };
   const renderVisualLibrary = () => {
@@ -2057,6 +2057,16 @@ const movieHistoryStyle = document.createElement("style");
           renderVisualLibrary();
         }catch(error){
           console.warn("Cloud asset delete failed:",error);
+          if(error?.tombstoneCommitted&&stillOwner()){
+            try{
+              const next=JSON.parse(localStorage.getItem(storageKey)||"[]").filter(asset=>asset.id!==removed.id);
+              localStorage.setItem(storageKey,JSON.stringify(next));
+              (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
+              $("#promptSaveFeedback").textContent="Материал удалён из библиотеки. Облачная запись помечена как удалённая, но часть файлов не удалось очистить; они не будут восстановлены при синхронизации.";
+              renderVisualLibrary();
+              return;
+            }catch(localError){console.warn("Local visual asset cleanup failed:",localError);}
+          }
           $("#promptSaveFeedback").textContent=stillOwner()
             ?"Не удалось подтвердить удаление в облаке. Материал оставлен на устройстве; повторите попытку."
             :"Аккаунт изменился. Данные другого аккаунта не изменены; обновите библиотеку после входа.";
