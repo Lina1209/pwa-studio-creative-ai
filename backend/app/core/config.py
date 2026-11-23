@@ -89,6 +89,12 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_vision_model_capability(self):
+        if self.vision_input_enabled and self.ai_model != "deepseek-flash":
+            raise ValueError("VISION_INPUT_ENABLED requires the DeepSeek Flash model.")
+        return self
+
+    @model_validator(mode="after")
     def validate_image_generation_provider_capability(self):
         provider = (self.image_generation_provider or "").strip().lower()
         if provider == "deepseek":
