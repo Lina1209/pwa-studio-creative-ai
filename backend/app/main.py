@@ -979,6 +979,11 @@ def admin_grant_finance_role(
 ):
     """Grant a scoped delegated role; actor identity comes only from verified JWT."""
     try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action="admin.finance.role.grant",
+            outcome="requested", resource_type="permission", resource_id=payload.principal_id,
+            reason=f"Requested finance role {payload.role_code} grant for scope {payload.scope_key}",
+        )
         assignment_id = grant_finance_role(
             settings,
             principal_id=payload.principal_id,
@@ -988,6 +993,16 @@ def admin_grant_finance_role(
             granted_by=UUID(user.user_id),
             reason=payload.reason,
         )
+        try:
+            record_admin_audit_event(
+                settings, actor_user_id=UUID(user.user_id), action="admin.finance.role.grant",
+                outcome="executed", resource_type="permission", resource_id=payload.principal_id,
+                reason=f"Granted finance role {payload.role_code} for scope {payload.scope_key}",
+            )
+        except (AdminAuditUnavailable, ValueError):
+            logger.error("Finance role grant persisted but completion audit could not be written.")
+    except AdminAuditUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Журнал аудита недоступен; назначение роли не выполнено.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Finance role assignment is invalid.") from exc
     except FinanceRoleConflict as exc:
@@ -1009,10 +1024,25 @@ def admin_revoke_finance_role(
 ):
     """Append a revocation; the original role assignment remains immutable."""
     try:
+        record_admin_audit_event(
+            settings, actor_user_id=UUID(user.user_id), action="admin.finance.role.revoke",
+            outcome="requested", resource_type="permission", resource_id=assignment_id,
+            reason="Requested finance role revocation",
+        )
         revocation_id = revoke_finance_role(
             settings, assignment_id=assignment_id,
             revoked_by=UUID(user.user_id), reason=payload.reason,
         )
+        try:
+            record_admin_audit_event(
+                settings, actor_user_id=UUID(user.user_id), action="admin.finance.role.revoke",
+                outcome="executed", resource_type="permission", resource_id=assignment_id,
+                reason="Finance role revocation persisted",
+            )
+        except (AdminAuditUnavailable, ValueError):
+            logger.error("Finance role revocation persisted but completion audit could not be written.")
+    except AdminAuditUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Журнал аудита недоступен; отзыв роли не выполнен.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Finance role revocation is invalid.") from exc
     except FinanceRegistryNotConfigured as exc:
