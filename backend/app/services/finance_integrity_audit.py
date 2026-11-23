@@ -125,6 +125,10 @@ def audit_finance_integrity(
             elif (available, reserved) != previous:
                 findings.append(_finding("wallet_ledger_mismatch", "critical", user_id=user_id))
 
+    for user_id in wallets:
+        if user_id not in ledger_by_user:
+            findings.append(_finding("ledger_history_missing", "warning", user_id=user_id))
+
     job_map: dict[str, dict[str, Any]] = {}
     for job in generation_jobs:
         if not isinstance(job, dict) or not isinstance(job.get("job_id"), str) or not job["job_id"]:
