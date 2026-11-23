@@ -1851,9 +1851,9 @@ const movieHistoryStyle = document.createElement("style");
         if(tombstones.has(localItem.id)||cloudById.has(localItem.id))continue;
         const blobs=[];
         for(const ref of (Array.isArray(localItem.referenceImages)?localItem.referenceImages:[])){
-          if(ref.storagePath)continue;
+          if(ref.storagePath){blobs.push(null);continue;}
           const blob=await getVisualRefImage(ref.id,userId);
-          if(blob)blobs.push(blob);
+          blobs.push(blob||null);
         }
         const migrated=await saveVisualAssetToCloud(localItem,blobs);
         cloudById.set(migrated.id,migrated);
@@ -1881,6 +1881,7 @@ const movieHistoryStyle = document.createElement("style");
     try{
       for(let i=0;i<files.length;i++){
         const file=files[i],ref=item.referenceImages[i];
+        if(!file||ref.storagePath)continue;
         const ext=file.type==="image/jpeg"?"jpg":file.type==="image/webp"?"webp":"png";
         const storagePath=userId+"/"+item.id+"/"+ref.id+"."+ext;
         const {error}=await supabaseClient.storage.from(cloudVisualBucket).upload(storagePath,file,{contentType:file.type,upsert:true});
