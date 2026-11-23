@@ -75,7 +75,7 @@ def admin_reports(user: StudioUser = Depends(require_admin)):
     return list_user_reports(settings)
 
 
-@app.patch(f"{settings.api_prefix}/admin/reports/{report_id}")
+@app.patch(f"{settings.api_prefix}/admin/reports/{{report_id}}")
 def review_report(report_id: str, payload: ReportReviewRequest, user: StudioUser = Depends(require_admin)):
     return review_user_report(settings, report_id, user.user_id, payload)
 
