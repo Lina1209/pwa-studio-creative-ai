@@ -5177,4 +5177,124 @@ begin
 end;
 $generation_cancellation_rpc_security_test$;
 
-select 'generation cancellation RPC security checks passed' as result;
+
+-- Exercise the owner-scoped cancellation RPC against real credited job fixtures.
+do $generation_cancellation_rpc_behavior_test$
+declare
+  v_queued record;
+  v_running record;
+  v_success record;
+  v_result record;
+  v_count integer;
+  v_hold_status text;
+  v_job_status text;
+begin
+  -- The owner can cancel queued work; job, quota reservation and credit hold
+  -- settle in the same transaction, and replay cannot release twice.
+  select * into v_queued
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation', 'quota-test-provider', 'quota-test-model',
+      'rpc-cancel-queued-owner-001', repeat('c',64),
+      '{"prompt":"queued cancellation RPC test","quantity":1}'::jsonb,
+      '{"amount":7,"quantity":1,"price_version":"test-v1"}'::jsonb, 7
+    );
+
+  perform set_config(
+    'request.jwt.claim.sub',
+    '11111111-1111-4111-8111-111111111111', true
+  );
+  begin
+    perform * from public.request_generation_job_cancellation(v_queued.job_id);
+    raise exception 'A non-owner cancelled another user job';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+
+  perform set_config(
+    'request.jwt.claim.sub',
+    '22222222-2222-4222-8222-222222222222', true
+  );
+  select * into v_result
+    from public.request_generation_job_cancellation(v_queued.job_id);
+  if v_result.job_status <> 'cancelled'
+     or v_result.cancellation_action <> 'cancelled_immediately'
+     or v_result.replayed then
+    raise exception 'Queued cancellation did not return its immediate transition';
+  end if;
+
+  select status into v_job_status from public.generation_jobs where id=v_queued.job_id;
+  select status into v_hold_status from public.credit_holds where id=v_queued.hold_id;
+  select count(*) into v_count from public.credit_ledger
+   where hold_id=v_queued.hold_id and operation_type='release';
+  if v_job_status <> 'cancelled' or v_hold_status <> 'released' or v_count <> 1 then
+    raise exception 'Queued cancellation did not settle the job and credit hold exactly once';
+  end if;
+
+  select * into v_result
+    from public.request_generation_job_cancellation(v_queued.job_id);
+  select count(*) into v_count from public.credit_ledger
+   where hold_id=v_queued.hold_id and operation_type='release';
+  if v_result.cancellation_action <> 'already_terminal' or v_count <> 1 then
+    raise exception 'Repeated cancellation changed terminal settlement';
+  end if;
+
+  -- Running work is only marked for cancellation. The worker lease and credit
+  -- hold remain intact until an explicit provider-stop acknowledgement exists.
+  select * into v_running
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation', 'quota-test-provider', 'quota-test-model',
+      'rpc-cancel-running-owner-001', repeat('d',64),
+      '{"prompt":"running cancellation RPC test","quantity":1}'::jsonb,
+      '{"amount":9,"quantity":1,"price_version":"test-v1"}'::jsonb, 9
+    );
+  update public.generation_jobs
+     set status='running', lease_owner='cancel-test-worker',
+         lease_expires_at=now()+interval '5 minutes', heartbeat_at=now(),
+         updated_at=now()
+   where id=v_running.job_id;
+
+  select * into v_result
+    from public.request_generation_job_cancellation(v_running.job_id);
+  if v_result.job_status <> 'cancel_requested'
+     or v_result.cancellation_action <> 'awaiting_worker_confirmation' then
+    raise exception 'Running cancellation did not request worker confirmation';
+  end if;
+  select status into v_job_status from public.generation_jobs where id=v_running.job_id;
+  select status into v_hold_status from public.credit_holds where id=v_running.hold_id;
+  if v_job_status <> 'cancel_requested' or v_hold_status <> 'held'
+     or (select lease_owner from public.generation_jobs where id=v_running.job_id)
+          <> 'cancel-test-worker' then
+    raise exception 'Running cancellation released credits or discarded the active lease prematurely';
+  end if;
+
+  -- A succeeded job is immutable and must never be refunded by cancellation.
+  select * into v_success
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation', 'quota-test-provider', 'quota-test-model',
+      'rpc-cancel-success-owner-001', repeat('e',64),
+      '{"prompt":"successful cancellation RPC test","quantity":1}'::jsonb,
+      '{"amount":11,"quantity":1,"price_version":"test-v1"}'::jsonb, 11
+    );
+  update public.generation_jobs
+     set status='succeeded', lease_owner=null, lease_expires_at=null,
+         heartbeat_at=null, completed_at=now(), updated_at=now()
+   where id=v_success.job_id;
+  select * into v_result
+    from public.request_generation_job_cancellation(v_success.job_id);
+  select status into v_hold_status from public.credit_holds where id=v_success.hold_id;
+  select count(*) into v_count from public.credit_ledger
+   where hold_id=v_success.hold_id and operation_type='release';
+  if v_result.cancellation_action <> 'already_terminal'
+     or v_hold_status <> 'held' or v_count <> 0 then
+    raise exception 'Cancellation refunded or mutated an already successful job';
+  end if;
+end;
+$generation_cancellation_rpc_behavior_test$;
+
+select 'generation cancellation RPC behavior checks passed' as result;
