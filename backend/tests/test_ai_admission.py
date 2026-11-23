@@ -192,3 +192,17 @@ def test_monthly_request_limit_is_rejected(monkeypatch):
 
     assert error.value.reason == "monthly_user_limit"
     assert error.value.retry_after_seconds == 300
+
+
+
+def test_vision_analysis_endpoint_uses_distributed_admission(monkeypatch):
+    client = FakeClient([
+        FakeResponse({"admitted": True, "duplicate": False, "state": "reserved"})
+    ])
+    monkeypatch.setattr(ai_admission.httpx, "Client", lambda timeout: client)
+    reservation = ai_admission.reserve_ai_request(
+        make_settings(), user_id=uuid4(), endpoint="vision",
+    )
+    assert reservation.request_id
+    assert client.calls[0][1]["p_endpoint"] == "vision"
+    assert client.calls[0][1]["p_max_global_per_day"] == 2000
