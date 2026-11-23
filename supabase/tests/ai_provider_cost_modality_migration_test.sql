@@ -11,6 +11,7 @@ declare
   v_result jsonb;
   v_count integer;
   v_state text;
+  v_modality text;
   v_failed boolean;
 begin
   insert into auth.users (
@@ -88,10 +89,10 @@ begin
   perform public.settle_ai_provider_cost_v2(
     v_text_request, 'text', 0.10, 'server_peak_price_estimate'
   );
-  select request_modality, status into v_state, v_result
+  select request_modality, status into v_modality, v_state
     from public.ai_provider_cost_reservations
    where request_id = v_text_request;
-  if v_state <> 'text' or v_result::text <> '"settled"' then
+  if v_modality <> 'text' or v_state <> 'settled' then
     raise exception 'Text settlement must preserve modality and settle state';
   end if;
 
