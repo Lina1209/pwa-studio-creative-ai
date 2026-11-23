@@ -156,3 +156,58 @@ begin
   perform * from public.send_direct_message(v_conversation,v_bob,'Restriction lifted','abababab-abab-4aba-8aba-abababababab');
 end;
 $direct_moderation_test$;
+
+
+\i supabase/migrations/0098_direct_message_edit_delete.sql
+
+do $direct_message_edit_delete_test$
+declare
+  v_alice uuid := '11111111-1111-4111-8111-111111111111';
+  v_bob uuid := '22222222-2222-4222-8222-222222222222';
+  v_conversation uuid;
+  v_message uuid;
+  v_changed boolean;
+  v_body text;
+  v_deleted_at timestamptz;
+begin
+  if has_function_privilege('authenticated',
+       'public.edit_direct_message(uuid,uuid,uuid,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.delete_direct_message(uuid,uuid,uuid)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.edit_direct_message(uuid,uuid,uuid,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.delete_direct_message(uuid,uuid,uuid)', 'EXECUTE') then
+    raise exception 'message mutation RPCs must be service-role-only';
+  end if;
+
+  v_conversation := public.create_direct_conversation(v_alice,v_bob);
+  select message_id into v_message from public.send_direct_message(
+    v_conversation,v_alice,'Original text','12121212-1212-4212-8212-121212121212'
+  );
+
+  v_changed := public.edit_direct_message(v_conversation,v_message,v_bob,'Unauthorized edit');
+  if v_changed then raise exception 'non-owner edited another user message'; end if;
+
+  v_changed := public.edit_direct_message(v_conversation,v_message,v_alice,'Edited text');
+  if not v_changed then raise exception 'owner could not edit a recent message'; end if;
+  select body into v_body from public.direct_messages where id=v_message;
+  if v_body <> 'Edited text' then raise exception 'edited message body was not persisted'; end if;
+
+  update public.direct_messages set created_at=now()-interval '16 minutes' where id=v_message;
+  v_changed := public.edit_direct_message(v_conversation,v_message,v_alice,'Too late');
+  if v_changed then raise exception 'message outside edit window was editable'; end if;
+
+  v_changed := public.delete_direct_message(v_conversation,v_message,v_bob);
+  if v_changed then raise exception 'non-owner deleted another user message'; end if;
+  v_changed := public.delete_direct_message(v_conversation,v_message,v_alice);
+  if not v_changed then raise exception 'owner could not soft-delete message'; end if;
+  select body,deleted_at into v_body,v_deleted_at
+    from public.direct_messages where id=v_message;
+  if v_body <> '' or v_deleted_at is null then
+    raise exception 'soft deletion did not redact body and timestamp message';
+  end if;
+  v_changed := public.edit_direct_message(v_conversation,v_message,v_alice,'Restore attempt');
+  if v_changed then raise exception 'deleted message was editable'; end if;
+end;
+$direct_message_edit_delete_test$;
