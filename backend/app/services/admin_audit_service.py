@@ -18,6 +18,8 @@ _ALLOWED_ACTIONS = {
     "admin.tariff.change.requested",
     "admin.tariff.change.approved", "admin.finance.operation.requested",
     "admin.finance.operation.approved", "admin.finance.operation.executed", "admin.finance.role.grant", "admin.finance.role.revoke",
+    "admin.finance.request.create", "admin.finance.request.decide", "admin.finance.request.cancel",
+    "admin.pricing.draft.create", "admin.plan.draft.create",
     "admin.security.settings.changed",
 }
 _ALLOWED_OUTCOMES = {"allowed", "denied", "requested", "approved", "executed", "failed"}
