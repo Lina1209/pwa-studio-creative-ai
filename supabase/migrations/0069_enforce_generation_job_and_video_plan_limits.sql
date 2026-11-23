@@ -286,82 +286,6 @@ begin
     else null
   end;
 
-  select count(*)::integer into v_active_assignment_count
-    from public.user_plan_assignments a
-    join lateral (
-      select e.event_type
-        from public.user_plan_assignment_events e
-       where e.assignment_id = a.id
-       order by e.occurred_at desc, e.id desc
-       limit 1
-    ) latest_event on latest_event.event_type = 'activated'
-   where a.user_id = p_user_id
-     and a.starts_at <= now()
-     and a.ends_at > now();
-
-  if v_active_assignment_count = 0 then
-    raise exception 'no active plan assignment' using errcode = 'P0002';
-  elsif v_active_assignment_count <> 1 then
-    raise exception 'multiple active plan assignments; generation denied'
-      using errcode = '23514';
-  end if;
-
-  select apv.*
-    into v_plan
-    from public.user_plan_assignments a
-    join lateral (
-      select e.event_type
-        from public.user_plan_assignment_events e
-       where e.assignment_id = a.id
-       order by e.occurred_at desc, e.id desc
-       limit 1
-    ) latest_event on latest_event.event_type = 'activated'
-    join public.approved_plan_versions apv
-      on apv.id = a.approved_plan_version_id
-   where a.user_id = p_user_id
-     and a.starts_at <= now()
-     and a.ends_at > now()
-   limit 1;
-
-  if not (v_plan.features_json ? v_required_feature) then
-    raise exception 'feature is not included in the active plan'
-      using errcode = '42501';
-  end if;
-
-  if p_job_type = 'video_generation' then
-    v_max_video_seconds := nullif(v_plan.limits_json ->> 'max_video_seconds','')::integer;
-    if v_max_video_seconds is not null then
-      if coalesce(p_request_snapshot ->> 'duration_seconds','') !~ '^[1-9][0-9]{0,5}$' then
-        raise exception 'Video duration must be a positive integer number of seconds'
-          using errcode = '22023';
-      end if;
-      v_video_seconds := (p_request_snapshot ->> 'duration_seconds')::integer;
-      if v_video_seconds > v_max_video_seconds then
-        raise exception 'Video duration exceeds the active plan limit'
-          using errcode = '42501';
-      end if;
-    end if;
-
-    v_max_resolution := v_plan.limits_json ->> 'max_resolution';
-    if v_max_resolution is not null then
-      v_video_resolution := p_request_snapshot ->> 'resolution';
-      v_video_resolution_rank := case v_video_resolution
-        when '480p' then 1 when '720p' then 2
-        when '1080p' then 3 when '4k' then 4 else null end;
-      v_max_resolution_rank := case v_max_resolution
-        when '480p' then 1 when '720p' then 2
-        when '1080p' then 3 when '4k' then 4 else null end;
-      if v_video_resolution_rank is null or v_max_resolution_rank is null then
-        raise exception 'Video resolution is missing or unsupported'
-          using errcode = '22023';
-      end if;
-      if v_video_resolution_rank > v_max_resolution_rank then
-        raise exception 'Video resolution exceeds the active plan limit'
-          using errcode = '42501';
-      end if;
-    end if;
-  end if;
-
   if p_job_type = 'image_generation' then
     v_features := array[
       'daily_image_generations','monthly_image_generations',
@@ -394,6 +318,211 @@ begin
       p_provider, p_model, p_idempotency_key, p_request_hash,
       p_request_snapshot, p_quote_snapshot, p_credit_amount
     );
+
+  -- A valid idempotent replay must remain readable after its original plan expires.
+  -- The base RPC verifies the original request, quote, hold and outbox identity.
+  -- Require the complete original quota set before replaying; never create new
+  -- quota reservations for a pre-existing non-plan job.
+  if v_job.replayed then
+    if (select count(*) from public.plan_quota_reservations r
+         where r.user_id = p_user_id
+           and r.request_id = v_job.job_id
+           and r.feature_key = any(v_features)
+           and r.operation_key = 'quota:' || md5(p_idempotency_key) || ':' || r.feature_key)
+       <> cardinality(v_features) then
+      raise exception 'Existing plan-based generation job is missing quota reservations'
+        using errcode = '55000';
+    end if;
+  else
+    select count(*)::integer into v_active_assignment_count
+      from public.user_plan_assignments a
+      join lateral (
+        select e.event_type
+          from public.user_plan_assignment_events e
+         where e.assignment_id = a.id
+         order by e.occurred_at desc, e.id desc
+         limit 1
+      ) latest_event on latest_event.event_type = 'activated'
+     where a.user_id = p_user_id
+       and a.starts_at <= now()
+       and a.ends_at > now();
+  
+    if v_active_assignment_count = 0 then
+      raise exception 'no active plan assignment' using errcode = 'P0002';
+    elsif v_active_assignment_count <> 1 then
+      raise exception 'multiple active plan assignments; generation denied'
+        using errcode = '23514';
+    end if;
+  
+    select apv.*
+      into v_plan
+      from public.user_plan_assignments a
+      join lateral (
+        select e.event_type
+          from public.user_plan_assignment_events e
+         where e.assignment_id = a.id
+         order by e.occurred_at desc, e.id desc
+         limit 1
+      ) latest_event on latest_event.event_type = 'activated'
+      join public.approved_plan_versions apv
+        on apv.id = a.approved_plan_version_id
+     where a.user_id = p_user_id
+       and a.starts_at <= now()
+       and a.ends_at > now()
+     limit 1;
+  
+    if not (v_plan.features_json ? v_required_feature) then
+      raise exception 'feature is not included in the active plan'
+        using errcode = '42501';
+    end if;
+  
+    if p_job_type = 'video_generation' then
+      v_max_video_seconds := nullif(v_plan.limits_json ->> 'max_video_seconds','')::integer;
+      if v_max_video_seconds is not null then
+        if coalesce(p_request_snapshot ->> 'duration_seconds','') !~ '^[1-9][0-9]{0,5}
+  foreach v_feature in array v_features loop
+    select * into v_quota
+      from public.reserve_plan_quota(
+        p_user_id,
+        v_job.job_id,
+        v_feature,
+        'quota:' || md5(p_idempotency_key) || ':' || v_feature,
+        case when v_feature = 'max_concurrent_ai_requests' then 1 else v_units end
+      );
+
+    v_quota_results := v_quota_results || jsonb_build_array(jsonb_build_object(
+      'reservation_id', v_quota.reservation_id,
+      'feature_key', v_feature,
+      'feature_limit', v_quota.feature_limit,
+      'used_units', v_quota.used_units,
+      'remaining_units', v_quota.remaining_units,
+      'status', v_quota.status,
+      'replayed', v_quota.replayed
+    ));
+  end loop;
+
+  return query select v_job.job_id, v_job.event_id, v_job.hold_id,
+    v_job.available_credits, v_job.reserved_credits,
+    v_job.created, v_job.replayed, v_quota_results;
+end;
+$$;
+
+revoke all on function public.create_plan_credited_generation_job_with_outbox(
+  uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint
+) from public, anon, authenticated;
+grant execute on function public.create_plan_credited_generation_job_with_outbox(
+  uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint
+) to service_role;
+
+comment on function public.create_plan_credited_generation_job_with_outbox(
+  uuid,uuid,uuid,text,text,text,text,text,jsonb,jsonb,bigint
+) is
+  'Atomically creates a durable generation job, transactional outbox event, lot-aware credit hold, and all required customer-plan quota reservations. Any failed step rolls back the entire submission.';
+
+-- Resolve plan quota reservations in the same transaction as job terminalization.
+-- Successful generation consumes period quotas but releases its concurrency slot.
+-- Failed/cancelled/expired jobs release every reservation.
+
+create or replace function public.resolve_generation_job_plan_quotas()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_reservation record;
+  v_outcome text;
+begin
+  if old.status is not distinct from new.status
+     or new.status not in ('succeeded','failed','cancelled','expired') then
+    return new;
+  end if;
+
+  for v_reservation in
+    select id, user_id, feature_key, operation_key, status
+      from public.plan_quota_reservations
+     where user_id = new.user_id
+       and request_id = new.id
+       and status = 'reserved'
+     order by id
+     for update
+  loop
+    if new.status = 'succeeded'
+       and v_reservation.feature_key not in ('max_concurrent_ai_requests','max_parallel_jobs') then
+      v_outcome := 'completed';
+    else
+      v_outcome := 'released';
+    end if;
+
+    update public.plan_quota_reservations
+       set status = v_outcome,
+           finished_at = now()
+     where id = v_reservation.id;
+
+    insert into public.plan_quota_events(
+      reservation_id, user_id, event_type, event_key, metadata
+    ) values (
+      v_reservation.id,
+      new.user_id,
+      v_outcome,
+      v_outcome || ':' || md5(v_reservation.operation_key),
+      jsonb_build_object(
+        'job_id', new.id,
+        'job_terminal_status', new.status,
+        'feature_key', v_reservation.feature_key
+      )
+    );
+  end loop;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.resolve_generation_job_plan_quotas()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists generation_job_plan_quota_terminal
+  on public.generation_jobs;
+create trigger generation_job_plan_quota_terminal
+after update of status on public.generation_jobs
+for each row
+execute function public.resolve_generation_job_plan_quotas();
+
+comment on function public.resolve_generation_job_plan_quotas() is
+  'Internal trigger: resolves all customer-plan quota holds atomically with terminal job state. Success consumes daily/monthly usage and releases concurrency; failure releases all usage.';
+ then
+          raise exception 'Video duration must be a positive integer number of seconds'
+            using errcode = '22023';
+        end if;
+        v_video_seconds := (p_request_snapshot ->> 'duration_seconds')::integer;
+        if v_video_seconds > v_max_video_seconds then
+          raise exception 'Video duration exceeds the active plan limit'
+            using errcode = '42501';
+        end if;
+      end if;
+  
+      v_max_resolution := v_plan.limits_json ->> 'max_resolution';
+      if v_max_resolution is not null then
+        v_video_resolution := p_request_snapshot ->> 'resolution';
+        v_video_resolution_rank := case v_video_resolution
+          when '480p' then 1 when '720p' then 2
+          when '1080p' then 3 when '4k' then 4 else null end;
+        v_max_resolution_rank := case v_max_resolution
+          when '480p' then 1 when '720p' then 2
+          when '1080p' then 3 when '4k' then 4 else null end;
+        if v_video_resolution_rank is null or v_max_resolution_rank is null then
+          raise exception 'Video resolution is missing or unsupported'
+            using errcode = '22023';
+        end if;
+        if v_video_resolution_rank > v_max_resolution_rank then
+          raise exception 'Video resolution exceeds the active plan limit'
+            using errcode = '42501';
+        end if;
+      end if;
+    end if;
+  
+  
+  end if;
 
   foreach v_feature in array v_features loop
     select * into v_quota
