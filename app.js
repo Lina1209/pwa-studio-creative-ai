@@ -678,6 +678,37 @@ const movieHistoryStyle = document.createElement("style");
     meta.textContent = new Date(message.created_at).toLocaleString();
     node.append(body, meta); return node;
   };
+  const directConversationUnread = conversation => {
+    const message=conversation.last_message;
+    return Boolean(message && message.sender_user_id !== authSession?.user?.id &&
+      (!conversation.last_read_at || new Date(message.created_at)>new Date(conversation.last_read_at)));
+  };
+  const renderDirectConversationList = () => {
+    const list=$("#directConversationList"); if(!list) return;
+    const query=($("#directConversationSearch")?.value||"").trim().toLocaleLowerCase();
+    const unread=directConversations.filter(directConversationUnread).length;
+    const badge=$("#directUnreadCount"); if(badge) badge.textContent=unread+" непрочитанных";
+    list.replaceChildren();
+    const filtered=directConversations.filter(conversation=>{
+      const haystack=[conversation.peer_user_id,conversation.last_message?.body].join(" ").toLocaleLowerCase();
+      return !query||haystack.includes(query);
+    });
+    filtered.forEach(conversation=>{
+      const button=document.createElement("button");button.type="button";
+      button.className="messages-conversation-item"+(conversation.id===activeDirectConversationId?" is-active":"");
+      const row=document.createElement("span");row.className="direct-chat-row";
+      const avatar=document.createElement("span");avatar.className="direct-chat-avatar";avatar.setAttribute("aria-hidden","true");avatar.textContent="●";
+      const content=document.createElement("span");content.className="direct-chat-content";
+      const title=document.createElement("b");title.textContent="Пользователь "+(conversation.peer_user_id||"—");
+      const preview=document.createElement("small");preview.textContent=conversation.last_message?.body||"Пока нет сообщений";
+      content.append(title,preview);row.append(avatar,content);
+      if(directConversationUnread(conversation)){const dot=document.createElement("span");dot.className="direct-chat-unread";dot.textContent="Новое";row.append(dot);}
+      button.append(row);
+      button.addEventListener("click",()=>openDirectConversation(conversation.id,conversation.peer_user_id));
+      list.append(button);
+    });
+    if(!filtered.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent=query?"Ничего не найдено.":"Здесь пока нет диалогов.";list.append(empty);}
+  };
   const resetDirectMessagesUi = () => {
     directConversations = []; activeDirectConversationId = null; activeDirectPeerId = null;
     $("#directConversationList")?.replaceChildren();
@@ -694,18 +725,7 @@ const movieHistoryStyle = document.createElement("style");
     try {
       const data = await apiRequest("/api/messages/direct/conversations");
       directConversations = data.conversations || [];
-      const list = $("#directConversationList"); if (!list) return;
-      list.replaceChildren();
-      directConversations.forEach(conversation => {
-        const button = document.createElement("button"); button.type = "button";
-        button.className = "messages-conversation-item";
-        const title = document.createElement("b"); title.textContent = "Пользователь " + (conversation.peer_user_id || "—");
-        const preview = document.createElement("small");
-        preview.textContent = conversation.last_message?.body || "Пока нет сообщений";
-        button.append(title, preview);
-        button.addEventListener("click", () => openDirectConversation(conversation.id, conversation.peer_user_id));
-        list.append(button);
-      });
+      renderDirectConversationList();
       if (status) status.textContent = directConversations.length
         ? "Ваши личные диалоги загружены." : "Диалогов пока нет. Можно начать новый по ID пользователя.";
     } catch (error) { if (status) status.textContent = error.message; }
@@ -725,6 +745,17 @@ const movieHistoryStyle = document.createElement("style");
     } catch (error) { if (status) status.textContent = error.message; }
   };
   $("#refreshDirectConversations")?.addEventListener("click", loadDirectConversations);
+  $("#directConversationSearch")?.addEventListener("input",renderDirectConversationList);
+  let directMessageRefreshTimer=null;
+  if(!directMessageRefreshTimer) directMessageRefreshTimer=window.setInterval(()=>{
+    if(document.visibilityState==="visible" && authSession?.user && $("#directMessagesPanel")) {
+      loadDirectConversations();
+      if(activeDirectConversationId && !$("#directMessageBody")?.matches(":focus")) {
+        openDirectConversation(activeDirectConversationId,activeDirectPeerId);
+      }
+    }
+  },20000);
+
   $("#directConversationCreateForm")?.addEventListener("submit", async event => {
     event.preventDefault();
     if (!authSession?.user) { $("#directMessagesStatus").textContent = "Сначала войдите в аккаунт."; return; }

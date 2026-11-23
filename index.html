@@ -676,6 +676,11 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
       </form>
       <p id="directMessagesStatus" class="helper-text" role="status" aria-live="polite">Войдите в аккаунт, чтобы пользоваться личными сообщениями.</p>
       <div class="messages-center-layout">
+        <div class="direct-chat-tools">
+          <label class="sr-only" for="directConversationSearch">Поиск по личным диалогам</label>
+          <input id="directConversationSearch" type="search" placeholder="Найти диалог по ID пользователя или тексту…" autocomplete="off">
+          <span id="directUnreadCount" class="notification-count" aria-live="polite">0 непрочитанных</span>
+        </div>
         <div id="directConversationList" class="messages-conversation-list" aria-label="Список личных диалогов"></div>
         <section id="directConversationView" class="messages-conversation-view" hidden aria-label="Открытый личный диалог">
           <div class="panel-heading"><div><h3 id="directConversationTitle">Диалог</h3><small id="directConversationMeta" class="helper-text"></small></div><div class="messages-conversation-actions"><button class="secondary-button" id="directBlockUser" type="button">Заблокировать</button><button class="secondary-button" id="directReportUser" type="button">Пожаловаться</button></div></div>
