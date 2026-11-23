@@ -22,13 +22,13 @@ _ENFORCED_DIMENSIONS = {
     "daily_image_generations", "monthly_image_generations",
     "daily_video_generations", "monthly_video_generations",
     "daily_audio_generations", "monthly_audio_generations",
+    "daily_generation_jobs", "monthly_generation_jobs", "max_parallel_jobs",
+    "max_video_seconds", "max_resolution",
 }
 
 # These are draft-schema dimensions only. They are deliberately reported as
 # not enforced until they are included in the same transactional admission path.
 _NOT_YET_ENFORCED_DIMENSIONS = {
-    "max_parallel_jobs", "daily_generation_jobs", "monthly_generation_jobs",
-    "max_video_seconds", "max_resolution",
 }
 
 
@@ -197,7 +197,7 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             raise EntitlementsUnavailable("Quota usage row contains invalid values.")
         if status not in {"reserved", "completed"}:
             raise EntitlementsUnavailable("Quota usage row has an unexpected status.")
-        if feature == "max_concurrent_ai_requests":
+        if feature in {"max_concurrent_ai_requests", "max_parallel_jobs"}:
             if status == "reserved":
                 usage[feature] = usage.get(feature, 0) + units
             continue
