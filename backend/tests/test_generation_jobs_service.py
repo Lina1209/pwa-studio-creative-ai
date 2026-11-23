@@ -524,3 +524,57 @@ def test_store_pricing_quote_maps_database_idempotency_conflict(monkeypatch):
                 "expires_at": "2026-11-22T00:00:00+00:00",
             },
         )
+
+
+def test_request_generation_job_cancellation_uses_verified_owner_bridge(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(
+            FakeResponse([{
+                "job_status": "cancel_requested",
+                "cancellation_action": "awaiting_worker_confirmation",
+                "replayed": False,
+            }]),
+            calls,
+        ),
+    )
+
+    result = generation_jobs.request_generation_job_cancellation(
+        configured_settings(), user_id=USER_ID, job_id=JOB_ID
+    )
+
+    assert result.job_status == "cancel_requested"
+    assert result.cancellation_action == "awaiting_worker_confirmation"
+    assert result.replayed is False
+    method, url, payload, headers = calls[0]
+    assert method == "POST"
+    assert url.endswith("/rpc/request_generation_job_cancellation_for_owner")
+    assert payload == {"p_job_id": str(JOB_ID), "p_user_id": str(USER_ID)}
+    assert headers["apikey"] == "sb_secret_test_key"
+    assert "Authorization" not in headers
+
+
+def test_request_generation_job_cancellation_maps_owner_scoped_not_found(monkeypatch):
+    monkeypatch.setattr(
+        generation_jobs.httpx,
+        "Client",
+        lambda timeout: FakeClient(FakeResponse([], status_code=404), []),
+    )
+
+    with pytest.raises(generation_jobs.GenerationJobNotFoundError):
+        generation_jobs.request_generation_job_cancellation(
+            configured_settings(), user_id=USER_ID, job_id=JOB_ID
+        )
+
+
+def test_request_generation_job_cancellation_remains_disabled_by_default(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("Cancellation RPC must not be called while generation jobs are disabled")
+
+    monkeypatch.setattr(generation_jobs.httpx, "Client", unexpected_client)
+    with pytest.raises(generation_jobs.GenerationJobsNotConfiguredError):
+        generation_jobs.request_generation_job_cancellation(
+            Settings(), user_id=USER_ID, job_id=JOB_ID
+        )
