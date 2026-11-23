@@ -208,7 +208,9 @@ def health():
         "pricing_quote_signing_configured": pricing_signing_ready,
         "pricing_catalog_configured": pricing_catalog_ready,
         "generation_worker_ready": bool(settings.generation_job_worker_ready),
-        "image_generation_configured": bool(settings.image_generation_provider and settings.image_generation_model),
+        # Configuration strings alone do not mean a runnable provider is registered.
+        "image_generation_configured": False,
+        "image_generation_status": "unavailable_no_registered_provider",
     }
 
 
