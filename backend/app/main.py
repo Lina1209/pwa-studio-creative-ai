@@ -24,6 +24,7 @@ from app.services.privacy_governance import (
     get_consent_status,
     create_privacy_request,
     list_privacy_requests,
+    record_ai_transfer_event,
 )
 from app.services.usage_service import record_ai_usage
 from app.services.ai_admission import (
@@ -1594,7 +1595,7 @@ def finance_request_cancel(
     return {"request_id": str(request_id), "status": "cancelled"}
 
 
-def _run_admitted_ai(operation: str, user_id: str, call):
+def _run_admitted_ai(operation: str, user_id: str, call, *, consent_event_id: UUID | None = None):
     try:
         reservation = reserve_ai_request(
             settings, user_id=UUID(user_id), endpoint=operation
@@ -1623,16 +1624,65 @@ def _run_admitted_ai(operation: str, user_id: str, call):
         ) from exc
 
     completed = False
+    transfer_correlation_id = uuid4()
+    transfer_operation = "vision" if operation == "vision" else "text"
     try:
-        result = _run_ai(operation, call)
-        completed = True
-        return result
+        # The append-only transfer journal must accept the metadata-only attempt
+        # before any external AI call. If it is unavailable, fail closed.
+        try:
+            record_ai_transfer_event(
+                settings,
+                user_id=UUID(user_id),
+                provider=settings.ai_provider,
+                model=settings.ai_model,
+                operation=transfer_operation,
+                outcome="attempted",
+                consent_event_id=consent_event_id,
+                correlation_id=transfer_correlation_id,
+            )
+        except PrivacyGovernanceUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Журнал защиты данных временно недоступен. Внешний AI-запрос не выполнен.",
+            ) from exc
+        try:
+            result = _run_ai(operation, call)
+            completed = True
+            try:
+                record_ai_transfer_event(
+                    settings,
+                    user_id=UUID(user_id),
+                    provider=settings.ai_provider,
+                    model=getattr(result, "actual_model", settings.ai_model),
+                    operation=transfer_operation,
+                    outcome="succeeded",
+                    consent_event_id=consent_event_id,
+                    correlation_id=transfer_correlation_id,
+                )
+            except PrivacyGovernanceUnavailable:
+                # The pre-call event is retained; do not turn a completed,
+                # potentially billable operation into a retry-inducing 5xx.
+                logger.warning("AI transfer success audit finalization failed: operation=%s", operation)
+            return result
+        except Exception:
+            try:
+                record_ai_transfer_event(
+                    settings,
+                    user_id=UUID(user_id),
+                    provider=settings.ai_provider,
+                    model=settings.ai_model,
+                    operation=transfer_operation,
+                    outcome="unknown",
+                    consent_event_id=consent_event_id,
+                    correlation_id=transfer_correlation_id,
+                )
+            except PrivacyGovernanceUnavailable:
+                logger.warning("AI transfer outcome audit finalization failed: operation=%s", operation)
+            raise
     finally:
         try:
             finish_ai_request(settings, reservation, completed=completed)
         except AIAdmissionUnavailable:
-            # Reservations expire from the active-concurrency window after
-            # five minutes; never log user content or provider credentials.
             logger.warning(
                 "AI admission reservation finalization failed: endpoint=%s outcome=%s",
                 operation,
@@ -1706,7 +1756,22 @@ def analyze_vision_input(
             user_id=UUID(user.user_id),
         )
 
-    result = _run_admitted_ai("vision", user.user_id, validate_and_analyze)
+    try:
+        consent_status = get_consent_status(settings, user_id=UUID(user.user_id))
+    except PrivacyGovernanceUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Проверка согласия временно недоступна.") from exc
+    current_vision_consent = next(
+        (item for item in consent_status if item["consent_scope"] == "vision_deepseek"),
+        None,
+    )
+    if not current_vision_consent or current_vision_consent["action"] != "accepted":
+        raise HTTPException(status_code=403, detail="Сначала необходимо отдельно подтвердить согласие на передачу изображения DeepSeek.")
+    result = _run_admitted_ai(
+        "vision",
+        user.user_id,
+        validate_and_analyze,
+        consent_event_id=UUID(current_vision_consent["event_id"]),
+    )
     record_ai_usage(
         settings,
         user_id=user.user_id,
