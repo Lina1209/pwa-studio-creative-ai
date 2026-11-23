@@ -25,6 +25,15 @@ begin
     raise exception 'consent RPC must be service-role-only';
   end if;
 
+  if has_table_privilege('authenticated','public.privacy_consent_events','SELECT')
+     or has_table_privilege('authenticated','public.privacy_requests','SELECT')
+     or has_table_privilege('authenticated','public.ai_data_transfer_events','SELECT')
+     or has_table_privilege('service_role','public.privacy_consent_events','SELECT')
+     or has_table_privilege('service_role','public.privacy_requests','SELECT')
+     or has_table_privilege('service_role','public.ai_data_transfer_events','SELECT') then
+    raise exception 'privacy metadata tables must not be directly readable';
+  end if;
+
   v_consent := public.record_privacy_consent_event(
     v_user,'vision_deepseek','accepted','privacy-2026-01','vision-consent-2026-01','web_app',null
   );
@@ -84,6 +93,10 @@ begin
   exception when unique_violation then v_failed := true;
   end;
   if not v_failed then raise exception 'privacy request idempotency conflict was accepted'; end if;
+  select count(*) into v_count from public.list_privacy_requests_for_user(v_user,100);
+  if v_count <> 1 then raise exception 'privacy request list did not return the owner request'; end if;
+  select count(*) into v_count from public.list_privacy_requests_for_user(v_other,100);
+  if v_count <> 0 then raise exception 'privacy request list leaked another account request'; end if;
 end;
 $$;
 
