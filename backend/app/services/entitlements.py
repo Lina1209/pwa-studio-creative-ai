@@ -190,7 +190,7 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
     for feature in sorted(_ENFORCED_DIMENSIONS | _NOT_YET_ENFORCED_DIMENSIONS):
         raw_limit = limits.get(feature)
         if feature == "max_resolution":
-            if raw_limit is not None and raw_limit not in {"480p", "720p", "1080p", "4k"}:
+            if raw_limit is not None and (not isinstance(raw_limit, str) or raw_limit not in {"480p", "720p", "1080p", "4k"}):
                 raise EntitlementsUnavailable("Approved plan contains an invalid resolution limit.")
             limit = raw_limit
             used = 0
