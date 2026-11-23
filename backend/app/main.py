@@ -1742,6 +1742,8 @@ def admin_support_reply(ticket_id: UUID, payload: SupportMessageCreate, user: St
         except (AdminAuditUnavailable, ValueError):
             logger.error("Support reply persisted but completion audit could not be written.")
         return {"status":"sent"}
+    except AdminAuditUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Журнал аудита недоступен; ответ не был отправлен.") from exc
     except SupportUnavailable: _support_error()
 
 @app.patch(f"{settings.api_prefix}/admin/support/tickets/{{ticket_id}}/status")
