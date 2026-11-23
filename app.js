@@ -1974,6 +1974,7 @@ const movieHistoryStyle = document.createElement("style");
     assertOwner();
   };
   let editingVisualAssetId=null;
+  const visualReferenceRemovalLocks=new Set();
   const resetVisualAssetEditor=()=>{
     editingVisualAssetId=null;
     $("#saveVisualAsset").textContent="＋ Сохранить в библиотеку";
@@ -2009,14 +2010,19 @@ const movieHistoryStyle = document.createElement("style");
             image.addEventListener("error",()=>URL.revokeObjectURL(objectUrl),{once:true});
             const removeRef=document.createElement("button");removeRef.type="button";removeRef.className="secondary-button";removeRef.textContent="Удалить изображение";
             removeRef.addEventListener("click",async()=>{
+              const removalKey=item.id;
+              if(visualReferenceRemovalLocks.has(removalKey))return;
               const ownerId=authSession?.user?.id||null,storageKey=visualLibraryKey();
               const current=readVisualLibrary().find(entry=>entry.id===item.id);
               const refNow=current?.referenceImages?.find(entry=>entry.id===ref.id);
               if(!current||!refNow)return;
+              visualReferenceRemovalLocks.add(removalKey);
+              // Prevent an older in-flight cloud sync from restoring stale metadata locally.
+              visualLibrarySyncSequence++;
               removeRef.disabled=true;
-              const nextAsset={...current,referenceImages:current.referenceImages.filter(entry=>entry.id!==ref.id),updatedAt:new Date().toISOString()};
-              const nextItems=readVisualLibrary().map(entry=>entry.id===current.id?nextAsset:entry);
               try{
+                const nextAsset={...current,referenceImages:current.referenceImages.filter(entry=>entry.id!==ref.id),updatedAt:new Date().toISOString()};
+                const nextItems=readVisualLibrary().map(entry=>entry.id===current.id?nextAsset:entry);
                 if(ownerId){
                   if(refNow.storagePath&&!refNow.storagePath.startsWith(ownerId+"/"))throw new Error("Путь к изображению не принадлежит текущему аккаунту.");
                   await saveVisualAssetToCloud(nextAsset,[]);
@@ -2034,6 +2040,8 @@ const movieHistoryStyle = document.createElement("style");
                 console.warn("Single reference delete failed:",error);
                 $("#promptSaveFeedback").textContent="Не удалось подтвердить удаление изображения. Оно оставлено в библиотеке; повторите попытку.";
                 removeRef.disabled=false;
+              }finally{
+                visualReferenceRemovalLocks.delete(removalKey);
               }
             });
             tile.append(image,removeRef);gallery.append(tile);
