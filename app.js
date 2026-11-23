@@ -10,6 +10,10 @@
     ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.publishableKey)
     : null;
   let authSession = null;
+  let authContextVersion = 0;
+  let activeAssistantConversationId = null;
+  let assistantHistoryBusy = false;
+  let assistantUserId = null;
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -25,6 +29,18 @@
     setAuthMessage("");
   };
   const refreshAuthUI = session => {
+    const nextUserId = session?.user?.id || null;
+    if (nextUserId !== assistantUserId) {
+      assistantUserId = nextUserId;
+      authContextVersion += 1;
+      activeAssistantConversationId = null;
+      const history = $("#assistantHistoryList");
+      const messages = $("#assistantMessages");
+      const status = $("#assistantHistoryStatus");
+      if (history) history.replaceChildren();
+      if (messages) messages.replaceChildren();
+      if (status) status.textContent = nextUserId ? "Загружаем историю нового аккаунта…" : "Войдите в аккаунт, чтобы сохранять историю диалогов.";
+    }
     authSession = session;
     const user = session && session.user;
     authGate.hidden = true;
@@ -70,9 +86,9 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); }, 0);
+      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -312,8 +328,6 @@ const movieHistoryStyle = document.createElement("style");
     $("#assistantInput").focus();
   }));
   // AI Companion cloud history. Supabase RLS restricts every row to its owner.
-  let activeAssistantConversationId = null;
-  let assistantHistoryBusy = false;
   const assistantHistoryList = $("#assistantHistoryList");
   const assistantMessages = $("#assistantMessages");
   const assistantStatus = $("#assistantHistoryStatus");
