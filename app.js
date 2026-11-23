@@ -684,6 +684,67 @@ const movieHistoryStyle = document.createElement("style");
   let directConversations = [];
   let activeDirectConversationId = null;
   let activeDirectPeerId = null;
+  let directNotifications = [];
+  const renderDirectNotifications = () => {
+    const list = $("#directNotificationList");
+    if (!list) return;
+    list.replaceChildren();
+    const unread = directNotifications.filter(item => !item.read_at).length;
+    const badge = $("#directNotificationCount");
+    if (badge) badge.textContent = String(unread);
+    directNotifications.forEach(item => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "messages-conversation-item" + (item.read_at ? "" : " is-unread");
+      const title = document.createElement("b");
+      title.textContent = item.title || "Новое уведомление";
+      const body = document.createElement("small");
+      body.textContent = item.body || "Откройте диалог, чтобы прочитать сообщение.";
+      const time = document.createElement("small");
+      time.textContent = new Date(item.created_at).toLocaleString();
+      button.append(title, body, time);
+      button.addEventListener("click", async () => {
+        try {
+          if (!item.read_at) {
+            await apiRequest("/api/messages/direct/notifications/" + encodeURIComponent(item.id) + "/read", {method:"PATCH"});
+            item.read_at = new Date().toISOString();
+            renderDirectNotifications();
+          }
+          if (item.conversation_id) {
+            const conversation = directConversations.find(row => row.id === item.conversation_id);
+            await openDirectConversation(item.conversation_id, conversation?.peer_user_id);
+          }
+        } catch (error) {
+          const status = $("#directMessagesStatus");
+          if (status) status.textContent = error.message;
+        }
+      });
+      list.append(button);
+    });
+    if (!directNotifications.length) {
+      const empty = document.createElement("p");
+      empty.className = "helper-text";
+      empty.textContent = "Новых уведомлений пока нет.";
+      list.append(empty);
+    }
+  };
+  const loadDirectNotifications = async () => {
+    if (!authSession?.user) {
+      directNotifications = [];
+      renderDirectNotifications();
+      return;
+    }
+    try {
+      const data = await apiRequest("/api/messages/direct/notifications");
+      directNotifications = data.notifications || [];
+      renderDirectNotifications();
+    } catch (error) {
+      const list = $("#directNotificationList");
+      if (list) list.textContent = error.message;
+    }
+  };
+  $("#refreshDirectNotifications")?.addEventListener("click", loadDirectNotifications);
+
   const directMessageNode = message => {
     const node = document.createElement("article");
     node.className = "assistant-message " + (message.sender_user_id === authSession?.user?.id ? "user-message" : "ai-message");
@@ -850,6 +911,7 @@ const movieHistoryStyle = document.createElement("style");
     directMessageRefreshBusy=true;
     try {
       await loadDirectConversations();
+      await loadDirectNotifications();
       if(activeDirectConversationId && !$("#directMessageBody")?.matches(":focus")) {
         await openDirectConversation(activeDirectConversationId,activeDirectPeerId);
       }
@@ -880,6 +942,7 @@ const movieHistoryStyle = document.createElement("style");
       $("#directMessageBody").value = "";
       await openDirectConversation(activeDirectConversationId, activeDirectPeerId);
       await loadDirectConversations();
+      await loadDirectNotifications();
     } catch (error) { $("#directMessagesStatus").textContent = error.message; }
     finally { if (button) button.disabled = false; }
   });
@@ -903,8 +966,8 @@ const movieHistoryStyle = document.createElement("style");
     } catch (error) { $("#directMessagesStatus").textContent = error.message; }
   });
   if ($("#directMessagesPanel")) {
-    if (authSession?.user) loadDirectConversations();
-    else resetDirectMessagesUi();
+    if (authSession?.user) { loadDirectConversations(); loadDirectNotifications(); }
+    else { resetDirectMessagesUi(); loadDirectNotifications(); }
   }
 
 
