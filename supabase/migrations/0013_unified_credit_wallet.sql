@@ -79,22 +79,24 @@ begin
     raise exception 'Invalid credit grant parameters';
   end if;
 
+  insert into public.credit_wallets(user_id, available_credits)
+  values (p_user_id, 0)
+  on conflict (user_id) do nothing;
+  select * into v_wallet from public.credit_wallets where user_id = p_user_id for update;
+
   select * into v_existing from public.credit_ledger
    where user_id = p_user_id and event_type = 'grant'
      and source = p_source and source_reference = p_source_reference;
   if found then
-    select * into v_wallet from public.credit_wallets where user_id = p_user_id;
     return jsonb_build_object('status', 'already_granted',
       'available_credits', v_wallet.available_credits,
       'reserved_credits', v_wallet.reserved_credits);
   end if;
 
-  insert into public.credit_wallets(user_id, available_credits)
-  values (p_user_id, p_amount)
-  on conflict (user_id) do update
-    set available_credits = public.credit_wallets.available_credits + excluded.available_credits,
-        updated_at = now()
-  returning * into v_wallet;
+  update public.credit_wallets
+    set available_credits = available_credits + p_amount, updated_at = now()
+    where user_id = p_user_id
+    returning * into v_wallet;
 
   insert into public.credit_ledger(user_id, event_type, available_delta,
     source, source_reference)
@@ -129,6 +131,13 @@ begin
     raise exception 'Invalid credit reservation parameters';
   end if;
 
+  select * into v_wallet from public.credit_wallets where user_id = p_user_id for update;
+  if not found then
+    return jsonb_build_object('status', 'insufficient_credits');
+  end if;
+
+  -- Locking the per-user wallet serializes reservations and grants; recheck
+  -- idempotency after the lock so concurrent retries cannot reserve twice.
   select * into v_reservation from public.credit_reservations
    where user_id = p_user_id and idempotency_key = p_idempotency_key
    for update;
@@ -140,8 +149,7 @@ begin
       'idempotent_replay', true);
   end if;
 
-  select * into v_wallet from public.credit_wallets where user_id = p_user_id for update;
-  if not found or v_wallet.available_credits < p_amount then
+  if v_wallet.available_credits < p_amount then
     return jsonb_build_object('status', 'insufficient_credits');
   end if;
 
