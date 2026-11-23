@@ -1,6 +1,6 @@
 # PWA Studio — Architecture, Safety, Governance and Product Plan
 
-Last reviewed: 2026-11-21
+Last reviewed: 2026-11-23
 
 This is the cross-project planning document for PWA Studio. It records product intent, current evidence, security and moderation requirements, known gaps, and the recommended implementation sequence. It complements `IMPLEMENTATION_ROADMAP.md`; it does not claim that planned work is implemented.
 
@@ -70,9 +70,11 @@ A committed migration is not proof it has been applied. A successful browser ref
 - Selected/recorded audio is not uploaded to the server; no TTS/music/SFX provider workflow or full editing/mixing is connected.
 
 ### Character Library, analytics, community
-- Character table existence has been reported but live schema and RLS need inspection.
-- Visitor analytics/Live World are concepts only.
-- Community chat and moderation are concepts only.
+- Character reference-storage and visual-metadata migrations exist in the review branch; full owner-scoped character CRUD and live RLS verification remain incomplete.
+- First-party visit analytics and privacy-governance foundations exist in the review branch; production collection, retention, legal review and public aggregate behavior remain unverified.
+- Community chat and public moderation remain planned.
+- A private support inbox is implemented in the review branch (user ticket UI, owner inbox, FastAPI routes, scoped capabilities and audit events); migrations 0055/0091 are not live and the flow is not production-verified.
+- No public creator showcase/gallery is implemented; it is now a separate planned product surface.
 
 ## 4. Product modules and target capabilities
 
@@ -125,6 +127,27 @@ A committed migration is not proof it has been applied. A successful browser ref
 - Persistent messages, edit/delete own message, report, pin, channel open/close, moderator review, admin deletion, mute, temporary/permanent ban, unban, appeals, audit log.
 - Enforce every permission in backend/database policies. Hiding a button is not authorization.
 - Rate limits, anti-spam controls, link controls, report queue, escalation and moderator guidance.
+
+### I. Support and feedback inbox
+- Private, asynchronous user-to-administration conversations, separate from AI Companion and public community chat.
+- Categories for general help, bugs, account/access, billing/credits, feature requests, product feedback and safety/privacy.
+- User-owned ticket list and message history; owner-only queue, reply and status controls.
+- Atomic ticket-plus-first-message and message-plus-status database operations.
+- Optional, user-approved diagnostic context; never attach private prompts, project contents, credentials or media by default.
+- Status lifecycle: open, in progress, waiting for user, resolved and closed; first-response and resolution timestamps.
+- Admin reads and mutations are permission-gated and audited.
+- Later additions: unread notifications, verified transactional email, assignment, priority, internal notes, attachments through private storage, saved replies and SLA metrics.
+- Private feedback is the default. Public idea voting requires a separate opt-in board and moderation controls.
+
+### J. Inspiration and creator showcase
+- A guest-facing inspiration page with platform-owned demos, prompt explanations, starter templates and example workflows.
+- A separate opt-in gallery for user-published works: films, images, music/sound, voiceover, scripts, storyboards and prompts.
+- Private projects and assets remain private unless a user explicitly publishes a selected item.
+- Creator attribution, explicit display/remix/template permissions, publication history, unpublish and takedown.
+- Search, filters, collections, likes/bookmarks and “use as template” copy semantics.
+- Public publication must use controlled preview assets and moderation; it must not make the user's private Storage bucket public.
+- A paid marketplace is deferred until licensing, creator verification, payout, tax, dispute and fraud workflows are ready.
+
 
 ## 5. Platform rules, prohibited content, filters, bans and appeals
 
@@ -308,6 +331,16 @@ Each feature needs explicit acceptance criteria and evidence. Manual user testin
 ### Phase 6 — community, analytics and Live World
 - Implement community chat only after moderation, reports, bans, and admin controls are enforceable.
 - Implement privacy-reviewed aggregate analytics and optional country-level globe.
+### Phase 6A — private support and feedback
+- Verify the review-branch support inbox and migrations 0055/0091 before live application.
+- Add support launcher, user notifications, admin queue filters and internal notes.
+- Add private feedback intake and later an opt-in public idea board.
+
+### Phase 6B — inspiration and creator showcase
+- Publish platform-owned examples and starter templates.
+- Add opt-in user publication, attribution, license choices, moderation, takedown and unpublish.
+- Keep a paid creator marketplace out of scope until creator-rights and payout operations are ready.
+
 
 ### Phase 7 — monetization and public launch
 - Complete quotas, payment integration, cost controls, legal documents, privacy/security review, support and incident processes.
@@ -325,7 +358,7 @@ Each feature needs explicit acceptance criteria and evidence. Manual user testin
 - Character table/schema/RLS must be inspected before building on it.
 - Audio is local preview only.
 - No real image/video generation pipeline, audio generation pipeline, timeline renderer, or MP4 export is connected.
-- Visitor analytics, community, policy management, ban/appeal system, quotas, and billing remain planned.
+- Visitor analytics and privacy-governance code exists in the review branch but is not live-verified; community chat, full moderation, ban/appeal system and creator showcase remain planned.\n- The support inbox exists in the review branch but is not deployed or live-verified; no real-time delivery, email/push notifications, attachments, assignment, internal notes or queue filters are connected yet.\n- No concrete production video-provider adapter is present; the provider idempotency audit marks video generation blocked.\n- Audio remains local preview only; speech-to-text, text-to-speech, music/SFX provider calls, dubbing, lip-sync, voice library, mixing and export are not connected.\n- Wallet, quota and payment foundations in the review branch are not equivalent to an enabled payment provider or production billing; payment execution remains disabled.
 - Existing keyword safety checks are only a first layer; they are not a complete moderation system.
 
 ## 12. Working agreement
