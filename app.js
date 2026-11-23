@@ -446,6 +446,7 @@ const movieHistoryStyle = document.createElement("style");
   $("#refreshMyEntitlements")?.addEventListener("click", loadMyEntitlements);
 
   const supportStatusLabels = {open:"Открыто",in_progress:"В работе",waiting_user:"Ожидает ответа",resolved:"Решено",closed:"Закрыто"};
+  const supportCategoryLabels = {general:"Общий вопрос",bug:"Ошибка",account:"Аккаунт",billing:"Тарифы и оплата",feature_request:"Предложение",feedback:"Отзыв",safety_privacy:"Безопасность"};
   let mySupportTickets = [];
   let adminSupportTickets = [];
   let selectedMySupportTicket = null;
@@ -467,7 +468,7 @@ const movieHistoryStyle = document.createElement("style");
     tickets.forEach(ticket => {
       const option = document.createElement("option");
       option.value = ticket.id;
-      option.textContent = ticket.subject + " · " + (supportStatusLabels[ticket.status] || ticket.status);
+      option.textContent = ticket.subject + " · " + (supportCategoryLabels[ticket.category] || "Обращение") + " · " + (supportStatusLabels[ticket.status] || ticket.status);
       select.append(option);
     });
   };
@@ -504,7 +505,14 @@ const movieHistoryStyle = document.createElement("style");
     if (!authSession?.user) { if (status) status.textContent = "Сначала войдите в аккаунт."; return; }
     const button = event.submitter; if (button) button.disabled = true;
     try {
-      await apiRequest("/api/support/tickets", {method:"POST",body:JSON.stringify({subject:$("#supportNewSubject").value,message:$("#supportNewMessage").value})});
+      const includeContext = $("#supportIncludeContext")?.checked === true;
+      const context = includeContext ? {page_path: (location.hash || "#account").slice(0,160)} : {};
+      await apiRequest("/api/support/tickets", {method:"POST",body:JSON.stringify({
+        subject:$("#supportNewSubject").value,
+        message:$("#supportNewMessage").value,
+        category:$("#supportNewCategory")?.value || "general",
+        context
+      })});
       $("#supportNewSubject").value = ""; $("#supportNewMessage").value = "";
       if (status) status.textContent = "Обращение отправлено.";
       await loadMySupportTickets();
