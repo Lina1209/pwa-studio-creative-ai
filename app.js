@@ -1954,7 +1954,8 @@ const movieHistoryStyle = document.createElement("style");
       // until a later safe garbage-collection pass; never risk deleting live refs.
       return item;
     }catch(error){
-      if(uploaded.length)await supabaseClient.storage.from(cloudVisualBucket).remove(uploaded).catch(()=>{});
+      // A failed/timeout response may still follow a committed metadata upsert.
+      // Keep uploaded objects until a reconciliation pass proves they are unreferenced.
       throw error;
     }
   };
