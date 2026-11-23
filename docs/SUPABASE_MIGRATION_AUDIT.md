@@ -58,3 +58,15 @@ Items still requiring hardening or live verification:
 5. No authenticated live integration tests were run against Supabase. The GitHub Actions suite validates mocked/unit behavior only.
 
 No production configuration, database schema, user data, or deployed service was changed during this review.
+
+## Atomic direct-message rate limiting
+
+A follow-up patch replaces the in-process read-then-count check with a database RPC backed by `public.message_rate_limits`.
+
+- The RPC uses one row per user and an atomic `INSERT ... ON CONFLICT DO UPDATE` to increment a fixed 60-second window counter.
+- The limit is 20 accepted message attempts per user per fixed window. Concurrent requests for the same user serialize through the unique-row conflict and cannot all pass based on a stale count.
+- The counter table has RLS enabled and no client-role table privileges. The function is executable only by `service_role`; the trusted backend supplies the authenticated sender UUID.
+- If the RPC cannot be reached, the message request fails closed rather than bypassing abuse protection.
+- This is a fixed-window limiter, not a sliding-window limiter; a user may send up to the limit on either side of a minute boundary. Revisit the policy if abuse telemetry justifies a stricter sliding window.
+
+Migration `0011_atomic_message_rate_limit.sql` is a forward migration and has not been applied. It must be reconciled with the actual production migration history and reviewed before execution.
