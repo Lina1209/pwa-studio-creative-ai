@@ -22,6 +22,10 @@ def test_admin_ai_cost_budget_endpoint_is_private_and_audited(monkeypatch):
         "global_remaining_usd": "2.0000000000",
         "max_outstanding_reserved_usd": "0.5000000000",
         "providers": [],
+        "by_modality": [
+            {"request_modality": "text", "settled_estimated_spend_usd": "0.0000000000", "outstanding_reserved_usd": "0.0000000000", "committed_total_usd": "0.0000000000", "active_reservations": 0, "unknown_reservations": 0},
+            {"request_modality": "vision", "settled_estimated_spend_usd": "0.0000000000", "outstanding_reserved_usd": "0.0000000000", "committed_total_usd": "0.0000000000", "active_reservations": 0, "unknown_reservations": 0},
+        ],
         "actual_billed_cost_usd": None,
         "billing_reconciliation": "not_available",
         "note": "estimate only",
