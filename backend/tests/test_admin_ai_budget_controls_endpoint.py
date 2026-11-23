@@ -110,3 +110,45 @@ def test_provider_budget_rejects_gemini_for_admin(monkeypatch):
         assert response.status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload", "rpc_name"),
+    [
+        ("put", "/api/admin/ai/budget/global", {
+            "enabled": True, "daily_budget_usd": "3", "max_outstanding_usd": "1"
+        }, "update_global_budget"),
+        ("put", "/api/admin/ai/budget/provider", {
+            "provider": "deepseek", "enabled": True, "daily_budget_usd": "1"
+        }, "update_provider_budget"),
+        ("post", "/api/admin/ai/budget/reservations/resolve", {
+            "request_id": "44444444-4444-4444-8444-444444444444",
+            "resolution": "confirm_no_charge", "actual_estimated_cost_usd": None,
+            "note": "Provider confirmed no charge"
+        }, "resolve_unknown_reservation"),
+    ],
+)
+def test_ai_budget_mutations_require_dedicated_capability(
+    monkeypatch, method, path, payload, rpc_name
+):
+    import app.main as main
+    import app.services.auth as auth
+
+    monkeypatch.setattr(
+        auth, "OWNER_CAPABILITIES",
+        frozenset(set(auth.OWNER_CAPABILITIES) - {"admin.ai.budget.manage"}),
+    )
+    monkeypatch.setattr(
+        auth, "record_admin_audit_event",
+        lambda *a, **k: "denial-audit",
+    )
+    monkeypatch.setattr(
+        main, rpc_name,
+        lambda *a, **k: pytest.fail("AI budget mutation RPC must not run"),
+    )
+    client = _client(ADMIN)
+    try:
+        response = getattr(client, method)(path, json=payload)
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
