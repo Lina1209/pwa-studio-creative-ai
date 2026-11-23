@@ -80,15 +80,31 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
     if not isinstance(assignments, list) or len(assignments) > 1000 or any(not isinstance(x, dict) for x in assignments):
         raise EntitlementsUnavailable("Plan assignment query returned invalid or excessive data.")
 
+    # Validate every database-returned identifier before embedding it in a
+    # PostgREST in-filter. The query is service-role scoped, so malformed or
+    # cross-owner rows must fail closed rather than influence a privileged read.
+    assignment_ids = []
+    seen_assignment_ids = set()
+    for item in assignments:
+        try:
+            assignment_id = UUID(str(item.get("id")))
+            assignment_owner = UUID(str(item.get("user_id")))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise EntitlementsUnavailable("Plan assignment identity is invalid.") from exc
+        if assignment_owner != user_id or assignment_id in seen_assignment_ids:
+            raise EntitlementsUnavailable("Plan assignment ownership or identity is invalid.")
+        seen_assignment_ids.add(assignment_id)
+        assignment_ids.append(str(assignment_id))
+
     events = []
-    if assignments:
-        assignment_ids = ",".join(str(item.get("id")) for item in assignments)
+    if assignment_ids:
+        assignment_filter = ",".join(assignment_ids)
         events = _get(
             settings,
             "user_plan_assignment_events",
             {
                 "select": "id,assignment_id,event_type,occurred_at",
-                "assignment_id": f"in.({assignment_ids})",
+                "assignment_id": f"in.({assignment_filter})",
                 "order": "occurred_at.desc,id.desc",
                 "limit": "10000",
             },
