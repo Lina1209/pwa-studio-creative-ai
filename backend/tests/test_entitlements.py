@@ -54,16 +54,16 @@ def _active_assignment():
         "id": ASSIGNMENT,
         "user_id": str(USER),
         "approved_plan_version_id": PLAN,
-        "status": "active",
         "starts_at": (now.replace(day=1)).isoformat(),
         "ends_at": (now.replace(day=1).replace(month=12)).isoformat(),
+        "created_at": now.isoformat(),
     }
 
 
 def test_no_active_plan_does_not_promote_pending_assignment(monkeypatch):
     calls = []
     responses = {
-        "user_plan_assignments": [[], [{"id": ASSIGNMENT, "status": "pending"}]],
+        "user_plan_assignments": [[]],
     }
     monkeypatch.setattr(
         entitlements.httpx, "Client",
@@ -75,16 +75,20 @@ def test_no_active_plan_does_not_promote_pending_assignment(monkeypatch):
     assert result["features"] == []
     assert result["capabilities_enabled"] is False
     assert result["pending_assignment_exists"] is True
-    assert [call[0] for call in calls] == ["user_plan_assignments", "user_plan_assignments"]
+    assert [call[0] for call in calls] == ["user_plan_assignments"]
 
 
 def test_multiple_active_assignments_fail_closed(monkeypatch):
     calls = []
     responses = {
-        "user_plan_assignments": [
-            [_active_assignment(), {**_active_assignment(), "id": "44444444-4444-4444-8444-444444444444"}],
-            [],
-        ],
+        "user_plan_assignments": [[
+            _active_assignment(),
+            {**_active_assignment(), "id": "44444444-4444-4444-8444-444444444444"},
+        ]],
+        "user_plan_assignment_events": [[
+            {"id": 2, "assignment_id": ASSIGNMENT, "event_type": "activated", "occurred_at": "2026-11-01T00:00:00+00:00"},
+            {"id": 1, "assignment_id": "44444444-4444-4444-8444-444444444444", "event_type": "activated", "occurred_at": "2026-11-01T00:00:00+00:00"},
+        ]],
     }
     monkeypatch.setattr(
         entitlements.httpx, "Client",
@@ -102,10 +106,10 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     calls = []
     responses = {
-        "user_plan_assignments": [
-            [_active_assignment()],
-            [],
-        ],
+        "user_plan_assignments": [[_active_assignment()]],
+        "user_plan_assignment_events": [[
+            {"id": 2, "assignment_id": ASSIGNMENT, "event_type": "activated", "occurred_at": "2026-11-01T00:00:00+00:00"},
+        ]],
         "approved_plan_versions": [{
             "id": PLAN,
             "plan_code": "creator",
@@ -160,7 +164,7 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
     assert result["checkout_enabled"] is False
     assert result["credits_granted"] is False
     assert [call[0] for call in calls] == [
-        "user_plan_assignments", "user_plan_assignments",
+        "user_plan_assignments", "user_plan_assignment_events",
         "approved_plan_versions", "plan_quota_reservations",
     ]
 
@@ -168,7 +172,10 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
 def test_invalid_active_plan_snapshot_fails_closed(monkeypatch):
     calls = []
     responses = {
-        "user_plan_assignments": [[_active_assignment()], []],
+        "user_plan_assignments": [[_active_assignment()]],
+        "user_plan_assignment_events": [[
+            {"id": 2, "assignment_id": ASSIGNMENT, "event_type": "activated", "occurred_at": "2026-11-01T00:00:00+00:00"},
+        ]],
         "approved_plan_versions": [],
     }
     monkeypatch.setattr(
