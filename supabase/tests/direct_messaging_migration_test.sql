@@ -159,6 +159,7 @@ $direct_moderation_test$;
 
 
 \i supabase/migrations/0098_direct_message_edit_delete.sql
+\i supabase/migrations/0101_direct_message_soft_delete_constraint.sql
 
 do $direct_message_edit_delete_test$
 declare

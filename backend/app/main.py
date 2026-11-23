@@ -59,6 +59,11 @@ from app.services.admin_financial_reporting import (
     ProviderCostReportNotConfiguredError,
     get_provider_cost_report,
 )
+from app.services.admin_finance_integrity import (
+    FinanceIntegrityAuditError,
+    FinanceIntegrityAuditNotConfigured,
+    get_finance_integrity_audit,
+)
 from app.services.pricing_service import PricingError, canonical_request_hash, issue_pricing_quote, load_pricing_catalog, verify_pricing_quote
 from app.services.site_analytics import SiteAnalyticsUnavailable, SiteAnalyticsRateLimited, record_visit, get_admin_visit_stats
 from app.services.finance_registry import (
@@ -1046,6 +1051,43 @@ def admin_user_wallet_summary(
         "lot_count": snapshot.lot_count,
         "allocation_count": snapshot.allocation_count,
     }
+
+
+@app.get(f"{settings.api_prefix}/admin/financial/integrity/{'{target_user_id}'}")
+def admin_user_finance_integrity_audit(
+    target_user_id: UUID,
+    response: Response,
+    user: StudioUser = Depends(require_permission("admin.finance.wallets.read")),
+):
+    """Read-only, single-statement integrity audit for one user's finance records."""
+    try:
+        report = get_finance_integrity_audit(settings, user_id=target_user_id)
+    except FinanceIntegrityAuditNotConfigured as exc:
+        raise HTTPException(
+            status_code=503, detail="Finance integrity audit is not configured."
+        ) from exc
+    except FinanceIntegrityAuditError as exc:
+        raise HTTPException(
+            status_code=502, detail="Finance integrity audit is temporarily unavailable."
+        ) from exc
+    try:
+        record_admin_audit_event(
+            settings,
+            actor_user_id=UUID(user.user_id),
+            action="admin.user.view",
+            outcome="allowed",
+            resource_type="credit_wallet",
+            resource_id=target_user_id,
+            reason="Viewed user finance integrity audit",
+        )
+    except AdminAuditUnavailable as exc:
+        # Financial integrity data is not disclosed if the access cannot be audited.
+        raise HTTPException(
+            status_code=503,
+            detail="Financial access audit is temporarily unavailable.",
+        ) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return report
 
 
 @app.get(f"{settings.api_prefix}/admin/financial/ledger/{'{target_user_id}'}")

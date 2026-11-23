@@ -76,3 +76,83 @@ def test_financial_report_rejects_invalid_date_range(monkeypatch):
         assert response.status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+def test_finance_integrity_audit_denies_non_admin_before_reading_data(monkeypatch):
+    import app.main as main_module
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("integrity audit must not run for a non-admin")
+
+    monkeypatch.setattr(main_module, "get_finance_integrity_audit", forbidden)
+    client = _client_for(StudioUser(
+        user_id="creator-id", email="creator@example.com", role="creator"
+    ))
+    try:
+        response = client.get(
+            "/api/admin/financial/integrity/22222222-2222-4222-8222-222222222222"
+        )
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_integrity_audit_admin_response_is_private_and_audited(monkeypatch):
+    import app.main as main_module
+
+    expected = {
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "status": "warning",
+        "complete": True,
+        "counts": {"critical": 0, "warning": 1},
+        "checked": {"ledger_entries": 0},
+        "limits": {},
+        "findings": [{"code": "opening_balance_unverified", "severity": "warning"}],
+        "read_only": True,
+        "snapshot_consistency": "single_statement",
+    }
+    audit_calls = []
+    monkeypatch.setattr(
+        main_module, "get_finance_integrity_audit", lambda *a, **k: expected
+    )
+    monkeypatch.setattr(
+        main_module, "record_admin_audit_event",
+        lambda *a, **k: audit_calls.append(k) or "audit-id",
+    )
+    actor_id = "22222222-2222-4222-8222-222222222222"
+    client = _client_for(StudioUser(
+        user_id=actor_id, email="admin@example.com", role="admin"
+    ))
+    try:
+        response = client.get(
+            f"/api/admin/financial/integrity/{actor_id}"
+        )
+        assert response.status_code == 200
+        assert response.json() == expected
+        assert response.headers["cache-control"] == "private, no-store"
+        assert len(audit_calls) == 1
+        assert audit_calls[0]["reason"] == "Viewed user finance integrity audit"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_integrity_audit_returns_502_when_snapshot_is_unavailable(monkeypatch):
+    import app.main as main_module
+
+    def unavailable(*args, **kwargs):
+        raise main_module.FinanceIntegrityAuditError("internal details")
+
+    monkeypatch.setattr(main_module, "get_finance_integrity_audit", unavailable)
+    client = _client_for(StudioUser(
+        user_id="22222222-2222-4222-8222-222222222222",
+        email="admin@example.com",
+        role="admin",
+    ))
+    try:
+        response = client.get(
+            "/api/admin/financial/integrity/33333333-3333-4333-8333-333333333333"
+        )
+        assert response.status_code == 502
+        assert "internal details" not in response.text
+    finally:
+        app.dependency_overrides.clear()

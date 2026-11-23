@@ -5158,6 +5158,7 @@ $plan_feature_allowlist_test$;
 \ir ../migrations/0085_generation_job_cancellation_requests.sql
 \ir ../migrations/0086_generation_worker_cancellation_handshake.sql
 \ir ../migrations/0087_generation_cancellation_backend_bridge.sql
+\ir ../migrations/0099_finance_integrity_audit_snapshot.sql
 
 do $generation_cancellation_rpc_security_test$
 declare
@@ -5461,3 +5462,51 @@ select 'generation worker cancellation handshake checks passed' as result;
 
 
 select 'generation worker cancellation handshake checks passed' as result;
+
+
+-- The finance integrity snapshot is service-role-only and exposes one bounded
+-- per-user point-in-time snapshot without any mutation capability.
+do $finance_integrity_snapshot_test$
+declare
+  v_snapshot jsonb;
+  v_counts jsonb;
+begin
+  if not has_function_privilege(
+       'service_role',
+       'public.get_finance_integrity_audit_snapshot(uuid)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.get_finance_integrity_audit_snapshot(uuid)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.get_finance_integrity_audit_snapshot(uuid)',
+       'EXECUTE'
+     ) then
+    raise exception 'Finance integrity snapshot RPC privileges are not service-role-only';
+  end if;
+
+  v_snapshot := public.get_finance_integrity_audit_snapshot(
+    '22222222-2222-4222-8222-222222222222'
+  );
+  v_counts := v_snapshot -> 'counts';
+
+  if v_snapshot ->> 'user_id' <> '22222222-2222-4222-8222-222222222222'
+     or v_snapshot ->> 'complete' <> 'true'
+     or jsonb_typeof(v_snapshot -> 'ledger') <> 'array'
+     or jsonb_typeof(v_snapshot -> 'holds') <> 'array'
+     or jsonb_typeof(v_snapshot -> 'lots') <> 'array'
+     or jsonb_typeof(v_snapshot -> 'allocations') <> 'array'
+     or jsonb_typeof(v_snapshot -> 'jobs') <> 'array'
+     or jsonb_typeof(v_snapshot -> 'provider_cost_events') <> 'array'
+     or (v_counts ->> 'jobs')::bigint < 1
+     or (v_snapshot -> 'limits' ->> 'ledger')::integer <> 10000 then
+    raise exception 'Finance integrity snapshot shape, completeness, or job inventory is invalid: %', v_snapshot;
+  end if;
+end;
+$finance_integrity_snapshot_test$;
+
+select 'finance integrity snapshot checks passed' as result;
