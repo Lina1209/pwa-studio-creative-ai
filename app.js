@@ -1409,7 +1409,10 @@ const movieHistoryStyle = document.createElement("style");
   }
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
-  $$("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
+  $("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
+  $("#supportLauncher")?.addEventListener("click", () => {
+    window.setTimeout(() => $("#supportUserPanel")?.scrollIntoView({behavior:"smooth",block:"start"}), 120);
+  });
   $(".profile").addEventListener("click", () => navigate("account"));
   $("#topAvatar")?.addEventListener("click", () => navigate("account"));
   $("#accountLogin").addEventListener("click", () => setAuthMode("login"));
