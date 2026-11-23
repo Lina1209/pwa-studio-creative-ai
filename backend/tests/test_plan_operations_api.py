@@ -126,10 +126,13 @@ def test_assignment_rejects_non_operator_source():
     assert response.status_code == 422
 
 
-def test_assignment_rejects_timezone_free_dates(monkeypatch):
+def test_assignment_rejects_timezone_free_dates_before_audit_or_mutation(monkeypatch):
     import app.main as main
 
-    monkeypatch.setattr(main, "create_pending_assignment", lambda *a, **k: (_ for _ in ()).throw(ValueError("timezone")))
+    audit_calls = []
+    mutations = []
+    monkeypatch.setattr(main, "record_admin_audit_event", lambda *a, **k: audit_calls.append(k) or "audit-id")
+    monkeypatch.setattr(main, "create_pending_assignment", lambda *a, **k: mutations.append(True))
     response = _client(StudioUser(user_id=ADMIN, email=None, role="admin")).post(
         "/api/admin/plans/assignments",
         headers={"Idempotency-Key": "test-assign-001"},
@@ -143,6 +146,8 @@ def test_assignment_rejects_timezone_free_dates(monkeypatch):
         },
     )
     assert response.status_code == 422
+    assert audit_calls == []
+    assert mutations == []
 
 
 def test_plan_approval_fails_closed_when_intent_audit_is_unavailable(monkeypatch):
