@@ -242,7 +242,7 @@ def admin_read_message_report(report_id: UUID,
 def admin_review_message_report(report_id: UUID,payload: ReportReviewUpdate,
     user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
     try:
-        if not update_report_status(settings,report_id,payload.status):
+        if not update_report_status(settings,report_id,UUID(user.user_id),payload.status):
             raise HTTPException(status_code=404,detail="Жалоба не найдена.")
         record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
             action="admin.direct_message.moderation.action",outcome="executed",

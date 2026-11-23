@@ -255,9 +255,9 @@ def apply_user_moderation(settings: Settings,target_id: UUID,actor_id: UUID,acti
     raise DirectMessagingUnavailable("Could not apply moderation action.")
 
 
-def update_report_status(settings: Settings,report_id: UUID,status: str):
+def update_report_status(settings: Settings,report_id: UUID,reviewer_id: UUID,status: str):
     rows=_request(settings,"POST","rpc/review_direct_message_report",payload={
-        "p_report_id":str(report_id),"p_status":status})
+        "p_report_id":str(report_id),"p_reviewer_user_id":str(reviewer_id),"p_status":status})
     return rows is True or rows == [True]
 
 
