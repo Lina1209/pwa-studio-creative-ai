@@ -8,15 +8,14 @@ insert into auth.users(id)
 values ('33333333-3333-4333-8333-333333333333')
 on conflict (id) do nothing;
 
-insert into public.approved_credit_pack_versions(
-  id, sku_code, sku_version, display_name, credits, price_minor,
-  currency, credit_validity_days, approved_by, approval_reason
-) values (
-  '44444444-4444-4444-8444-444444444444',
-  'mini_topup', 1, 'Mini Top-up', 850, 99000,
-  'KZT', 365, '11111111-1111-4111-8111-111111111111',
-  'Approved test credit pack version'
-);
+create temporary table payment_test_credit_pack_version(id uuid);
+insert into payment_test_credit_pack_version(id)
+select approved_credit_pack_version_id
+  from public.approve_credit_pack_version(
+    'mini_topup', 1, 'Mini Top-up', 850, 99000, 'KZT', 365,
+    '11111111-1111-4111-8111-111111111111',
+    'Approved test credit pack version'
+  );
 
 insert into public.plan_catalog_drafts(
   id, plan_code, plan_version, display_name, billing_period, period_days,
@@ -58,7 +57,7 @@ begin
     'examplepay',
     'purchase-credit-pack-001',
     'aaaaaaaa-1111-4111-8111-111111111111',
-    '44444444-4444-4444-8444-444444444444',
+    (select id from payment_test_credit_pack_version),
     '{"source":"integration_test"}'::jsonb
   );
 
