@@ -79,6 +79,8 @@ def audit_finance_integrity(
 
     findings: list[dict[str, Any]] = []
     ledger_by_user: dict[str, list[tuple[datetime, int, dict[str, Any]]]] = defaultdict(list)
+    seen_ledger_ids: set[int] = set()
+    seen_ledger_operations: set[tuple[str, str]] = set()
     for raw in ledger_entries:
         try:
             if not isinstance(raw, dict):
@@ -94,6 +96,20 @@ def audit_finance_integrity(
                 raise ValueError("invalid_entry_id")
             if any(not _integer(raw.get(field)) for field in fields):
                 raise ValueError("invalid_balance_integer")
+            operation_type, operation_key = raw.get("operation_type"), raw.get("operation_key")
+            if operation_type not in {"grant", "reserve", "capture", "release", "refund", "adjustment"}:
+                raise ValueError("invalid_operation_type")
+            if not isinstance(operation_key, str) or not operation_key:
+                raise ValueError("invalid_operation_key")
+            if raw["delta_available"] == 0 and raw["delta_reserved"] == 0:
+                raise ValueError("zero_ledger_delta")
+            if entry_id in seen_ledger_ids:
+                findings.append(_finding("duplicate_ledger_entry_id", "critical", user_id=user_id, entry_id=entry_id))
+            seen_ledger_ids.add(entry_id)
+            operation = (user_id, operation_key)
+            if operation in seen_ledger_operations:
+                findings.append(_finding("duplicate_ledger_operation_key", "critical", user_id=user_id, entry_id=entry_id))
+            seen_ledger_operations.add(operation)
             if raw["balance_available_after"] < 0 or raw["balance_reserved_after"] < 0:
                 findings.append(_finding("negative_ledger_balance", "critical", user_id=user_id, entry_id=entry_id))
             created = _timestamp(raw.get("created_at"))
