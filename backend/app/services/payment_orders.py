@@ -14,7 +14,7 @@ import httpx
 
 from app.core.config import Settings
 from app.services.payment_provider_contracts import (
-    PaymentProviderWebhookAdapter,
+    PaymentProviderAdapterRegistry,
     VerifiedProviderEvent,
 )
 
@@ -270,8 +270,8 @@ def fail_payment_fulfillment(
 
 
 def record_verified_provider_event(
-    settings: Settings, *, adapter: PaymentProviderWebhookAdapter,
-    raw_body: bytes, headers: Mapping[str, str],
+    settings: Settings, *, registry: PaymentProviderAdapterRegistry,
+    provider_code: str, raw_body: bytes, headers: Mapping[str, str],
 ) -> dict:
     """Verify a raw provider webhook through its adapter before persisting it.
 
@@ -288,9 +288,11 @@ def record_verified_provider_event(
     ):
         raise ValueError("Webhook headers are invalid.")
 
-    provider_code = getattr(adapter, "provider_code", None)
     if not isinstance(provider_code, str) or not _PROVIDER.fullmatch(provider_code):
-        raise ValueError("Payment provider adapter identity is invalid.")
+        raise ValueError("Payment provider code is invalid.")
+    adapter = registry.get(provider_code)
+    if adapter.provider_code != provider_code:
+        raise ValueError("Payment provider adapter identity mismatch.")
 
     # Signature verification, timestamp/replay-window checks and payload
     # normalization happen inside the provider-specific adapter. Any failure
