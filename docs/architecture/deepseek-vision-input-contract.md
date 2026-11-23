@@ -27,7 +27,7 @@ modality in the shared global/provider USD ledger before transmission, and
 settles from provider usage. Missing usage or ambiguous provider outcomes remain
 `unknown` and retain the full reservation.
 
-The endpoint is disabled unless `VISION_INPUT_ENABLED=true`. The health endpoint
+The endpoint is disabled unless both `VISION_INPUT_ENABLED=true` and `VISION_PRIVACY_REVIEW_APPROVED=true` are explicitly configured. The second setting is an independent legal/privacy release gate and defaults to false. The health endpoint
 reports `vision_analysis_enabled=true` only when the flag, DeepSeek Flash model,
 DeepSeek API key and server-side Supabase credentials are present. The frontend
 upload/preview and explicit consent panel are implemented; the panel remains
