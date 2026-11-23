@@ -76,9 +76,9 @@ This is a server-side admission primitive, not a live generation endpoint. Exist
 The disposable PostgreSQL migration integration suite now includes plan/assignment fixtures and checks atomic admission, daily/monthly reservation, over-quota rollback of job/outbox/credit hold, and quota lifecycle resolution on success. CI must complete against the latest branch SHA before this foundation is treated as verified.
 
 
-## Plan dimensions intentionally not yet enforced
+## Plan dimensions added to atomic admission (migration 0069)
 
-The plan draft schema also permits `max_parallel_jobs`, `daily_generation_jobs`, `monthly_generation_jobs`, `max_video_seconds`, and `max_resolution`. These are not yet part of the combined admission RPC. They must not be presented as enforced product limits until their semantics are added to the same transaction and covered by integration tests. In particular, maximum video duration and resolution require validated request fields and should be checked against the immutable approved plan snapshot before job creation.
+Migration 0069 adds `max_parallel_jobs`, `daily_generation_jobs`, `monthly_generation_jobs`, `max_video_seconds`, and `max_resolution` to the server-side admission path. Their behavior and test coverage are described below. Treat them as implemented in the database admission transaction, but do not assume generation is live: generation routes and worker/provider execution remain disabled unless separately configured and explicitly approved.
 
 
 ## Authenticated effective-entitlements API
@@ -86,8 +86,8 @@ The plan draft schema also permits `max_parallel_jobs`, `daily_generation_jobs`,
 `GET /api/me/entitlements` resolves the calling user's current plan using the verified Supabase Auth subject UUID. The client cannot provide a target user ID, plan ID, feature list, or quota limits.
 
 The resolver:
-- considers only assignments whose status is `active` and whose start/end timestamps contain the current UTC time;
-- never promotes `pending` or `scheduled` assignments;
+- considers only assignments whose latest immutable lifecycle event is `activated` and whose start/end timestamps contain the current UTC time;
+- never promotes `pending` or `scheduled` assignments; the assignment row itself remains immutable with its original `pending` status;
 - returns no capabilities when no active assignment exists;
 - denies capabilities when more than one active assignment is found;
 - reads the immutable approved plan snapshot and current reservation usage from the server-side database;
