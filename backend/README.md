@@ -90,3 +90,17 @@ Keep `GENERATION_JOBS_ENABLED`, `GENERATION_JOB_WORKER_READY`, and `GENERATION_W
 ## Vision privacy release gate
 
 Vision is off by default. The independent `VISION_PRIVACY_REVIEW_APPROVED` setting must remain `false` until the operator has verified the DeepSeek API-specific terms, processing/storage regions, retention and deletion commitments, published the approved PWA Studio privacy notice, implemented approved consent and withdrawal handling, and completed a legal review for every launch market (including Kazakhstan cross-border transfer and local-storage requirements where applicable). Setting `VISION_INPUT_ENABLED=true` alone is rejected by configuration validation. See `docs/privacy/PRIVACY_POLICY_DRAFT.md` and `docs/privacy/VISION_CONSENT_AND_DATA_FLOW.md`; both are internal drafts/specifications, not public legal notices.
+
+## Privacy governance API
+
+Authenticated endpoints:
+- `POST /api/privacy/consent` — append a versioned consent acceptance/withdrawal event. The client cannot choose policy versions; the server supplies the configured published versions.
+- `GET /api/privacy/consent` — returns the latest status per consent scope for the signed-in account.
+- `POST /api/privacy/requests` — idempotently submits an access, export, correction or deletion request.
+- `GET /api/privacy/requests` — lists only the signed-in account's request metadata.
+
+The privacy request endpoints are **intake and status only**. They do not yet generate exports, erase accounts/files, purge provider data, or fulfill a legal request. Do not tell users that a request is completed until a separately reviewed operator fulfillment workflow actually performs and verifies it.
+
+Every synchronous external AI request first writes a metadata-only `attempted` event to the append-only `ai_data_transfer_events` journal. The outcome is then recorded as `succeeded` or `unknown`; a journal outage before the provider call fails closed. The journal never stores prompt text, image bytes, data URLs, provider payloads, signed URLs or credentials. Vision attempts require the current accepted `vision_deepseek` consent event and a correlation ID.
+
+Consent and transfer events are append-only. Retention periods and deletion/anonymization procedures for these records are not yet configured; do not claim that the audit metadata is automatically purged. See `docs/privacy/PRIVACY_POLICY_DRAFT.md` and `docs/privacy/VISION_CONSENT_AND_DATA_FLOW.md`.
