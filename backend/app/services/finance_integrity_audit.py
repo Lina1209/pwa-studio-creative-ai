@@ -503,6 +503,11 @@ def audit_finance_integrity(
                 findings.append(_finding("unverified_payment_provider_event", "critical", payment_order_id=oid))
             if event.get("processing_status") != "processed" or not event.get("processed_at"):
                 findings.append(_finding("payment_provider_event_unprocessed", "warning", payment_order_id=oid))
+            order_status = order.get("status")
+            event_type = event.get("event_type")
+            if (event_type == "payment.succeeded" and order_status in {"failed", "cancelled"})
+                or (event_type in {"payment.failed", "payment.cancelled"} and order_status in {"succeeded", "partially_refunded", "refunded"}):
+                findings.append(_finding("payment_provider_event_status_conflict", "critical", payment_order_id=oid))
             provider_events_by_order[oid].append(event)
 
         assignment_by_order: dict[str, dict[str, Any]] = {}
@@ -571,8 +576,14 @@ def audit_finance_integrity(
             events = order_events_by_order.get(oid, [])
             if events:
                 try:
-                    latest = max(events, key=lambda e: (_timestamp(e["occurred_at"]), str(e["id"])))
-                    if latest.get("new_status") != order.get("status"):
+                    timeline = sorted(events, key=lambda e: (_timestamp(e["occurred_at"]), str(e["id"])))
+                    if timeline[0].get("previous_status") is not None or timeline[0].get("new_status") != "created":
+                        findings.append(_finding("payment_order_event_opening_mismatch", "critical", payment_order_id=oid))
+                    for previous, current in zip(timeline, timeline[1:]):
+                        if current.get("previous_status") != previous.get("new_status"):
+                            findings.append(_finding("payment_order_event_discontinuity", "critical", payment_order_id=oid))
+                            break
+                    if timeline[-1].get("new_status") != order.get("status"):
                         findings.append(_finding("payment_order_event_projection_mismatch", "critical", payment_order_id=oid))
                 except (KeyError, ValueError, TypeError):
                     findings.append(_finding("invalid_payment_order_event", "critical", payment_order_id=oid))
@@ -631,6 +642,8 @@ def audit_finance_integrity(
                 findings.append(_finding("invalid_plan_quota_units", "critical", reservation_id=rid))
                 continue
             events = quota_event_map.get(rid, [])
+            if any(e.get("user_id") != owner for e in events):
+                findings.append(_finding("plan_quota_event_owner_mismatch", "critical", reservation_id=rid))
             reserved_events = [e for e in events if e.get("event_type") == "reserved"]
             terminal_events = [e for e in events if e.get("event_type") in {"completed", "released"}]
             digest = md5(operation_key.encode("utf-8")).hexdigest()
@@ -662,9 +675,10 @@ def audit_finance_integrity(
                 findings.append(_finding("invalid_plan_quota_period", "critical", reservation_id=rid))
                 continue
             included = state in {"reserved", "completed"} and (feature not in {"max_concurrent_ai_requests", "max_parallel_jobs"} or state == "reserved")
+            usage_key = (aid, feature, period)
             if included:
-                usage[(owner, feature, period)] += reservation["reserved_units"]
-            if included and usage[(owner, feature, period)] > limit:
+                usage[usage_key] += reservation["reserved_units"]
+            if included and usage[usage_key] > limit:
                 findings.append(_finding("plan_quota_limit_exceeded", "critical", reservation_id=rid))
         for rid, events in quota_event_map.items():
             if rid not in reservations_by_id:
