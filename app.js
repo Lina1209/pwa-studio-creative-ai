@@ -272,7 +272,7 @@ const movieHistoryStyle = document.createElement("style");
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       adminUiAuthorized = data.role === "admin";
       panel.hidden = !adminUiAuthorized;
-      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); loadAdminAiProviders(); loadAdminAiCostBudget(); }
+      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); loadAdminAiProviders(); loadAdminAiCostBudget(); loadDirectModerationConsole(); }
       loadFinanceAccess();
     } catch {
       if (authSession?.user?.id === userId) {
