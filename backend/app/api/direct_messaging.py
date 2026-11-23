@@ -6,15 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
-from app.services.auth import StudioUser, get_current_user
+from app.services.auth import StudioUser, get_current_user, require_permission
 from app.services.direct_messaging import (
     DirectMessagingUnavailable, create_conversation, list_conversations,
     read_messages, send_message, mark_read,
     create_message_notification, list_user_notifications, mark_user_notification_read,
-    set_user_block, report_direct_message,
+    set_user_block, report_direct_message, list_admin_reports, list_admin_appeals,\n    list_moderation_events, apply_user_moderation, update_report_status,\n    create_moderation_appeal, list_my_moderation_appeals, review_moderation_appeal,
 )
 
-logger = logging.getLogger(__name__)
+from app.services.admin_audit_service import record_admin_audit_event, AdminAuditUnavailable\n\nlogger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/messages/direct", tags=["private-messaging"])
 settings = get_settings()
@@ -164,4 +164,140 @@ def submit_direct_message_report(payload: DirectMessageReportCreate,
         )
         return {"report_id": str(report_id)}
     except DirectMessagingUnavailable:
+        _unavailable()
+
+
+class ModerationActionCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    action: str = Field(pattern="^(warn|mute|ban|unmute|unban)$")
+    reason: str = Field(min_length=1,max_length=500)
+    duration_hours: int | None = Field(default=None,ge=1,le=8760)
+
+class ReportReviewUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    status: str = Field(pattern="^(reviewing|resolved|dismissed)$")
+
+class AppealCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    reason: str = Field(min_length=10,max_length=2000)
+
+class AppealReviewUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    status: str = Field(pattern="^(accepted|rejected)$")
+    decision_reason: str = Field(min_length=1,max_length=500)
+
+
+@router.get("/moderation/appeals")
+def get_my_moderation_appeals(user: StudioUser = Depends(get_current_user)):
+    try:
+        return {"appeals":list_my_moderation_appeals(settings,UUID(user.user_id))}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.post("/moderation/appeals",status_code=201)
+def submit_moderation_appeal(payload: AppealCreate,user: StudioUser = Depends(get_current_user)):
+    try:
+        appeal_id=create_moderation_appeal(settings,UUID(user.user_id),payload.reason)
+        return {"appeal_id":str(appeal_id),"status":"pending"}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.get("/admin/reports")
+def admin_list_message_reports(status: str | None = None,user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
+    if status not in (None,"open","reviewing","resolved","dismissed"):
+        raise HTTPException(status_code=422,detail="Некорректный фильтр жалоб.")
+    try:
+        rows=list_admin_reports(settings,status=status)
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+            action="admin.direct_message.report.view",outcome="allowed",
+            resource_type="direct_message_report",reason="Admin opened private message report queue")
+        return {"reports":rows}
+    except (DirectMessagingUnavailable,AdminAuditUnavailable):
+        _unavailable()
+
+
+@router.patch("/admin/reports/{report_id}")
+def admin_review_message_report(report_id: UUID,payload: ReportReviewUpdate,
+    user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
+    try:
+        if not update_report_status(settings,report_id,payload.status):
+            raise HTTPException(status_code=404,detail="Жалоба не найдена.")
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+            action="admin.direct_message.moderation.action",outcome="executed",
+            resource_type="direct_message_report",resource_id=report_id,
+            reason=f"Report status changed to {payload.status}")
+        return {"status":payload.status}
+    except (DirectMessagingUnavailable,AdminAuditUnavailable):
+        _unavailable()
+
+
+@router.post("/admin/users/{target_user_id}/actions",status_code=201)
+def admin_moderate_direct_user(target_user_id: UUID,payload: ModerationActionCreate,
+    user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
+    if target_user_id==UUID(user.user_id):
+        raise HTTPException(status_code=422,detail="Нельзя применять модерацию к собственному аккаунту.")
+    if payload.action in ("unmute","unban") and payload.duration_hours is not None:
+        raise HTTPException(status_code=422,detail="Для снятия ограничения срок не указывается.")
+    from datetime import datetime,timedelta,timezone
+    expires_at=datetime.now(timezone.utc)+timedelta(hours=payload.duration_hours) if payload.duration_hours else None
+    try:
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+            action="admin.direct_message.moderation.action",outcome="requested",
+            resource_type="user",resource_id=target_user_id,
+            reason=f"Requested {payload.action}: {payload.reason[:350]}")
+        event_id=apply_user_moderation(settings,target_user_id,UUID(user.user_id),
+            payload.action,payload.reason.strip(),expires_at)
+        try:
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+                action="admin.direct_message.moderation.action",outcome="executed",
+                resource_type="user",resource_id=target_user_id,
+                reason=f"Applied {payload.action}: {payload.reason[:350]}")
+        except AdminAuditUnavailable:
+            logger.error("Moderation action applied but completion audit failed.")
+        return {"event_id":str(event_id),"action":payload.action,
+                "expires_at":expires_at.isoformat() if expires_at else None}
+    except (DirectMessagingUnavailable,AdminAuditUnavailable):
+        _unavailable()
+
+
+@router.get("/admin/users/{target_user_id}/history")
+def admin_get_direct_user_moderation_history(target_user_id: UUID,
+    user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
+    try:
+        return {"events":list_moderation_events(settings,target_user_id)}
+    except DirectMessagingUnavailable:
+        _unavailable()
+
+
+@router.get("/admin/appeals")
+def admin_list_moderation_appeals(user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
+    try:
+        rows=list_admin_appeals(settings)
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+            action="admin.direct_message.appeal.review",outcome="allowed",
+            resource_type="direct_moderation_appeal",reason="Admin opened appeal queue")
+        return {"appeals":rows}
+    except (DirectMessagingUnavailable,AdminAuditUnavailable):
+        _unavailable()
+
+
+@router.patch("/admin/appeals/{appeal_id}")
+def admin_decide_moderation_appeal(appeal_id: UUID,payload: AppealReviewUpdate,
+    user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
+    try:
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+            action="admin.direct_message.appeal.review",outcome="requested",
+            resource_type="direct_moderation_appeal",resource_id=appeal_id,
+            reason=f"Appeal decision requested: {payload.status}")
+        if not review_moderation_appeal(settings,appeal_id,UUID(user.user_id),
+            payload.status,payload.decision_reason):
+            raise HTTPException(status_code=404,detail="Апелляция не найдена или уже рассмотрена.")
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+            action="admin.direct_message.appeal.review",outcome="executed",
+            resource_type="direct_moderation_appeal",resource_id=appeal_id,
+            reason=f"Appeal {payload.status}: {payload.decision_reason[:350]}")
+        return {"status":payload.status}
+    except (DirectMessagingUnavailable,AdminAuditUnavailable):
         _unavailable()

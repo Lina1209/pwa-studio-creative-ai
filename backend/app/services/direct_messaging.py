@@ -218,3 +218,68 @@ def report_direct_message(settings: Settings, reporter_id: UUID, target_id: UUID
         if isinstance(value, dict):
             return value.get("report_direct_message") or value.get("id")
     raise DirectMessagingUnavailable("Could not submit safety report.")
+
+
+def list_admin_reports(settings: Settings, status: str | None = None, limit: int = 100):
+    params={"select":"id,reporter_user_id,target_user_id,message_id,category,details,status,created_at,reviewed_at",
+            "order":"created_at.desc","limit":str(max(1,min(limit,200)))}
+    if status: params["status"]=f"eq.{status}"
+    rows=_request(settings,"GET","direct_message_reports",params=params)
+    if not isinstance(rows,list): raise DirectMessagingUnavailable("Invalid report queue.")
+    return rows
+
+
+def list_admin_appeals(settings: Settings, status: str = "pending", limit: int = 100):
+    rows=_request(settings,"GET","direct_moderation_appeals",params={
+        "select":"id,user_id,reason,status,created_at,reviewed_at,decision_reason",
+        "status":f"eq.{status}","order":"created_at.asc","limit":str(max(1,min(limit,200)))})
+    if not isinstance(rows,list): raise DirectMessagingUnavailable("Invalid appeal queue.")
+    return rows
+
+
+def list_moderation_events(settings: Settings, user_id: UUID, limit: int = 50):
+    rows=_request(settings,"GET","direct_moderation_events",params={
+        "select":"id,target_user_id,actor_user_id,action,reason,expires_at,created_at",
+        "target_user_id":f"eq.{user_id}","order":"created_at.desc","limit":str(max(1,min(limit,100)))})
+    if not isinstance(rows,list): raise DirectMessagingUnavailable("Invalid moderation history.")
+    return rows
+
+
+def apply_user_moderation(settings: Settings,target_id: UUID,actor_id: UUID,action: str,reason: str,expires_at=None):
+    rows=_request(settings,"POST","rpc/apply_direct_user_moderation",payload={
+        "p_target_user_id":str(target_id),"p_actor_user_id":str(actor_id),"p_action":action,
+        "p_reason":reason,"p_expires_at":expires_at.isoformat() if expires_at else None})
+    if isinstance(rows,str): return rows
+    if isinstance(rows,list) and rows:
+        return rows[0] if isinstance(rows[0],str) else rows[0].get("apply_direct_user_moderation")
+    raise DirectMessagingUnavailable("Could not apply moderation action.")
+
+
+def update_report_status(settings: Settings,report_id: UUID,status: str):
+    rows=_request(settings,"POST","rpc/review_direct_message_report",payload={
+        "p_report_id":str(report_id),"p_status":status})
+    return rows is True or rows == [True]
+
+
+def create_moderation_appeal(settings: Settings,user_id: UUID,reason: str):
+    rows=_request(settings,"POST","rpc/create_direct_moderation_appeal",payload={
+        "p_user_id":str(user_id),"p_reason":reason})
+    if isinstance(rows,str): return rows
+    if isinstance(rows,list) and rows:
+        return rows[0] if isinstance(rows[0],str) else rows[0].get("create_direct_moderation_appeal")
+    raise DirectMessagingUnavailable("Could not submit appeal.")
+
+
+def list_my_moderation_appeals(settings: Settings,user_id: UUID):
+    rows=_request(settings,"GET","direct_moderation_appeals",params={
+        "select":"id,reason,status,created_at,reviewed_at,decision_reason",
+        "user_id":f"eq.{user_id}","order":"created_at.desc","limit":"20"})
+    if not isinstance(rows,list): raise DirectMessagingUnavailable("Invalid appeal history.")
+    return rows
+
+
+def review_moderation_appeal(settings: Settings,appeal_id: UUID,reviewer_id: UUID,status: str,decision_reason: str):
+    rows=_request(settings,"POST","rpc/review_direct_moderation_appeal",payload={
+        "p_appeal_id":str(appeal_id),"p_reviewer_user_id":str(reviewer_id),
+        "p_status":status,"p_decision_reason":decision_reason})
+    return rows is True or rows == [True]

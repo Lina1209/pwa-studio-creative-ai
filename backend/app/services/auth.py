@@ -138,6 +138,7 @@ OWNER_CAPABILITIES = frozenset({
     "admin.support.read",
     "admin.support.reply",
     "admin.support.status.manage",
+    "admin.direct_messages.moderate",
 })
 
 
