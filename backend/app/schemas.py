@@ -90,3 +90,11 @@ class DirectMessageEditRequest(BaseModel):
 
 class UserBlockRequest(BaseModel):
     user_id: str = Field(min_length=36, max_length=36)
+
+
+class ProfileUpdateRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=3, max_length=24, pattern=r"^[A-Za-z0-9_.]+$")
+    display_name: str | None = Field(default=None, min_length=2, max_length=40)
+    bio: str | None = Field(default=None, max_length=500)
+    visibility: str | None = Field(default=None, pattern=r"^(public|private)$")
+    show_in_directory: bool | None = None
