@@ -195,9 +195,31 @@ declare
   v_claim3 record;
   v_complete boolean;
   v_status text;
+  v_new_order record;
 begin
+  select * into v_new_order from public.create_payment_order(
+    '11111111-1111-4111-8111-111111111111',
+    'examplepay',
+    'test-merchant-ref-lease-002',
+    'aaaaaaaa-0000-4000-8000-000000000002',
+    2500,
+    'KZT',
+    'Lease recovery test purchase',
+    '{"plan_code":"starter"}'::jsonb
+  );
+  perform * from public.record_verified_payment_provider_event(
+    'examplepay',
+    'provider-event-lease-success-002',
+    v_new_order.payment_order_id,
+    'payment.succeeded',
+    repeat('b', 64),
+    2500,
+    'KZT',
+    'provider-payment-lease-002'
+  );
+
   select * into v_claim1 from public.claim_payment_fulfillment(15);
-  if v_claim1.fulfillment_id is null or v_claim1.attempt_count <> 2 then
+  if v_claim1.fulfillment_id is null or v_claim1.attempt_count <> 1 then
     raise exception 'Expected the queued fulfillment to be atomically claimed';
   end if;
 
