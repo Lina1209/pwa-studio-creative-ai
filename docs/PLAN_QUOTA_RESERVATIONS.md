@@ -125,3 +125,20 @@ Example response shape (values are illustrative):
 
 
 The account page now calls this endpoint after authentication and on demand. It displays the active plan, feature access, daily/monthly usage and remaining quotas. If the account has no active assignment, the page explicitly reports that state; it does not assume or silently grant a Free plan. A quota dimension marked `enforced: false` is never presented as a live generation restriction.
+
+
+## General generation and video limits (migration 0069)
+
+The atomic plan-based job admission now reserves, in the same transaction as the job, outbox event, credit hold, and feature quota:
+
+- `daily_generation_jobs` and `monthly_generation_jobs`: one unit per admitted job; reserved work counts immediately, successful work becomes completed usage, and failed/cancelled/expired work is released.
+- `max_parallel_jobs`: one temporary unit per admitted job across image, video, audio, speech, and AI-processing jobs. It counts only `reserved` rows and is released for every terminal state, including success.
+- Existing feature-specific daily/monthly image, video, audio, and AI dimensions remain independent. Image quantity counts image units; video/audio/AI jobs count one generation/request per job.
+- `max_video_seconds`: when configured on the immutable approved plan, the video request snapshot must include a positive integer `duration_seconds` not exceeding the limit.
+- `max_resolution`: when configured, the request snapshot must include `resolution` from `480p`, `720p`, `1080p`, or `4k`; the server compares an explicit capability rank and rejects any resolution above the plan maximum. It never compares resolution strings lexicographically.
+
+Video duration and resolution are checked against the single time-valid assignment whose latest lifecycle event is `activated`, before a job or credit hold is created. Every quota reservation is then revalidated transactionally against that same effective active-plan rule; a failed dimension rolls back the whole operation.
+
+The entitlements resolver reads the latest immutable assignment event rather than the immutable assignment row's original `pending` status. It now reports general job usage, active parallel jobs, video duration, and resolution as enforced dimensions.
+
+The expected server-owned video request snapshot fields are `duration_seconds` and `resolution`. This is an admission contract; it does not itself enable generation routes, worker execution, provider calls, or billing.
