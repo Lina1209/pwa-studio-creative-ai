@@ -1904,7 +1904,12 @@ const movieHistoryStyle = document.createElement("style");
           const {data:blob,error:downloadError}=await supabaseClient.storage.from(cloudVisualBucket).download(ref.storagePath);
           if(downloadError||!blob){missingImages++;continue;}
           if(!isCurrentSync())return;
-          await saveVisualRefImage(ref.id,blob,userId);
+          try{
+            await saveVisualRefImage(ref.id,blob,userId);
+          }catch(cacheError){
+            missingImages++;
+            console.warn("Visual reference could not be cached locally:",cacheError);
+          }
         }
       }
       if(!isCurrentSync())return;
@@ -1917,6 +1922,12 @@ const movieHistoryStyle = document.createElement("style");
         }
       }
       if(!isCurrentSync())return;
+      // Never replace the device library with an incomplete cloud snapshot.
+      // Malformed rows may represent valid local work that must remain recoverable.
+      if(invalidRows){
+        $("#promptSaveFeedback").textContent="Синхронизация частичная: обнаружены повреждённые облачные записи — "+invalidRows+". Локальная библиотека сохранена без перезаписи; остальные изображения проверены.";
+        return;
+      }
       localStorage.setItem(visualLibraryKey(),JSON.stringify(activeItems));
       renderVisualLibrary();
       $("#promptSaveFeedback").textContent=invalidRows||missingImages
