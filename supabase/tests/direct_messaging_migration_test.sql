@@ -82,8 +82,8 @@ begin
 end;
 $direct_messaging_test$;
 
-\\i supabase/migrations/0094_direct_message_notifications.sql
-\\i supabase/migrations/0095_direct_messaging_safety_controls.sql
+\i supabase/migrations/0094_direct_message_notifications.sql
+\i supabase/migrations/0095_direct_messaging_safety_controls.sql
 
 do $direct_messaging_safety_test$
 declare
