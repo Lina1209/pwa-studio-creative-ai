@@ -303,3 +303,105 @@ begin
   return v_updated = 1;
 end;
 $$;
+
+
+-- Reclaim expired cancellation leases for provider-state reconciliation.
+-- Cancellation jobs retain their status and do not consume another generation attempt.
+create or replace function public.claim_next_generation_job_v2(
+  p_worker_id text,
+  p_lease_seconds integer default 180
+)
+returns table (
+  job_id uuid,
+  user_id uuid,
+  studio_scene_id uuid,
+  job_type text,
+  provider text,
+  model text,
+  request_snapshot jsonb,
+  attempt_count integer,
+  max_attempts integer,
+  lease_expires_at timestamptz,
+  job_status text
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if p_worker_id is null or length(btrim(p_worker_id)) not between 1 and 120 then
+    raise exception 'worker_id must contain 1 to 120 characters' using errcode = '22023';
+  end if;
+  if p_lease_seconds is null or p_lease_seconds not between 30 and 3600 then
+    raise exception 'lease_seconds must be between 30 and 3600' using errcode = '22023';
+  end if;
+
+  -- Expired ordinary generation attempts are terminal after their retry budget.
+  -- Cancellation reconciliation is not a new generation attempt and remains claimable.
+  update public.generation_jobs as expired
+     set status = 'failed',
+         last_error_code = 'worker_lease_expired',
+         lease_owner = null,
+         lease_expires_at = null,
+         heartbeat_at = null,
+         completed_at = now(),
+         updated_at = now()
+   where expired.status = 'running'
+     and expired.lease_expires_at <= now()
+     and expired.attempt_count >= expired.max_attempts;
+
+  return query
+  with candidate as (
+    select j.id
+      from public.generation_jobs as j
+     where (
+       j.status in ('queued', 'retry_wait') and j.available_at <= now()
+     ) or (
+       j.status in ('running', 'cancel_requested')
+       and j.lease_expires_at <= now()
+     )
+     order by j.available_at, j.created_at, j.id
+     for update skip locked
+     limit 1
+  ),
+  claimed as (
+    update public.generation_jobs as j
+       set status = case
+             when j.status = 'cancel_requested' then 'cancel_requested'
+             else 'running'
+           end,
+           attempt_count = case
+             when j.status = 'cancel_requested' then j.attempt_count
+             else j.attempt_count + 1
+           end,
+           lease_owner = btrim(p_worker_id),
+           lease_expires_at = now() + make_interval(secs => p_lease_seconds),
+           heartbeat_at = now(),
+           started_at = coalesce(j.started_at, now()),
+           completed_at = null,
+           last_error_code = case
+             when j.status = 'running' then 'worker_lease_expired'
+             when j.status = 'cancel_requested' then 'user_cancel_requested'
+             else j.last_error_code
+           end,
+           updated_at = now()
+      from candidate as c
+     where j.id = c.id
+     returning j.id, j.user_id, j.studio_scene_id, j.job_type,
+               j.provider, j.model, j.request_snapshot,
+               j.attempt_count, j.max_attempts, j.lease_expires_at, j.status
+  )
+  select c.id, c.user_id, c.studio_scene_id, c.job_type,
+         c.provider, c.model, c.request_snapshot,
+         c.attempt_count, c.max_attempts, c.lease_expires_at, c.status
+    from claimed as c;
+end;
+$$;
+
+revoke all on function public.claim_next_generation_job_v2(text, integer)
+  from public, anon, authenticated;
+grant execute on function public.claim_next_generation_job_v2(text, integer)
+  to service_role;
+
+comment on function public.claim_next_generation_job_v2(text, integer) is
+  'Claims normal generation jobs or reclaims expired cancellation leases without incrementing generation attempts; cancellation status is preserved for provider reconciliation.';
