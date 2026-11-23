@@ -5314,6 +5314,21 @@ declare
   v_count integer;
   v_attempt_count integer;
 begin
+  if has_function_privilege(
+       'anon',
+       'public.request_generation_job_cancellation_for_owner(uuid,uuid)', 'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.request_generation_job_cancellation_for_owner(uuid,uuid)', 'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.request_generation_job_cancellation_for_owner(uuid,uuid)', 'EXECUTE'
+     ) then
+    raise exception 'Backend cancellation bridge privileges are not restricted to service_role';
+  end if;
+
   -- A single credited job exercises active/cancel_requested heartbeat states,
   -- rejects a stale worker, refuses to settle an unknown provider operation,
   -- then settles exactly once after the provider result is journaled.
