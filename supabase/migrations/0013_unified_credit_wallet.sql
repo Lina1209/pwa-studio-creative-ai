@@ -315,7 +315,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as $
+as $function$
 declare
   v_wallet public.credit_wallets%rowtype;
   v_reservation public.credit_reservations%rowtype;
@@ -341,9 +341,14 @@ begin
   update public.credit_reservations
     set status = 'reconciliation_required', updated_at = now()
     where id = p_reservation_id;
+  insert into public.credit_ledger(user_id, event_type, reservation_id,
+    source, operation_code, pricing_version, metadata)
+  values (p_user_id, 'reconciliation_required', p_reservation_id,
+    'operation', v_reservation.operation_code, v_reservation.pricing_version,
+    jsonb_build_object('reason', 'provider_outcome_ambiguous'));
   return jsonb_build_object('status', 'reconciliation_required', 'idempotent_replay', false);
 end;
-$;
+$function$;
 
 revoke all on function public.mark_credit_reservation_reconciliation_required(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.grant_user_credits(uuid, bigint, text, text) from public, anon, authenticated;
