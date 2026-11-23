@@ -391,7 +391,8 @@ const movieHistoryStyle = document.createElement("style");
         } else {
           line.textContent = entitlementDimensionLabels[dimension] + ": " +
             quota.used + " / " + quota.limit +
-            (quota.remaining !== null ? " · осталось " + quota.remaining : "");
+            (quota.remaining !== null ? " · осталось " + quota.remaining : "") +
+            (quota.reset_at ? " · сброс " + new Date(quota.reset_at).toLocaleDateString() : "");
         }
         card.append(line);
       }
