@@ -1753,6 +1753,22 @@ def analyze_vision_input(
             image = validate_vision_data_url(payload.image_data_url)
         except VisionInputError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # Recheck immediately before the Vision service can reserve cost or contact
+        # DeepSeek. A withdrawal after the initial route check blocks this attempt.
+        try:
+            latest_consent = get_consent_status(settings, user_id=UUID(user.user_id))
+        except PrivacyGovernanceUnavailable as exc:
+            raise HTTPException(status_code=503, detail="Повторная проверка согласия временно недоступна.") from exc
+        latest_vision = next(
+            (item for item in latest_consent if item["consent_scope"] == "vision_deepseek"),
+            None,
+        )
+        if (
+            not latest_vision
+            or latest_vision["action"] != "accepted"
+            or latest_vision["event_id"] != current_vision_consent["event_id"]
+        ):
+            raise HTTPException(status_code=403, detail="Согласие на передачу изображения отозвано или изменено.")
         return ask_ai_vision(
             settings,
             system_prompt=system_prompt,
