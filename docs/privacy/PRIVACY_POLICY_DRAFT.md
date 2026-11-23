@@ -126,3 +126,8 @@ The integration branch contains authenticated privacy-consent and privacy-reques
 
 External AI transfer records contain only account UUID, provider/model identifiers, operation, outcome, consent-event reference, correlation ID and timestamp. They intentionally exclude prompts, images, base64 and provider payloads. These records are append-only and currently have no configured automatic retention/purge schedule. A retention period and legally reviewed anonymization/purge process must be set before publication.
 
+
+
+## Current user-facing privacy controls (integration branch)
+
+Account Settings includes controls to view the latest consent state, withdraw Vision consent, and submit authenticated access, export or deletion requests. The UI explicitly tells users that a submitted request is not proof of completed export or deletion. The backend currently stores the request and exposes its status; a verified operator workflow to fulfill requests, produce downloadable exports, erase application data, handle backups/provider-held data and notify users is still required.
