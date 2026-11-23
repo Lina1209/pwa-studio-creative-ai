@@ -88,6 +88,7 @@ from app.services.generation_jobs import (
     store_pricing_quote,
 )
 
+from app.services.pricing_drafts import PricingDraftUnavailable, create_draft, list_drafts
 from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
 
 settings = get_settings()
@@ -1575,3 +1576,42 @@ def admin_support_update_status(ticket_id: UUID, payload: SupportStatusUpdate, u
     except SupportUnavailable: _support_error()
     except HTTPException: raise
     except Exception: _support_error()
+
+
+
+class PricingCatalogDraftCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    version: str = Field(min_length=1, max_length=80, pattern="^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    rules: list[dict] = Field(max_length=500)
+
+@app.get(f"{settings.api_prefix}/admin/pricing/drafts")
+def admin_list_pricing_drafts(user: StudioUser = Depends(require_admin)):
+    try:
+        rows=list_drafts(settings)
+        _audit_admin_read(user,resource_type="pricing_catalog_draft",reason="Admin viewed tariff drafts")
+        return {"drafts":rows,"live_catalog_version":_safe_live_pricing_version()}
+    except PricingDraftUnavailable:
+        raise HTTPException(status_code=503,detail="Хранилище черновиков тарифов временно недоступно.")
+
+@app.post(f"{settings.api_prefix}/admin/pricing/drafts",status_code=201)
+def admin_create_pricing_draft(payload: PricingCatalogDraftCreate,user: StudioUser = Depends(require_admin)):
+    catalog_payload={"version":payload.version,"rules":payload.rules}
+    try:
+        validated=load_pricing_catalog(json.dumps(catalog_payload,ensure_ascii=False,allow_nan=False))
+        if not validated.rules:
+            raise HTTPException(status_code=422,detail="Нельзя сохранить пустой тарифный каталог.")
+        draft=create_draft(settings,version=validated.version,catalog=catalog_payload,actor_id=UUID(user.user_id))
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.access",outcome="allowed",resource_type="pricing_catalog_draft",resource_id=UUID(draft["id"]),reason=f"Created inactive tariff draft {validated.version}")
+        return {"draft":draft,"live_pricing_changed":False}
+    except PricingError as exc:
+        raise HTTPException(status_code=422,detail=str(exc))
+    except PricingDraftUnavailable:
+        raise HTTPException(status_code=503,detail="Хранилище черновиков тарифов временно недоступно.")
+
+def _safe_live_pricing_version():
+    try:
+        catalog=load_pricing_catalog(settings.pricing_catalog_json)
+        return catalog.version if catalog.rules else None
+    except PricingError:
+        return None
+
