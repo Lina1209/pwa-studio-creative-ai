@@ -4286,9 +4286,16 @@ begin
   select available_credits into v_before_available
     from public.credit_wallets
    where user_id = '22222222-2222-4222-8222-222222222222';
-  update public.user_plan_assignments
-     set ends_at = now() - interval '1 second'
-   where id = '14141414-1414-4141-8141-141414141414';
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values (
+    '14141414-1414-4141-8141-141414141414',
+    '22222222-2222-4222-8222-222222222222',
+    'expired',
+    '11111111-1111-4111-8111-111111111111',
+    'expired:quota-replay-test',
+    'Test plan expiry before idempotent replay'
+  );
 
   select * into v_created
     from public.create_plan_credited_generation_job_with_outbox(
@@ -4327,9 +4334,29 @@ begin
           where aggregate_id = v_job_id and event_type = 'generation_job.created') <> 1 then
     raise exception 'Expired-plan replay changed credits or duplicated job/outbox records';
   end if;
-  update public.user_plan_assignments
-     set ends_at = now() + interval '30 days'
-   where id = '14141414-1414-4141-8141-141414141414';
+  -- A new immutable assignment restores active entitlement for later test cases.
+  insert into public.user_plan_assignments(
+    id, user_id, approved_plan_version_id, assignment_source,
+    source_reference, idempotency_key, status, starts_at, ends_at, created_by
+  ) values (
+    '16161616-1616-4161-8161-161616161616',
+    '22222222-2222-4222-8222-222222222222',
+    '13131313-1313-4131-8131-131313131313',
+    'operator_grant', 'quota-replay-renewal', 'quota-replay-renewal-001',
+    'active', now() - interval '1 minute', now() + interval '30 days',
+    '11111111-1111-4111-8111-111111111111'
+  );
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values
+    ('16161616-1616-4161-8161-161616161616',
+     '22222222-2222-4222-8222-222222222222',
+     'created','11111111-1111-4111-8111-111111111111',
+     'created:quota-replay-renewal-001','Test-only renewal assignment'),
+    ('16161616-1616-4161-8161-161616161616',
+     '22222222-2222-4222-8222-222222222222',
+     'activated','11111111-1111-4111-8111-111111111111',
+     'activated:quota-replay-renewal-001','Restore test entitlement after expiry replay');
 end;
 $plan_quota_atomic_admission_test$;
 
