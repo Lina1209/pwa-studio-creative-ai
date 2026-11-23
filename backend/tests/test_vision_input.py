@@ -89,7 +89,7 @@ def test_vision_feature_flag_is_off_by_default():
     assert Settings().vision_input_enabled is False
 
 
-def test_vision_feature_flag_requires_deepseek_flash():
+def test_vision_feature_flag_requires_privacy_approval_and_deepseek_flash():
     with pytest.raises(ValidationError):
         Settings(vision_input_enabled=True, ai_model="deepseek-flash")
     with pytest.raises(ValidationError):
