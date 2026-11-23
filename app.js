@@ -1453,7 +1453,7 @@ const movieHistoryStyle = document.createElement("style");
                 story: String(project.story || "").slice(0, 6000),
                 storyboard: String(project.storyboard || "").slice(0, 6000),
                 characters: String(project.characters || "").slice(0, 3000),
-                visual_continuity: (Array.isArray(project.visualContinuity)?project.visualContinuity:[]).slice(0,12).map(ref=>({type:ref.type==="scene"?"scene":"character",name:String(ref.name||"").slice(0,80),description:String(ref.description||"").slice(0,3000)})),
+                visual_continuity: (Array.isArray(project.visualContinuity)?project.visualContinuity:[]).slice(0,12).map(ref=>({type:ref.type==="scene"?"scene":"character",name:String(ref.name||"").slice(0,80),description:String(ref.description||"").slice(0,3000),...(ref.passport?{passport:{face:String(ref.passport.face||"").slice(0,600),profile:String(ref.passport.profile||"").slice(0,600),fullBody:String(ref.passport.fullBody||"").slice(0,600),wardrobe:String(ref.passport.wardrobe||"").slice(0,800),palette:String(ref.passport.palette||"").slice(0,300),expressions:String(ref.passport.expressions||"").slice(0,500)}}:{})})),
                 voices: String(project.voices || "").slice(0, 2000),
                 edit: String(project.edit || "").slice(0, 2000)
               };
@@ -1817,6 +1817,11 @@ const movieHistoryStyle = document.createElement("style");
       const card=document.createElement("article");card.className="prompt-visual-card";
       const title=document.createElement("b");title.textContent=(item.type==="character"?"Персонаж · ":"Сцена · ")+item.name;
       const description=document.createElement("p");description.textContent=item.text;
+      if(item.type==="character"&&item.passport){
+        const passport=document.createElement("p");passport.className="helper-text";
+        passport.textContent=["Лицо: "+(item.passport.face||"—"),"Профиль: "+(item.passport.profile||"—"),"Полный рост: "+(item.passport.fullBody||"—"),"Одежда: "+(item.passport.wardrobe||"—"),"Палитра: "+(item.passport.palette||"—"),"Эмоции: "+(item.passport.expressions||"—")].join(" · ");
+        card.append(title,description,passport);
+      }else{card.append(title,description);}
       const actions=document.createElement("div");actions.className="prompt-library-actions";
       const insert=document.createElement("button");insert.type="button";insert.className="secondary-button";insert.textContent="Вставить в конструктор";insert.addEventListener("click",()=>{
         $("#promptBlockType").value=item.type;$("#promptBlockText").value=item.text;$("#promptBlockText").focus();
@@ -1833,7 +1838,7 @@ const movieHistoryStyle = document.createElement("style");
         if(existing>=0){refs.splice(existing,1);}
         else{
           if(refs.length>=12){$("#promptSaveFeedback").textContent="В одном фильме можно закрепить до 12 персонажей и локаций.";return;}
-          refs.push({id:item.id,type:item.type,name:item.name.slice(0,80),description:item.text.slice(0,3000)});
+          refs.push({id:item.id,type:item.type,name:item.name.slice(0,80),description:item.text.slice(0,3000),...(item.passport?{passport:item.passport}:{})});
         }
         project.visualContinuity=refs;project.updatedAt=new Date().toISOString();
         if(movieWrite(projects)){renderVisualLibrary();$("#promptSaveFeedback").textContent=existing>=0?"Материал откреплён от текущего фильма.":"Материал закреплён: AI будет учитывать его при создании новых промптов.";}
@@ -1841,7 +1846,7 @@ const movieHistoryStyle = document.createElement("style");
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
         const next=readVisualLibrary();next.splice(index,1);localStorage.setItem(visualLibraryKey(),JSON.stringify(next));renderVisualLibrary();
       });
-      actions.append(insert,pin,remove);card.append(title,description,actions);list.append(card);
+      actions.append(insert,pin,remove);card.append(actions);list.append(card);
     });
   };
   $("#saveVisualAsset").addEventListener("click",()=>{
@@ -1849,10 +1854,17 @@ const movieHistoryStyle = document.createElement("style");
     if(!["character","scene"].includes(type)||!name||!value){$("#promptSaveFeedback").textContent="Укажите тип, название и описание материала.";return;}
     const items=readVisualLibrary();
     if(items.length>=100){$("#promptSaveFeedback").textContent="Библиотека вмещает до 100 материалов. Удалите ненужные записи.";return;}
-    items.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),type,name:name.slice(0,80),text:value.slice(0,5000),createdAt:new Date().toISOString()});
+    const passport=type==="character"?{
+      face:$("#passportFace").value.trim().slice(0,600),profile:$("#passportProfile").value.trim().slice(0,600),
+      fullBody:$("#passportFullBody").value.trim().slice(0,600),wardrobe:$("#passportWardrobe").value.trim().slice(0,800),
+      palette:$("#passportPalette").value.trim().slice(0,300),expressions:$("#passportExpressions").value.trim().slice(0,500)
+    }:null;
+    items.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),createdAt:new Date().toISOString()});
     try{localStorage.setItem(visualLibraryKey(),JSON.stringify(items));}
     catch{$("#promptSaveFeedback").textContent="Не удалось сохранить материал: проверьте свободное место браузера.";return;}
-    $("#visualAssetName").value="";$("#visualAssetDescription").value="";renderVisualLibrary();
+    $("#visualAssetName").value="";$("#visualAssetDescription").value="";
+    ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
+    renderVisualLibrary();
     $("#promptSaveFeedback").textContent="«"+name+"» сохранён в библиотеке и доступен в других фильмах на этом устройстве.";
   });
   renderVisualLibrary();
@@ -2069,7 +2081,7 @@ const movieHistoryStyle = document.createElement("style");
         story: String(activeProject.story || "").slice(0, 6000),
         storyboard: String(activeProject.storyboard || "").slice(0, 6000),
         characters: String(activeProject.characters || "").slice(0, 3000),
-        visual_continuity: (Array.isArray(activeProject.visualContinuity)?activeProject.visualContinuity:[]).slice(0,12).map(ref=>({type:ref.type==="scene"?"scene":"character",name:String(ref.name||"").slice(0,80),description:String(ref.description||"").slice(0,3000)})),
+        visual_continuity: (Array.isArray(activeProject.visualContinuity)?activeProject.visualContinuity:[]).slice(0,12).map(ref=>({type:ref.type==="scene"?"scene":"character",name:String(ref.name||"").slice(0,80),description:String(ref.description||"").slice(0,3000),...(ref.passport?{passport:{face:String(ref.passport.face||"").slice(0,600),profile:String(ref.passport.profile||"").slice(0,600),fullBody:String(ref.passport.fullBody||"").slice(0,600),wardrobe:String(ref.passport.wardrobe||"").slice(0,800),palette:String(ref.passport.palette||"").slice(0,300),expressions:String(ref.passport.expressions||"").slice(0,500)}}:{})})),
         voices: String(activeProject.voices || "").slice(0, 2000),
         edit: String(activeProject.edit || "").slice(0, 2000)
       } : null;
