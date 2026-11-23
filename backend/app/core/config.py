@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     # Server-only key; never expose to frontend or API responses.
     supabase_service_role_key: str | None = None
+    # Prefer immutable Supabase auth user UUID for production admin assignment.
+    owner_user_id: str | None = None
+    # Transitional fallback for deployments that have not configured owner_user_id.
     owner_email: str | None = None
 
     model_config = SettingsConfigDict(
