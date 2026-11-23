@@ -17,7 +17,7 @@ Official references:
 
 - Authenticated `POST /api/vision/analyze`; verified account required.
 - Request schema requires `consent_to_deepseek: true`; the responsive frontend shows a preview and explicit consent checkbox before sending.
-- Feature flag `VISION_INPUT_ENABLED` defaults to `false`. The route returns 503 while disabled.
+- Feature flag `VISION_INPUT_ENABLED` defaults to `false`; independent release gate `VISION_PRIVACY_REVIEW_APPROVED` also defaults to `false`. The route returns 503 unless both are true.
 - Health reports `vision_analysis_enabled=true` only when the flag, DeepSeek Flash model, DeepSeek API key and server-side Supabase credentials are present. The frontend hides the Vision panel unless this health capability is true.
 - Only bounded base64 data URLs for JPEG, PNG, WebP and still GIF are accepted. Remote URLs, SVG, MIME/signature mismatches, malformed base64, animation and oversized images are rejected.
 - Images are decoded and re-encoded in memory to remove EXIF/GPS and ancillary metadata. No source or normalized image is stored in PWA Studio, localStorage, IndexedDB, chat history or object storage.
