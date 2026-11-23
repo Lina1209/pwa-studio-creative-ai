@@ -332,3 +332,29 @@ def test_fulfill_payment_order_rejects_malformed_rpc_response(monkeypatch):
         service.fulfill_payment_order(
             SETTINGS, fulfillment_id=fulfillment, lease_token=lease,
         )
+
+
+
+def test_central_payment_provider_bootstrap_is_disabled_by_default():
+    from app.services.payment_provider_contracts import build_payment_provider_registry
+
+    registry = build_payment_provider_registry(Settings(payment_provider_runtime_enabled=False), adapters=[FakeVerifiedAdapter()])
+    assert registry.provider_codes == ()
+    with pytest.raises(PaymentProviderNotConfigured):
+        registry.get("examplepay")
+
+
+def test_central_payment_provider_bootstrap_rejects_enabled_runtime_without_adapter():
+    from app.services.payment_provider_contracts import build_payment_provider_registry
+
+    with pytest.raises(PaymentProviderNotConfigured, match="without a concrete server adapter"):
+        build_payment_provider_registry(Settings(payment_provider_runtime_enabled=True))
+
+
+def test_central_payment_provider_bootstrap_validates_server_adapter():
+    from app.services.payment_provider_contracts import build_payment_provider_registry
+
+    registry = build_payment_provider_registry(
+        Settings(payment_provider_runtime_enabled=True), adapters=[FakeVerifiedAdapter()]
+    )
+    assert registry.provider_codes == ("examplepay",)
