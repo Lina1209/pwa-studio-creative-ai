@@ -1483,30 +1483,133 @@ const movieHistoryStyle = document.createElement("style");
     }
   });
 
+  let editingPromptRef = null;
+  const promptModeLabels = { video:"Видео", image:"Изображения", music:"Музыка", sound:"Звуковые эффекты", script:"Сценарий", character:"Персонажи", voice:"Голос", storyboard:"Раскадровка" };
+  const resetPromptEditing = () => {
+    editingPromptRef = null;
+    $("#promptOutput").contentEditable = "false";
+    $("#savePromptToMovie").textContent = "＋ Сохранить в выбранный фильм";
+    $("#cancelPromptEdit").hidden = true;
+  };
+  const renderPromptLibrary = () => {
+    const list = $("#promptLibraryList");
+    if (!list) return;
+    const projects = movieRead();
+    const entries = projects.flatMap(project => (Array.isArray(project.prompts) ? project.prompts : []).map((prompt, index) => ({
+      projectId: project.id, projectName: project.name || "Без названия", prompt, index
+    }))).filter(entry => entry.prompt && typeof entry.prompt.prompt === "string");
+    const query = ($("#promptLibrarySearch")?.value || "").trim().toLocaleLowerCase();
+    const category = $("#promptLibraryCategory")?.value || "";
+    const filtered = entries.filter(entry => {
+      const p = entry.prompt;
+      const searchable = [entry.projectName, p.idea, p.prompt, p.purpose, p.language].join(" ").toLocaleLowerCase();
+      return (!query || searchable.includes(query)) && (!category || p.purpose === category);
+    }).sort((a,b) => Date.parse(b.prompt.createdAt || 0) - Date.parse(a.prompt.createdAt || 0));
+    $("#promptLibraryCount").textContent = String(filtered.length) + " / " + String(entries.length);
+    list.replaceChildren();
+    if (!filtered.length) {
+      const empty = document.createElement("p");
+      empty.className = "helper-text";
+      empty.textContent = entries.length ? "По вашему запросу ничего не найдено." : "Пока нет сохранённых промптов. Создайте промпт и сохраните его в выбранный фильм.";
+      list.appendChild(empty);
+      return;
+    }
+    filtered.forEach(entry => {
+      const card = document.createElement("article");
+      card.className = "prompt-library-card";
+      const heading = document.createElement("div"); heading.className = "result-head";
+      const title = document.createElement("b"); title.textContent = (promptModeLabels[entry.prompt.purpose] || "Промпт") + " · " + entry.projectName;
+      const badge = document.createElement("span"); badge.className = "draft-badge"; badge.textContent = entry.prompt.language || "—";
+      heading.append(title,badge);
+      const idea = document.createElement("p"); idea.className = "helper-text"; idea.textContent = String(entry.prompt.idea || "Без исходного описания").slice(0,240);
+      const preview = document.createElement("p"); preview.className = "prompt-library-preview"; preview.textContent = String(entry.prompt.prompt).slice(0,420) + (entry.prompt.prompt.length > 420 ? "…" : "");
+      const actions = document.createElement("div"); actions.className = "prompt-library-actions";
+      const makeButton = (label, handler, danger = false) => {
+        const button = document.createElement("button"); button.type = "button"; button.className = danger ? "secondary-button prompt-library-danger" : "secondary-button"; button.textContent = label; button.addEventListener("click", handler); return button;
+      };
+      actions.append(
+        makeButton("Использовать", () => {
+          resetPromptEditing();
+          $("#promptIdea").value = entry.prompt.idea || "";
+          $("#promptType").value = promptModeLabels[entry.prompt.purpose] ? entry.prompt.purpose : "video";
+          $("#promptLanguage").value = entry.prompt.language || "Русский";
+          $("#promptOutput").textContent = entry.prompt.prompt;
+          lastGeneratedPrompt = { ...entry.prompt };
+          $("#promptSaveFeedback").textContent = "Промпт загружен. Можно скопировать его или сохранить как новую версию в выбранный фильм.";
+          $("#promptLibraryFeedback").textContent = "Промпт загружен в редактор.";
+          $("#view-prompts").scrollIntoView({behavior:"smooth",block:"start"});
+        }),
+        makeButton("Редактировать", () => {
+          editingPromptRef = { projectId: entry.projectId, index: entry.index };
+          lastGeneratedPrompt = { ...entry.prompt };
+          $("#promptIdea").value = entry.prompt.idea || "";
+          $("#promptType").value = promptModeLabels[entry.prompt.purpose] ? entry.prompt.purpose : "video";
+          $("#promptLanguage").value = entry.prompt.language || "Русский";
+          $("#promptOutput").textContent = entry.prompt.prompt;
+          $("#promptOutput").contentEditable = "true";
+          $("#savePromptToMovie").textContent = "✓ Сохранить изменения";
+          $("#cancelPromptEdit").hidden = false;
+          $("#promptSaveFeedback").textContent = "Режим редактирования: измените текст промпта выше и сохраните изменения.";
+          $("#promptLibraryFeedback").textContent = "Открыт редактор выбранного промпта.";
+          $("#view-prompts").scrollIntoView({behavior:"smooth",block:"start"});
+          $("#promptOutput").focus();
+        }),
+        makeButton("Удалить", () => {
+          if (!window.confirm("Удалить этот промпт из фильма «" + entry.projectName + "»?")) return;
+          const all = movieRead(); const projectIndex = all.findIndex(p => p.id === entry.projectId);
+          if (projectIndex < 0) return;
+          const project = { ...all[projectIndex] }; const saved = Array.isArray(project.prompts) ? [...project.prompts] : [];
+          saved.splice(entry.index,1); project.prompts = saved; project.updatedAt = new Date().toISOString(); all[projectIndex] = project;
+          if (!movieWrite(all)) { $("#promptLibraryFeedback").textContent = "Не удалось удалить промпт."; return; }
+          renderPromptLibrary(); renderMovieProjects();
+          $("#promptLibraryFeedback").textContent = "Промпт удалён из проекта.";
+        }, true)
+      );
+      card.append(heading,idea,preview,actions); list.appendChild(card);
+    });
+  };
+  $("#promptLibrarySearch").addEventListener("input", renderPromptLibrary);
+  $("#promptLibraryCategory").addEventListener("change", renderPromptLibrary);
+  $("#cancelPromptEdit").addEventListener("click", () => { resetPromptEditing(); $("#promptLibraryFeedback").textContent = "Редактирование отменено."; });
   $("#savePromptToMovie").addEventListener("click", () => {
     const feedback = $("#promptSaveFeedback");
     if (!lastGeneratedPrompt?.prompt) { feedback.textContent = "Сначала сформируйте промпт."; return; }
     if (!authSession?.user) { feedback.textContent = "Войдите в аккаунт, чтобы сохранить промпт в проект."; return; }
-    if (!activeMovieId) { feedback.textContent = "Сначала откройте нужный фильм в Миникиностудии."; return; }
     const projects = movieRead();
-    const index = projects.findIndex(project => project.id === activeMovieId);
-    if (index < 0) { feedback.textContent = "Выбранный фильм не найден. Откройте его заново."; return; }
+    const targetProjectId = editingPromptRef?.projectId || activeMovieId;
+    if (!targetProjectId) { feedback.textContent = "Сначала откройте нужный фильм в Миникиностудии."; return; }
+    const index = projects.findIndex(project => project.id === targetProjectId);
+    if (index < 0) { feedback.textContent = "Фильм не найден. Откройте проект заново."; return; }
     const project = { ...projects[index] };
     const saved = Array.isArray(project.prompts) ? [...project.prompts] : [];
-    saved.push({
+    const item = {
       ...lastGeneratedPrompt,
-      prompt: String(lastGeneratedPrompt.prompt).slice(0, 12000),
-      idea: String(lastGeneratedPrompt.idea || "").slice(0, 2000)
-    });
+      prompt: String($("#promptOutput").textContent || lastGeneratedPrompt.prompt).slice(0,12000),
+      idea: String($("#promptIdea").value || lastGeneratedPrompt.idea || "").slice(0,2000),
+      purpose: $("#promptType").value,
+      language: $("#promptLanguage").value,
+      updatedAt: new Date().toISOString()
+    };
+    if (editingPromptRef) {
+      if (editingPromptRef.index < 0 || editingPromptRef.index >= saved.length) { feedback.textContent = "Промпт больше не найден в проекте."; return; }
+      saved[editingPromptRef.index] = { ...saved[editingPromptRef.index], ...item, createdAt: saved[editingPromptRef.index].createdAt || item.createdAt };
+    } else {
+      saved.push({ ...item, createdAt: item.createdAt || new Date().toISOString() });
+    }
     project.prompts = saved.slice(-100);
     project.updatedAt = new Date().toISOString();
     projects[index] = project;
     if (!movieWrite(projects)) { feedback.textContent = "Не удалось сохранить промпт. Проверьте свободное место."; return; }
-    renderMovieProjects();
-    feedback.textContent = "✓ Промпт сохранён в фильме «" + String(project.name || "Без названия").slice(0, 80) + "».";
+    const wasEditing = Boolean(editingPromptRef);
+    resetPromptEditing();
+    renderPromptLibrary(); renderMovieProjects();
+    feedback.textContent = wasEditing ? "✓ Изменения сохранены в фильме «" + String(project.name || "Без названия").slice(0,80) + "»." : "✓ Промпт сохранён в фильме «" + String(project.name || "Без названия").slice(0,80) + "».";
   });
+  renderPromptLibrary();
 
   $("#copyPrompt").addEventListener("click", async () => {
+    if (editingPromptRef) $("#promptLibraryFeedback").textContent = "Вы можете сначала сохранить изменения или отменить редактирование.";
+
     const text = $("#promptOutput").textContent;
     try {
       await navigator.clipboard.writeText(text);
