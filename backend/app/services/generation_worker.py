@@ -41,6 +41,7 @@ class ClaimedImageJob:
     request_snapshot: dict
     attempt_count: int
     max_attempts: int
+    job_status: str = "running"
 
 
 @dataclass(frozen=True)
@@ -199,12 +200,16 @@ class GenerationWorker:
         return await operation
 
     async def process(self, job: ClaimedImageJob) -> WorkerResult:
+        if job.job_status not in {"running", "cancel_requested"}:
+            return WorkerResult("lease_lost", "unsupported_job_status")
         if job.job_type != "image_generation":
             return await self._terminal_failure(job, "unsupported_job_type")
         if job.attempt_count < 1 or job.max_attempts < job.attempt_count:
             return await self._terminal_failure(job, "invalid_attempt_metadata")
 
         cancel_requested = asyncio.Event()
+        if job.job_status == "cancel_requested":
+            cancel_requested.set()
         provider_cost_reconciled = False
         try:
             request = ImageGenerationRequest(**job.request_snapshot)
@@ -220,9 +225,16 @@ class GenerationWorker:
                 self._maintain_lease(job.job_id, lost, cancel_requested)
             )
             try:
-                journal = await self.repository.begin_provider_operation(
-                    job.job_id, self.worker_id, job.provider, provider_idempotency_key
-                )
+                if job.job_status == "cancel_requested":
+                    journal = await self.repository.get_provider_operation(job.job_id)
+                    if journal is None:
+                        # No durable provider operation means no external
+                        # submission was begun; the fenced acknowledgement is safe.
+                        return await self._acknowledge_cancellation(job.job_id)
+                else:
+                    journal = await self.repository.begin_provider_operation(
+                        job.job_id, self.worker_id, job.provider, provider_idempotency_key
+                    )
                 # A journal RPC may finish after heartbeat has already lost the
                 # lease. Never start or recover provider work from a stale claim.
                 if lost.is_set():
@@ -282,6 +294,8 @@ class GenerationWorker:
                         raise
                 else:
                     if getattr(provider, "supports_lookup", False) is not True:
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_lookup_not_supported")
                         if not await self.repository.mark_provider_operation_unknown(
                             job.job_id, self.worker_id, "provider_lookup_not_supported"
                         ):
@@ -299,6 +313,8 @@ class GenerationWorker:
                             job.job_id, self.worker_id, "provider_lookup_unavailable"
                         ):
                             return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_lookup_unavailable")
                         return await self._schedule_retry(job, "provider_operation_quarantined")
 
                     decision = decide_provider_recovery(
@@ -310,6 +326,8 @@ class GenerationWorker:
                         # The journal proves a result was already observed. Never
                         # resubmit or downgrade that checkpoint based on a later
                         # negative, failed, pending or inconclusive lookup.
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_result_recovery_pending")
                         return await self._schedule_retry(
                             job, "provider_result_recovery_pending"
                         )
@@ -325,6 +343,14 @@ class GenerationWorker:
                             self.repository.authorize_provider_operation(job.job_id, self.worker_id), lost
                         )
                         if not budget_allowed:
+                            if cancel_requested.is_set():
+                                changed = await self.repository.mark_provider_operation_failed(
+                                    job.job_id, self.worker_id, "user_cancelled_before_submission"
+                                )
+                                if changed:
+                                    provider_cost_reconciled = True
+                                    return await self._acknowledge_cancellation(job.job_id)
+                                return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
                             changed = await self.repository.mark_provider_operation_failed(
                                 job.job_id, self.worker_id, "provider_budget_blocked"
                             )
@@ -340,6 +366,9 @@ class GenerationWorker:
                             job.job_id, self.worker_id, code
                         ):
                             return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        if cancel_requested.is_set():
+                            provider_cost_reconciled = True
+                            return await self._acknowledge_cancellation(job.job_id)
                         return await self._terminal_failure(job, code)
                     else:
                         if not await self.repository.mark_provider_operation_unknown(
@@ -347,6 +376,8 @@ class GenerationWorker:
                             decision.error_code or "provider_operation_status_unknown"
                         ):
                             return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_operation_status_unknown")
                         return await self._schedule_retry(
                             job, "provider_operation_quarantined"
                         )
