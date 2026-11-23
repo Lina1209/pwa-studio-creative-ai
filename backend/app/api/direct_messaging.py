@@ -11,7 +11,7 @@ from app.services.direct_messaging import (
     DirectMessagingUnavailable, create_conversation, list_conversations,
     read_messages, send_message, mark_read,
     create_message_notification, list_user_notifications, mark_user_notification_read,
-    set_user_block, report_direct_message, list_admin_reports, list_admin_appeals,
+    set_user_block, report_direct_message, list_admin_reports, get_admin_report_detail, list_admin_appeals,
     list_moderation_events, apply_user_moderation, update_report_status,
     create_moderation_appeal, list_my_moderation_appeals, review_moderation_appeal,
 )
@@ -218,6 +218,22 @@ def admin_list_message_reports(status: str | None = None,user: StudioUser = Depe
             action="admin.direct_message.report.view",outcome="allowed",
             resource_type="direct_message_report",reason="Admin opened private message report queue")
         return {"reports":rows}
+    except (DirectMessagingUnavailable,AdminAuditUnavailable):
+        _unavailable()
+
+
+@router.get("/admin/reports/{report_id}")
+def admin_read_message_report(report_id: UUID,
+    user: StudioUser = Depends(require_permission("admin.direct_messages.moderate"))):
+    try:
+        detail=get_admin_report_detail(settings,report_id)
+        if detail is None:
+            raise HTTPException(status_code=404,detail="Жалоба не найдена.")
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),
+            action="admin.direct_message.report.view",outcome="allowed",
+            resource_type="direct_message_report",resource_id=report_id,
+            reason="Admin inspected reported private message")
+        return detail
     except (DirectMessagingUnavailable,AdminAuditUnavailable):
         _unavailable()
 
