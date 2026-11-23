@@ -223,3 +223,31 @@ def test_read_finance_request_events_rejects_invalid_transition(monkeypatch):
     }])
     with pytest.raises(service.FinanceRequestUnavailable):
         service.read_finance_operation_request_events(SETTINGS, request_id=REQUEST)
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"scope_key": f"user:{ACTOR}"},
+        {"amount": "NaN"},
+        {"amount": "-1"},
+        {"currency_code": "crd"},
+        {"currency_code": "USD"},
+    ],
+)
+def test_read_finance_request_rejects_inconsistent_financial_snapshot(monkeypatch, overrides):
+    row = {
+        "request_id": str(REQUEST),
+        "requester_id": str(ACTOR),
+        "request_type": "credit_compensation",
+        "target_user_id": str(TARGET),
+        "amount": "12",
+        "currency_code": "CRD",
+        "scope_key": f"user:{TARGET}",
+        "status": "pending",
+    }
+    row.update(overrides)
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: [row])
+
+    with pytest.raises(service.FinanceRequestUnavailable):
+        service.read_finance_operation_request(SETTINGS, request_id=REQUEST)
+
