@@ -34,6 +34,8 @@
   };
   const refreshAuthUI = session => {
     authSession = session;
+    // Restore only the job belonging to the currently authenticated account.
+    setTimeout(() => window.PWAStudioGenerationJobs?.restore?.(), 0);
     const adminPanel = $("#adminPanel");
     adminUiAuthorized = false;
     if (adminPanel) adminPanel.hidden = true;
@@ -3585,14 +3587,28 @@ const movieHistoryStyle = document.createElement("style");
   };
   generationJobElements.cancel?.addEventListener("click", cancelTrackedGenerationJob);
   generationJobElements.refresh?.addEventListener("click", () => loadGenerationJobStatus(false));
-  window.PWAStudioGenerationJobs = Object.freeze({track: trackGenerationJob, refresh: () => loadGenerationJobStatus(false)});
-  if (authSession?.user?.id) {
-    const savedGenerationJobId = localStorage.getItem(generationJobStorageKey());
-    if (savedGenerationJobId) {
-      try { trackGenerationJob({job_id: savedGenerationJobId}); }
-      catch (error) { generationJobElements.feedback.textContent = error.message; }
+  const restoreGenerationJobForCurrentUser = () => {
+    stopGenerationJobPolling();
+    activeGenerationJobId = null;
+    if (!authSession?.user?.id) {
+      renderGenerationJob(null);
+      if (generationJobElements.feedback) generationJobElements.feedback.textContent = "Войдите в аккаунт, чтобы отслеживать свои задания.";
+      return;
     }
-  }
+    const savedGenerationJobId = localStorage.getItem(generationJobStorageKey());
+    if (!savedGenerationJobId) {
+      renderGenerationJob(null);
+      return;
+    }
+    try { trackGenerationJob({job_id: savedGenerationJobId}); }
+    catch (error) { generationJobElements.feedback.textContent = error.message; }
+  };
+  window.PWAStudioGenerationJobs = Object.freeze({
+    track: trackGenerationJob,
+    refresh: () => loadGenerationJobStatus(false),
+    restore: restoreGenerationJobForCurrentUser
+  });
+  restoreGenerationJobForCurrentUser();
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     window.addEventListener("load", () => {
