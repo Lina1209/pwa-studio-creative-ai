@@ -304,8 +304,9 @@ const movieHistoryStyle = document.createElement("style");
   const entitlementCapabilityLabels = {
     ai: { title: "AI Companion", icon: "✦", dimensions: ["daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests"] },
     image: { title: "Генерация изображений", icon: "▧", dimensions: ["daily_image_generations", "monthly_image_generations"] },
-    video: { title: "Генерация видео", icon: "🎬", dimensions: ["daily_video_generations", "monthly_video_generations"] },
-    audio: { title: "Генерация аудио", icon: "♫", dimensions: ["daily_audio_generations", "monthly_audio_generations"] }
+    video: { title: "Генерация видео", icon: "🎬", dimensions: ["daily_video_generations", "monthly_video_generations", "max_video_seconds", "max_resolution"] },
+    audio: { title: "Генерация аудио", icon: "♫", dimensions: ["daily_audio_generations", "monthly_audio_generations"] },
+    jobs: { title: "Общий ресурс заданий", icon: "⚙", dimensions: ["daily_generation_jobs", "monthly_generation_jobs", "max_parallel_jobs"] }
   };
   const entitlementDimensionLabels = {
     daily_ai_requests: "Запросы AI за день",
@@ -316,7 +317,12 @@ const movieHistoryStyle = document.createElement("style");
     daily_video_generations: "Видео за день",
     monthly_video_generations: "Видео за месяц",
     daily_audio_generations: "Аудио за день",
-    monthly_audio_generations: "Аудио за месяц"
+    monthly_audio_generations: "Аудио за месяц",
+    daily_generation_jobs: "Задания за день",
+    monthly_generation_jobs: "Задания за месяц",
+    max_parallel_jobs: "Одновременные задания",
+    max_video_seconds: "Максимальная длительность видео",
+    max_resolution: "Максимальное разрешение"
   };
   let entitlementRequestVersion = 0;
   const clearMyEntitlements = message => {
@@ -377,6 +383,10 @@ const movieHistoryStyle = document.createElement("style");
         line.className = "entitlement-quota-line";
         if (!quota || !quota.configured) {
           line.textContent = entitlementDimensionLabels[dimension] + ": лимит не задан";
+        } else if (dimension === "max_resolution") {
+          line.textContent = entitlementDimensionLabels[dimension] + ": " + quota.limit;
+        } else if (dimension === "max_video_seconds") {
+          line.textContent = entitlementDimensionLabels[dimension] + ": " + quota.limit + " сек. на одно видео";
         } else {
           line.textContent = entitlementDimensionLabels[dimension] + ": " +
             quota.used + " / " + quota.limit +
