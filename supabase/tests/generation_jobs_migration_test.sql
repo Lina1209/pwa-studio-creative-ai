@@ -5145,6 +5145,7 @@ $plan_feature_allowlist_test$;
 
 -- Owner-scoped cancellation request RPC (0085).
 \ir ../migrations/0085_generation_job_cancellation_requests.sql
+\ir ../migrations/0086_generation_worker_cancellation_handshake.sql
 
 do $generation_cancellation_rpc_security_test$
 declare
@@ -5298,3 +5299,158 @@ end;
 $generation_cancellation_rpc_behavior_test$;
 
 select 'generation cancellation RPC behavior checks passed' as result;
+
+
+-- Structured heartbeat states and fenced cancellation acknowledgement (0086).
+do $generation_worker_cancellation_handshake_test$
+declare
+  v_no_operation record;
+  v_unknown_operation record;
+  v_result_operation record;
+  v_state text;
+  v_ack boolean;
+  v_status text;
+  v_hold_status text;
+  v_count integer;
+begin
+  -- A running lease remains active, then reports cancellation without being
+  -- misclassified as lease loss. A cancellation acknowledgement with no
+  -- provider journal is safe: submission was never durably started.
+  select * into v_no_operation
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation', 'quota-test-provider', 'quota-test-model',
+      'rpc-cancel-handshake-no-op-001', repeat('a',64),
+      '{"prompt":"cancel before provider submission","quantity":1}'::jsonb,
+      '{"amount":5,"quantity":1,"price_version":"test-v1"}'::jsonb, 5
+    );
+
+  update public.generation_jobs
+     set status='running', lease_owner='cancel-handshake-worker',
+         lease_expires_at=now()+interval '5 minutes', heartbeat_at=now(),
+         updated_at=now()
+   where id=v_no_operation.job_id;
+
+  v_state := public.heartbeat_generation_job(
+    v_no_operation.job_id, 'cancel-handshake-worker', 180
+  );
+  if v_state <> 'active' then
+    raise exception 'Active worker heartbeat did not return active';
+  end if;
+
+  update public.generation_jobs
+     set status='cancel_requested', updated_at=now()
+   where id=v_no_operation.job_id;
+  v_state := public.heartbeat_generation_job(
+    v_no_operation.job_id, 'cancel-handshake-worker', 180
+  );
+  if v_state <> 'cancel_requested' then
+    raise exception 'Cancellation heartbeat was not distinguished from lease loss';
+  end if;
+
+  v_ack := public.acknowledge_generation_job_cancellation(
+    v_no_operation.job_id, 'wrong-worker'
+  );
+  if v_ack then
+    raise exception 'A different worker acknowledged cancellation';
+  end if;
+
+  v_ack := public.acknowledge_generation_job_cancellation(
+    v_no_operation.job_id, 'cancel-handshake-worker'
+  );
+  if not v_ack then
+    raise exception 'Cancellation without a provider journal was not acknowledged';
+  end if;
+  select status into v_status from public.generation_jobs where id=v_no_operation.job_id;
+  select status into v_hold_status from public.credit_holds where id=v_no_operation.hold_id;
+  select count(*) into v_count from public.credit_ledger
+   where hold_id=v_no_operation.hold_id and operation_type='release';
+  if v_status <> 'cancelled' or v_hold_status <> 'released' or v_count <> 1 then
+    raise exception 'No-operation cancellation did not settle exactly once';
+  end if;
+
+  -- An unknown provider operation is not safe to refund or acknowledge.
+  select * into v_unknown_operation
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation', 'quota-test-provider', 'quota-test-model',
+      'rpc-cancel-handshake-unknown-001', repeat('b',64),
+      '{"prompt":"unknown provider operation","quantity":1}'::jsonb,
+      '{"amount":6,"quantity":1,"price_version":"test-v1"}'::jsonb, 6
+    );
+  update public.generation_jobs
+     set status='running', lease_owner='cancel-handshake-worker',
+         lease_expires_at=now()+interval '5 minutes', heartbeat_at=now(),
+         updated_at=now()
+   where id=v_unknown_operation.job_id;
+
+  perform * from public.begin_generation_provider_operation(
+    v_unknown_operation.job_id, 'cancel-handshake-worker',
+    'quota-test-provider', v_unknown_operation.job_id::text
+  );
+  if not public.mark_generation_provider_operation_unknown(
+    v_unknown_operation.job_id, 'cancel-handshake-worker', 'provider_status_unknown'
+  ) then
+    raise exception 'Could not mark provider operation unknown for fixture';
+  end if;
+  update public.generation_jobs
+     set status='cancel_requested', updated_at=now()
+   where id=v_unknown_operation.job_id;
+
+  v_ack := public.acknowledge_generation_job_cancellation(
+    v_unknown_operation.job_id, 'cancel-handshake-worker'
+  );
+  select status into v_status from public.generation_jobs where id=v_unknown_operation.job_id;
+  select status into v_hold_status from public.credit_holds where id=v_unknown_operation.hold_id;
+  select count(*) into v_count from public.credit_ledger
+   where hold_id=v_unknown_operation.hold_id and operation_type='release';
+  if v_ack or v_status <> 'cancel_requested' or v_hold_status <> 'held' or v_count <> 0 then
+    raise exception 'Unknown provider operation was incorrectly acknowledged or refunded';
+  end if;
+
+  -- A result-received provider operation is definitive: discard its asset,
+  -- acknowledge cancellation, and release the customer hold exactly once.
+  select * into v_result_operation
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation', 'quota-test-provider', 'quota-test-model',
+      'rpc-cancel-handshake-result-001', repeat('c',64),
+      '{"prompt":"provider result received before cancel ack","quantity":1}'::jsonb,
+      '{"amount":8,"quantity":1,"price_version":"test-v1"}'::jsonb, 8
+    );
+  update public.generation_jobs
+     set status='running', lease_owner='cancel-handshake-worker',
+         lease_expires_at=now()+interval '5 minutes', heartbeat_at=now(),
+         updated_at=now()
+   where id=v_result_operation.job_id;
+
+  perform * from public.begin_generation_provider_operation(
+    v_result_operation.job_id, 'cancel-handshake-worker',
+    'quota-test-provider', v_result_operation.job_id::text
+  );
+  if not public.mark_generation_provider_operation_result_received(
+    v_result_operation.job_id, 'cancel-handshake-worker', 'provider-result-123'
+  ) then
+    raise exception 'Could not mark provider result received for fixture';
+  end if;
+  update public.generation_jobs
+     set status='cancel_requested', updated_at=now()
+   where id=v_result_operation.job_id;
+
+  v_ack := public.acknowledge_generation_job_cancellation(
+    v_result_operation.job_id, 'cancel-handshake-worker'
+  );
+  select status into v_status from public.generation_jobs where id=v_result_operation.job_id;
+  select status into v_hold_status from public.credit_holds where id=v_result_operation.hold_id;
+  select count(*) into v_count from public.credit_ledger
+   where hold_id=v_result_operation.hold_id and operation_type='release';
+  if not v_ack or v_status <> 'cancelled' or v_hold_status <> 'released' or v_count <> 1 then
+    raise exception 'Reconciled provider result was not cancelled and settled exactly once';
+  end if;
+end;
+$generation_worker_cancellation_handshake_test$;
+
+select 'generation worker cancellation handshake checks passed' as result;
