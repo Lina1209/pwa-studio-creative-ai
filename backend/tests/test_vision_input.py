@@ -3,6 +3,9 @@ import io
 
 import pytest
 from PIL import Image
+from pydantic import ValidationError
+
+from app.core.config import Settings
 
 from app.services.vision_input import VisionInputError, validate_vision_data_url
 
@@ -79,3 +82,14 @@ def test_empty_or_non_string_input_is_rejected():
     for value in ("", None, b"image"):
         with pytest.raises(VisionInputError):
             validate_vision_data_url(value)
+
+
+
+def test_vision_feature_flag_is_off_by_default():
+    assert Settings().vision_input_enabled is False
+
+
+def test_vision_feature_flag_requires_deepseek_flash():
+    with pytest.raises(ValidationError):
+        Settings(vision_input_enabled=True, ai_model="deepseek-v4-pro")
+    assert Settings(vision_input_enabled=True, ai_model="deepseek-flash").vision_input_enabled is True
