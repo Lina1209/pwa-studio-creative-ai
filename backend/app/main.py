@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest)
+from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest, ProfileUpdateRequest)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
@@ -13,6 +13,7 @@ from app.services.usage_service import record_ai_usage
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self
+from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -108,6 +109,31 @@ def read_notification(notification_id: str, user: StudioUser = Depends(get_curre
 @app.post(f"{settings.api_prefix}/notifications/read-all")
 def read_all_notifications(user: StudioUser = Depends(get_current_user)):
     return mark_all_notifications_read(settings, user.user_id)
+
+
+
+@app.get(f"{settings.api_prefix}/community/profile")
+def own_community_profile(user: StudioUser = Depends(get_current_user)):
+    return get_own_profile(settings, user.user_id)
+
+
+@app.patch(f"{settings.api_prefix}/community/profile")
+def update_community_profile(payload: ProfileUpdateRequest, user: StudioUser = Depends(get_current_user)):
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No profile changes were supplied.")
+    return update_own_profile(settings, user.user_id, changes)
+
+
+@app.get(f"{settings.api_prefix}/community/users")
+def community_user_search(q: str, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
+    return search_public_profiles(settings, q, user.user_id)
+
+
+@app.get(f"{settings.api_prefix}/community/profiles/{{profile_user_id}}")
+def community_public_profile(profile_user_id: str, user: StudioUser = Depends(get_current_user)):
+    return get_public_profile(settings, profile_user_id, user.user_id)
 
 
 @app.get(f"{settings.api_prefix}/conversations")
