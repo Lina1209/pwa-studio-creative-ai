@@ -239,3 +239,19 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
   margin-bottom: 8px;
   font-weight: 600;
 }
+
+
+/* Generation job status and safe cancellation controls */
+.generation-jobs-panel{margin-top:1.25rem;border:1px solid var(--border,rgba(148,163,184,.22));}
+.generation-jobs-heading,.generation-job-main{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;}
+.generation-jobs-heading h2{margin:.25rem 0;}
+.generation-jobs-heading .helper-text{max-width:58rem;margin:.45rem 0 0;}
+.generation-jobs-empty{padding:1rem;border:1px dashed var(--border,rgba(148,163,184,.25));border-radius:14px;margin-top:1rem;color:var(--muted,#94a3b8);line-height:1.55;}
+.generation-job-card{margin-top:1rem;padding:1rem;border:1px solid var(--border,rgba(148,163,184,.25));border-radius:16px;background:rgba(148,163,184,.045);}
+.generation-job-label{display:block;font-size:.78rem;color:var(--muted,#94a3b8);margin-bottom:.3rem;}
+.generation-job-main strong{font-size:1.05rem;}
+.generation-job-id{font-size:.72rem;overflow-wrap:anywhere;color:var(--muted,#94a3b8);text-align:right;max-width:45%;}
+.generation-job-actions{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:.85rem;}
+.generation-job-feedback{min-height:1.2em;margin:.75rem 0 0;}
+.generation-job-actions button:disabled{opacity:.55;cursor:not-allowed;}
+@media(max-width:600px){.generation-jobs-heading,.generation-job-main{flex-direction:column;}.generation-job-id{text-align:left;max-width:100%;}.generation-job-actions button{width:100%;}}
