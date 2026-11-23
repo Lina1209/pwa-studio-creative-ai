@@ -7,12 +7,24 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class CharacterVisualPassport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    face: str = Field(default="", max_length=600)
+    profile: str = Field(default="", max_length=600)
+    fullBody: str = Field(default="", max_length=600)
+    wardrobe: str = Field(default="", max_length=800)
+    palette: str = Field(default="", max_length=300)
+    expressions: str = Field(default="", max_length=500)
+
+
 class VisualContinuityReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["character", "scene"]
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(min_length=1, max_length=3000)
+    passport: CharacterVisualPassport | None = None
 
 
 class ChatProjectContext(BaseModel):
@@ -34,7 +46,11 @@ class ChatProjectContext(BaseModel):
     def limit_total_context(self):
         data = self.model_dump()
         total = sum(len(value) for value in data.values() if isinstance(value, str))
-        total += sum(len(ref.name) + len(ref.description) for ref in self.visual_continuity)
+        total += sum(
+            len(ref.name) + len(ref.description)
+            + (sum(len(value) for value in ref.passport.model_dump().values()) if ref.passport else 0)
+            for ref in self.visual_continuity
+        )
         if total > 18000:
             raise ValueError("Project context is too large.")
         return self
