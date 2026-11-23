@@ -138,8 +138,9 @@ All settlement/release RPCs must be idempotent. A repeated callback must never d
 The repository currently has:
 - private ai_usage telemetry (best-effort writes, no credit debits);
 - an atomic per-user/per-endpoint AI request-frequency limiter;
-- a server-side AI output-token ceiling.
+- a server-side AI output-token ceiling;
+- a source-only migration draft (0013_unified_credit_wallet.sql) for wallet balances, append-only ledger entries, idempotent reservations, and atomic grant/reserve/settle/release RPCs.
 
-It does not yet have subscription entitlements, a credit wallet, a credit ledger, operation reservations, settlement/refund logic, payment webhooks, or end-to-end paid-operation enforcement. The new architecture must not be described as active until those pieces are implemented, tested, deployed, and verified against the live database.
+The wallet migration has not been applied, its SQL has not been executed against Supabase, and the RPCs are not yet called by application endpoints. Subscription entitlements, payment webhooks, operation pricing, frontend wallet views, and end-to-end paid-operation enforcement are not implemented. The credit foundation must not be described as active until migration history is reconciled, the SQL is reviewed and applied with authorization, backend integration is tested, and live behavior is verified.
 
 No SQL from this design should be executed against production until the migration history and live schema are reconciled.
