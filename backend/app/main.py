@@ -79,6 +79,7 @@ from app.services.credit_wallet_service import (
     CreditWalletUnavailable,
     get_credit_wallet_snapshot,
 )
+from app.services.payment_provider_contracts import build_payment_provider_registry
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
@@ -96,6 +97,9 @@ from app.services.entitlements import EntitlementsUnavailable, resolve_user_enti
 from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
 
 settings = get_settings()
+# Payment providers are assembled only from trusted server code. With the
+# default runtime flag off, this is an empty, fail-closed registry.
+payment_provider_registry = build_payment_provider_registry(settings)
 logger = logging.getLogger(__name__)
 
 
