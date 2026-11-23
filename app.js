@@ -1809,6 +1809,28 @@ const movieHistoryStyle = document.createElement("style");
       return Array.isArray(items)?items.filter(item=>item&&["character","scene"].includes(item.type)&&typeof item.name==="string"&&typeof item.text==="string").slice(0,100):[];
     } catch { return []; }
   };
+  const visualRefDbName="pwa-studio-visual-references-v1";
+  const openVisualRefDb=()=>new Promise((resolve,reject)=>{
+    if(!("indexedDB" in window)){reject(new Error("IndexedDB недоступен"));return;}
+    const request=indexedDB.open(visualRefDbName,1);
+    request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains("images"))request.result.createObjectStore("images",{keyPath:"id"});};
+    request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error||new Error("Не удалось открыть хранилище"));
+  });
+  const saveVisualRefImage=async(id,blob,ownerId)=>{
+    const db=await openVisualRefDb();
+    await new Promise((resolve,reject)=>{const tx=db.transaction("images","readwrite");tx.objectStore("images").put({id,ownerId,blob,createdAt:new Date().toISOString()});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+    db.close();
+  };
+  const getVisualRefImage=async(id,ownerId)=>{
+    const db=await openVisualRefDb();
+    const record=await new Promise((resolve,reject)=>{const request=db.transaction("images","readonly").objectStore("images").get(id);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    db.close();return record&&record.ownerId===ownerId?record.blob:null;
+  };
+  const deleteVisualRefImage=async(id)=>{
+    const db=await openVisualRefDb();
+    await new Promise((resolve,reject)=>{const tx=db.transaction("images","readwrite");tx.objectStore("images").delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+    db.close();
+  };
   const renderVisualLibrary = () => {
     const list=$("#visualAssetList");if(!list)return;
     const items=readVisualLibrary();list.replaceChildren();
@@ -1822,6 +1844,17 @@ const movieHistoryStyle = document.createElement("style");
         passport.textContent=["Лицо: "+(item.passport.face||"—"),"Профиль: "+(item.passport.profile||"—"),"Полный рост: "+(item.passport.fullBody||"—"),"Одежда: "+(item.passport.wardrobe||"—"),"Палитра: "+(item.passport.palette||"—"),"Эмоции: "+(item.passport.expressions||"—")].join(" · ");
         card.append(title,description,passport);
       }else{card.append(title,description);}
+      if(Array.isArray(item.referenceImages)&&item.referenceImages.length){
+        const gallery=document.createElement("div");gallery.className="visual-reference-gallery";
+        const label=document.createElement("p");label.className="helper-text";label.textContent="Прикреплённые референсы: "+item.referenceImages.length;gallery.append(label);
+        item.referenceImages.slice(0,6).forEach(async(ref)=>{
+          try{const blob=await getVisualRefImage(ref.id,authSession?.user?.id||"guest");if(!blob)return;
+            const image=document.createElement("img");image.alt="Референс персонажа "+item.name;image.loading="lazy";image.src=URL.createObjectURL(blob);
+            image.addEventListener("load",()=>URL.revokeObjectURL(image.src),{once:true});gallery.append(image);
+          }catch{}
+        });
+        card.append(gallery);
+      }
       const actions=document.createElement("div");actions.className="prompt-library-actions";
       const insert=document.createElement("button");insert.type="button";insert.className="secondary-button";insert.textContent="Вставить в конструктор";insert.addEventListener("click",()=>{
         $("#promptBlockType").value=item.type;$("#promptBlockText").value=item.text;$("#promptBlockText").focus();
@@ -1893,25 +1926,38 @@ const movieHistoryStyle = document.createElement("style");
         actions.append(pack);
       }
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
-        const next=readVisualLibrary();next.splice(index,1);localStorage.setItem(visualLibraryKey(),JSON.stringify(next));renderVisualLibrary();
+        const next=readVisualLibrary();const removed=next.splice(index,1)[0];localStorage.setItem(visualLibraryKey(),JSON.stringify(next));
+        (removed?.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));renderVisualLibrary();
       });
       actions.append(insert,pin,remove);card.append(actions);list.append(card);
     });
   };
-  $("#saveVisualAsset").addEventListener("click",()=>{
+  $("#saveVisualAsset").addEventListener("click",async()=>{
     const type=$("#visualAssetType").value,name=$("#visualAssetName").value.trim(),value=$("#visualAssetDescription").value.trim();
     if(!["character","scene"].includes(type)||!name||!value){$("#promptSaveFeedback").textContent="Укажите тип, название и описание материала.";return;}
     const items=readVisualLibrary();
     if(items.length>=100){$("#promptSaveFeedback").textContent="Библиотека вмещает до 100 материалов. Удалите ненужные записи.";return;}
+    const files=Array.from($("#visualReferenceFiles")?.files||[]);
+    if(files.length>6){$("#promptSaveFeedback").textContent="Можно прикрепить не более 6 изображений.";return;}
+    if(files.some(file=>!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>8*1024*1024)){
+      $("#promptSaveFeedback").textContent="Поддерживаются PNG, JPEG и WebP до 8 МБ каждый.";return;
+    }
     const passport=type==="character"?{
       face:$("#passportFace").value.trim().slice(0,600),profile:$("#passportProfile").value.trim().slice(0,600),
       fullBody:$("#passportFullBody").value.trim().slice(0,600),wardrobe:$("#passportWardrobe").value.trim().slice(0,800),
       palette:$("#passportPalette").value.trim().slice(0,300),expressions:$("#passportExpressions").value.trim().slice(0,500)
     }:null;
-    items.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),createdAt:new Date().toISOString()});
-    try{localStorage.setItem(visualLibraryKey(),JSON.stringify(items));}
-    catch{$("#promptSaveFeedback").textContent="Не удалось сохранить материал: проверьте свободное место браузера.";return;}
-    $("#visualAssetName").value="";$("#visualAssetDescription").value="";
+    const assetId=crypto.randomUUID?crypto.randomUUID():String(Date.now());
+    const refs=files.map((file,index)=>({id:assetId+"-"+index,name:file.name.slice(0,120),type:file.type}));
+    items.unshift({id:assetId,type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),referenceImages:refs,createdAt:new Date().toISOString()});
+    try{
+      for(let i=0;i<files.length;i++) await saveVisualRefImage(refs[i].id,files[i],authSession?.user?.id||"guest");
+      localStorage.setItem(visualLibraryKey(),JSON.stringify(items));
+    }catch{
+      await Promise.all(refs.map(ref=>deleteVisualRefImage(ref.id).catch(()=>{})));
+      $("#promptSaveFeedback").textContent="Не удалось сохранить референсы. Проверьте свободное место браузера и доступность IndexedDB.";return;
+    }
+    $("#visualAssetName").value="";$("#visualAssetDescription").value="";$("#visualReferenceFiles").value="";
     ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
     renderVisualLibrary();
     $("#promptSaveFeedback").textContent="«"+name+"» сохранён в библиотеке и доступен в других фильмах на этом устройстве.";
