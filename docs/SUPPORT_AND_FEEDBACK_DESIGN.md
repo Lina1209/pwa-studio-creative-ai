@@ -21,7 +21,7 @@ The current review branch already contains a first support-inbox implementation:
 - Migration 0055_private_support_inbox.sql defines private support_tickets and support_ticket_messages tables. Direct browser access is revoked; the API mediates access using the server-side service role.
 - FastAPI routes let a signed-in user create a ticket, list their own tickets, read their own conversation and reply.
 - Owner-only routes expose the admin queue, read a ticket, reply and change its status.
-- The frontend contains a floating support launcher and native dialog widget with categorized request form, optional page-only diagnostic context, the user's ticket list and conversation view; the owner-only inbox remains in the account dashboard.
+- The frontend contains a floating support launcher and native dialog widget with categorized request form, optional page-only diagnostic context, the user's ticket list and conversation view; the owner-only inbox remains in the account dashboard. The widget closes and clears its private message state when the authenticated account changes.
 - Permission checks use the named capabilities admin.support.read, admin.support.reply and admin.support.status.manage; administrative reads and mutations are audited.
 - Migration 0091_support_inbox_atomic_mutations_and_categories.sql adds request categories and optional diagnostic context, and moves ticket creation/message append into database transactions.
 
@@ -192,7 +192,7 @@ Support v1 is ready for a controlled release only when:
 
 1. Ticket plus first message is atomic.
 2. Reply plus status/timestamp update is atomic.
-3. User A cannot list, read, reply to or infer User B's tickets.
+3. User A cannot list, read, reply to or infer User B's tickets; the open widget and selected conversation are cleared on account switch.
 4. Non-admins cannot read or mutate the owner inbox.
 5. Only named admin capabilities can read, reply or change status.
 6. The status lifecycle behaves as documented.
