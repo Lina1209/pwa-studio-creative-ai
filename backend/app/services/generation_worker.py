@@ -52,7 +52,8 @@ class UploadedImageObject:
 
 
 class GenerationJobRepository(Protocol):
-    async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> bool: ...
+    async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> str: ...
+    async def acknowledge_cancellation(self, job_id: UUID, worker_id: str) -> bool: ...
     async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool: ...
     async def fail(self, job_id: UUID, worker_id: str, error_code: str) -> bool: ...
     async def complete_credited(self, job_id: UUID, worker_id: str, result_path: str, result_sha256: str): ...
@@ -113,19 +114,55 @@ class GenerationWorker:
     def _retry_delay(self, attempt: int) -> int:
         return min(self.retry_max_seconds, self.retry_base_seconds * (2 ** max(0, attempt - 1)))
 
-    async def _maintain_lease(self, job_id: UUID, lost: asyncio.Event) -> None:
+    async def _maintain_lease(
+        self, job_id: UUID, lost: asyncio.Event, cancel_requested: asyncio.Event
+    ) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_interval_seconds)
             try:
-                active = await self.repository.heartbeat(
+                state = await self.repository.heartbeat(
                     job_id, self.worker_id, self.lease_seconds
                 )
             except Exception:
                 logger.warning("generation_worker_heartbeat_error job_id=%s", job_id)
-                active = False
-            if not active:
-                lost.set()
-                return
+                state = "lease_lost"
+            if state == "active":
+                continue
+            if state == "cancel_requested":
+                # Keep the lease alive and let any in-flight provider operation
+                # reach a definitive, journaled outcome. Never cancel it locally.
+                cancel_requested.set()
+                continue
+            lost.set()
+            return
+
+    async def _observe_cancellation(
+        self, job_id: UUID, cancel_requested: asyncio.Event
+    ) -> bool:
+        if cancel_requested.is_set():
+            return True
+        try:
+            state = await self.repository.heartbeat(
+                job_id, self.worker_id, self.lease_seconds
+            )
+        except Exception:
+            return False
+        if state == "cancel_requested":
+            cancel_requested.set()
+        return cancel_requested.is_set()
+
+    async def _acknowledge_cancellation(self, job_id: UUID) -> WorkerResult:
+        try:
+            acknowledged = await self.repository.acknowledge_cancellation(
+                job_id, self.worker_id
+            )
+        except Exception:
+            logger.warning("generation_worker_cancellation_ack_error job_id=%s", job_id)
+            return WorkerResult("cancellation_pending", "cancellation_ack_unavailable")
+        return WorkerResult(
+            "cancelled" if acknowledged else "cancellation_pending",
+            None if acknowledged else "provider_operation_not_reconciled",
+        )
 
     async def _run_while_leased(self, awaitable, lost: asyncio.Event):
         operation = asyncio.create_task(awaitable)
@@ -147,6 +184,7 @@ class GenerationWorker:
         if job.attempt_count < 1 or job.max_attempts < job.attempt_count:
             return await self._terminal_failure(job, "invalid_attempt_metadata")
 
+        cancel_requested = asyncio.Event()
         try:
             request = ImageGenerationRequest(**job.request_snapshot)
             provider: ImageGenerationProvider = self.providers.get(job.provider)
@@ -157,7 +195,9 @@ class GenerationWorker:
             # Stable across every worker retry/reclaim for this durable job.
             provider_idempotency_key = str(job.job_id)
             lost = asyncio.Event()
-            heartbeat = asyncio.create_task(self._maintain_lease(job.job_id, lost))
+            heartbeat = asyncio.create_task(
+                self._maintain_lease(job.job_id, lost, cancel_requested)
+            )
             try:
                 journal = await self.repository.begin_provider_operation(
                     job.job_id, self.worker_id, job.provider, provider_idempotency_key
@@ -167,13 +207,19 @@ class GenerationWorker:
                 if lost.is_set():
                     return WorkerResult("lease_lost", "lease_lost_after_journal_begin")
                 if journal.state == "provider_failed":
-                    # A previous worker may have persisted provider-confirmed
-                    # failure and crashed before failing the job row. Never
-                    # reinterpret that terminal journal state as absence.
-                    return await self._terminal_failure(
-                        job, "provider_operation_failed"
-                    )
+                    # A definitive provider failure is reconciled. If the user
+                    # requested cancellation, settle as cancelled, not failed.
+                    if await self._observe_cancellation(job.job_id, cancel_requested):
+                        return await self._acknowledge_cancellation(job.job_id)
+                    return await self._terminal_failure(job, "provider_operation_failed")
                 if journal.created:
+                    if await self._observe_cancellation(job.job_id, cancel_requested):
+                        changed = await self.repository.mark_provider_operation_failed(
+                            job.job_id, self.worker_id, "user_cancelled_before_submission"
+                        )
+                        if changed:
+                            return await self._acknowledge_cancellation(job.job_id)
+                        return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
                     # Budget admission is database-authoritative and happens
                     # before any billable provider request. Missing/uncertain
                     # budget state fails closed.
@@ -181,6 +227,13 @@ class GenerationWorker:
                         self.repository.authorize_provider_operation(job.job_id, self.worker_id), lost
                     )
                     if not budget_allowed:
+                        if await self._observe_cancellation(job.job_id, cancel_requested):
+                            changed = await self.repository.mark_provider_operation_failed(
+                                job.job_id, self.worker_id, "user_cancelled_before_submission"
+                            )
+                            if changed:
+                                return await self._acknowledge_cancellation(job.job_id)
+                            return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
                         changed = await self.repository.mark_provider_operation_failed(
                             job.job_id, self.worker_id, "provider_budget_blocked"
                         )
@@ -194,6 +247,11 @@ class GenerationWorker:
                     except ImageGenerationError as exc:
                         if exc.ambiguous:
                             if not await self.repository.mark_provider_operation_unknown(
+                                job.job_id, self.worker_id, exc.error_code
+                            ):
+                                return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        else:
+                            if not await self.repository.mark_provider_operation_failed(
                                 job.job_id, self.worker_id, exc.error_code
                             ):
                                 return WorkerResult("lease_lost", "provider_journal_transition_rejected")
@@ -318,6 +376,9 @@ class GenerationWorker:
                     if lost.is_set():
                         return WorkerResult("lease_lost", "lease_lost_after_cost_record")
 
+                if await self._observe_cancellation(job.job_id, cancel_requested):
+                    return await self._acknowledge_cancellation(job.job_id)
+
                 uploaded = await self._run_while_leased(
                     self.storage.upload_image(
                         owner_id=job.user_id,
@@ -343,6 +404,8 @@ class GenerationWorker:
                 )
                 if lost.is_set():
                     return WorkerResult("lease_lost", "lease_lost_before_completion")
+                if await self._observe_cancellation(job.job_id, cancel_requested):
+                    return await self._acknowledge_cancellation(job.job_id)
                 completion = await self._complete_credited_with_recovery(
                     job.job_id, verified.object_path, verified.sha256_hex
                 )
@@ -364,10 +427,14 @@ class GenerationWorker:
         except ImageGenerationError as exc:
             if exc.error_code == "worker_lease_lost":
                 return WorkerResult("lease_lost", exc.error_code)
+            if cancel_requested.is_set():
+                return await self._acknowledge_cancellation(job.job_id)
             if exc.retryable:
                 return await self._schedule_retry(job, exc.error_code)
             return await self._terminal_failure(job, exc.error_code)
         except WorkerRepositoryError as exc:
+            if await self._observe_cancellation(job.job_id, cancel_requested):
+                return await self._acknowledge_cancellation(job.job_id)
             if exc.retryable:
                 return await self._schedule_retry(job, exc.error_code)
             return await self._terminal_failure(job, exc.error_code)
