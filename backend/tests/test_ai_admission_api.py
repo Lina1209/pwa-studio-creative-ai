@@ -17,6 +17,7 @@ def test_admitted_ai_request_is_finalized_as_completed(monkeypatch):
         lambda settings, value, completed: finished.append((value, completed)),
     )
     monkeypatch.setattr(main, "_run_ai", lambda operation, call: call())
+    monkeypatch.setattr(main, "record_ai_transfer_event", lambda *args, **kwargs: "audit-event")
 
     result = main._run_admitted_ai("chat", str(reservation.user_id), lambda: "answer")
 
@@ -37,6 +38,7 @@ def test_failed_provider_request_releases_admission_reservation(monkeypatch):
         raise HTTPException(status_code=502, detail="provider failed")
 
     monkeypatch.setattr(main, "_run_ai", fail)
+    monkeypatch.setattr(main, "record_ai_transfer_event", lambda *args, **kwargs: "audit-event")
     with pytest.raises(HTTPException) as error:
         main._run_admitted_ai("prompts", str(reservation.user_id), lambda: None)
 
