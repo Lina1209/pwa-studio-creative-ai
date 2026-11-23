@@ -39,11 +39,11 @@ class FakeClient:
         if url.endswith("/ai_provider_cost_reservations"):
             if params.get("status") == "in.(reserved,unknown)":
                 return FakeResponse([
-                    {"request_id": "11111111-1111-4111-8111-111111111111", "provider": "deepseek", "model": "deepseek-chat", "status": "reserved", "reserved_cost_usd": "0.10", "actual_estimated_cost_usd": None, "created_at": "2026-11-23T00:00:00+00:00"},
-                    {"request_id": "22222222-2222-4222-8222-222222222222", "provider": "gemini", "model": "gemini-3.1-flash-lite", "status": "unknown", "reserved_cost_usd": "0.20", "actual_estimated_cost_usd": None, "created_at": "2026-11-23T00:01:00+00:00"},
+                    {"request_id": "11111111-1111-4111-8111-111111111111", "provider": "deepseek", "model": "deepseek-chat", "status": "reserved", "request_modality": "text", "reserved_cost_usd": "0.10", "actual_estimated_cost_usd": None, "created_at": "2026-11-23T00:00:00+00:00"},
+                    {"request_id": "22222222-2222-4222-8222-222222222222", "provider": "gemini", "model": "gemini-3.1-flash-lite", "status": "unknown", "request_modality": "vision", "reserved_cost_usd": "0.20", "actual_estimated_cost_usd": None, "created_at": "2026-11-23T00:01:00+00:00"},
                 ])
             return FakeResponse([
-                {"provider": "deepseek", "status": "settled", "reserved_cost_usd": "0.02", "actual_estimated_cost_usd": "0.03"},
+                {"provider": "deepseek", "request_modality": "text", "status": "settled", "reserved_cost_usd": "0.02", "actual_estimated_cost_usd": "0.03"},
             ])
         raise AssertionError(url)
 
@@ -64,8 +64,14 @@ def test_admin_budget_report_separates_spend_reservations_and_unknown(monkeypatc
     assert by_provider["deepseek"]["outstanding_reserved_usd"] == "0.1000000000"
     assert by_provider["gemini"]["unknown_reservations"] == 1
     assert by_provider["gemini"]["status"] == "unknown_costs"
+    by_modality = {row["request_modality"]: row for row in result["by_modality"]}
+    assert by_modality["text"]["settled_estimated_spend_usd"] == "0.0300000000"
+    assert by_modality["text"]["outstanding_reserved_usd"] == "0.1000000000"
+    assert by_modality["vision"]["outstanding_reserved_usd"] == "0.2000000000"
+    assert by_modality["vision"]["unknown_reservations"] == 1
     assert result["unknown_reservations"][0]["request_id"] == "22222222-2222-4222-8222-222222222222"
     assert result["unknown_reservations"][0]["provider"] == "gemini"
+    assert result["unknown_reservations"][0]["request_modality"] == "vision"
     assert result["actual_billed_cost_usd"] is None
 
 
