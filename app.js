@@ -687,7 +687,7 @@ const movieHistoryStyle = document.createElement("style");
     const list=$("#directConversationList"); if(!list) return;
     const query=($("#directConversationSearch")?.value||"").trim().toLocaleLowerCase();
     const unread=directConversations.filter(directConversationUnread).length;
-    const badge=$("#directUnreadCount"); if(badge) badge.textContent=unread+" непрочитанных";
+    const badge=$("#directUnreadCount"); if(badge) badge.textContent=unread+" непрочитанных диалогов";
     list.replaceChildren();
     const filtered=directConversations.filter(conversation=>{
       const haystack=[conversation.peer_user_id,conversation.last_message?.body].join(" ").toLocaleLowerCase();
@@ -740,6 +740,8 @@ const movieHistoryStyle = document.createElement("style");
       if ($("#directConversationTitle")) $("#directConversationTitle").textContent = "Личный диалог";
       if ($("#directConversationMeta")) $("#directConversationMeta").textContent = "ID собеседника: " + (peerId || "скрыт");
       await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(conversationId) + "/read", {method:"PATCH"});
+      const opened=directConversations.find(item=>item.id===conversationId); if(opened) opened.last_read_at=new Date().toISOString();
+      renderDirectConversationList();
       if (status) status.textContent = "Диалог открыт.";
       history?.scrollTo({top:history.scrollHeight,behavior:"smooth"});
     } catch (error) { if (status) status.textContent = error.message; }
@@ -747,13 +749,16 @@ const movieHistoryStyle = document.createElement("style");
   $("#refreshDirectConversations")?.addEventListener("click", loadDirectConversations);
   $("#directConversationSearch")?.addEventListener("input",renderDirectConversationList);
   let directMessageRefreshTimer=null;
-  if(!directMessageRefreshTimer) directMessageRefreshTimer=window.setInterval(()=>{
-    if(document.visibilityState==="visible" && authSession?.user && $("#directMessagesPanel")) {
-      loadDirectConversations();
+  let directMessageRefreshBusy=false;
+  if(!directMessageRefreshTimer) directMessageRefreshTimer=window.setInterval(async()=>{
+    if(directMessageRefreshBusy || document.visibilityState!=="visible" || !authSession?.user || !$("#directMessagesPanel")) return;
+    directMessageRefreshBusy=true;
+    try {
+      await loadDirectConversations();
       if(activeDirectConversationId && !$("#directMessageBody")?.matches(":focus")) {
-        openDirectConversation(activeDirectConversationId,activeDirectPeerId);
+        await openDirectConversation(activeDirectConversationId,activeDirectPeerId);
       }
-    }
+    } finally { directMessageRefreshBusy=false; }
   },20000);
 
   $("#directConversationCreateForm")?.addEventListener("submit", async event => {
