@@ -78,6 +78,7 @@ Implemented on the integration branch:
 - Versioned service-role-only RPCs `reserve_ai_provider_cost_v2` and `settle_ai_provider_cost_v2` bind each reservation and settlement to the same modality. Legacy RPC signatures remain as text-only wrappers for compatibility.
 - Text and Vision reservations take the same global policy-row lock and provider budget-row lock. Global daily spend, provider daily spend and outstanding exposure include both modalities; no separate Vision budget can bypass the shared ceiling.
 - Request modality is checked during idempotent reservation replay, checked again at settlement, and protected by a database trigger against mutation.
+- The admin synchronous AI budget report exposes settled estimates, active reserves and unknown counts separately for `text` and `vision`, while provider/global totals continue to include both.
 - The backend exposes a typed `reserve_ai_provider_vision_cost` admission helper. It performs no provider request; a dedicated Vision transport/service, image consent flow and feature-flagged endpoint remain out of scope.
 
 Unit tests cover text and Vision reservation metadata, shared RPC usage, modality-bound settlement and fail-closed mismatch handling. A transactional PostgreSQL test script covers shared-budget denial, idempotency conflict, modality immutability and settlement binding; it must run in CI before this migration is considered validated.
