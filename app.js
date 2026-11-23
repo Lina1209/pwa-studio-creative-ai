@@ -91,6 +91,7 @@
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+        if (typeof syncCloudVisualLibrary === "function") syncCloudVisualLibrary();
       }, 0);
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => {
@@ -1831,6 +1832,62 @@ const movieHistoryStyle = document.createElement("style");
     await new Promise((resolve,reject)=>{const tx=db.transaction("images","readwrite");tx.objectStore("images").delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
     db.close();
   };
+  const cloudVisualBucket="character-references";
+  const syncCloudVisualLibrary=async()=>{
+    const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
+    try{
+      const {data,error}=await supabaseClient.from("character_visual_assets").select("asset").eq("user_id",userId);
+      if(error)throw error;
+      const local=readVisualLibrary(),byId=new Map(local.map(item=>[item.id,item]));
+      for(const row of (data||[])){
+        const item=row?.asset;if(!item||typeof item.id!=="string")continue;
+        byId.set(item.id,item);
+        for(const ref of (Array.isArray(item.referenceImages)?item.referenceImages:[])){
+          if(!ref.storagePath)continue;
+          const {data:blob,error:downloadError}=await supabaseClient.storage.from(cloudVisualBucket).download(ref.storagePath);
+          if(downloadError)continue;
+          await saveVisualRefImage(ref.id,blob,userId);
+        }
+      }
+      const merged=[...byId.values()].slice(0,100);
+      localStorage.setItem(visualLibraryKey(),JSON.stringify(merged));
+      renderVisualLibrary();
+      $("#promptSaveFeedback").textContent="Облачная библиотека синхронизирована с вашим аккаунтом.";
+    }catch(error){
+      console.warn("Visual library cloud sync unavailable:",error);
+      $("#promptSaveFeedback").textContent="Облачная синхронизация пока недоступна. Локальная библиотека сохранена.";
+    }
+  };
+  const saveVisualAssetToCloud=async(item,files)=>{
+    const userId=authSession?.user?.id;if(!supabaseClient||!userId)return item;
+    const uploaded=[];
+    try{
+      for(let i=0;i<files.length;i++){
+        const file=files[i],ref=item.referenceImages[i];
+        const ext=file.type==="image/jpeg"?"jpg":file.type==="image/webp"?"webp":"png";
+        const storagePath=userId+"/"+item.id+"/"+ref.id+"."+ext;
+        const {error}=await supabaseClient.storage.from(cloudVisualBucket).upload(storagePath,file,{contentType:file.type,upsert:true});
+        if(error)throw error;
+        uploaded.push(storagePath);ref.storagePath=storagePath;
+      }
+      const {error}=await supabaseClient.from("character_visual_assets").upsert(
+        {user_id:userId,asset_id:item.id,asset:item,updated_at:new Date().toISOString()},
+        {onConflict:"user_id,asset_id"}
+      );
+      if(error)throw error;
+      return item;
+    }catch(error){
+      if(uploaded.length)await supabaseClient.storage.from(cloudVisualBucket).remove(uploaded).catch(()=>{});
+      throw error;
+    }
+  };
+  const deleteVisualAssetFromCloud=async(item)=>{
+    const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
+    const paths=(item?.referenceImages||[]).map(ref=>ref.storagePath).filter(Boolean);
+    if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error)throw error;}
+    const {error}=await supabaseClient.from("character_visual_assets").delete().eq("user_id",userId).eq("asset_id",item.id);
+    if(error)throw error;
+  };
   const renderVisualLibrary = () => {
     const list=$("#visualAssetList");if(!list)return;
     const items=readVisualLibrary();list.replaceChildren();
@@ -1927,7 +1984,8 @@ const movieHistoryStyle = document.createElement("style");
       }
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
         const next=readVisualLibrary();const removed=next.splice(index,1)[0];localStorage.setItem(visualLibraryKey(),JSON.stringify(next));
-        (removed?.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));renderVisualLibrary();
+        (removed?.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
+        deleteVisualAssetFromCloud(removed).catch(error=>console.warn("Cloud asset delete failed:",error));renderVisualLibrary();
       });
       actions.append(insert,pin,remove);card.append(actions);list.append(card);
     });
@@ -1950,22 +2008,30 @@ const movieHistoryStyle = document.createElement("style");
     const assetId=crypto.randomUUID?crypto.randomUUID():String(Date.now());
     const refs=files.map((file,index)=>({id:assetId+"-"+index,name:file.name.slice(0,120),type:file.type}));
     items.unshift({id:assetId,type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),referenceImages:refs,createdAt:new Date().toISOString()});
+    const newAsset=items[0];
     try{
       for(let i=0;i<files.length;i++) await saveVisualRefImage(refs[i].id,files[i],authSession?.user?.id||"guest");
+      if(authSession?.user?.id) await saveVisualAssetToCloud(newAsset,files);
       localStorage.setItem(visualLibraryKey(),JSON.stringify(items));
-    }catch{
+    }catch(error){
       await Promise.all(refs.map(ref=>deleteVisualRefImage(ref.id).catch(()=>{})));
-      $("#promptSaveFeedback").textContent="Не удалось сохранить референсы. Проверьте свободное место браузера и доступность IndexedDB.";return;
+      $("#promptSaveFeedback").textContent=authSession?.user?.id
+        ?"Не удалось загрузить материал в облако. Проверьте, что миграции 0070 и 0071 применены; локальная запись не создана."
+        :"Не удалось сохранить референсы. Проверьте свободное место браузера и доступность IndexedDB.";
+      console.warn("Visual asset save failed:",error);return;
     }
     $("#visualAssetName").value="";$("#visualAssetDescription").value="";$("#visualReferenceFiles").value="";
     ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
     renderVisualLibrary();
-    $("#promptSaveFeedback").textContent="«"+name+"» сохранён в библиотеке и доступен в других фильмах на этом устройстве.";
+    $("#promptSaveFeedback").textContent=authSession?.user?.id
+      ?"«"+name+"» сохранён в облачной библиотеке вашего аккаунта."
+      :"«"+name+"» сохранён локально. Войдите в аккаунт для облачной синхронизации.";
   });
   const syncPassportFields=()=>{$("#characterPassportFields").hidden=$("#visualAssetType").value!=="character";};
   $("#visualAssetType").addEventListener("change",syncPassportFields);
   syncPassportFields();
   renderVisualLibrary();
+  if(authSession?.user?.id)syncCloudVisualLibrary();
     const promptTemplates = {
     cinematic: "Субъект: {{subject}}.\nЛокация: {{location}}.\nНастроение: {{mood}}.\nКинематографичная композиция, выразительная глубина кадра, естественное освещение, детализированные материалы, продуманная цветовая палитра. Камера: {{camera}}. Сохранить визуальную целостность и реалистичную физику.",
     character: "Персонаж: {{subject}}.\nВнешность и отличительные черты: {{appearance}}.\nОдежда и аксессуары: {{wardrobe}}.\nХарактер и манера движения: {{personality}}. Сохранять одинаковые черты лица, пропорции, причёску и одежду во всех кадрах. Не менять идентичность персонажа.",
