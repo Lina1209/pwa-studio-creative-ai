@@ -72,3 +72,15 @@ The reservation ledger is separate from customer credits. It does not charge use
 ### Administrator authorization boundary
 
 The current administrator model is a server-side owner UUID allowlist, not a general role-management system. It supports one or more explicitly configured owner UUIDs, but does not yet provide delegated finance operators, permission scopes, two-person approval, or an administrator audit trail for financial adjustments. Service-role database RPCs remain server-only. Do not build a customer-facing credit-compensation or cash-refund action on top of `require_admin` until scoped financial permissions, immutable operator audit records, approval rules, and the selected credit-lot restoration/expiry policy are implemented and tested.
+
+
+## Durable generation worker runtime
+
+The single-job executor and separately deployable polling loop are implemented as dependency-injected components:
+- `app.services.generation_worker.GenerationWorker` processes one claimed image job.
+- `app.services.generation_worker_runner.run_generation_worker_loop` claims durable work, applies idle polling/error backoff, and supports graceful process shutdown.
+- `app.services.supabase_generation_worker_repository.SupabaseGenerationJobRepository` owns the service-role RPC boundary.
+
+The runner does not construct or register providers, storage clients, or credentials. No real image-generation provider or private Storage adapter is registered yet. DeepSeek remains the only text AI provider; it is not treated as an image-generation API.
+
+Keep `GENERATION_JOBS_ENABLED`, `GENERATION_JOB_WORKER_READY`, and `GENERATION_WORKER_RUNTIME_ENABLED` false until the provider, private storage adapter, dedicated worker entrypoint, deployment controls, and spend limits have passed separate review. See [generation worker runtime](../docs/architecture/generation-worker-runtime.md).
