@@ -88,7 +88,7 @@ from app.services.generation_jobs import (
     store_pricing_quote,
 )
 
-settings = get_settings()
+from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message\n\nsettings = get_settings()
 logger = logging.getLogger(__name__)
 
 
@@ -1476,3 +1476,103 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
     record_ai_usage(settings, user_id=user.user_id, request_id=getattr(result, "request_id", uuid4()), endpoint="prompts",
                     provider=settings.ai_provider, result=result)
     return PromptResponse(prompt=result.text, provider=settings.ai_provider, model=result.actual_model)
+\n\n
+class SupportTicketCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    subject: str = Field(min_length=3, max_length=160)
+    message: str = Field(min_length=1, max_length=5000)
+
+class SupportMessageCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    message: str = Field(min_length=1, max_length=5000)
+
+class SupportStatusUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    status: str = Field(pattern="^(open|in_progress|waiting_user|resolved|closed)$")
+
+def _support_error():
+    raise HTTPException(status_code=503, detail="Служба поддержки временно недоступна.")
+
+@app.post(f"{settings.api_prefix}/support/tickets", status_code=201)
+def support_create_ticket(payload: SupportTicketCreate, user: StudioUser = Depends(get_current_user)):
+    subject=payload.subject.strip()
+    body=payload.message.strip()
+    if len(subject)<3 or not body: raise HTTPException(status_code=422, detail="Тема и сообщение обязательны.")
+    try:
+        ticket=create_ticket(settings, UUID(user.user_id), subject, body)
+        record_admin_audit_event(settings, actor_user_id=UUID(user.user_id), action="admin.support.view", outcome="requested", resource_type="support_ticket", resource_id=UUID(ticket["id"]), reason="User created support ticket")
+        return {"ticket":ticket}
+    except SupportUnavailable: _support_error()
+
+@app.get(f"{settings.api_prefix}/support/tickets")
+def support_list_my_tickets(user: StudioUser = Depends(get_current_user)):
+    try: return {"tickets":list_tickets(settings,user_id=UUID(user.user_id))}
+    except SupportUnavailable: _support_error()
+
+@app.get(f"{settings.api_prefix}/support/tickets/{{ticket_id}}")
+def support_read_my_ticket(ticket_id: UUID, user: StudioUser = Depends(get_current_user)):
+    try:
+        ticket=get_ticket(settings,ticket_id)
+        if ticket is None or ticket["user_id"] != user.user_id: raise HTTPException(status_code=404,detail="Обращение не найдено.")
+        return {"ticket":ticket,"messages":list_messages(settings,ticket_id)}
+    except SupportUnavailable: _support_error()
+
+@app.post(f"{settings.api_prefix}/support/tickets/{{ticket_id}}/messages", status_code=201)
+def support_reply_my_ticket(ticket_id: UUID, payload: SupportMessageCreate, user: StudioUser = Depends(get_current_user)):
+    body=payload.message.strip()
+    if not body: raise HTTPException(status_code=422,detail="Сообщение не может быть пустым.")
+    try:
+        ticket=get_ticket(settings,ticket_id)
+        if ticket is None or ticket["user_id"] != user.user_id: raise HTTPException(status_code=404,detail="Обращение не найдено.")
+        if ticket["status"] in ("resolved","closed"): raise HTTPException(status_code=409,detail="Обращение закрыто.")
+        add_message(settings,ticket_id,UUID(user.user_id),"user",body)
+        return {"status":"sent"}
+    except SupportUnavailable: _support_error()
+
+@app.get(f"{settings.api_prefix}/admin/support/tickets")
+def admin_support_list_tickets(user: StudioUser = Depends(require_admin)):
+    try:
+        rows=list_tickets(settings,limit=100)
+        _audit_admin_read(user,resource_type="support_ticket",reason="Admin opened support inbox")
+        return {"tickets":rows}
+    except SupportUnavailable: _support_error()
+
+@app.get(f"{settings.api_prefix}/admin/support/tickets/{{ticket_id}}")
+def admin_support_read_ticket(ticket_id: UUID, user: StudioUser = Depends(require_admin)):
+    try:
+        ticket=get_ticket(settings,ticket_id)
+        if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
+        messages=list_messages(settings,ticket_id)
+        _audit_admin_read(user,resource_type="support_ticket",reason="Admin read support conversation")
+        return {"ticket":ticket,"messages":messages}
+    except SupportUnavailable: _support_error()
+
+@app.post(f"{settings.api_prefix}/admin/support/tickets/{{ticket_id}}/messages", status_code=201)
+def admin_support_reply(ticket_id: UUID, payload: SupportMessageCreate, user: StudioUser = Depends(require_admin)):
+    body=payload.message.strip()
+    if not body: raise HTTPException(status_code=422,detail="Сообщение не может быть пустым.")
+    try:
+        ticket=get_ticket(settings,ticket_id)
+        if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
+        add_message(settings,ticket_id,UUID(user.user_id),"admin",body)
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.view",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason="Admin replied to support ticket")
+        return {"status":"sent"}
+    except SupportUnavailable: _support_error()
+
+@app.patch(f"{settings.api_prefix}/admin/support/tickets/{{ticket_id}}/status")
+def admin_support_update_status(ticket_id: UUID, payload: SupportStatusUpdate, user: StudioUser = Depends(require_admin)):
+    try:
+        ticket=get_ticket(settings,ticket_id)
+        if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
+        # Status transitions are explicit; closed/resolved tickets may be reopened by an administrator.
+        import httpx
+        key=settings.supabase_service_role_key
+        headers={"apikey":key,"Authorization":f"Bearer {key}","Content-Type":"application/json"} if key and key.startswith("eyJ") else {"apikey":key or "","Content-Type":"application/json"}
+        with httpx.Client(timeout=8.0) as client:
+            response=client.patch(f"{settings.supabase_url.rstrip('/')}/rest/v1/support_tickets",params={"id":f"eq.{ticket_id}"},json={"status":payload.status,"updated_at":"now()"},headers=headers)
+            response.raise_for_status()
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.view",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason=f"Admin changed ticket status to {payload.status}")
+        return {"status":payload.status}
+    except SupportUnavailable: _support_error()
+    except HTTPException: raise
+    except Exception: _support_error()
