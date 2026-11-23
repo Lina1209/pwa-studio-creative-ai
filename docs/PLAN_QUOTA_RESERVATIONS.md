@@ -79,3 +79,46 @@ The disposable PostgreSQL migration integration suite now includes plan/assignme
 ## Plan dimensions intentionally not yet enforced
 
 The plan draft schema also permits `max_parallel_jobs`, `daily_generation_jobs`, `monthly_generation_jobs`, `max_video_seconds`, and `max_resolution`. These are not yet part of the combined admission RPC. They must not be presented as enforced product limits until their semantics are added to the same transaction and covered by integration tests. In particular, maximum video duration and resolution require validated request fields and should be checked against the immutable approved plan snapshot before job creation.
+
+
+## Authenticated effective-entitlements API
+
+`GET /api/me/entitlements` resolves the calling user's current plan using the verified Supabase Auth subject UUID. The client cannot provide a target user ID, plan ID, feature list, or quota limits.
+
+The resolver:
+- considers only assignments whose status is `active` and whose start/end timestamps contain the current UTC time;
+- never promotes `pending` or `scheduled` assignments;
+- returns no capabilities when no active assignment exists;
+- denies capabilities when more than one active assignment is found;
+- reads the immutable approved plan snapshot and current reservation usage from the server-side database;
+- reports remaining daily/monthly quota after both reserved and completed work, and counts only still-reserved AI concurrency slots;
+- marks each dimension with `enforced`; draft dimensions not yet connected to transactional admission are visibly marked `false`;
+- reports a feature as available only when the approved plan includes it and all required enforced quota dimensions are configured and positive.
+
+The endpoint is authenticated, private/no-store, and never grants credits or activates plans. Technical anti-abuse admission ceilings remain separate from customer-plan quotas.
+
+Example response shape (values are illustrative):
+```json
+{
+  "status": "active",
+  "plan": {"code": "creator", "version": 1, "name": "Creator"},
+  "capabilities": {
+    "ai": {"available": true, "included_in_plan": true, "quota_ready": true},
+    "image": {"available": true, "included_in_plan": true, "quota_ready": true},
+    "video": {"available": false, "included_in_plan": true, "quota_ready": false},
+    "audio": {"available": false, "included_in_plan": false, "quota_ready": false}
+  },
+  "quotas": {
+    "daily_image_generations": {
+      "limit": 20, "used": 3, "remaining": 17, "enforced": true, "configured": true
+    },
+    "max_video_seconds": {
+      "limit": 60, "used": 0, "remaining": 60, "enforced": false, "configured": true
+    }
+  },
+  "capabilities_enabled": true,
+  "activation_enabled": false,
+  "checkout_enabled": false,
+  "credits_granted": false
+}
+```
