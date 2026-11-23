@@ -1431,6 +1431,7 @@ const movieHistoryStyle = document.createElement("style");
     window.location.hash = view === "home" ? "" : view;
     window.scrollTo({top:0,behavior:"smooth"});
     if (view === "account" && authSession?.user) { loadMySupportTickets(); if (adminUiAuthorized) { loadAdminSupportTickets(); loadAdminPricingDrafts(); loadAdminPlanDrafts(); } }
+    if (view === "messages" && authSession?.user) loadMySupportTickets();
   }
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
