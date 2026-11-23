@@ -2201,6 +2201,10 @@ const movieHistoryStyle = document.createElement("style");
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",async()=>{
         const ownerId=authSession?.user?.id||null,storageKey=visualLibraryKey();
         const current=readVisualLibrary(),removed=current.find(asset=>asset.id===item.id);if(!removed)return;
+        if(visualReferenceRemovalLocks.has(removed.id)){
+          $("#promptSaveFeedback").textContent="Сначала дождитесь завершения удаления изображения из этого материала.";
+          return;
+        }
         const stillOwner=()=>((authSession?.user?.id||null)===ownerId);
         remove.disabled=true;
         // A sync started before this deletion must not restore its stale snapshot.
@@ -2249,6 +2253,10 @@ const movieHistoryStyle = document.createElement("style");
     const items=readVisualLibrary(),editingId=editingVisualAssetId;
     const existing=editingId?items.find(item=>item.id===editingId):null;
     if(editingId&&!existing){resetVisualAssetEditor();$("#promptSaveFeedback").textContent="Материал больше не найден. Обновите библиотеку.";return;}
+    if(editingId&&visualReferenceRemovalLocks.has(editingId)){
+      $("#promptSaveFeedback").textContent="Сначала дождитесь завершения удаления изображения из этого материала.";
+      return;
+    }
     if(!editingId&&items.length>=100){$("#promptSaveFeedback").textContent="Библиотека вмещает до 100 материалов. Удалите ненужные записи.";return;}
     const files=Array.from($("#visualReferenceFiles")?.files||[]);
     const oldRefs=existing&&Array.isArray(existing.referenceImages)?existing.referenceImages:[];
