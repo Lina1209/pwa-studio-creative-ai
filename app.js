@@ -664,6 +664,116 @@ const movieHistoryStyle = document.createElement("style");
   });
 
 
+  // Private one-to-one messaging UI. All identities are derived server-side from the session.
+  let directConversations = [];
+  let activeDirectConversationId = null;
+  let activeDirectPeerId = null;
+  const directMessageNode = message => {
+    const node = document.createElement("article");
+    node.className = "assistant-message " + (message.sender_user_id === authSession?.user?.id ? "user-message" : "ai-message");
+    const body = document.createElement("div"); body.textContent = message.body || "";
+    const meta = document.createElement("small");
+    meta.textContent = new Date(message.created_at).toLocaleString();
+    node.append(body, meta); return node;
+  };
+  const resetDirectMessagesUi = () => {
+    directConversations = []; activeDirectConversationId = null; activeDirectPeerId = null;
+    $("#directConversationList")?.replaceChildren();
+    $("#directMessageHistory")?.replaceChildren();
+    $("#directConversationView")?.setAttribute("hidden", "");
+    if ($("#directMessagesStatus")) $("#directMessagesStatus").textContent = authSession?.user
+      ? "Выберите диалог или начните новый." : "Войдите в аккаунт, чтобы пользоваться личными сообщениями.";
+  };
+  resetSupportUiForAccountChange = () => { resetDirectMessagesUi(); };
+  const loadDirectConversations = async () => {
+    const status = $("#directMessagesStatus");
+    if (!authSession?.user) { resetDirectMessagesUi(); return; }
+    if (status) status.textContent = "Загружаем личные диалоги…";
+    try {
+      const data = await apiRequest("/api/messages/direct/conversations");
+      directConversations = data.conversations || [];
+      const list = $("#directConversationList"); if (!list) return;
+      list.replaceChildren();
+      directConversations.forEach(conversation => {
+        const button = document.createElement("button"); button.type = "button";
+        button.className = "messages-conversation-item";
+        const title = document.createElement("b"); title.textContent = "Пользователь " + (conversation.peer_user_id || "—");
+        const preview = document.createElement("small");
+        preview.textContent = conversation.last_message?.body || "Пока нет сообщений";
+        button.append(title, preview);
+        button.addEventListener("click", () => openDirectConversation(conversation.id, conversation.peer_user_id));
+        list.append(button);
+      });
+      if (status) status.textContent = directConversations.length
+        ? "Ваши личные диалоги загружены." : "Диалогов пока нет. Можно начать новый по ID пользователя.";
+    } catch (error) { if (status) status.textContent = error.message; }
+  };
+  const openDirectConversation = async (conversationId, peerId) => {
+    activeDirectConversationId = conversationId; activeDirectPeerId = peerId || null;
+    const status = $("#directMessagesStatus");
+    try {
+      const data = await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(conversationId));
+      const history = $("#directMessageHistory"); if (history) history.replaceChildren(...(data.messages || []).map(directMessageNode));
+      const view = $("#directConversationView"); if (view) view.hidden = false;
+      if ($("#directConversationTitle")) $("#directConversationTitle").textContent = "Личный диалог";
+      if ($("#directConversationMeta")) $("#directConversationMeta").textContent = "ID собеседника: " + (peerId || "скрыт");
+      await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(conversationId) + "/read", {method:"PATCH"});
+      if (status) status.textContent = "Диалог открыт.";
+      history?.scrollTo({top:history.scrollHeight,behavior:"smooth"});
+    } catch (error) { if (status) status.textContent = error.message; }
+  };
+  $("#refreshDirectConversations")?.addEventListener("click", loadDirectConversations);
+  $("#directConversationCreateForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!authSession?.user) { $("#directMessagesStatus").textContent = "Сначала войдите в аккаунт."; return; }
+    const button = event.submitter; if (button) button.disabled = true;
+    try {
+      const recipient = $("#directRecipientUserId").value.trim();
+      const data = await apiRequest("/api/messages/direct/conversations", {method:"POST",body:JSON.stringify({recipient_user_id:recipient})});
+      $("#directRecipientUserId").value = "";
+      await loadDirectConversations();
+      await openDirectConversation(data.conversation_id, recipient);
+    } catch (error) { $("#directMessagesStatus").textContent = error.message; }
+    finally { if (button) button.disabled = false; }
+  });
+  $("#directMessageSendForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!activeDirectConversationId) return;
+    const body = $("#directMessageBody").value.trim(); if (!body) return;
+    const button = event.submitter; if (button) button.disabled = true;
+    try {
+      await apiRequest("/api/messages/direct/conversations/" + encodeURIComponent(activeDirectConversationId) + "/messages",
+        {method:"POST",body:JSON.stringify({body,idempotency_key:crypto.randomUUID()})});
+      $("#directMessageBody").value = "";
+      await openDirectConversation(activeDirectConversationId, activeDirectPeerId);
+      await loadDirectConversations();
+    } catch (error) { $("#directMessagesStatus").textContent = error.message; }
+    finally { if (button) button.disabled = false; }
+  });
+  $("#directBlockUser")?.addEventListener("click", async () => {
+    if (!activeDirectPeerId || !confirm("Заблокировать этого пользователя? Он не сможет отправлять вам новые сообщения.")) return;
+    try {
+      await apiRequest("/api/messages/direct/users/" + encodeURIComponent(activeDirectPeerId) + "/block", {method:"PUT"});
+      $("#directMessagesStatus").textContent = "Пользователь заблокирован.";
+    } catch (error) { $("#directMessagesStatus").textContent = error.message; }
+  });
+  $("#directReportUser")?.addEventListener("click", async () => {
+    if (!activeDirectPeerId) return;
+    const category = prompt("Причина жалобы: spam, harassment, scam, threats, inappropriate или other", "other");
+    if (!category) return;
+    const details = prompt("Дополнительные сведения (необязательно):", "") || "";
+    try {
+      await apiRequest("/api/messages/direct/reports", {method:"POST",body:JSON.stringify({
+        target_user_id:activeDirectPeerId, category:category.trim(), details
+      })});
+      $("#directMessagesStatus").textContent = "Жалоба отправлена на проверку.";
+    } catch (error) { $("#directMessagesStatus").textContent = error.message; }
+  });
+  if ($("#directMessagesPanel")) {
+    if (authSession?.user) loadDirectConversations();
+    else resetDirectMessagesUi();
+  }
+
   const loadAdminPricingDrafts = async () => {
     const status = $("#pricingDraftStatus");
     if (!adminUiAuthorized) { if (status) status.textContent = "Нет доступа."; return; }
