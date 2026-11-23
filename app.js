@@ -1843,6 +1843,29 @@ const movieHistoryStyle = document.createElement("style");
         project.visualContinuity=refs;project.updatedAt=new Date().toISOString();
         if(movieWrite(projects)){renderVisualLibrary();$("#promptSaveFeedback").textContent=existing>=0?"Материал откреплён от текущего фильма.":"Материал закреплён: AI будет учитывать его при создании новых промптов.";}
       });
+      if(item.type==="character"){
+        const sheet=document.createElement("button");sheet.type="button";sheet.className="secondary-button";sheet.textContent="Собрать Character Sheet";
+        sheet.addEventListener("click",()=>{
+          const p=item.passport||{};
+          const sections=[
+            "CHARACTER SHEET — CONSISTENT MODEL REFERENCE",
+            "Character: "+item.name,
+            "Core identity and personality: "+item.text,
+            "FRONT FACE / PORTRAIT: "+(p.face||"Define from the core description; preserve identity."),
+            "SIDE PROFILE: "+(p.profile||"Create a clear side profile matching the same face and skull shape."),
+            "FULL BODY: "+(p.fullBody||"Show complete body proportions, posture and silhouette."),
+            "WARDROBE AND ACCESSORIES: "+(p.wardrobe||"Design a coherent outfit consistent with the character description."),
+            "COLOR PALETTE: "+(p.palette||"Derive a restrained, consistent palette from the description."),
+            "EXPRESSIONS: "+(p.expressions||"Include neutral, joyful, concerned and determined expressions."),
+            "LAYOUT: one clean professional character-reference sheet on a plain neutral background; front portrait, side profile, full-body front view, full-body back view, and a compact expression row. Keep every view of the exact same character.",
+            "CONTINUITY RULES: identical facial identity, age appearance, body proportions, hairstyle, outfit construction, accessories and palette across all panels. No redesign, no extra characters, no cropped feet, no perspective distortion, no text labels or watermarks unless requested.",
+            "STYLE AND QUALITY: polished production-ready concept-art reference, clear readable silhouettes, consistent anatomy, even studio lighting, high detail."
+          ];
+          const output=$("#promptOutput");if(output){output.textContent=sections.join("\n\n");output.setAttribute("contenteditable","true");output.focus();output.scrollIntoView({behavior:"smooth",block:"center"});}
+          $("#promptSaveFeedback").textContent="Лист персонажа собран как готовый промпт. Проверьте детали и при необходимости сохраните его в библиотеку промптов.";
+        });
+        actions.append(sheet);
+      }
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",()=>{
         const next=readVisualLibrary();next.splice(index,1);localStorage.setItem(visualLibraryKey(),JSON.stringify(next));renderVisualLibrary();
       });
@@ -1864,12 +1887,12 @@ const movieHistoryStyle = document.createElement("style");
     catch{$("#promptSaveFeedback").textContent="Не удалось сохранить материал: проверьте свободное место браузера.";return;}
     $("#visualAssetName").value="";$("#visualAssetDescription").value="";
     ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
-    const syncPassportFields=()=>{$("#characterPassportFields").hidden=$("#visualAssetType").value!=="character";};
-  $("#visualAssetType").addEventListener("change",syncPassportFields);
-  syncPassportFields();
-  renderVisualLibrary();
+    renderVisualLibrary();
     $("#promptSaveFeedback").textContent="«"+name+"» сохранён в библиотеке и доступен в других фильмах на этом устройстве.";
   });
+  const syncPassportFields=()=>{$("#characterPassportFields").hidden=$("#visualAssetType").value!=="character";};
+  $("#visualAssetType").addEventListener("change",syncPassportFields);
+  syncPassportFields();
   renderVisualLibrary();
     const promptTemplates = {
     cinematic: "Субъект: {{subject}}.\nЛокация: {{location}}.\nНастроение: {{mood}}.\nКинематографичная композиция, выразительная глубина кадра, естественное освещение, детализированные материалы, продуманная цветовая палитра. Камера: {{camera}}. Сохранить визуальную целостность и реалистичную физику.",
