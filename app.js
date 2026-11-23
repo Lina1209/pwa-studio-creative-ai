@@ -306,7 +306,7 @@ const movieHistoryStyle = document.createElement("style");
     image: { title: "Генерация изображений", icon: "▧", dimensions: ["daily_image_generations", "monthly_image_generations"] },
     video: { title: "Генерация видео", icon: "🎬", dimensions: ["daily_video_generations", "monthly_video_generations", "max_video_seconds", "max_resolution"] },
     audio: { title: "Генерация аудио", icon: "♫", dimensions: ["daily_audio_generations", "monthly_audio_generations"] },
-    jobs: { title: "Общий ресурс заданий", icon: "⚙", dimensions: ["daily_generation_jobs", "monthly_generation_jobs", "max_parallel_jobs"] }
+    jobs: { title: "Общий ресурс заданий", icon: "⚙", dimensions: ["daily_generation_jobs", "monthly_generation_jobs", "max_parallel_jobs"], capability: false }
   };
   const entitlementDimensionLabels = {
     daily_ai_requests: "Запросы AI за день",
@@ -374,7 +374,8 @@ const movieHistoryStyle = document.createElement("style");
       const icon = document.createElement("span"); icon.textContent = meta.icon;
       const title = document.createElement("b"); title.textContent = meta.title;
       const state = document.createElement("p");
-      state.textContent = capability.available ? "Доступно по вашему тарифу" :
+      state.textContent = key === "jobs" ? "Общие ограничения для всех типов заданий" :
+        capability.available ? "Доступно по вашему тарифу" :
         capability.included_in_plan ? "Включено в тариф, но квоты ещё не готовы" : "Не входит в тариф";
       card.append(icon, title, state);
       for (const dimension of meta.dimensions) {
