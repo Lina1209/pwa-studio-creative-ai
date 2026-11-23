@@ -358,7 +358,11 @@ Each feature needs explicit acceptance criteria and evidence. Manual user testin
 - Character table/schema/RLS must be inspected before building on it.
 - Audio is local preview only.
 - No real image/video generation pipeline, audio generation pipeline, timeline renderer, or MP4 export is connected.
-- Visitor analytics and privacy-governance code exists in the review branch but is not live-verified; community chat, full moderation, ban/appeal system and creator showcase remain planned.\n- The support inbox exists in the review branch but is not deployed or live-verified; no real-time delivery, email/push notifications, attachments, assignment, internal notes or queue filters are connected yet.\n- No concrete production video-provider adapter is present; the provider idempotency audit marks video generation blocked.\n- Audio remains local preview only; speech-to-text, text-to-speech, music/SFX provider calls, dubbing, lip-sync, voice library, mixing and export are not connected.\n- Wallet, quota and payment foundations in the review branch are not equivalent to an enabled payment provider or production billing; payment execution remains disabled.
+- Visitor analytics and privacy-governance code exists in the review branch but is not live-verified; community chat, full moderation, ban/appeal system and creator showcase remain planned.
+- The support inbox exists in the review branch but is not deployed or live-verified; no real-time delivery, email/push notifications, attachments, assignment, internal notes or queue filters are connected yet.
+- No concrete production video-provider adapter is present; the provider idempotency audit marks video generation blocked.
+- Audio remains local preview only; speech-to-text, text-to-speech, music/SFX provider calls, dubbing, lip-sync, voice library, mixing and export are not connected.
+- Wallet, quota and payment foundations in the review branch are not equivalent to an enabled payment provider or production billing; payment execution remains disabled.
 - Existing keyword safety checks are only a first layer; they are not a complete moderation system.
 
 ## 12. Working agreement
