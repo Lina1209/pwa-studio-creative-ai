@@ -4,6 +4,7 @@
 \set ON_ERROR_STOP on
 \ir ../migrations/0078_atomic_payment_fulfillment.sql
 \ir ../migrations/0100_finance_integrity_payments_subscriptions_quotas.sql
+\ir ../migrations/0102_payment_refund_foundation.sql
 
 insert into auth.users(id)
 values
@@ -383,3 +384,167 @@ end;
 $finance_commerce_snapshot_test$;
 
 select 'expanded finance commerce snapshot checks passed' as result;
+
+
+do $payment_refund_idempotency_and_compensation_queue$
+declare
+  v_order public.payment_orders%rowtype;
+  v_refund record;
+  v_event record;
+  v_second record;
+  v_lot public.credit_lots%rowtype;
+  v_refunded bigint;
+  v_reconciliation_count integer;
+begin
+  select * into v_order from public.payment_orders
+   where merchant_reference = 'purchase-credit-pack-001';
+  if not found or v_order.status <> 'succeeded' then
+    raise exception 'Settled credit-pack order fixture is missing';
+  end if;
+
+  select * into v_refund from public.create_payment_refund_intent(
+    v_order.id, 25000, 'refund-partial-001',
+    '88888888-8888-4888-8888-888888888888', 'customer_request'
+  );
+  if v_refund.refund_status <> 'requested' or v_refund.replayed then
+    raise exception 'First refund intent was not created';
+  end if;
+
+  select * into v_second from public.create_payment_refund_intent(
+    v_order.id, 25000, 'refund-partial-001',
+    '88888888-8888-4888-8888-888888888888', 'customer_request'
+  );
+  if not v_second.replayed or v_second.refund_id <> v_refund.refund_id then
+    raise exception 'Refund intent idempotent replay failed';
+  end if;
+
+  begin
+    perform public.create_payment_refund_intent(
+      v_order.id, 75000, 'refund-overflow-001',
+      '88888888-8888-4888-8888-888888888888', 'customer_request'
+    );
+    raise exception 'Over-refund request was unexpectedly accepted';
+  exception when sqlstate '22023' then
+    null;
+  end;
+
+  select * into v_event from public.record_verified_payment_refund_provider_event(
+    'examplepay', 'refund-event-partial-pending-001', v_refund.refund_id,
+    'refund.pending', repeat('a',64), 25000, 'KZT', 'provider-refund-partial-001'
+  );
+  if v_event.resulting_status <> 'submitted' or v_event.replayed then
+    raise exception 'Pending refund provider event was not recorded';
+  end if;
+
+  select * into v_event from public.record_verified_payment_refund_provider_event(
+    'examplepay', 'refund-event-partial-success-001', v_refund.refund_id,
+    'refund.succeeded', repeat('b',64), 25000, 'KZT', 'provider-refund-partial-001'
+  );
+  if v_event.resulting_status <> 'succeeded' or v_event.replayed then
+    raise exception 'Partial refund did not settle';
+  end if;
+
+  select * into v_event from public.record_verified_payment_refund_provider_event(
+    'examplepay', 'refund-event-partial-success-001', v_refund.refund_id,
+    'refund.succeeded', repeat('b',64), 25000, 'KZT', 'provider-refund-partial-001'
+  );
+  if not v_event.replayed or v_event.resulting_status <> 'succeeded' then
+    raise exception 'Verified refund provider event replay was not idempotent';
+  end if;
+
+  select status into v_order.status from public.payment_orders where id = v_order.id;
+  if v_order.status <> 'partially_refunded' then
+    raise exception 'Partial refund did not update payment order status';
+  end if;
+
+  select * into v_lot from public.credit_lots
+   where user_id = v_order.user_id
+     and source_reference = 'payment-order:' || v_order.id::text;
+  if not found or v_lot.granted_credits <> 850
+     or v_lot.available_credits <> 850 or v_lot.reserved_credits <> 0 then
+    raise exception 'Refund foundation unexpectedly changed the purchased credit lot';
+  end if;
+
+  select count(*) into v_reconciliation_count
+    from public.payment_refund_reconciliations
+   where refund_id = v_refund.refund_id and status = 'pending_review';
+  if v_reconciliation_count <> 1 then
+    raise exception 'Settled refund did not create exactly one entitlement review item';
+  end if;
+
+  select * into v_second from public.create_payment_refund_intent(
+    v_order.id, 74000, 'refund-final-001',
+    '88888888-8888-4888-8888-888888888888', 'customer_request'
+  );
+  if v_second.refund_status <> 'requested' or v_second.replayed then
+    raise exception 'Remaining refundable amount was not reserved correctly';
+  end if;
+
+  select * into v_event from public.record_verified_payment_refund_provider_event(
+    'examplepay', 'refund-event-final-success-001', v_second.refund_id,
+    'refund.succeeded', repeat('c',64), 74000, 'KZT', 'provider-refund-final-001'
+  );
+  if v_event.resulting_status <> 'succeeded' then
+    raise exception 'Final refund did not settle';
+  end if;
+
+  select status into v_order.status from public.payment_orders where id = v_order.id;
+  if v_order.status <> 'refunded' then
+    raise exception 'Fully refunded payment order was not closed';
+  end if;
+
+  select coalesce(sum(amount_minor),0) into v_refunded
+    from public.payment_refunds where payment_order_id = v_order.id and status = 'succeeded';
+  if v_refunded <> v_order.amount_minor then
+    raise exception 'Settled refund total does not exactly match original order amount';
+  end if;
+
+  select count(*) into v_reconciliation_count
+    from public.payment_refund_reconciliations
+   where payment_order_id = v_order.id and status = 'pending_review';
+  if v_reconciliation_count <> 2 then
+    raise exception 'Every settled refund must have exactly one pending entitlement review';
+  end if;
+
+  begin
+    perform public.create_payment_refund_intent(
+      v_order.id, 1, 'refund-after-full-001',
+      '88888888-8888-4888-8888-888888888888', 'customer_request'
+    );
+    raise exception 'Refund after full settlement was unexpectedly accepted';
+  exception when sqlstate '55000' then
+    null;
+  end;
+end;
+$payment_refund_idempotency_and_compensation_queue$;
+
+do $payment_refund_privilege_boundaries$
+begin
+  if has_function_privilege(
+       'authenticated',
+       'public.create_payment_refund_intent(uuid,bigint,text,uuid,text)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.record_verified_payment_refund_provider_event(text,text,uuid,text,text,bigint,text,text)',
+       'EXECUTE'
+     ) then
+    raise exception 'Untrusted roles can execute refund financial RPCs';
+  end if;
+  if not has_function_privilege(
+       'service_role',
+       'public.create_payment_refund_intent(uuid,bigint,text,uuid,text)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.record_verified_payment_refund_provider_event(text,text,uuid,text,text,bigint,text,text)',
+       'EXECUTE'
+     ) then
+    raise exception 'Service role cannot execute refund RPCs';
+  end if;
+end;
+$payment_refund_privilege_boundaries$;
+
+select 'payment refund intent and settlement checks passed' as result;
