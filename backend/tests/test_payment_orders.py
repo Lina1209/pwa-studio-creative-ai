@@ -62,6 +62,10 @@ class FakeVerifiedAdapter:
         self.received_body = None
         self.received_headers = None
 
+    def validate_configuration(self, settings):
+        if getattr(settings, "test_adapter_ready", True) is not True:
+            raise ValueError("adapter configuration is incomplete")
+
     def verify_webhook(self, *, raw_body, headers):
         self.received_body = raw_body
         self.received_headers = headers
@@ -76,7 +80,7 @@ def test_webhook_signature_failure_stops_before_privileged_rpc(monkeypatch):
     adapter = FakeVerifiedAdapter(error=ValueError("invalid provider signature"))
     with pytest.raises(ValueError, match="invalid provider signature"):
         service.record_verified_provider_event(
-            SETTINGS, registry=PaymentProviderAdapterRegistry([adapter]), provider_code="examplepay", raw_body=b'{"paid":true}',
+            SETTINGS, registry=PaymentProviderAdapterRegistry([adapter], enabled=True, settings=Settings(payment_provider_runtime_enabled=True)), provider_code="examplepay", raw_body=b'{"paid":true}',
             headers={"x-signature": "invalid"},
         )
     assert called == []
@@ -143,9 +147,36 @@ def test_provider_registry_rejects_duplicate_adapter_identity():
 
 
 def test_provider_registry_does_not_select_provider_from_unknown_code():
-    registry = PaymentProviderAdapterRegistry([FakeVerifiedAdapter()])
+    registry = PaymentProviderAdapterRegistry([FakeVerifiedAdapter()], enabled=True, settings=Settings(payment_provider_runtime_enabled=True))
     with pytest.raises(PaymentProviderNotConfigured):
         registry.get("otherpay")
+
+
+
+def test_provider_registry_cannot_enable_without_server_runtime_flag():
+    with pytest.raises(PaymentProviderNotConfigured, match="runtime is disabled"):
+        PaymentProviderAdapterRegistry(
+            [FakeVerifiedAdapter()], enabled=True,
+            settings=Settings(payment_provider_runtime_enabled=False),
+        )
+
+
+def test_provider_registry_validates_adapter_configuration_before_registration():
+    class IncompleteAdapter(FakeVerifiedAdapter):
+        def validate_configuration(self, settings):
+            raise ValueError("missing webhook secret")
+
+    with pytest.raises(ValueError, match="missing webhook secret"):
+        PaymentProviderAdapterRegistry(
+            [IncompleteAdapter()], enabled=True,
+            settings=Settings(payment_provider_runtime_enabled=True),
+        )
+
+
+def test_disabled_registry_rejects_even_registered_provider():
+    registry = PaymentProviderAdapterRegistry([FakeVerifiedAdapter()])
+    with pytest.raises(PaymentProviderNotConfigured, match="runtime is disabled"):
+        registry.get("examplepay")
 
 
 def test_credit_pack_order_uses_approved_version_rpc_and_no_client_price(monkeypatch):
