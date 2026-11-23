@@ -132,6 +132,81 @@ begin
 end;
 $$;
 
+-- Modality-bound settlement prevents a request ID from being settled through
+-- a different accounting path. The legacy settlement RPC remains text-only.
+create or replace function public.settle_ai_provider_cost_v2(
+  p_request_id uuid,
+  p_request_modality text,
+  p_actual_estimated_cost_usd numeric,
+  p_cost_source text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $
+declare
+  v_row public.ai_provider_cost_reservations%rowtype;
+begin
+  if p_request_id is null
+     or p_request_modality is null or p_request_modality not in ('text', 'vision')
+     or (p_actual_estimated_cost_usd is not null and
+         (p_actual_estimated_cost_usd < 0 or p_actual_estimated_cost_usd > 1000000000))
+     or (p_cost_source is not null and length(p_cost_source) > 80) then
+    raise exception 'Invalid AI provider cost settlement' using errcode = '22023';
+  end if;
+
+  perform 1 from public.ai_provider_budget_policy where singleton = true for update;
+  select * into v_row from public.ai_provider_cost_reservations
+   where request_id = p_request_id for update;
+  if not found then
+    return false;
+  end if;
+  if v_row.request_modality <> p_request_modality then
+    raise exception 'AI provider cost settlement modality conflict'
+      using errcode = '23505';
+  end if;
+  if v_row.status in ('settled', 'unknown') then
+    return true;
+  end if;
+  if v_row.status <> 'reserved' then
+    return false;
+  end if;
+
+  if p_actual_estimated_cost_usd is null or p_cost_source is null then
+    update public.ai_provider_cost_reservations
+       set status = 'unknown', cost_source = 'unknown',
+           updated_at = now(),
+           resolution_note = 'Provider outcome received without complete token usage; full reservation retained.'
+     where request_id = p_request_id;
+  else
+    update public.ai_provider_cost_reservations
+       set status = 'settled',
+           actual_estimated_cost_usd = p_actual_estimated_cost_usd,
+           cost_source = p_cost_source,
+           settled_at = now(), updated_at = now(),
+           resolution_note = 'Settled using conservative server-side peak token pricing; not an invoice.'
+     where request_id = p_request_id;
+  end if;
+  return true;
+end;
+$;
+
+create or replace function public.settle_ai_provider_cost(
+  p_request_id uuid,
+  p_actual_estimated_cost_usd numeric,
+  p_cost_source text
+)
+returns boolean
+language sql
+security definer
+set search_path = pg_catalog, public
+as $
+  select public.settle_ai_provider_cost_v2(
+    p_request_id, 'text', p_actual_estimated_cost_usd, p_cost_source
+  );
+$;
+
 -- Preserve compatibility for existing backend versions: old calls are text requests.
 create or replace function public.reserve_ai_provider_cost(
   p_request_id uuid,
