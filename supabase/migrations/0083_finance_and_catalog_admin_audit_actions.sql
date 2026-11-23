@@ -28,7 +28,7 @@ begin
  or p_outcome not in ('allowed','denied','requested','approved','executed','failed')
  or p_resource_type not in (
   'platform','user','support_ticket','tariff','payment','credit_wallet','credit_ledger',
-  'pricing_catalog_draft','plan_catalog_draft','permission','security_setting'
+  'pricing_catalog_draft','plan_catalog_draft','finance_request','permission','security_setting'
  )
  or (p_reason is not null and length(p_reason)>500) then
   raise exception 'invalid admin audit event' using errcode='22023';
