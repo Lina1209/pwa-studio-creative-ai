@@ -1,5 +1,5 @@
 -- Transactional integration checks for modality-aware shared AI cost reservations.
--- Run after migrations 0050 and 0088 in a disposable PostgreSQL test database.
+-- Run after migrations 0050, 0088 and 0089 in a disposable PostgreSQL test database.
 begin;
 
 do $$
