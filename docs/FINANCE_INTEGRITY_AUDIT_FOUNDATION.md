@@ -88,12 +88,25 @@ The audit cross-checks:
 - assignment ownership, plan-version identity, payment source reference, and creation event;
 - quota reservation ownership against the plan assignment and generation job, plus event-key idempotency, terminal outcome, plan limit, and usage totals.
 
-### Refund limitation — explicit, not hidden
+### Refund foundation — migrations 0102 and 0103
 
-The current schema has refunded and partially_refunded payment-order statuses, but it does not yet provide a first-class immutable refund record with refund ID, amount, currency, provider settlement reference, and event lifecycle. The current normalized provider webhook RPC accepts payment pending/succeeded/failed/cancelled events, not refund events. Therefore the audit deliberately emits refund_amounts_not_auditable and refund_lifecycle_not_implemented warnings for refunded/partially-refunded orders. It does not claim to verify refunded amounts or net settlement, and it does not attempt to infer refund values from status changes.
+The repository now has a provider-neutral refund foundation:
+- immutable refund identity and amount, with per-order idempotency keys;
+- partial/full amount bounds that reserve requested, submitted, and succeeded refunds so concurrent or repeated requests cannot over-refund an order;
+- unique provider refund IDs and unique provider event IDs;
+- a normalized provider-event RPC for pending/succeeded/failed/cancelled outcomes, with payload digest and signature-verification evidence;
+- append-only refund lifecycle events and payment-order status transitions to partially_refunded/refunded;
+- one entitlement-compensation review item for every provider-confirmed successful refund;
+- the one-statement finance snapshot now includes refund intents, provider events, refund lifecycle events, and compensation queue rows.
 
-A separate reviewed refund foundation is still required before enabling refunds: immutable refund intents/events, provider signature verification, partial/full refund amount constraints, idempotent provider refund references, append-only compensating credit entries or entitlement suspension rules, and atomic reconciliation across payment, wallet, lot, and plan-assignment state. No automatic clawback or entitlement revocation is performed by this audit.
+The normalized refund RPC must only be called after a future provider adapter verifies the raw webhook signature. No provider adapter, refund API route, provider network call, or live refund execution is enabled by these migrations.
+
+### Entitlement compensation remains deliberately manual
+
+A provider-confirmed money refund does not automatically remove credits or subscription access. Each successful refund creates a pending review item linked to the original immutable purchase snapshot. The audit verifies refund totals, event continuity, provider evidence, and the presence/status of that review item. Pending/manual review remains a visible warning.
+
+Automatic credit clawback is unsafe if any purchased credits have been reserved or spent. Subscription revocation is unsafe if plan quota or other entitlements have already been consumed. A later compensation workflow must first inspect source-specific lots, holds, captures, quota reservations, assignment lifecycle, and any downstream usage; then apply an atomic compensating ledger/entitlement event with idempotency and a complete audit trail. Partial refunds need an explicit allocation policy. No automatic clawback or entitlement revocation is performed by this foundation.
 
 ### Limits and operational boundaries
 
-The expanded source caps are included in the RPC response and any over-cap source makes the snapshot incomplete. The snapshot is one user's point-in-time view, not a platform-wide reconciliation. The RPC is service-role-only and read-only. The new migration and endpoint are not deployed to a live Supabase project; production data was not accessed. The audit reports discrepancies only and never modifies payment, credit, plan, or quota state.
+The expanded source caps are included in the RPC response and any over-cap source makes the snapshot incomplete. The snapshot is one user's point-in-time view, not a platform-wide reconciliation. The RPC is service-role-only and read-only. Migrations 0099–0103 are not deployed to a live Supabase project; production data was not accessed. The audit reports discrepancies only and never modifies payment, credit, plan, or quota state.
