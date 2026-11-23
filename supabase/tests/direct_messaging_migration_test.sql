@@ -81,3 +81,46 @@ begin
   if not v_rejected then raise exception 'self conversation was accepted'; end if;
 end;
 $direct_messaging_test$;
+
+\\i supabase/migrations/0094_direct_message_notifications.sql
+\\i supabase/migrations/0095_direct_messaging_safety_controls.sql
+
+do $direct_messaging_safety_test$
+declare
+  v_alice uuid := '11111111-1111-4111-8111-111111111111';
+  v_bob uuid := '22222222-2222-4222-8222-222222222222';
+  v_eve uuid := '33333333-3333-4333-8333-333333333333';
+  v_conversation uuid;
+  v_message uuid;
+  v_report uuid;
+  v_rejected boolean := false;
+begin
+  if has_table_privilege('authenticated','public.direct_user_blocks','SELECT')
+     or has_table_privilege('authenticated','public.direct_message_reports','SELECT')
+     or has_function_privilege('authenticated','public.set_direct_user_block(uuid,uuid,boolean)','EXECUTE')
+     or has_function_privilege('authenticated','public.report_direct_message(uuid,uuid,uuid,text,text)','EXECUTE') then
+    raise exception 'authenticated role must not access private safety records or RPCs';
+  end if;
+  v_conversation := public.create_direct_conversation(v_alice,v_bob);
+  select message_id into v_message from public.send_direct_message(
+    v_conversation,v_bob,'Reportable message','cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  );
+  v_report := public.report_direct_message(v_alice,v_bob,v_message,'harassment','Please review.');
+  if v_report is null then raise exception 'report was not created'; end if;
+
+  perform public.set_direct_user_block(v_alice,v_bob,true);
+  v_rejected := false;
+  begin
+    perform * from public.send_direct_message(
+      v_conversation,v_bob,'Blocked attempt','dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    );
+  exception when insufficient_privilege then v_rejected := true;
+  end;
+  if not v_rejected then raise exception 'blocked account was allowed to send'; end if;
+
+  perform public.set_direct_user_block(v_alice,v_bob,false);
+  perform * from public.send_direct_message(
+    v_conversation,v_bob,'Unblocked message','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  );
+end;
+$direct_messaging_safety_test$;
