@@ -1864,6 +1864,20 @@ const movieHistoryStyle = document.createElement("style");
     const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
     const syncSequence=++visualLibrarySyncSequence;
     const isCurrentSync=()=>authSession?.user?.id===userId&&syncSequence===visualLibrarySyncSequence;
+    const downloadVisualRefWithRetry=async storagePath=>{
+      let lastResult=null;
+      for(let attempt=0;attempt<3;attempt++){
+        if(!isCurrentSync())return {aborted:true};
+        lastResult=await supabaseClient.storage.from(cloudVisualBucket).download(storagePath);
+        if(!isCurrentSync())return {aborted:true};
+        if(!lastResult.error&&lastResult.data)return lastResult;
+        const status=Number(lastResult.error?.statusCode||lastResult.error?.status||0);
+        // Retry network/temporary server failures, but do not retry permanent 4xx responses.
+        if(status>=400&&status<500)break;
+        if(attempt<2)await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+      }
+      return lastResult||{data:null,error:new Error("Не удалось загрузить изображение.")};
+    };
     try{
       const {data,error}=await supabaseClient.from("character_visual_assets").select("asset_id,asset,deleted_at").eq("user_id",userId);
       if(error)throw error;
@@ -1931,16 +1945,19 @@ const movieHistoryStyle = document.createElement("style");
             // Legacy metadata may still have a valid device-local image. Keep it;
             // report it as unavailable only when this device has no cached blob.
             const localBlob=await getVisualRefImage(ref.id,userId);
+            if(!isCurrentSync())return;
             if(!localBlob)missingImages++;
             continue;
           }
           if(!ref.storagePath.startsWith(userId+"/")){missingImages++;continue;}
-          const {data:blob,error:downloadError}=await supabaseClient.storage.from(cloudVisualBucket).download(ref.storagePath);
+          const {data:blob,error:downloadError,aborted}=await downloadVisualRefWithRetry(ref.storagePath);
+          if(aborted||!isCurrentSync())return;
           if(downloadError||!blob){missingImages++;continue;}
-          if(!isCurrentSync())return;
           try{
             await saveVisualRefImage(ref.id,blob,userId);
+            if(!isCurrentSync())return;
           }catch(cacheError){
+            if(!isCurrentSync())return;
             missingImages++;
             console.warn("Visual reference could not be cached locally:",cacheError);
           }
