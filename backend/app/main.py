@@ -84,7 +84,6 @@ from app.services.generation_jobs import (
     GenerationJobsServiceError,
     GenerationPricingQuoteConflictError,
     get_generation_job,
-    create_scene_generation_job,
     create_plan_credited_generation_job,
     store_pricing_quote,
 )
