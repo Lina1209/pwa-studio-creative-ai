@@ -3,7 +3,7 @@
 Only a single time-valid active assignment can grant plan capabilities. Pending,
 scheduled, expired, revoked, or ambiguous assignments never grant access.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -197,6 +197,8 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
 
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_day = day_start + timedelta(days=1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
     usage: dict[str, int] = {}
     for row in reservations:
         feature = row.get("feature_key")
@@ -239,12 +241,26 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             used = usage.get(feature, 0)
             remaining = max(limit - used, 0) if limit is not None else None
         enforced = feature in _ENFORCED_DIMENSIONS
+        if feature.startswith("daily_"):
+            window_start = day_start.isoformat()
+            reset_at = next_day.isoformat()
+        elif feature.startswith("monthly_"):
+            window_start = month_start.isoformat()
+            reset_at = next_month.isoformat()
+        elif feature in {"max_concurrent_ai_requests", "max_parallel_jobs"}:
+            window_start = None
+            reset_at = None
+        else:
+            window_start = None
+            reset_at = None
         quotas[feature] = {
             "limit": limit,
             "used": used,
             "remaining": remaining,
             "enforced": enforced,
             "configured": limit is not None,
+            "window_start": window_start,
+            "reset_at": reset_at,
         }
 
     common_job_dimensions = (
