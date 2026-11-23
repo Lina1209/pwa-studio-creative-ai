@@ -9,7 +9,6 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
-  <script src="https://cdn.tailwindcss.com"></script>
 <style id="assistant-history-styles">
 .assistant-history-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .assistant-history-toolbar b{font-size:13px}.assistant-history-status{font-size:11px;color:var(--muted);margin-top:4px}
@@ -24,6 +23,7 @@
 .assistant-message.user-message{align-self:flex-end;background:rgba(112,103,210,.18);color:var(--text)}
 .assistant-message.ai-message{align-self:flex-start;background:rgba(145,125,190,.12);color:var(--text)}
 body.light .assistant-history-open,body.light .assistant-history-rename{color:#373149}
+  .prompt-library{margin-top:22px}.prompt-library-list{display:grid;gap:12px;margin-top:14px}.prompt-library-card{border:1px solid rgba(160,145,205,.22);border-radius:14px;padding:14px;background:rgba(120,100,170,.05)}.prompt-library-preview{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;max-height:120px;overflow:hidden;margin:10px 0}.prompt-library-actions{display:flex;gap:8px;flex-wrap:wrap}.prompt-library-actions button{font-size:13px;padding:8px 12px}.prompt-library-danger{border-color:rgba(220,90,90,.35)}#promptOutput[contenteditable="true"]{outline:2px solid rgba(155,125,255,.55);border-radius:10px;padding:12px;min-height:140px;white-space:pre-wrap}
 </style></head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
@@ -41,6 +41,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <button class="nav-item" data-view="prompts"><span>⌘</span> Prompt Studio <i>NEW</i></button>
         <button class="nav-item" data-view="library"><span>▧</span> Медиатека</button>
         <button class="nav-item" data-view="account"><span>♙</span> Личный кабинет</button>
+        <button class="nav-item" data-view="messages"><span>✉</span> Сообщения <i class="messages-nav-badge" id="messagesUnreadBadge" hidden>0</i></button>
         <button class="nav-item guest-space-nav" data-view="guestspace" id="guestSpaceNav" hidden><span>✧</span> Гостевое пространство</button>
       </nav>
       <div class="workspace-label tools-label">ТВОРЧЕСКИЕ ИНСТРУМЕНТЫ</div>
@@ -73,6 +74,10 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <div class="hero-foot"><span>✧ Не нужно знать специальные термины</span><span>⌁ От идеи к результату</span></div>
           </div>
           <div class="hero-art" aria-hidden="true"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="art-core"><span>✦</span></div><div class="art-chip chip-top">AI <b>CREATIVE</b></div><div class="art-chip chip-bottom">IDEA <b>→</b> VIDEO</div><div class="art-stars">✧　·　✦<br>　·　✧　·</div></div>
+        </div>
+        <div class="site-counter-card" aria-live="polite">
+          <div><span class="site-counter-label">✦ НАША ТВОРЧЕСКАЯ ВСЕЛЕННАЯ</span><strong id="siteTotalVisits" data-total-visits>—</strong><span>Посещений за всё время</span></div>
+          <div class="site-counter-today"><strong id="siteTodayVisits" data-today-visits>—</strong><span>Сегодня</span></div>
         </div>
         <div class="section-heading"><div><div class="eyebrow">БЫСТРЫЙ СТАРТ</div><h2>Выберите способ создания</h2></div><span class="muted">Начните с того, что уже есть</span></div>
         <div class="quick-grid">
@@ -128,16 +133,123 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
       <section class="view" id="view-create">
         <div class="page-heading"><div class="eyebrow">VIDEO WORKFLOW</div><h1>Создать <span class="gradient-text">видео</span></h1><p>Настройте будущий ролик. Сейчас мы подготовим рабочую форму и структуру процесса.</p></div>
         <div class="panel form-panel"><label for="topic">Тема или идея видео</label><textarea id="topic" rows="4" placeholder="Расскажите, о чём должно быть видео, какое настроение и впечатление оно должно передавать..."></textarea><div class="form-row"><div><label for="ratio">Формат кадра</label><select id="ratio"><option value="9:16">Вертикальный · 9:16</option><option value="16:9">Широкий · 16:9</option><option value="1:1">Квадрат · 1:1</option></select></div><div><label for="lang">Язык</label><select id="lang"><option value="ru">Русский</option><option value="en">English</option><option value="zh">中文</option></select></div><div><label for="style">Стиль видео</label><select id="style"><option>Кинематографичный</option><option>Документальный</option><option>Обучающий</option><option>Рекламный</option><option>Атмосферный</option></select></div></div><button class="primary-button" id="prepareIdea">✦ Подготовить идею</button><p class="helper-text" id="createFeedback">Генерация сценария и рендеринг подключаются на следующем этапе.</p></div>
+        <section class="panel generation-jobs-panel" id="generationJobsPanel" aria-labelledby="generationJobsTitle">
+          <div class="generation-jobs-heading">
+            <div><div class="eyebrow">GENERATION CONTROL</div><h2 id="generationJobsTitle">Задания генерации</h2><p class="helper-text">Здесь отображается состояние отправленной генерации. Если отменить её, система сначала проверит результат у обработчика и только затем завершит отмену.</p></div>
+            <span class="draft-badge" id="generationJobBadge">НЕТ ЗАДАНИЙ</span>
+          </div>
+          <div id="generationJobsEmpty" class="generation-jobs-empty" aria-live="polite">Пока нет активных заданий. После отправки генерации её состояние появится здесь.</div>
+          <div id="generationJobCard" class="generation-job-card" hidden>
+            <div class="generation-job-main">
+              <div><span class="generation-job-label">Текущее состояние</span><strong id="generationJobStatus">Ожидает</strong></div>
+              <span class="generation-job-id" id="generationJobId"></span>
+            </div>
+            <p class="helper-text" id="generationJobDetail" aria-live="polite"></p>
+            <div class="generation-job-actions"><button type="button" class="secondary-button" id="cancelGenerationJob">Отменить генерацию</button><button type="button" class="secondary-button" id="openGenerationResult" hidden>Открыть результат</button><button type="button" class="secondary-button" id="refreshGenerationJob">Обновить статус</button></div>
+          </div>
+          <p class="helper-text generation-job-feedback" id="generationJobFeedback" role="status" aria-live="polite"></p>
+        </section>
       </section>
 
       <section class="view" id="view-prompts">
         <div class="page-heading"><div class="eyebrow">PROMPT ENGINEERING</div><h1>Prompt <span class="gradient-text">Studio</span></h1><p>Превращайте простые описания в точные и выразительные запросы для ИИ.</p></div>
-        <div class="prompt-layout"><div class="panel"><label for="promptIdea">Опишите, что хотите получить</label><textarea id="promptIdea" rows="7" placeholder="Например: кинематографичный кадр старинного города после дождя, тёплый свет окон, камера медленно движется вперёд..."></textarea><div class="form-row"><div><label for="promptType">Для чего промт?</label><select id="promptType"><option>Генерация видео</option><option>Генерация изображения</option><option>Музыка и звук</option><option>Сценарий</option></select></div><div><label for="promptLanguage">Язык результата</label><select id="promptLanguage"><option>English</option><option>Русский</option></select></div></div><button class="primary-button" id="buildPrompt">✦ Сформировать промт</button><p class="helper-text" id="promptFeedback">Промт формируется через настроенный backend и выбранную языковую модель. Для работы необходим вход в аккаунт и действующий ключ AI-провайдера.</p></div><div class="panel prompt-result"><div class="result-head"><b>Ваш промт</b><span class="draft-badge">DRAFT</span></div><div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button></div></div>
+        <div class="prompt-layout"><div class="panel"><label for="promptIdea">Опишите, что хотите получить</label><textarea id="promptIdea" rows="7" placeholder="Например: кинематографичный кадр старинного города после дождя, тёплый свет окон, камера медленно движется вперёд..."></textarea><div class="form-row"><div><label for="promptType">Мастерская промптов</label><select id="promptType"><option value="video">🎬 Видео</option><option value="image">🖼 Изображения</option><option value="music">♫ Музыка</option><option value="sound">🔊 Звуковые эффекты</option><option value="script">✍ Сценарий и диалоги</option><option value="character">🧑 Персонажи</option><option value="voice">🎙 Голос и озвучка</option><option value="storyboard">▦ Раскадровка</option></select></div><div><label for="promptLanguage">Язык результата</label><select id="promptLanguage"><option>English</option><option>Русский</option></select></div></div><button class="primary-button" id="buildPrompt">✦ Сформировать промт</button><p class="helper-text" id="promptFeedback">Промт формируется через настроенный backend и выбранную языковую модель. Для работы необходим вход в аккаунт и действующий ключ AI-провайдера.</p></div><div class="panel prompt-result"><div class="result-head"><b>Ваш промт</b><span class="draft-badge">DRAFT</span></div><div class="prompt-editor-toolbar" role="toolbar" aria-label="Инструменты работы с промптом">
+            <button type="button" class="secondary-button" id="selectAllPrompt">Выделить всё</button>
+            <button type="button" class="secondary-button" id="copySelectedPrompt">Копировать выделенное</button>
+            <button type="button" class="secondary-button" id="wrapBoldPrompt" title="Обрамить выделение звёздочками">** Жирный **</button>
+            <button type="button" class="secondary-button" id="wrapQuotePrompt">Цитата</button>
+            <button type="button" class="secondary-button" id="wrapCodePrompt">Блок кода</button>
+          </div>
+          <section class="prompt-block-builder" aria-label="Конструктор промпта">
+            <div class="prompt-workbench-head"><b>Конструктор промпта</b><span>Соберите сцену из смысловых блоков</span></div>
+            <div class="form-row">
+              <div><label for="promptBlockType">Тип блока</label><select id="promptBlockType"><option value="character">Персонаж</option><option value="scene">Сцена и окружение</option><option value="camera">Камера и композиция</option><option value="light">Свет и цвет</option><option value="style">Визуальный стиль</option><option value="sound">Звук и музыка</option></select></div>
+              <div><label for="promptBlockText">Содержание блока</label><input id="promptBlockText" type="text" maxlength="1800" placeholder="Опишите нужные детали…"></div>
+            </div>
+            <div class="prompt-preset-row">
+              <div><label for="promptPresetSelect">Готовые художественные настройки</label><select id="promptPresetSelect">
+                <optgroup label="Ракурсы камеры"><option value="Крупный план, камера на уровне глаз, малая глубина резкости.">Крупный план</option><option value="Общий план с высокой точки, широкий угол обзора.">Общий план сверху</option><option value="Низкий ракурс, камера направлена вверх, выразительная перспектива.">Низкий ракурс</option><option value="Съёмка через плечо, естественная композиция диалога.">Через плечо</option><option value="Симметричная фронтальная композиция, камера неподвижна.">Симметричный кадр</option></optgroup>
+                <optgroup label="Движение камеры"><option value="Плавный dolly-in, медленное приближение к герою.">Плавное приближение</option><option value="Медленный tracking shot, камера следует за персонажем сбоку.">Следование за героем</option><option value="Плавный pan слева направо, раскрывающий пространство.">Панорама</option><option value="Мягкий crane shot, камера поднимается и открывает общий план.">Подъём камеры</option><option value="Статичная камера, движение только внутри сцены.">Статичная камера</option></optgroup>
+                <optgroup label="Освещение"><option value="Мягкий рассеянный свет, деликатные тени, естественная кожа.">Мягкий дневной свет</option><option value="Золотой контровой свет заката, тёплые блики и длинные тени.">Золотой час</option><option value="Холодный лунный свет, глубокие синие полутона и мягкий контровой контур.">Лунный свет</option><option value="Драматичный chiaroscuro, сильный контраст света и тени.">Светотень</option><option value="Неоновое освещение, цветные отражения на мокрых поверхностях.">Неоновый свет</option></optgroup>
+                <optgroup label="Художественный стиль"><option value="Фотореализм, кинематографическая детализация, натуральные материалы.">Фотореализм</option><option value="Акварельная иллюстрация, прозрачные слои краски и мягкие края.">Акварель</option><option value="Атмосфера классической масляной живописи, фактурные мазки.">Масляная живопись</option><option value="Стилизованная 3D-анимация, выразительные формы и мягкие материалы.">3D-анимация</option><option value="Минималистичная графика, чистые формы и ограниченная палитра.">Минимализм</option><option value="Атмосферное тёмное фэнтези, сложные фактуры и мистический свет.">Тёмное фэнтези</option></optgroup>
+                <optgroup label="Звуковая атмосфера"><option value="Тихий природный амбиент, ветер и далёкие звуки окружения.">Природный амбиент</option><option value="Объёмная кинематографическая музыка, постепенное нарастание и эмоциональная кульминация.">Кинематографическая музыка</option><option value="Минимальные фоли-эффекты, синхронизированные с движениями в кадре.">Фоли</option></optgroup>
+              </select></div>
+              <button type="button" class="secondary-button" id="insertPromptPreset">Добавить настройку в блок</button>
+            </div>
+            <div class="prompt-block-controls"><button type="button" class="secondary-button" id="addPromptBlock">＋ Добавить блок</button><button type="button" class="secondary-button" id="composePromptBlocks">Собрать промпт</button><button type="button" class="secondary-button" id="clearPromptBlocks">Очистить блоки</button></div>
+            <div id="promptBlockList" class="prompt-block-list" aria-live="polite"><p class="helper-text">Добавьте один или несколько блоков. Их можно будет удалить до сборки промпта.</p></div>
+          </section>
+          <section class="prompt-visual-library" aria-label="Библиотека персонажей и сцен">
+            <div class="prompt-workbench-head"><b>Библиотека персонажей и сцен</b><span>Сохраняйте образы и возвращайтесь к ним в других фильмах</span></div>
+            <div class="form-row">
+              <div><label for="visualAssetType">Тип материала</label><select id="visualAssetType"><option value="character">Персонаж</option><option value="scene">Сцена / локация</option></select></div>
+              <div><label for="visualAssetName">Название</label><input id="visualAssetName" maxlength="80" placeholder="Например, Хранительница леса"></div>
+            </div>
+            <label for="visualAssetDescription">Общее описание и характер</label>
+            <textarea id="visualAssetDescription" rows="3" maxlength="5000" placeholder="Кто это? Характер, роль в истории, важные особенности…"></textarea>
+            <div id="characterPassportFields" class="character-passport-fields">
+              <div class="form-row">
+                <div><label for="passportFace">Лицо спереди</label><input id="passportFace" maxlength="600" placeholder="Форма лица, глаза, нос, особые черты"></div>
+                <div><label for="passportProfile">Профиль</label><input id="passportProfile" maxlength="600" placeholder="Профиль лица, силуэт головы"></div>
+              </div>
+              <label for="passportFullBody">Полный рост и телосложение</label><input id="passportFullBody" maxlength="600" placeholder="Рост, пропорции, осанка, силуэт">
+              <label for="passportWardrobe">Одежда и аксессуары</label><textarea id="passportWardrobe" rows="2" maxlength="800" placeholder="Основной костюм, обувь, украшения, предметы"></textarea>
+              <div class="form-row">
+                <div><label for="passportPalette">Палитра цветов</label><input id="passportPalette" maxlength="300" placeholder="Например: индиго, серебро, охра"></div>
+                <div><label for="passportExpressions">Выражения лица</label><input id="passportExpressions" maxlength="500" placeholder="Спокойствие, тревога, улыбка…"></div>
+              </div>
+            </div>
+            <div class="visual-reference-upload">
+              <label for="visualReferenceFiles">Изображения-референсы (до 6 файлов)</label>
+              <input id="visualReferenceFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+              <small>Можно прикрепить до 6 изображений персонажа или сцены. Они сохраняются в браузере, а после входа в аккаунт синхронизируются с закрытым облачным хранилищем. До 8 МБ каждый.</small>
+            </div>
+            <div class="prompt-block-controls"><button type="button" class="secondary-button" id="saveVisualAsset">＋ Сохранить в библиотеку</button></div>
+            <div id="visualAssetList" class="prompt-visual-list" aria-live="polite"><p class="helper-text">Ваша библиотека пока пуста.</p></div>
+            <p class="helper-text">Библиотека хранится отдельно от фильмов в этом браузере и разделяется по аккаунтам.</p>
+          </section>
+          <section class="prompt-workbench" aria-label="Шаблоны и переменные промпта">
+            <div class="prompt-workbench-head"><b>Быстрый старт</b><span>Шаблоны и переменные</span></div>
+            <div class="form-row">
+              <div><label for="promptTemplateSelect">Шаблон промпта</label><select id="promptTemplateSelect"><option value="">Выберите шаблон…</option><option value="cinematic">Кинематографичный кадр</option><option value="character">Постоянство персонажа</option><option value="video">Движение и камера</option><option value="music">Музыкальная сцена</option><option value="sound">Атмосфера и звуки</option></select></div>
+              <div class="prompt-workbench-action"><button type="button" class="secondary-button" id="applyPromptTemplate">Вставить шаблон</button></div>
+            </div>
+            <div class="prompt-variable-tools"><label for="promptVariableValues">Значения переменных</label><textarea id="promptVariableValues" rows="3" placeholder="Например: subject=девушка-астроном\nlocation=обсерватория\nmood=таинственный"></textarea><button type="button" class="secondary-button" id="applyPromptVariables">Подставить значения</button><small>В шаблонах используются обозначения {{subject}}, {{location}}, {{mood}} и другие. Укажите по одной переменной в строке: имя=значение.</small></div>
+          </section>
+          <div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div>
+          <section class="prompt-fragments">
+            <div class="prompt-workbench-head"><b>Мои фрагменты</b><span>Сохраняйте удачные части промптов</span></div>
+            <div class="prompt-fragment-actions"><button type="button" class="secondary-button" id="savePromptFragment">＋ Сохранить выделенное</button><input id="promptFragmentName" type="text" maxlength="60" placeholder="Название фрагмента"></div>
+            <div id="promptFragmentList" class="prompt-fragment-list"><p class="helper-text">Сохранённых фрагментов пока нет.</p></div>
+          </section><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button><button class="secondary-button full-button" id="savePromptToMovie">＋ Сохранить в выбранный фильм</button><button class="secondary-button full-button" id="cancelPromptEdit" hidden>Отменить редактирование</button><p class="helper-text" id="promptSaveFeedback" aria-live="polite">Выберите фильм в Миникиностудии, чтобы сохранять промпты вместе с его материалами.</p></div></div>
+        <section class="panel prompt-library" aria-labelledby="promptLibraryTitle">
+          <div class="result-head"><div><b id="promptLibraryTitle">Библиотека промптов</b><p class="helper-text">Сохранённые промпты из ваших фильмов. Они синхронизируются вместе с проектами.</p></div><span class="draft-badge" id="promptLibraryCount">0</span></div>
+          <div class="form-row">
+            <div><label for="promptLibrarySearch">Поиск</label><input id="promptLibrarySearch" type="search" placeholder="Название фильма, идея или текст промпта"></div>
+            <div><label for="promptLibraryCategory">Категория</label><select id="promptLibraryCategory"><option value="">Все категории</option><option value="video">Видео</option><option value="image">Изображения</option><option value="music">Музыка</option><option value="sound">Звуковые эффекты</option><option value="script">Сценарий</option><option value="character">Персонажи</option><option value="voice">Голос</option><option value="storyboard">Раскадровка</option></select></div>
+          </div>
+          <div id="promptLibraryList" class="prompt-library-list" aria-live="polite"><p class="helper-text">Загрузка библиотеки…</p></div>
+          <p class="helper-text" id="promptLibraryFeedback"></p>
+        </section>
       </section>
 
       <section class="view" id="view-assistant">
         <div class="page-heading"><div class="eyebrow">YOUR CREATIVE PARTNER</div><h1>Studio AI <span class="gradient-text">Companion</span></h1><p>Помощник по идеям, сценариям, промтам и инструментам студии.</p></div>
-        <div class="assistant-panel panel"><div class="assistant-history-toolbar"><div><b>История диалогов</b><div id="assistantHistoryStatus" class="assistant-history-status" aria-live="polite">Загрузка…</div></div><button type="button" id="assistantNewChat" class="secondary-button">＋ Новый диалог</button></div><div id="assistantHistoryList" class="assistant-history-list" aria-label="Сохранённые диалоги"></div><div id="assistantMessages" class="assistant-messages" aria-live="polite"></div><div class="assistant-welcome"><div class="companion-orb large">✦</div><h2>Привет! Давайте создадим что-нибудь особенное.</h2><p>Я уже на связи! Помогу придумать идею, разработать сценарий, разбить его на сцены и подготовить промты для создания видео.</p></div><div class="suggestion-row"><button data-assist="Помоги придумать идею для короткого видео">Придумать идею</button><button data-assist="Помоги написать промт для видео">Создать промт</button><button data-assist="Помоги разбить сюжет на сцены">Разбить на сцены</button></div><form id="assistantForm" class="chat-form"><input id="assistantInput" placeholder="Расскажите, что хотите создать..." aria-label="Сообщение помощнику"><button aria-label="Отправить">↑</button></form><div class="helper-text">Сообщения отправляются на backend PWA Studio. Ответ зависит от доступности AI-провайдера.</div></div>
+        <div class="assistant-panel panel"><div class="assistant-history-toolbar"><div><b>История диалогов</b><div id="assistantHistoryStatus" class="assistant-history-status" aria-live="polite">Загрузка…</div></div><button type="button" id="assistantNewChat" class="secondary-button">＋ Новый диалог</button></div><div id="assistantHistoryList" class="assistant-history-list" aria-label="Сохранённые диалоги"></div><div id="assistantMessages" class="assistant-messages" aria-live="polite"></div><div class="assistant-welcome"><div class="companion-orb large">✦</div><h2>Привет! Давайте создадим что-нибудь особенное.</h2><p>Я уже на связи! Помогу придумать идею, разработать сценарий, разбить его на сцены и подготовить промты для создания видео.</p></div><div class="suggestion-row"><button data-assist="Помоги придумать идею для короткого видео">Придумать идею</button><button data-assist="Помоги написать промт для видео">Создать промт</button><button data-assist="Помоги разбить сюжет на сцены">Разбить на сцены</button></div><form id="assistantForm" class="chat-form"><input id="assistantInput" placeholder="Расскажите, что хотите создать..." aria-label="Сообщение помощнику"><button aria-label="Отправить">↑</button></form><div class="helper-text">Сообщения отправляются на backend PWA Studio. Ответ зависит от доступности AI-провайдера.</div>
+          <section class="assistant-vision-panel" id="assistantVisionPanel" hidden aria-labelledby="assistantVisionTitle">
+            <div class="assistant-vision-heading">
+              <div><b id="assistantVisionTitle">Анализ изображения · Vision</b><p>Покажите помощнику референс, кадр или эскиз — он поможет разобрать композицию, свет, цвет и визуальную непрерывность.</p></div>
+              <span class="draft-badge">DeepSeek Flash</span>
+            </div>
+            <label for="assistantVisionFile">Выберите одно изображение (JPEG, PNG, WebP или статичный GIF · до 5 МБ)</label>
+            <input id="assistantVisionFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+            <img id="assistantVisionPreview" class="assistant-vision-preview" alt="Предпросмотр выбранного изображения" hidden>
+            <label for="assistantVisionPrompt">Что нужно рассмотреть?</label>
+            <textarea id="assistantVisionPrompt" rows="2" maxlength="2000" placeholder="Например: оцени композицию, освещение и детали, которые стоит сохранить в следующей сцене.">Опиши изображение и выдели важные детали для будущего видео.</textarea>
+            <label class="assistant-vision-consent"><input id="assistantVisionConsent" type="checkbox"><span>Я понимаю, что выбранное изображение и мой запрос будут отправлены DeepSeek для анализа и обрабатываться по условиям и политике конфиденциальности провайдера. PWA Studio не сохраняет исходное изображение. Я не отправляю конфиденциальные материалы и имею право использовать это изображение.</span></label>
+            <div class="assistant-vision-actions"><button type="button" id="assistantVisionAnalyze" class="primary-button" disabled>Проанализировать изображение</button><span id="assistantVisionStatus" class="helper-text" aria-live="polite"></span></div>
+            <div id="assistantVisionResult" class="assistant-vision-result" aria-live="polite" hidden></div>
+          </section></div>
       </section>
 
       <section class="view" id="view-editor"><div class="page-heading"><div class="eyebrow">EDITING ROOM</div><h1>Видеоредактор</h1><p>Рабочее пространство для монтажа, таймлайна и предпросмотра.</p></div><div class="empty-workspace panel"><div class="empty-icon">▤</div><h2>Монтажная скоро откроется</h2><p>Здесь появятся предпросмотр, дорожки видео и аудио, сцены, переходы и субтитры.</p><button class="secondary-button" data-go="create">Подготовить новый проект →</button></div></section>
@@ -263,9 +375,262 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
       <section class="view" id="view-account">
         <div class="page-heading"><div class="eyebrow">YOUR PRIVATE WORKSPACE</div><h1>Личный <span class="gradient-text">кабинет</span></h1><p>Ваш аккаунт, проекты и личные материалы. Каждый автор видит только своё пространство.</p></div>
         <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
+        <section class="panel account-plan-panel" id="myEntitlementsPanel" aria-labelledby="myEntitlementsHeading">
+          <div class="panel-heading"><div><div class="eyebrow">YOUR PLAN & ACCESS</div><h2 id="myEntitlementsHeading">Мой тариф и возможности</h2><p id="myEntitlementsStatus" role="status" aria-live="polite">Войдите в аккаунт, чтобы проверить тариф и доступные инструменты.</p></div><button class="secondary-button" id="refreshMyEntitlements" type="button" hidden>↻ Обновить</button></div>
+          <div id="myEntitlementsPlan" class="account-notice" hidden></div>
+          <div id="myEntitlementsCapabilities" class="account-grid" aria-live="polite"></div>
+          <p id="myEntitlementsFootnote" class="helper-text">Тарифные квоты и технические ограничения API учитываются отдельно. Неактивированные и ожидающие назначения не открывают функции.</p>
+        </section>
         <div class="account-grid"><article class="account-tile"><span>🎬</span><b>Мои фильмы</b><p>Проекты, сценарии и версии фильмов.</p><button data-go="movie">Открыть Миникиностудию →</button></article><article class="account-tile"><span>♙</span><b>Мои персонажи</b><p>Личная библиотека цифровых героев и их образов.</p><button data-go="library">Открыть медиатеку →</button></article><article class="account-tile"><span>♫</span><b>Мои голоса и материалы</b><p>Аудио, изображения и файлы проектов.</p><button data-go="voice">Открыть раздел →</button></article></div>
         <div class="account-notice" id="accountStorageNotice">Фильмы авторизованных пользователей синхронизируются с Supabase. Гостевые черновики хранятся только в этом браузере. Файловое хранилище подключается отдельно.</div>
-        <div class="account-admin panel" id="adminPanel" hidden><div class="eyebrow">OWNER WORKSPACE</div><h2>Панель владельца</h2><p>Административные инструменты будут доступны только владельцу после серверной проверки роли. Просмотр личных проектов пользователей не является открытым по умолчанию.</p><span class="account-role">Доступ владельца подтверждён сервером</span></div>
+
+        
+        <div class="account-admin panel" id="financePanel" hidden>
+          <div class="eyebrow">DELEGATED FINANCE ACCESS</div>
+          <div class="owner-dashboard-heading"><div><h2>Финансовые операции</h2><p>Доступ определяется персональными серверными полномочиями и ограниченными областями ответственности.</p></div></div>
+          <p class="helper-text" id="financeAccessStatus" role="status">Проверяем назначенные финансовые полномочия…</p>
+          <button class="primary-button" type="button" data-go="finance-operations">Открыть очередь финансовых заявок →</button>
+        </div>
+        <div class="account-admin panel" id="adminPanel" hidden>
+          <div class="eyebrow">OWNER WORKSPACE · PRIVATE ANALYTICS</div>
+          <div class="owner-dashboard-heading"><div><h2>Панель владельца</h2><p>Агрегированная статистика посещений. Личные данные посетителей не отображаются.</p></div><button class="secondary-button" id="refreshSiteAnalytics" type="button">↻ Обновить</button></div>
+          <span class="account-role">Доступ владельца подтверждён сервером</span>
+          <div class="admin-entry-actions"><button class="primary-button" type="button" data-go="admin-platform">Управление платформой →</button><button class="secondary-button" type="button" data-go="admin-technical">Технический и финансовый центр →</button></div>
+
+          <section class="admin-module" id="adminSupportModule" aria-labelledby="adminSupportHeading">
+            <div class="panel-heading"><div><div class="eyebrow">CUSTOMER CARE</div><h3 id="adminSupportHeading">Обращения пользователей</h3><p>Очередь поддержки и история переписки.</p></div><button class="secondary-button" id="refreshAdminSupport" type="button">↻ Обновить</button></div>
+            <p id="adminSupportFeedback" class="helper-text" role="status" aria-live="polite">Очередь загружается только по запросу.</p>
+            <div class="finance-queue-controls"><label>Обращение<select id="adminSupportTicketSelect"><option value="">Нет обращений</option></select></label></div>
+            <div id="adminSupportConversation" hidden>
+              <p id="adminSupportTicketMeta" class="helper-text"></p>
+              <div id="adminSupportMessages" class="assistant-messages" aria-live="polite"></div>
+              <form id="adminSupportReplyForm" class="finance-queue-controls"><label>Ответ пользователю<textarea id="adminSupportReply" maxlength="5000" rows="3" required></textarea></label><button class="primary-button" type="submit">Отправить ответ</button></form>
+              <div class="finance-queue-controls"><label>Статус<select id="adminSupportStatusSelect"><option value="open">Открыто</option><option value="in_progress">В работе</option><option value="waiting_user">Ожидает ответа пользователя</option><option value="resolved">Решено</option><option value="closed">Закрыто</option></select></label><button class="secondary-button" id="saveAdminSupportStatus" type="button">Сохранить статус</button></div>
+            </div>
+          </section>
+
+          <section class="admin-module" id="adminPricingDraftModule" aria-labelledby="adminPricingDraftHeading">
+            <div class="panel-heading"><div><div class="eyebrow">PRICING CONTROL</div><h3 id="adminPricingDraftHeading">Тарифы и лимиты · черновики</h3><p>Сохраняйте проверяемые версии тарифов. Черновики не меняют действующие цены и не включают оплату.</p></div><button class="secondary-button" id="refreshPricingDrafts" type="button">↻ Обновить</button></div>
+            <p id="pricingDraftStatus" class="helper-text" role="status" aria-live="polite">Действующий каталог не изменяется через этот раздел.</p>
+            <form id="pricingDraftForm" class="finance-queue-controls">
+              <label>Версия черновика<input id="pricingDraftVersion" minlength="1" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" required placeholder="например pilot-2026-01"></label>
+              <label>Правила тарифов · JSON<textarea id="pricingDraftRules" rows="8" maxlength="60000" required placeholder='[{"job_type":"scene_image","provider":"deepseek","model":"deepseek-flash","credits_per_unit":10,"unit_label":"image","min_quantity":1,"max_quantity":3,"max_provider_cost_usd_per_unit":"0.01"}]'></textarea></label>
+              <button class="primary-button" type="submit">Сохранить черновик</button>
+            </form>
+            <div id="pricingDraftList" class="assistant-messages" aria-live="polite"></div>
+          </section>
+
+          <section class="admin-module" id="adminPlanDraftModule" aria-labelledby="adminPlanDraftHeading">
+            <div class="panel-heading"><div><div class="eyebrow">SUBSCRIPTION PLANS</div><h3 id="adminPlanDraftHeading">Тарифные планы · черновики</h3><p>Создавайте версии Free, Creator и Studio Pro. Пока это только проекты условий: кредиты не начисляются, оплата не включается.</p></div><button class="secondary-button" id="refreshPlanDrafts" type="button">↻ Обновить</button></div>
+            <p id="planDraftStatus" class="helper-text" role="status" aria-live="polite">Публикация, начисления и checkout отключены.</p>
+            <form id="planDraftForm" class="finance-queue-controls">
+              <label>Код плана<input id="planDraftCode" required pattern="[a-z][a-z0-9_]{2,40}" maxlength="41" placeholder="free / creator / studio_pro"></label>
+              <label>Версия<input id="planDraftVersion" type="number" min="1" max="100000" value="1" required></label>
+              <label>Название<input id="planDraftName" maxlength="80" required placeholder="Creator"></label>
+              <label>Период<select id="planDraftPeriod"><option value="month">Месяц · 30 дней</option><option value="week">Неделя · 7 дней</option></select></label>
+              <label>Кредиты за период<input id="planDraftCredits" type="number" min="1" max="1000000000" required placeholder="1500"></label>
+              <label>Цена в минимальных единицах валюты<input id="planDraftPrice" type="number" min="0" max="1000000000" placeholder="Оставить пустым до расчёта"></label>
+              <label>Валюта<input id="planDraftCurrency" maxlength="3" pattern="[A-Z]{3}" placeholder="USD / KZT"></label>
+              <label>Лимиты · JSON<textarea id="planDraftLimits" rows="4" maxlength="8000">{}</textarea></label>
+              <label>Возможности · JSON-массив строк<textarea id="planDraftFeatures" rows="4" maxlength="8000">[]</textarea></label>
+              <button class="primary-button" type="submit">Сохранить план-черновик</button>
+            </form>
+            <div id="planDraftList" class="assistant-messages" aria-live="polite"></div>
+          </section>
+
+
+
+          <p id="adminAnalyticsStatus" class="helper-text" role="status" aria-live="polite">Загрузка статистики…</p>
+          <div class="owner-metrics">
+            <article><span>За всё время</span><strong id="adminTotalVisits">—</strong><small>Все учтённые просмотры</small></article>
+            <article><span>Сегодня</span><strong id="adminTodayVisits">—</strong><small>Просмотры страниц · UTC</small></article>
+            <article><span>Уникальные сегодня</span><strong id="adminUniqueToday">—</strong><small>Приблизительная оценка</small></article>
+            <article><span>За 7 дней</span><strong id="adminWeekVisits">—</strong><small>Скользящий период</small></article>
+            <article><span>За 30 дней</span><strong id="adminMonthVisits">—</strong><small>Скользящий период</small></article>
+            <article><span>Отклонено за 24 часа</span><strong id="adminRateLimited">—</strong><small>Запросы сверх лимита</small></article>
+          </div>
+          <div class="owner-chart-panel"><div><b>Динамика за 30 дней</b><small>Просмотры страниц по дням · UTC</small></div><div id="adminVisitsChart" class="owner-visits-chart" role="img" aria-label="График просмотров за последние 30 дней"></div></div>
+          <div class="owner-routes-panel"><b>Популярные разделы за 30 дней</b><div id="adminPopularRoutes" class="owner-popular-routes"><span class="helper-text">Пока нет данных.</span></div></div>
+          <p class="owner-privacy-note">География посетителей намеренно не собирается: мы не храним IP-адреса и не пытаемся определять страны. Данные — агрегированные просмотры, а не точное число людей.</p>
+        </div>
+      </section>
+
+      <section class="view" id="view-finance-operations">
+        <div class="page-heading"><div class="eyebrow">DELEGATED FINANCE WORKSPACE</div><h1>Очередь <span class="gradient-text">финансовых заявок</span></h1><p>Оператор подаёт заявку, независимый проверяющий принимает решение. Эта очередь не выполняет начисления и не отправляет платежи.</p></div>
+        <div class="admin-security-banner"><b>Разделение полномочий</b><span>Доступны только заявки в пределах назначенных областей. Подтверждение собственной заявки запрещено. Реальные денежные и кредитные операции выключены.</span></div>
+        <section class="panel finance-request-create" id="financeRequestCreatePanel" hidden>
+          <div class="panel-heading"><div><h2>Новая заявка</h2><p>Создаётся только запрос на рассмотрение — без движения средств.</p></div></div>
+          <form id="financeRequestCreateForm" class="finance-request-form">
+            <label>Тип заявки<select id="financeRequestType" required><option value="credit_compensation">Компенсация кредитов</option><option value="billing_refund">Денежный возврат</option></select></label>
+            <label>ID пользователя<input id="financeTargetUserId" type="text" inputmode="text" autocomplete="off" placeholder="UUID пользователя" minlength="36" maxlength="36" required></label>
+            <label>Сумма<input id="financeRequestAmount" type="number" min="1" step="1" required></label>
+            <label>Единица / валюта<select id="financeRequestCurrency" required><option value="CRD">CRD — кредиты</option><option value="KZT">KZT — тенге</option><option value="USD">USD — доллары</option><option value="EUR">EUR — евро</option><option value="RUB">RUB — рубли</option></select></label>
+            <label class="finance-request-reason">Причина<textarea id="financeRequestReason" minlength="1" maxlength="500" rows="3" required></textarea></label>
+            <button class="primary-button" id="submitFinanceRequest" type="submit">Отправить на независимое рассмотрение</button>
+          </form>
+        </section>
+        <section class="panel admin-audit-panel">
+          <div class="panel-heading"><div><h2>Журнал заявок</h2><p>Фильтр по состоянию и постраничная загрузка с серверным курсором.</p></div><div class="finance-queue-controls"><select id="financeQueueStatus" aria-label="Фильтр статуса"><option value="">Все статусы</option><option value="pending">Ожидает</option><option value="approved">Подтверждена</option><option value="rejected">Отклонена</option><option value="cancelled">Отменена</option></select><button class="secondary-button" id="refreshFinanceQueue" type="button">Обновить</button></div></div>
+          <p class="helper-text" id="financeQueueStatusText" role="status">Загрузка финансовых заявок…</p>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Создана</th><th>Заявитель</th><th>Пользователь</th><th>Операция</th><th>Сумма</th><th>Статус</th><th>Причина</th><th>Решение / действия</th></tr></thead><tbody id="financeQueueRows"></tbody></table></div>
+          <button class="secondary-button" id="loadMoreFinanceQueue" type="button" hidden>Загрузить более ранние заявки</button>
+        </section>
+        <button class="secondary-button" type="button" data-go="account">← Вернуться в кабинет</button>
+      </section>
+
+      <section class="view admin-view" id="view-admin-platform">
+        <div class="page-heading"><div class="eyebrow">PRIVATE OWNER CONSOLE · 01</div><h1>Управление <span class="gradient-text">платформой</span></h1><p>Закрытая рабочая область владельца. Все операции должны дополнительно проверяться сервером.</p></div>
+        <div class="admin-security-banner"><b>Защищённый раздел</b><span>Доступ к этой странице в интерфейсе не заменяет серверную проверку полномочий. Сейчас доступны только обзорные разделы; изменение данных не включено.</span></div>
+        <div class="admin-module-grid">
+          <article class="admin-module"><b>Пользователи и аккаунты</b><p>Поиск учётных записей, статусы, даты регистрации, роли и история активности.</p><small>Подключение данных: следующий этап</small></article>
+          <article class="admin-module"><b>Сообщения и обращения</b><p>Входящие сообщения, переписка с поддержкой, статусы, приоритеты и история ответов.</p><small>Подключение данных: следующий этап</small></article>
+          <article class="admin-module"><b>Обратная связь</b><p>Предложения, жалобы, сообщения об ошибках, оценки и модерация обращений.</p><small>Подключение данных: следующий этап</small></article>
+          <article class="admin-module"><b>Тарифы и категории</b><p>Категории планов, цены, лимиты, квоты, сроки действия и версии тарифов.</p><small>Изменения цен пока заблокированы</small></article>
+          <article class="admin-module"><b>Валюты и курсы</b><p>KZT, USD, EUR, RUB и другие валюты; источник курса, дата обновления и история конвертации.</p><small>Без проведения платежей</small></article>
+          <article class="admin-module"><b>Посещения и аудитория</b><p>Счётчик за всё время, сегодня, периоды, популярные разделы и агрегированная статистика.</p><small>Доступна отдельная статистика посещений</small></article>
+          <article class="admin-module"><b>Уведомления и объявления</b><p>Системные сообщения, уведомления пользователей, шаблоны и журнал отправок.</p><small>Отправка рассылок выключена</small></article>
+          <article class="admin-module"><b>Настройки платформы</b><p>Функции, доступность инструментов, ограничения, режим обслуживания и feature flags.</p><small>Критические переключатели заблокированы</small></article>
+        </div>
+        <button class="secondary-button" type="button" data-go="account">← Вернуться в личный кабинет</button>
+      </section>
+
+      <section class="view admin-view" id="view-admin-technical">
+        <div class="page-heading"><div class="eyebrow">PRIVATE OWNER CONSOLE · 02</div><h1>Технический и <span class="gradient-text">финансовый центр</span></h1><p>Контроль затрат, поступлений, технического состояния и безопасности.</p></div>
+        <div class="admin-security-banner"><b>Финансовая защита</b><span>Просмотр и изменение разделены. Возвраты, списания, начисления и тарифные операции не активируются без отдельных разрешений, подтверждения и журнала аудита.</span></div>
+        <div class="admin-module-grid">
+          <article class="admin-module"><b>Поступления и платежи</b><p>Оплаты, подписки, статусы транзакций, комиссии провайдеров и возвраты.</p><small>Платёжные операции выключены</small></article>
+          <article class="admin-module"><b>Расходы и себестоимость</b><p>Расходы AI-провайдеров, API, серверов, хранения, трафика и инфраструктуры.</p><small>Подключение источников: следующий этап</small></article>
+          <article class="admin-module"><b>Доходы, расходы и результат</b><p>Выручка, операционные расходы, комиссии, валовая и чистая динамика по периодам.</p><small>Только подтверждённые финансовые события</small></article>
+          <article class="admin-module"><b>Кредиты и кошельки</b><p>Начисления, резервы, списания, возвраты кредитов, истечения и сверка балансов.</p><small>Изменение балансов заблокировано</small></article>
+          <article class="admin-module"><b>API и AI-интеграции</b><p>Доступность провайдеров, задержки, ошибки, лимиты, квоты и состояние очередей.</p><small>Секретные ключи не отображаются</small></article>
+          <article class="admin-module"><b>Журналы и инциденты</b><p>Технические ошибки, подозрительные запросы, отказы авторизации и события безопасности.</p><small>Без раскрытия токенов и секретов</small></article>
+          <article class="admin-module"><b>Роли и действия администраторов</b><p>Разрешения, история входов, изменения тарифов, запросы на подтверждение и audit log.</p><small>Управление делегированными ролями — через защищённую форму ниже</small></article>
+          <article class="admin-module"><b>Резервные копии и восстановление</b><p>Статус резервирования, контроль целостности, сроки хранения и результаты тестов восстановления.</p><small>Удаление резервных копий запрещено</small></article>
+        </div>
+        <section class="panel admin-finance-report-panel" aria-labelledby="adminAiProvidersHeading">
+          <div class="panel-heading"><div><h2 id="adminAiProvidersHeading">AI-провайдеры и бесплатные квоты</h2><p>Без раскрытия ключей. Выбор провайдера задаётся только конфигурацией backend; автоматического fallback нет.</p></div><button class="secondary-button" id="refreshAdminAiProviders" type="button">↻ Обновить</button></div>
+          <p class="helper-text" id="adminAiProviderStatus" role="status" aria-live="polite">Загрузка состояния AI-провайдеров…</p>
+          <div class="owner-metrics">
+            <article><span>Активный провайдер</span><strong id="adminAiSelectedProvider">—</strong><small id="adminAiSelectedModel">Модель —</small></article>
+            <article><span>Ключ на сервере</span><strong id="adminAiKeyStatus">—</strong><small>Значение ключа не отображается</small></article>
+            <article><span>Автопереключение</span><strong id="adminAiFallbackStatus">—</strong><small>Без скрытых платных переходов</small></article>
+          </div>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>Поддержка</th><th>Ключ настроен</th><th>Режим тарифа</th></tr></thead><tbody id="adminAiProviderRows"></tbody></table></div>
+          <div class="admin-module" aria-labelledby="adminAiCostBudgetHeading">
+            <div class="panel-heading"><div><h3 id="adminAiCostBudgetHeading">Денежный стоп-кран AI · USD</h3><p>Атомарные резервы перед каждым запросом. Неизвестная стоимость блокирует резерв до проверки администратором.</p></div><button class="secondary-button" id="refreshAdminAiCostBudget" type="button">Обновить лимиты</button></div>
+            <p class="helper-text" id="adminAiCostBudgetStatus" role="status" aria-live="polite">Состояние денежного контроля загружается только для администратора.</p>
+            <div class="owner-metrics">
+              <article><span>Общий лимит в сутки</span><strong id="adminAiGlobalBudget">—</strong><small>USD · все провайдеры</small></article>
+              <article><span>Уже зарезервировано</span><strong id="adminAiOutstandingBudget">—</strong><small>USD · активные и неизвестные</small></article>
+              <article><span>Остаток общего лимита</span><strong id="adminAiRemainingBudget">—</strong><small>USD · оценка + резервы</small></article>
+            </div>
+            <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Дневной предел USD</th><th>Израсходовано по оценке</th><th>Резерв</th><th>Остаток</th><th>Неизвестные</th><th>Состояние</th></tr></thead><tbody id="adminAiCostBudgetRows"></tbody></table></div>
+            <p class="owner-privacy-note" id="adminAiCostBudgetNote">Оценки рассчитаны по консервативным пиковым тарифам; фактический счёт проверяется в кабинете провайдера.</p>
+            <div class="admin-module" aria-labelledby="adminAiBudgetControlsHeading">
+              <h4 id="adminAiBudgetControlsHeading">Управление денежными лимитами</h4>
+              <div class="finance-queue-controls">
+                <label>Общий лимит в сутки, USD<input id="adminAiGlobalDailyLimit" type="number" min="0.000001" max="1000000000" step="0.01" value="2" required></label>
+                <label>Максимум активных резервов, USD<input id="adminAiGlobalOutstandingLimit" type="number" min="0.000001" max="1000000000" step="0.01" value="0.5" required></label>
+                <label><input id="adminAiGlobalEnabled" type="checkbox" checked> Глобальный стоп-кран включён</label>
+                <button class="secondary-button" id="saveAdminAiGlobalBudget" type="button">Сохранить общий лимит</button>
+              </div>
+              <div class="finance-queue-controls">
+                <label>Провайдер<select id="adminAiBudgetProvider"><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option></select></label>
+                <label>Дневной лимит, USD<input id="adminAiProviderDailyLimit" type="number" min="0.000001" max="1000000000" step="0.01" value="1" required></label>
+                <label><input id="adminAiProviderEnabled" type="checkbox" checked> Провайдер разрешён</label>
+                <button class="secondary-button" id="saveAdminAiProviderBudget" type="button">Сохранить лимит провайдера</button>
+              </div>
+              <h4>Проверка неизвестных резервов</h4>
+              <p class="helper-text">Резерв нельзя освободить автоматически. Укажите решение и обязательное объяснение; действие попадёт в журнал аудита.</p>
+              <div class="finance-queue-controls">
+                <label>Неизвестный резерв<select id="adminAiUnknownReservation"><option value="">Нет доступных неизвестных резервов</option></select></label>
+                <label>Решение<select id="adminAiReservationResolution"><option value="confirm_no_charge">Подтверждено: списания не было</option><option value="record_estimated_cost">Зафиксировать оценку расхода</option></select></label>
+                <label>Оценка USD (для второго решения)<input id="adminAiReservationCost" type="number" min="0" max="1000000000" step="0.000001"></label>
+                <label>Причина<textarea id="adminAiReservationNote" minlength="8" maxlength="1000" rows="2" required></textarea></label>
+                <button class="secondary-button" id="resolveAdminAiReservation" type="button">Подтвердить решение</button>
+              </div>
+              <p class="helper-text" id="adminAiBudgetControlStatus" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+          <div class="admin-module" aria-labelledby="adminAiUsageHeading">
+            <div class="panel-heading"><div><h3 id="adminAiUsageHeading">Использование AI · токены и оценка расходов</h3><p>Данные из серверного журнала ai_usage. Не содержит промптов, ответов и идентификаторов пользователей.</p></div></div>
+            <div class="finance-queue-controls">
+              <label>С даты<input id="adminAiUsageDateFrom" type="date"></label>
+              <label>По дату<input id="adminAiUsageDateTo" type="date"></label>
+              <button class="secondary-button" id="loadAdminAiUsage" type="button">Загрузить статистику</button>
+            </div>
+            <p class="helper-text" id="adminAiUsageStatus" role="status">Статистика загружается только по запросу.</p>
+            <div class="owner-metrics">
+              <article><span>Запросы</span><strong id="adminAiUsageRequests">—</strong><small>Всего за период</small></article>
+              <article><span>Токены</span><strong id="adminAiUsageTokens">—</strong><small>Вход + выход</small></article>
+              <article><span>Оценка API-стоимости</span><strong id="adminAiUsageCost">—</strong><small>USD · не счёт провайдера</small></article>
+            </div>
+            <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>Запросы</th><th>Входные токены</th><th>Выходные токены</th><th>Оценка USD</th><th>Стоимость неизвестна · запросов</th></tr></thead><tbody id="adminAiUsageRows"></tbody></table></div>
+            <p class="owner-privacy-note" id="adminAiUsageDisclaimer">Фактические списания, доступность Free Tier и остатки квот нельзя достоверно определить по журналу запросов. Сверяйте их в кабинетах DeepSeek и Google AI Studio.</p>
+          </div>
+          <p class="owner-privacy-note" id="adminAiProviderSafetyNote">Бесплатные лимиты и состояние биллинга проверяются в кабинете самого провайдера; backend не может гарантировать неизменность внешних квот.</p>
+        </section>
+        <section class="panel admin-finance-report-panel" aria-labelledby="adminFinanceReportHeading">
+          <div class="panel-heading"><div><h2 id="adminFinanceReportHeading">Финансовая отчётность · только чтение</h2><p>Показываются только подтверждённые расходы провайдеров и сводка кошелька. До подключения платёжного провайдера выручка не рассчитывается.</p></div></div>
+          <div class="admin-module-grid">
+            <article class="admin-module">
+              <b>Расходы AI-провайдеров</b>
+              <div class="finance-queue-controls">
+                <label>С даты<input id="adminCostDateFrom" type="date"></label>
+                <label>По дату<input id="adminCostDateTo" type="date"></label>
+                <button class="secondary-button" id="loadAdminProviderCosts" type="button">Загрузить отчёт</button>
+              </div>
+              <p class="helper-text" id="adminProviderCostStatus" role="status">Отчёт загружается только по запросу.</p>
+              <div class="owner-metrics">
+                <article><span>Известные расходы</span><strong id="adminKnownProviderCost">—</strong><small>USD · без неизвестных сумм</small></article>
+                <article><span>События</span><strong id="adminProviderCostEvents">—</strong><small>Записи журнала себестоимости</small></article>
+                <article><span>Неизвестная стоимость</span><strong id="adminUnknownProviderCosts">—</strong><small>Требует сверки</small></article>
+              </div>
+              <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Провайдер</th><th>Модель</th><th>События</th><th>Известные расходы USD</th><th>Неизвестные</th></tr></thead><tbody id="adminProviderCostRows"></tbody></table></div>
+            </article>
+            <article class="admin-module">
+              <b>Сводка кошелька пользователя</b>
+              <label for="adminWalletUserId">UUID аккаунта</label>
+              <div class="finance-queue-controls"><input id="adminWalletUserId" type="text" minlength="36" maxlength="36" placeholder="UUID пользователя" autocomplete="off"><button class="secondary-button" id="loadAdminWallet" type="button">Проверить</button></div>
+              <p class="helper-text" id="adminWalletStatus" role="status">Доступ предоставляется только при отдельном серверном разрешении; просмотр журналируется.</p>
+              <div class="owner-metrics">
+                <article><span>Доступно</span><strong id="adminWalletAvailable">—</strong><small>Кредиты</small></article>
+                <article><span>В резерве</span><strong id="adminWalletReserved">—</strong><small>Кредиты</small></article>
+                <article><span>Всего</span><strong id="adminWalletTotal">—</strong><small>Доступно + резерв</small></article>
+              </div>
+              <p class="helper-text" id="adminWalletDetails">Количество активных резервов и партий появится после проверки.</p>
+              <div class="table-scroll">
+                <table class="admin-audit-table"><thead><tr><th>Дата UTC</th><th>Операция</th><th>Изменение доступно</th><th>Изменение резерва</th><th>Баланс после</th></tr></thead><tbody id="adminCreditLedgerRows"></tbody></table>
+              </div>
+              <p class="helper-text" id="adminCreditLedgerStatus" role="status">Журнал кредитных единиц загружается отдельно; денежные платежи здесь не отображаются.</p>
+              <button class="secondary-button" id="loadMoreAdminCreditLedger" type="button" hidden>Загрузить ещё</button>
+            </article>
+          </div>
+        </section>
+        <section class="panel finance-role-admin-panel" id="financeRoleAdminPanel" aria-labelledby="financeRoleAdminHeading">
+          <div class="panel-heading"><div><h2 id="financeRoleAdminHeading">Назначение финансовых полномочий</h2><p>Только владелец с разрешением управления ролями. Самоназначение запрещено; срок действия обязателен.</p></div></div>
+          <form id="financeRoleGrantForm" class="finance-request-form">
+            <label>ID аккаунта сотрудника<input id="financeRolePrincipalId" type="text" minlength="36" maxlength="36" placeholder="UUID аккаунта оператора / проверяющего" required></label>
+            <label>Роль<select id="financeRoleCode" required><option value="finance_operator">Финансовый оператор</option><option value="finance_approver">Финансовый проверяющий</option><option value="auditor_readonly">Аудитор · только чтение</option></select></label>
+            <label>Область доступа — ID пользователя<input id="financeRoleScopeUserId" type="text" minlength="36" maxlength="36" placeholder="UUID пользователя, по которому разрешены операции" required></label>
+            <label>Действует до<input id="financeRoleValidUntil" type="datetime-local" required></label>
+            <label class="finance-request-reason">Основание назначения<textarea id="financeRoleReason" minlength="1" maxlength="500" rows="2" required></textarea></label>
+            <button class="primary-button" type="submit" id="grantFinanceRoleButton">Назначить роль</button>
+          </form>
+          <div class="finance-role-lookup">
+            <label for="financeRoleLookupId">Проверить активные роли аккаунта</label>
+            <div class="finance-queue-controls"><input id="financeRoleLookupId" type="text" minlength="36" maxlength="36" placeholder="UUID аккаунта"><button class="secondary-button" id="loadFinanceRoles" type="button">Загрузить роли</button></div>
+          </div>
+          <p class="helper-text" id="financeRoleAdminStatus" role="status">Назначения и отзыв фиксируются сервером. Роль не активирует платежи и не начисляет кредиты.</p>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Роль</th><th>Область</th><th>Действует до</th><th>Назначил</th><th>Действия</th></tr></thead><tbody id="financeRoleRows"></tbody></table></div>
+        </section>
+        <section class="panel admin-audit-panel" aria-labelledby="adminAuditHeading">
+          <div class="panel-heading"><div><h2 id="adminAuditHeading">Журнал административного аудита</h2><p>Защищённая история действий. Доступ только при наличии серверного разрешения.</p></div><button class="secondary-button" id="refreshAdminAudit" type="button">Обновить</button></div>
+          <p class="helper-text" id="adminAuditStatus" role="status">Журнал загружается после проверки роли администратора.</p>
+          <div class="table-scroll"><table class="admin-audit-table"><thead><tr><th>Время (UTC)</th><th>ID администратора</th><th>Действие</th><th>Результат</th><th>Объект</th><th>Примечание</th></tr></thead><tbody id="adminAuditRows"></tbody></table></div>
+          <button class="secondary-button" id="loadMoreAdminAudit" type="button" hidden>Загрузить более ранние события</button>
+        </section>
+        <button class="secondary-button" type="button" data-go="account">← Вернуться в личный кабинет</button>
       </section>
 
       <section class="view" id="view-rules">
@@ -277,19 +642,63 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="rules-footer panel"><b>Приватность</b><p>Личные проекты по умолчанию приватны. Администратор не должен просматривать все личные работы без причины. Доступ для проверки должен ограничиваться жалобами, сигналами безопасности и необходимыми действиями модерации с записью таких действий.</p></div>
       </section>
 
+      <section class="view" id="view-messages">
+        <div class="page-heading"><div class="eyebrow">PWA STUDIO · CHAT CENTER</div><h1>Центр <span class="gradient-text">сообщений</span></h1><p>Обращения и ответы команды в одном удобном пространстве.</p></div>
+    <section class="panel messages-center-panel" id="supportUserPanel" aria-labelledby="supportUserHeading">
+          <div class="panel-heading"><div><div class="eyebrow">YOUR MESSAGES</div><h2 id="supportUserHeading">Диалоги и поддержка</h2><p>Ваши личные обращения к команде PWA Studio — в одном месте.</p></div><button class="secondary-button" id="refreshMySupportTickets" type="button">↻ Обновить</button></div>
+          <form id="supportCreateForm" class="finance-queue-controls">
+            <label>Категория обращения
+              <select id="supportNewCategory">
+                <option value="general">Общий вопрос</option>
+                <option value="bug">Ошибка или техническая проблема</option>
+                <option value="account">Аккаунт и доступ</option>
+                <option value="billing">Тарифы, кредиты и оплата</option>
+                <option value="feature_request">Предложение новой функции</option>
+                <option value="feedback">Отзыв о PWA Studio</option>
+                <option value="safety_privacy">Безопасность и конфиденциальность</option>
+              </select>
+            </label>
+            <label>Тема обращения<input id="supportNewSubject" minlength="3" maxlength="160" required placeholder="Например, проблема с сохранением проекта"></label>
+            <label>Сообщение<textarea id="supportNewMessage" minlength="1" maxlength="5000" rows="3" required placeholder="Опишите, что произошло или что можно улучшить…"></textarea></label>
+            <label class="support-context-optin"><input id="supportIncludeContext" type="checkbox"> Добавить технический контекст: открытый раздел сайта. Никакие файлы или тексты проектов не прикладываются.</label>
+            <button class="primary-button" type="submit">Отправить обращение</button>
+          </form>
+          <p id="supportUserStatus" class="helper-text" role="status" aria-live="polite">Войдите в аккаунт, чтобы пользоваться поддержкой.</p>
+          <div class="messages-list-heading">Ваши диалоги</div><div id="messagesConversationList" class="messages-conversation-list" aria-live="polite"></div><div class="finance-queue-controls messages-select-fallback"><label>Мои обращения<select id="supportMyTicketSelect"><option value="">Пока нет обращений</option></select></label></div>
+          <div id="supportMyConversation" class="panel" hidden>
+            <div id="supportMyMessages" class="assistant-messages" aria-live="polite"></div>
+            <form id="supportUserReplyForm" class="finance-queue-controls"><label>Ваш ответ<textarea id="supportUserReply" maxlength="5000" rows="2" required placeholder="Напишите сообщение…"></textarea></label><button class="secondary-button" type="submit">Отправить ответ</button></form>
+          </div>
+        </section>
+      </section>
+
       <section class="view" id="view-settings">
         <div class="page-heading"><div class="eyebrow">PREFERENCES & CONNECTIONS</div><h1>Настройки</h1><p>Подключите сервер студии. Секретные ключи AI-провайдера вводятся только в окружении backend, не здесь.</p></div>
         <div class="panel settings-list">
           <div><b>Внешний вид</b><span>Тёмная и светлая темы сохраняются в этом браузере.</span></div>
-          <div><b>AI-провайдеры</b><span>OpenAI, DeepSeek, Anthropic или доступный Ollama настраиваются на сервере.</span></div>
+          <div><b>AI-провайдеры</b><span>В этой версии PWA Studio используется только DeepSeek. API-ключ задаётся исключительно в защищённом окружении backend.</span></div>
           <div class="backend-setup">
             <label for="backendUrl"><b>Адрес Backend API</b></label>
             <input id="backendUrl" type="url" inputmode="url" placeholder="https://your-api.example.com" autocomplete="url">
             <div class="backend-actions"><button class="secondary-button" id="saveBackend" type="button">Сохранить адрес</button><button class="primary-button" id="testBackend" type="button">Проверить соединение</button></div>
-            <p class="helper-text" id="backendStatus" aria-live="polite">Backend пока не подключён. Укажите HTTPS-адрес развёрнутого API.</p>
+            <p class="helper-text" id="backendStatus" aria-live="polite">Backend пока не подключён. Укажите HTTPS-адрес доверенного API: сервер получит токен вашей сессии.</p>
           </div>
           <div><b>Хранение проектов</b><span>Фильмы авторизованных пользователей синхронизируются с Supabase; гостевые черновики сохраняются локально в браузере.</span></div>
         </div>
+        <section class="panel privacy-center" aria-labelledby="privacyCenterTitle">
+          <div class="panel-heading"><div><div class="eyebrow">YOUR DATA & PRIVACY</div><h2 id="privacyCenterTitle">Конфиденциальность и персональные данные</h2></div></div>
+          <p class="helper-text">Здесь можно посмотреть сохранённые согласия, отозвать согласие на Vision и отправить запрос на доступ, экспорт или удаление данных. Отправка запроса регистрирует обращение, но сама по себе ещё не выполняет экспорт или удаление.</p>
+          <div class="backend-actions">
+            <button class="secondary-button" id="privacyRefresh" type="button">Обновить сведения</button>
+            <button class="secondary-button" id="privacyWithdrawVision" type="button">Отозвать согласие Vision</button>
+            <button class="secondary-button" id="privacyRequestAccess" type="button">Запросить доступ к данным</button>
+            <button class="secondary-button" id="privacyRequestExport" type="button">Запросить экспорт</button>
+            <button class="secondary-button" id="privacyRequestDeletion" type="button">Запросить удаление аккаунта и данных</button>
+          </div>
+          <div id="privacyCenterStatus" class="helper-text" role="status" aria-live="polite">Войдите в аккаунт, чтобы управлять запросами и согласиями.</div>
+          <div id="privacyConsentList" class="privacy-data-list"></div>
+          <div id="privacyRequestList" class="privacy-data-list"></div>
+        </section>
       </section>
 
       <footer class="site-footer">
@@ -350,11 +759,37 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
     .auth-form .primary-button{width:100%;justify-content:center;margin-top:12px}.auth-link{color:#c7a9ff;padding:10px;font-size:13px}
     .auth-feedback{min-height:24px;margin:12px 0 0!important;font-size:13px}.profile{cursor:default}
     @media(max-width:480px){.auth-card{padding:23px 19px}.auth-card h1{font-size:24px}.backend-pill{display:none}.auth-top-button{padding:7px 8px;font-size:11px}}
-  </style>
+  .owner-dashboard-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}.owner-dashboard-heading h2{margin:6px 0}.owner-dashboard-heading p{margin:0 0 10px;color:var(--muted);font-size:12px}.owner-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:18px 0}.owner-metrics article,.owner-chart-panel,.owner-routes-panel{padding:14px;border:1px solid var(--line);border-radius:14px;background:rgba(135,105,220,.06)}.owner-metrics article{display:grid;gap:5px}.owner-metrics article span,.owner-metrics article small,.owner-chart-panel small{font-size:11px;color:var(--muted)}.owner-metrics article strong{font-size:25px}.owner-chart-panel,.owner-routes-panel{margin-top:12px}.owner-chart-panel>div:first-child{display:grid;gap:3px}.owner-visits-chart{display:grid;grid-template-columns:repeat(30,minmax(3px,1fr));align-items:end;gap:3px;height:145px;padding:12px 0 22px}.owner-visits-chart button{min-width:0;height:var(--bar-height);align-self:end;border:0;border-radius:4px 4px 1px 1px;background:linear-gradient(180deg,#b99aff,#6e58b8);padding:0;position:relative}.owner-visits-chart button:focus-visible{outline:2px solid var(--text);outline-offset:2px}.owner-visits-chart button span{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:8px;color:var(--muted);white-space:nowrap}.owner-popular-routes{display:grid;gap:8px;margin-top:12px}.owner-route-row{display:grid;grid-template-columns:minmax(90px,130px) 1fr 48px;align-items:center;gap:9px;font-size:11px}.owner-route-bar{height:7px;border-radius:99px;background:rgba(145,125,190,.16);overflow:hidden}.owner-route-bar i{display:block;height:100%;border-radius:99px;background:#9c80e7}.owner-route-row strong{text-align:right}.owner-privacy-note{font-size:11px;color:var(--muted);line-height:1.5;margin-top:14px}.\n  .site-counter-card{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:22px 0;padding:17px 20px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(120deg,rgba(135,105,220,.12),rgba(90,160,190,.07));color:var(--text)}
+  .site-counter-card>div{display:grid;gap:3px}.site-counter-label{font-size:9px;letter-spacing:1.5px;color:var(--muted)}.site-counter-card strong{font-size:26px;line-height:1.2}.site-counter-card span:not(.site-counter-label){font-size:11px;color:var(--muted)}.site-counter-today{min-width:90px;text-align:right}
+  @media(max-width:480px){.site-counter-card{padding:13px 15px}.site-counter-card strong{font-size:22px}}
+      .visual-reference-upload{display:grid;gap:6px;margin:12px 0;padding:12px;border:1px dashed var(--border-color,#888);border-radius:12px}.visual-reference-upload small{opacity:.75;line-height:1.45}.visual-reference-gallery{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.visual-reference-gallery img{width:88px;height:88px;object-fit:cover;border-radius:10px;border:1px solid var(--border-color,#888)}@media(max-width:600px){.visual-reference-gallery img{width:76px;height:76px}}.character-passport-fields{display:grid;gap:9px;margin:10px 0;padding:12px;border:1px dashed var(--border);border-radius:12px}.character-passport-fields input,.character-passport-fields textarea{width:100%;min-height:40px;padding:9px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text)}.character-passport-fields label{display:block;margin:5px 0}.prompt-visual-card .helper-text{overflow-wrap:anywhere;line-height:1.5}
+
+  .support-launcher{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));z-index:80;display:flex;align-items:center;gap:9px;padding:12px 16px;border:1px solid rgba(196,167,255,.45);border-radius:999px;background:linear-gradient(135deg,#7659bd,#4c3b86);color:#fff;box-shadow:0 10px 30px rgba(25,15,50,.32);font:inherit;font-size:12px;font-weight:600;line-height:1.2;cursor:pointer}
+  .support-launcher:focus-visible{outline:3px solid #d7c4ff;outline-offset:3px}.support-launcher-icon{font-size:17px;line-height:1}
+  @media(max-width:480px){.support-launcher{right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));padding:12px 14px}.support-launcher-label{display:none}}
+
+  .support-widget-dialog{position:fixed;inset:auto 16px 16px auto;margin:0;width:min(440px,calc(100vw - 32px));max-height:min(82dvh,760px);padding:0;overflow:auto;resize:both;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--text);box-shadow:0 24px 80px rgba(12,8,28,.42)}
+  .support-widget-dialog::backdrop{background:rgba(8,6,18,.42);backdrop-filter:blur(3px)}
+  .support-widget-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+  .support-widget-header>div{display:grid;gap:3px}.support-widget-header b{font-size:13px}.support-widget-header small{font-size:10px;color:var(--muted)}
+  .support-widget-close{width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--text);font-size:20px;cursor:pointer}
+  .support-widget-dialog #supportUserPanel{border:0;border-radius:0;box-shadow:none;margin:0;padding:16px}
+  .support-widget-dialog #supportUserPanel .panel-heading{align-items:flex-start}
+  .support-widget-dialog #supportUserPanel .panel-heading h2{font-size:18px}
+  .support-widget-dialog #supportUserPanel .panel-heading p{font-size:11px}
+  .support-widget-dialog #supportMyConversation{padding:10px;margin-top:12px}
+  .support-widget-dialog #supportMyMessages{max-height:34dvh;overflow:auto}
+  .support-context-optin{display:flex!important;align-items:flex-start;gap:8px;font-size:11px;line-height:1.45;color:var(--muted)}
+  .support-context-optin input{width:auto;min-height:0;margin-top:2px}
+  @media(max-width:600px){.support-widget-dialog{inset:auto 8px max(8px,env(safe-area-inset-bottom)) 8px;width:auto;max-width:none;max-height:82dvh;resize:none;border-radius:18px}.support-widget-dialog #supportMyMessages{max-height:30dvh}}
+</style>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./supabase-config.js"></script>
-  <script src="./app.js?v=20261121-9" defer></script>
+  <script src="./analytics.js" defer></script>
+  <script src="./movie-storage.js?v=20261123-1"></script>
+  <script src="./app.js?v=20261123-1" defer></script>
   <script src="./audio-lab.js?v=20261121-1" defer></script>
+  <button class="support-launcher" id="supportLauncher" type="button" aria-label="Открыть центр сообщений" title="Сообщения"><span class="support-launcher-icon" aria-hidden="true">✉</span><span class="support-launcher-label">Сообщения</span></button>
 </body>
 </html>

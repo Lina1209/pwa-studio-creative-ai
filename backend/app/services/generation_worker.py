@@ -1,0 +1,556 @@
+"""Provider-neutral execution contract for one already-claimed image job.
+
+This module intentionally has no polling loop, Supabase client, provider credentials,
+or storage SDK. A trusted runner must claim via the service-role RPC and inject
+repository/provider/storage adapters. The feature flag remains off until those
+adapters and deployment controls exist.
+"""
+import asyncio
+import hashlib
+import logging
+from dataclasses import dataclass, replace
+from typing import Protocol
+from uuid import UUID
+
+from app.services.generation_result_storage import (
+    GenerationResultStorageError,
+    GenerationStorageAdapterError,
+    StoredObjectMetadata,
+    calculate_sha256,
+    validate_generation_result_object,
+)
+from app.services.provider_operation_recovery import decide_provider_recovery
+from app.services.worker_repository_errors import WorkerRepositoryError
+from app.services.image_generation import (
+    ImageGenerationError,
+    ImageGenerationProvider,
+    ImageGenerationRequest,
+    ImageProviderRegistry,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ClaimedImageJob:
+    job_id: UUID
+    user_id: UUID
+    job_type: str
+    provider: str
+    model: str
+    request_snapshot: dict
+    attempt_count: int
+    max_attempts: int
+    job_status: str = "running"
+
+
+@dataclass(frozen=True)
+class UploadedImageObject:
+    metadata: StoredObjectMetadata
+    expected_bucket: str
+    expected_object_path: str
+    expected_sha256_hex: str
+
+
+class GenerationJobRepository(Protocol):
+    async def heartbeat(self, job_id: UUID, worker_id: str, lease_seconds: int) -> str: ...
+    async def acknowledge_cancellation(self, job_id: UUID, worker_id: str) -> bool: ...
+    async def get_provider_operation(self, job_id: UUID): ...
+    async def retry(self, job_id: UUID, worker_id: str, error_code: str, delay_seconds: int) -> bool: ...
+    async def fail(self, job_id: UUID, worker_id: str, error_code: str) -> bool: ...
+    async def complete_credited(self, job_id: UUID, worker_id: str, result_path: str, result_sha256: str): ...
+    async def authorize_provider_operation(self, job_id: UUID, worker_id: str) -> bool: ...
+    async def record_provider_cost(
+        self, *, job_id: UUID, user_id: UUID, operation_key: str,
+        provider: str, model: str, provider_usage_id: str | None,
+        cost_usd, cost_source: str, input_units: int | None = None,
+        output_units: int | None = None, total_units: int | None = None,
+        unit_kind: str = "unknown", metadata: dict | None = None,
+    ): ...
+
+
+class PrivateImageStorage(Protocol):
+    async def upload_image(
+        self, *, owner_id: UUID, job_id: UUID, image_bytes: bytes, mime_type: str
+    ) -> UploadedImageObject: ...
+
+
+@dataclass(frozen=True)
+class WorkerResult:
+    outcome: str
+    error_code: str | None = None
+
+
+class GenerationWorker:
+    """Execute one leased image job; all state transitions remain DB-authoritative."""
+
+    def __init__(
+        self,
+        *,
+        worker_id: str,
+        repository: GenerationJobRepository,
+        providers: ImageProviderRegistry,
+        storage: PrivateImageStorage,
+        lease_seconds: int = 180,
+        heartbeat_interval_seconds: float = 30.0,
+        retry_base_seconds: int = 15,
+        retry_max_seconds: int = 900,
+    ):
+        if not worker_id or len(worker_id.strip()) > 120:
+            raise ValueError("Worker identity must contain 1 to 120 characters.")
+        if not 30 <= lease_seconds <= 3600:
+            raise ValueError("Lease duration must be between 30 and 3600 seconds.")
+        if not 0 < heartbeat_interval_seconds < lease_seconds / 2:
+            raise ValueError("Heartbeat interval must be less than half the lease.")
+        if not 1 <= retry_base_seconds <= retry_max_seconds <= 86400:
+            raise ValueError("Retry delay bounds are invalid.")
+        self.worker_id = worker_id.strip()
+        self.repository = repository
+        self.providers = providers
+        self.storage = storage
+        self.lease_seconds = lease_seconds
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self.retry_base_seconds = retry_base_seconds
+        self.retry_max_seconds = retry_max_seconds
+
+    def _retry_delay(self, attempt: int) -> int:
+        return min(self.retry_max_seconds, self.retry_base_seconds * (2 ** max(0, attempt - 1)))
+
+    async def _maintain_lease(
+        self, job_id: UUID, lost: asyncio.Event, cancel_requested: asyncio.Event
+    ) -> None:
+        while True:
+            await asyncio.sleep(self.heartbeat_interval_seconds)
+            try:
+                state = await self.repository.heartbeat(
+                    job_id, self.worker_id, self.lease_seconds
+                )
+            except Exception:
+                logger.warning("generation_worker_heartbeat_error job_id=%s", job_id)
+                state = "lease_lost"
+            if state == "active":
+                continue
+            if state == "cancel_requested":
+                # Keep the lease alive and let any in-flight provider operation
+                # reach a definitive, journaled outcome. Never cancel it locally.
+                cancel_requested.set()
+                continue
+            lost.set()
+            return
+
+    async def _observe_cancellation(
+        self, job_id: UUID, cancel_requested: asyncio.Event
+    ) -> bool:
+        if cancel_requested.is_set():
+            return True
+        try:
+            state = await self.repository.heartbeat(
+                job_id, self.worker_id, self.lease_seconds
+            )
+        except Exception:
+            return False
+        if state == "cancel_requested":
+            cancel_requested.set()
+        return cancel_requested.is_set()
+
+    async def _acknowledge_cancellation(self, job_id: UUID) -> WorkerResult:
+        try:
+            acknowledged = await self.repository.acknowledge_cancellation(
+                job_id, self.worker_id
+            )
+        except Exception:
+            logger.warning("generation_worker_cancellation_ack_error job_id=%s", job_id)
+            return WorkerResult("cancellation_pending", "cancellation_ack_unavailable")
+        return WorkerResult(
+            "cancelled" if acknowledged else "cancellation_pending",
+            None if acknowledged else "provider_operation_not_reconciled",
+        )
+
+    async def _acknowledge_cancellation_if_safe(
+        self, job_id: UUID, cancel_requested: asyncio.Event,
+        provider_cost_reconciled: bool,
+    ) -> WorkerResult | None:
+        if not await self._observe_cancellation(job_id, cancel_requested):
+            return None
+        if not provider_cost_reconciled:
+            try:
+                operation = await self.repository.get_provider_operation(job_id)
+            except Exception:
+                return WorkerResult(
+                    "cancellation_pending", "provider_operation_reconciliation_unavailable"
+                )
+            if operation is not None and operation.state != "provider_failed":
+                return WorkerResult(
+                    "cancellation_pending", "provider_operation_not_reconciled"
+                )
+        return await self._acknowledge_cancellation(job_id)
+
+    async def _run_while_leased(self, awaitable, lost: asyncio.Event):
+        operation = asyncio.create_task(awaitable)
+        lease_lost = asyncio.create_task(lost.wait())
+        done, pending = await asyncio.wait(
+            {operation, lease_lost}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if lease_lost in done and lost.is_set():
+            operation.cancel()
+            await asyncio.gather(operation, return_exceptions=True)
+            raise ImageGenerationError("worker_lease_lost", retryable=False)
+        lease_lost.cancel()
+        await asyncio.gather(lease_lost, return_exceptions=True)
+        return await operation
+
+    async def process(self, job: ClaimedImageJob) -> WorkerResult:
+        if job.job_status not in {"running", "cancel_requested"}:
+            return WorkerResult("lease_lost", "unsupported_job_status")
+        if job.job_type != "image_generation":
+            return await self._terminal_failure(job, "unsupported_job_type")
+        if job.attempt_count < 1 or job.max_attempts < job.attempt_count:
+            return await self._terminal_failure(job, "invalid_attempt_metadata")
+
+        cancel_requested = asyncio.Event()
+        if job.job_status == "cancel_requested":
+            cancel_requested.set()
+        provider_cost_reconciled = False
+        try:
+            request = ImageGenerationRequest(**job.request_snapshot)
+            provider: ImageGenerationProvider = self.providers.get(job.provider)
+            if provider.name.strip().lower() != job.provider.strip().lower():
+                raise ImageGenerationError("provider_identity_mismatch", retryable=False)
+            if getattr(provider, "supports_idempotency", False) is not True:
+                raise ImageGenerationError("provider_idempotency_not_supported", retryable=False)
+            # Stable across every worker retry/reclaim for this durable job.
+            provider_idempotency_key = str(job.job_id)
+            lost = asyncio.Event()
+            heartbeat = asyncio.create_task(
+                self._maintain_lease(job.job_id, lost, cancel_requested)
+            )
+            try:
+                if job.job_status == "cancel_requested":
+                    journal = await self.repository.get_provider_operation(job.job_id)
+                    if journal is None:
+                        # No durable provider operation means no external
+                        # submission was begun; the fenced acknowledgement is safe.
+                        return await self._acknowledge_cancellation(job.job_id)
+                else:
+                    journal = await self.repository.begin_provider_operation(
+                        job.job_id, self.worker_id, job.provider, provider_idempotency_key
+                    )
+                # A journal RPC may finish after heartbeat has already lost the
+                # lease. Never start or recover provider work from a stale claim.
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_after_journal_begin")
+                if journal.state == "provider_failed":
+                    # A definitive provider failure is reconciled. If the user
+                    # requested cancellation, settle as cancelled, not failed.
+                    if await self._observe_cancellation(job.job_id, cancel_requested):
+                        provider_cost_reconciled = True
+                        return await self._acknowledge_cancellation(job.job_id)
+                    return await self._terminal_failure(job, "provider_operation_failed")
+                if journal.created:
+                    if await self._observe_cancellation(job.job_id, cancel_requested):
+                        changed = await self.repository.mark_provider_operation_failed(
+                            job.job_id, self.worker_id, "user_cancelled_before_submission"
+                        )
+                        if changed:
+                            provider_cost_reconciled = True
+                            return await self._acknowledge_cancellation(job.job_id)
+                        return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
+                    # Budget admission is database-authoritative and happens
+                    # before any billable provider request. Missing/uncertain
+                    # budget state fails closed.
+                    budget_allowed = await self._run_while_leased(
+                        self.repository.authorize_provider_operation(job.job_id, self.worker_id), lost
+                    )
+                    if not budget_allowed:
+                        if await self._observe_cancellation(job.job_id, cancel_requested):
+                            changed = await self.repository.mark_provider_operation_failed(
+                                job.job_id, self.worker_id, "user_cancelled_before_submission"
+                            )
+                            if changed:
+                                provider_cost_reconciled = True
+                                return await self._acknowledge_cancellation(job.job_id)
+                            return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
+                        changed = await self.repository.mark_provider_operation_failed(
+                            job.job_id, self.worker_id, "provider_budget_blocked"
+                        )
+                        if not changed:
+                            return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        return await self._terminal_failure(job, "provider_budget_blocked")
+                    try:
+                        result = await self._run_while_leased(
+                            provider.generate(request, idempotency_key=provider_idempotency_key), lost
+                        )
+                    except ImageGenerationError as exc:
+                        if exc.ambiguous:
+                            if not await self.repository.mark_provider_operation_unknown(
+                                job.job_id, self.worker_id, exc.error_code
+                            ):
+                                return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        else:
+                            if not await self.repository.mark_provider_operation_failed(
+                                job.job_id, self.worker_id, exc.error_code
+                            ):
+                                return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        raise
+                else:
+                    if getattr(provider, "supports_lookup", False) is not True:
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_lookup_not_supported")
+                        if not await self.repository.mark_provider_operation_unknown(
+                            job.job_id, self.worker_id, "provider_lookup_not_supported"
+                        ):
+                            return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        return await self._schedule_retry(job, "provider_operation_quarantined")
+                    try:
+                        lookup = await self._run_while_leased(
+                            provider.lookup_by_idempotency_key(
+                                idempotency_key=provider_idempotency_key
+                            ),
+                            lost,
+                        )
+                    except Exception:
+                        if not await self.repository.mark_provider_operation_unknown(
+                            job.job_id, self.worker_id, "provider_lookup_unavailable"
+                        ):
+                            return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_lookup_unavailable")
+                        return await self._schedule_retry(job, "provider_operation_quarantined")
+
+                    decision = decide_provider_recovery(
+                        lookup,
+                        supports_idempotency=getattr(provider, "supports_idempotency", False) is True,
+                        supports_lookup=getattr(provider, "supports_lookup", False) is True,
+                    )
+                    if journal.state == "result_received" and decision.action != "use_existing_result":
+                        # The journal proves a result was already observed. Never
+                        # resubmit or downgrade that checkpoint based on a later
+                        # negative, failed, pending or inconclusive lookup.
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_result_recovery_pending")
+                        return await self._schedule_retry(
+                            job, "provider_result_recovery_pending"
+                        )
+
+                    if decision.action == "use_existing_result":
+                        # Some provider lookup APIs return the asset separately
+                        # from its request ID. Preserve that ID for the durable journal.
+                        result = lookup.result
+                        if result.provider_request_id is None and lookup.provider_request_id:
+                            result = replace(result, provider_request_id=lookup.provider_request_id)
+                    elif decision.action == "resubmit_same_key":
+                        budget_allowed = await self._run_while_leased(
+                            self.repository.authorize_provider_operation(job.job_id, self.worker_id), lost
+                        )
+                        if not budget_allowed:
+                            if cancel_requested.is_set():
+                                changed = await self.repository.mark_provider_operation_failed(
+                                    job.job_id, self.worker_id, "user_cancelled_before_submission"
+                                )
+                                if changed:
+                                    provider_cost_reconciled = True
+                                    return await self._acknowledge_cancellation(job.job_id)
+                                return WorkerResult("cancellation_pending", "provider_journal_not_reconciled")
+                            changed = await self.repository.mark_provider_operation_failed(
+                                job.job_id, self.worker_id, "provider_budget_blocked"
+                            )
+                            if not changed:
+                                return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                            return await self._terminal_failure(job, "provider_budget_blocked")
+                        result = await self._run_while_leased(
+                            provider.generate(request, idempotency_key=provider_idempotency_key), lost
+                        )
+                    elif decision.action == "fail":
+                        code = decision.error_code or "provider_operation_failed"
+                        if not await self.repository.mark_provider_operation_failed(
+                            job.job_id, self.worker_id, code
+                        ):
+                            return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        if cancel_requested.is_set():
+                            provider_cost_reconciled = True
+                            return await self._acknowledge_cancellation(job.job_id)
+                        return await self._terminal_failure(job, code)
+                    else:
+                        if not await self.repository.mark_provider_operation_unknown(
+                            job.job_id, self.worker_id,
+                            decision.error_code or "provider_operation_status_unknown"
+                        ):
+                            return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                        if cancel_requested.is_set():
+                            return WorkerResult("cancellation_pending", "provider_operation_status_unknown")
+                        return await self._schedule_retry(
+                            job, "provider_operation_quarantined"
+                        )
+
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_before_result_journal")
+                if result.provider_request_id and journal.state != "result_received":
+                    if not await self.repository.mark_provider_operation_accepted(
+                        job.job_id, self.worker_id, result.provider_request_id
+                    ):
+                        return WorkerResult("lease_lost", "provider_journal_transition_rejected")
+                    if lost.is_set():
+                        return WorkerResult("lease_lost", "lease_lost_after_provider_acceptance")
+                if not await self.repository.mark_provider_operation_result_received(
+                    job.job_id, self.worker_id, result.provider_request_id
+                ):
+                    return WorkerResult("lease_lost", "provider_result_journal_rejected")
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_after_result_journal")
+
+                if result.provider.strip().lower() != job.provider.strip().lower():
+                    raise ImageGenerationError("provider_result_mismatch", retryable=False)
+                if result.model != job.model:
+                    raise ImageGenerationError("model_result_mismatch", retryable=False)
+
+                # Provider billing evidence is persisted before storage/completion.
+                # A retry replays the same immutable event and cannot double-count.
+                # Results without a usage contract remain explicitly unreported;
+                # we never fabricate zero-cost usage.
+                if result.usage is not None:
+                    usage = result.usage
+                    usage_key_suffix = (
+                        hashlib.sha256(usage.provider_usage_id.encode("utf-8")).hexdigest()
+                        if usage.provider_usage_id else "result"
+                    )
+                    await self.repository.record_provider_cost(
+                        job_id=job.job_id,
+                        user_id=job.user_id,
+                        operation_key=f"provider-usage:{job.job_id}:{usage_key_suffix}",
+                        provider=job.provider,
+                        model=job.model,
+                        provider_usage_id=usage.provider_usage_id,
+                        cost_usd=usage.cost_usd,
+                        cost_source=usage.cost_source,
+                        input_units=usage.input_units,
+                        output_units=usage.output_units,
+                        total_units=usage.total_units,
+                        unit_kind=usage.unit_kind,
+                        metadata=usage.metadata,
+                    )
+                    if lost.is_set():
+                        return WorkerResult("lease_lost", "lease_lost_after_cost_record")
+
+                # If the adapter has no usage contract, the absence remains
+                # explicitly unreported; it is not fabricated as zero cost.
+                provider_cost_reconciled = True
+                if await self._observe_cancellation(job.job_id, cancel_requested):
+                    return await self._acknowledge_cancellation(job.job_id)
+
+                uploaded = await self._run_while_leased(
+                    self.storage.upload_image(
+                        owner_id=job.user_id,
+                        job_id=job.job_id,
+                        image_bytes=result.image_bytes,
+                        mime_type=result.mime_type,
+                    ),
+                    lost,
+                )
+                actual_digest = calculate_sha256(result.image_bytes)
+                if (
+                    uploaded.expected_sha256_hex != actual_digest
+                    or uploaded.metadata.size_bytes != len(result.image_bytes)
+                    or uploaded.metadata.content_type != result.mime_type
+                ):
+                    raise GenerationResultStorageError("uploaded_object_content_mismatch")
+                verified = validate_generation_result_object(
+                    owner_id=job.user_id,
+                    expected_bucket=uploaded.expected_bucket,
+                    expected_object_path=uploaded.expected_object_path,
+                    expected_sha256_hex=actual_digest,
+                    metadata=uploaded.metadata,
+                )
+                if lost.is_set():
+                    return WorkerResult("lease_lost", "lease_lost_before_completion")
+                if await self._observe_cancellation(job.job_id, cancel_requested):
+                    return await self._acknowledge_cancellation(job.job_id)
+                completion = await self._complete_credited_with_recovery(
+                    job.job_id, verified.object_path, verified.sha256_hex
+                )
+                if not completion.completed:
+                    return WorkerResult("lease_lost", "completion_rejected")
+                # A replay means the database committed before a previous
+                # worker lost its response. The RPC verifies the exact path and
+                # captured hold, and does not capture credits a second time.
+                return WorkerResult("succeeded")
+            finally:
+                heartbeat.cancel()
+                await asyncio.gather(heartbeat, return_exceptions=True)
+        except GenerationStorageAdapterError as exc:
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
+            if exc.retryable:
+                return await self._schedule_retry(job, exc.error_code)
+            return await self._terminal_failure(job, exc.error_code)
+        except GenerationResultStorageError as exc:
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
+            return await self._terminal_failure(job, exc.error_code)
+        except ImageGenerationError as exc:
+            if exc.error_code == "worker_lease_lost":
+                return WorkerResult("lease_lost", exc.error_code)
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
+            if exc.retryable:
+                return await self._schedule_retry(job, exc.error_code)
+            return await self._terminal_failure(job, exc.error_code)
+        except WorkerRepositoryError as exc:
+            safe_cancel = await self._acknowledge_cancellation_if_safe(
+                job.job_id, cancel_requested, provider_cost_reconciled
+            )
+            if safe_cancel is not None:
+                return safe_cancel
+            if exc.retryable:
+                return await self._schedule_retry(job, exc.error_code)
+            return await self._terminal_failure(job, exc.error_code)
+        except (ValueError, TypeError, KeyError):
+            return await self._terminal_failure(job, "invalid_job_payload")
+        except Exception:
+            logger.exception("generation_worker_job_error job_id=%s", job.job_id)
+            return await self._schedule_retry(job, "worker_internal_error")
+
+    async def _complete_credited_with_recovery(self, job_id: UUID, result_path: str, result_sha256: str):
+        """Resolve an ambiguous completion response with an idempotent RPC replay.
+
+        The first request may commit capture + success in Postgres while its HTTP
+        response is lost. Repeating the exact job/path is safe: the RPC verifies
+        the captured hold and returns replayed without changing balances.
+        """
+        for attempt in range(2):
+            try:
+                return await self.repository.complete_credited(
+                    job_id, self.worker_id, result_path, result_sha256
+                )
+            except WorkerRepositoryError as exc:
+                if not exc.retryable or attempt == 1:
+                    raise
+                await asyncio.sleep(0.1)
+
+        raise RuntimeError("Unreachable credited completion recovery state")
+
+    async def _terminal_failure(self, job: ClaimedImageJob, code: str) -> WorkerResult:
+        try:
+            changed = await self.repository.fail(job.job_id, self.worker_id, code)
+        except Exception:
+            logger.warning("generation_worker_failure_transition_error job_id=%s", job.job_id)
+            return WorkerResult("transition_error", code)
+        return WorkerResult("failed" if changed else "lease_lost", code)
+
+    async def _schedule_retry(self, job: ClaimedImageJob, code: str) -> WorkerResult:
+        try:
+            changed = await self.repository.retry(
+                job.job_id, self.worker_id, code, self._retry_delay(job.attempt_count)
+            )
+        except Exception:
+            logger.warning("generation_worker_retry_transition_error job_id=%s", job.job_id)
+            return WorkerResult("transition_error", code)
+        return WorkerResult("retry_scheduled" if changed else "lease_lost", code)

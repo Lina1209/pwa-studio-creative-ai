@@ -1,6 +1,8 @@
 from functools import lru_cache
+from decimal import Decimal
 from typing import Literal
 
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,18 +15,67 @@ class Settings(BaseSettings):
         "https://lina1209.github.io"
     )
 
-    ai_provider: str = "deepseek"
+    # Only DeepSeek is supported; provider fallback is disabled.
+    ai_provider: Literal["deepseek"] = "deepseek"
     ai_model: str = "deepseek-flash"
-    openai_api_key: str | None = None
+    ai_max_concurrent_requests: int = Field(default=4, ge=1, le=32)
+    ai_queue_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
+    ai_request_timeout_seconds: int = Field(default=90, ge=5, le=300)
+    ai_max_retries: Literal[0] = 0
+    ai_max_output_tokens: int = Field(default=2048, ge=1, le=8192)
+    ai_max_input_bytes: int = Field(default=30000, ge=256, le=200000)
+    ai_max_requests_per_minute_per_user: int = Field(default=10, ge=1, le=120)
+    ai_max_requests_per_day_per_user: int = Field(default=100, ge=1, le=10000)
+    ai_max_requests_per_day_global: int = Field(default=2000, ge=1, le=100000)
+    # Hard operational ceiling, independent of customer plan credits.
+    ai_max_requests_per_month_per_user: int = Field(default=1200, ge=1, le=100000)
+    ai_daily_budget_usd_deepseek: Decimal | None = Field(default=None, gt=0, le=Decimal('1000000000'))
+    ai_max_concurrent_requests_per_user: int = Field(default=2, ge=1, le=16)
+    ai_max_global_concurrent_requests: int = Field(default=16, ge=1, le=128)
     deepseek_api_key: str | None = None
-    anthropic_api_key: str | None = None
-    ollama_api_base: str = "http://localhost:11434"
+    # Vision remains opt-in and unavailable until consent UX and policy review are complete.
+    vision_input_enabled: bool = False
+    # Separate legal/privacy release gate; must be explicitly approved before Vision can start.
+    vision_privacy_review_approved: bool = False
+    # These versions stay unpublished until approved documents are actually served by the app.
+    privacy_notice_version: str = "unpublished"
+    vision_consent_version: str = "unpublished"
+
+    # Payment provider adapters remain disabled until a concrete provider is reviewed.
+    payment_provider_runtime_enabled: bool = False
+    payment_provider_mode: Literal["test", "live"] = "test"
 
     # Supabase Auth verifies user sessions. Never put the service-role key in the frontend.
     supabase_url: str | None = None
     # Server-only key; never expose to frontend or API responses.
     supabase_service_role_key: str | None = None
-    owner_email: str | None = None
+    # Comma-separated immutable Supabase Auth user UUIDs allowed to administer the app.
+    # Empty means no administrator is configured; email addresses are never authorization identities.
+    owner_user_ids: str | None = None
+    # Keep job endpoints disabled until migrations 0009/0010 and the worker path are reviewed.
+    generation_jobs_enabled: bool = False
+    # HMAC secret for short-lived, owner-bound server pricing quotes (>=32 bytes).
+    pricing_quote_signing_secret: str | None = None
+    # Empty catalog means pricing is unavailable; configure only approved server-side rules.
+    pricing_catalog_json: str = '{"version":"unconfigured","rules":[]}'
+    # No automatic free-credit grants unless an enabled DB policy is explicitly selected.
+    free_entitlement_policy_code: str | None = None
+    # Keep submission disabled until a durable dispatcher and worker are deployed.
+    generation_job_worker_ready: bool = False
+    # Runtime remains off until real provider and private storage adapters are deployed.
+    generation_worker_runtime_enabled: bool = False
+    generation_worker_idle_poll_seconds: float = Field(default=3.0, ge=0.25, le=60.0)
+    generation_worker_error_backoff_seconds: float = Field(default=5.0, ge=0.25, le=300.0)
+    generation_storage_bucket: str = "studio-media"
+    generation_storage_timeout_seconds: float = Field(default=30.0, ge=1.0, le=180.0)
+    image_generation_provider: str | None = None
+    image_generation_model: str | None = None
+    video_generation_provider: str | None = None
+    video_generation_model: str | None = None
+    audio_generation_provider: str | None = None
+    audio_generation_model: str | None = None
+    speech_generation_provider: str | None = None
+    speech_generation_model: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -32,6 +83,67 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_ai_provider_model(self):
+        allowed_models = {
+            "deepseek": {"deepseek-flash", "deepseek-v4-pro"},
+        }
+        if self.ai_model not in allowed_models[self.ai_provider]:
+            raise ValueError("AI_MODEL is not allowed for the selected AI_PROVIDER.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_vision_model_capability(self):
+        if self.vision_input_enabled and not self.vision_privacy_review_approved:
+            raise ValueError("VISION_INPUT_ENABLED requires explicit privacy/legal review approval.")
+        if self.vision_input_enabled and (self.privacy_notice_version == "unpublished" or self.vision_consent_version == "unpublished"):
+            raise ValueError("Vision requires published privacy and consent document versions.")
+        if self.vision_input_enabled and self.ai_model != "deepseek-flash":
+            raise ValueError("VISION_INPUT_ENABLED requires the DeepSeek Flash model.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_image_generation_provider_capability(self):
+        provider = (self.image_generation_provider or "").strip().lower()
+        if provider == "deepseek":
+            raise ValueError(
+                "DeepSeek currently supports image input for vision analysis, "
+                "but its API model output modality is text; it cannot be used "
+                "as an image-generation provider."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_payment_provider_mode(self):
+        if self.payment_provider_mode == "live" and self.payment_provider_runtime_enabled is not True:
+            raise ValueError(
+                "PAYMENT_PROVIDER_RUNTIME_ENABLED must be true before live payment mode can be selected."
+            )
+        return self
+
+    @field_validator("free_entitlement_policy_code")
+    @classmethod
+    def validate_free_entitlement_policy_code(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        if len(value) > 64 or not value[0].islower() or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789_" for ch in value):
+            raise ValueError("FREE_ENTITLEMENT_POLICY_CODE must be a lowercase policy code.")
+        return value
+
+    @field_validator("generation_storage_bucket")
+    @classmethod
+    def validate_generation_storage_bucket(cls, value: str) -> str:
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 100
+            or "/" in value
+            or "\\" in value
+            or value.strip() != value
+        ):
+            raise ValueError("Generation storage bucket name is invalid.")
+        return value
 
     @property
     def allowed_origins(self) -> list[str]:

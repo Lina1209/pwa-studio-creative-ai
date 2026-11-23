@@ -1,6 +1,6 @@
 # PWA Studio — implementation roadmap and status
 
-Last reviewed: 2026-11-21
+Last reviewed: 2026-11-23
 
 For the complete product vision, platform rules, prohibited-content taxonomy, filters, bans, appeals, privacy/security requirements, rights/consent, testing strategy, and phased plan, see [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md).
 
@@ -19,10 +19,27 @@ This document is the working source of truth for the next implementation stages.
 - Mini Movie Studio has a local-first cloud sync implementation in `app.js`. Migration `0005_cloud_projects_and_storage.sql` was applied to live Supabase; `public.projects` and the private `studio-media` bucket were verified. A test movie row was independently confirmed in Supabase and remained visible after browser refresh. Cross-device persistence, conflict behavior, and deletion synchronization still require verification.
 - Audio Studio has a navigable UI and local microphone/file preview only. It does not yet upload media or call speech/music generation services.
 
+## Review-branch additions — not production verified (2026-11-23)
+
+The current Draft PR/review branch adds substantial foundations beyond the earlier roadmap. These must not be described as deployed or live:
+
+- **Support inbox:** private ticket/message schema, FastAPI user and owner endpoints, user-facing account panel, owner inbox, scoped support permissions and administrative audit events. Migration 0055 is the base schema; migration 0091 adds categories, optional bounded context and atomic ticket/message RPCs. The code is under CI review; neither migration has been applied to live Supabase and no real user support conversation has been verified.
+- **Support correction:** the earlier implementation had non-atomic ticket/message writes and inverted user/admin reply status transitions. Migration 0091 and the service update make creation and reply/state changes atomic and align the lifecycle. This still requires PostgreSQL CI and live verification.
+- **Generation foundation:** durable jobs, outbox, worker orchestration, cancellation/recovery, provider-operation journal and private image-result storage code exist. Runtime feature flags remain fail-closed; no production worker is enabled.
+- **Provider boundary:** the 2026-11-23 provider idempotency audit marks production video generation as blocked. No concrete production video-provider adapter is present; do not enable video generation or promise MP4 output.
+- **Image/Vision:** API contracts and admission/storage foundations exist, but a production image-generation provider adapter and live end-to-end generation are not verified. DeepSeek remains the configured text provider.
+- **Credits and billing:** wallet, ledger, quota reservation, payment-order and fulfillment foundations/tests exist in the review branch. No concrete payment provider is configured, payment execution is disabled, and production billing/credit activation is not approved.
+- **Admin controls:** support, audit, finance-role, pricing/plan draft and approval/assignment capabilities have backend authorization and audit foundations. Drafts are not live prices or active subscriptions.
+- **Analytics and privacy:** first-party visit analytics and privacy-consent/governance foundations are in the branch; live collection, retention, legal review and public analytics behavior remain to be verified.
+- **Character assets:** private character reference storage and visual metadata migrations exist; complete owner-scoped character CRUD and user workflow are not yet verified.
+
+CI on the current PR head passed both the syntax/backend-test/manifest job and PostgreSQL migration integration job on 2026-11-23. CI success is not a production deployment or proof that live Supabase has the migrations.
+
+
 ## Workstreams and acceptance criteria
 
 ### 1. AI Companion persistent history
-**Current state:** migration `0004_assistant_chat_history.sql` was applied to live Supabase. Frontend saves and reloads conversation titles and user/assistant messages. A test conversation survived a browser refresh on 2026-11-21.
+**Current state:** migration `0004_assistant_chat_history.sql` was applied to live Supabase. Frontend saves and reloads conversation titles and user/assistant messages. A test conversation survived a browser refresh on 2026-11-21. Migration `0006_assistant_conversation_updated_at.sql` has been added to keep conversation ordering correct after a rename; it has not been applied to the live database.
 
 Remaining verification: test logout/login and confirm that a second account cannot read or modify the first account's conversations. Existing AI replies continue to work.
 
@@ -104,17 +121,50 @@ Tasks:
 
 Done when: users can chat safely, moderation is enforced server-side, and admin actions are auditable.
 
+
+### 8. Private support inbox and feedback
+**Current state:** first version exists in the review branch, including user ticket creation/replies, owner inbox, role checks and audit actions. Migration 0091 adds categories and atomic mutations. It is not merged/deployed or live-verified.
+
+Next tasks:
+1. Pass CI including the support-inbox PostgreSQL migration test.
+2. Review the atomic RPCs and status lifecycle; verify RLS/grants and cross-account access on a disposable database.
+3. Apply migrations 0055 and 0091 only after a reviewed production migration plan; verify the live schema.
+4. Test user A/user B isolation and owner-only queue/reply/status capabilities.
+5. Add the native support launcher, unread notifications and email notifications only after delivery configuration is verified.
+6. Add admin queue filters, priority, assignment and internal notes with separate protected storage.
+7. Add attachments only after private media upload, malware/content validation and retention are ready.
+
+See [SUPPORT_AND_FEEDBACK_DESIGN.md](./SUPPORT_AND_FEEDBACK_DESIGN.md).
+
+Done when: users can privately contact the team, see replies/status, and no support data leaks across accounts or into AI Companion/community chat.
+
+### 9. Inspiration page and creator showcase
+**Current state:** not implemented.
+
+Next tasks:
+1. Publish platform-owned example workflows and starter templates.
+2. Add an opt-in publication workflow; private-by-default must remain unchanged.
+3. Add creator attribution, explicit display/remix licenses, moderation, report/takedown and unpublish.
+4. Add search, filters, collections and “Use as template” copy semantics.
+5. Defer a paid marketplace until rights, billing, creator verification and payouts are reviewed.
+
+See [CREATOR_SHOWCASE_AND_MULTIMODAL_ROADMAP.md](./CREATOR_SHOWCASE_AND_MULTIMODAL_ROADMAP.md).
+
+Done when: users can discover examples and intentionally publish selected works without exposing their private projects or source assets.
+
 ## Recommended implementation order
 
-1. Stabilize current foundation: account switching, AI context/isolation, admin authorization, Mini Movie Studio labels, version restore, cloud conflict/deletion behavior.
-2. Build private media upload and asset metadata on the already-applied Storage foundation.
-3. Verify schema/RLS and build Character Library.
-4. Implement platform rules, backend safety filters, moderation, reports, bans, appeals, and audit controls before opening community posting or unrestricted generation.
-5. Build Audio Studio upload and provider/job framework.
-6. Build image/video provider/job pipeline and then timeline/export.
-7. Implement privacy-preserving visitor analytics and Live World.
-8. Implement community chat after moderation controls are enforceable.
-9. Complete quotas, billing, rights/privacy review, and launch readiness.
+1. Stabilize current foundation: account switching, AI context/isolation, admin authorization, Mini Movie Studio version restore, cloud conflict/deletion behavior and cross-device tests.
+2. Complete private media upload and asset metadata on the already-applied Storage foundation.
+3. Verify schema/RLS and complete owner-scoped Character Library CRUD.
+4. Implement platform rules, backend safety filters, moderation, reports, bans, appeals and audit controls before public sharing or unrestricted generation.
+5. Complete the private support inbox and feedback flow; it is separate from AI Companion and community chat.
+6. Build Audio Studio upload, speech-to-text, text-to-speech, music/SFX and provider/job framework.
+7. Build image/video provider adapters, scene generation, timeline and verified export; video remains blocked until a concrete adapter passes its idempotency and pricing review.
+8. Implement privacy-preserving visitor analytics and Live World.
+9. Publish platform-owned examples and starter templates, then add an opt-in creator showcase after moderation, rights and takedown controls are enforceable.
+10. Implement community chat only after moderation controls are enforceable.
+11. Complete quotas, billing, rights/privacy review and launch readiness.
 
 ## Release and safety rules
 
@@ -131,3 +181,10 @@ Done when: users can chat safely, moderation is enforced server-side, and admin 
 ## Platform rules and moderation
 
 The detailed policy and moderation plan is maintained in [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md), including policy taxonomy, layered filters, enforcement ladder, temporary/permanent bans, appeals, audit logging, and privacy requirements. These capabilities are planned and must be enforced server-side; frontend-only filters or hidden buttons do not count as security.
+
+
+## 10. Durable jobs and credit ledger — design prepared
+
+The design contract is documented in [GENERATION_JOBS_AND_LEDGER_DESIGN.md](./GENERATION_JOBS_AND_LEDGER_DESIGN.md).
+
+Current status: migrations `0009_generation_jobs_and_outbox.sql` and `0010_create_generation_job_rpc.sql` are prepared in the audit branch. Static review confirmed that migration `0005` defines `public.projects(id uuid, owner_id uuid)`, matching the parent relation expected by 0009. Migration 0009 performs a preflight for that table/column shape and requires PostgreSQL 15+ for its column-specific `ON DELETE SET NULL (project_id)` behavior. Migration 0010 adds a trusted backend-only RPC that creates a job and its outbox event in one database transaction, returns the original job on an identical idempotent replay, and rejects reuse of a key for a different request. A disposable PostgreSQL 16 integration harness applies migrations 0005, 0007, 0009 and 0010 and checks cross-user project isolation, authenticated read-only job access, backend-only RPC permissions, idempotent replay, single outbox event creation, and job preservation when a project is deleted. GitHub Actions passed both the PostgreSQL integration job and the existing syntax/backend-test/manifest job on commit `b29d508`. Backend service wrapper `backend/app/services/generation_jobs.py` now calls the trusted RPC and reads jobs with both `id` and authenticated `user_id` filters. `GET /api/jobs/{job_id}` is implemented but disabled by default through `GENERATION_JOBS_ENABLED=false`; the RPC wrapper is not exposed as a client-facing create endpoint yet. Unit tests cover server-key handling, owner filters, response validation, and the feature gate; GitHub Actions passed on commit `587342e`. This validates the tested code against an isolated PostgreSQL 16 fixture and mocked HTTP services; it does not inspect or modify live Supabase. Migrations 0009/0010 have not been applied to Supabase. No public job creation endpoint, outbox dispatcher, Redis/Celery dependency, worker, wallet, holds, ledger, or real billing has been deployed. Next: choose the first provider-backed operation and define its server-side request/pricing contract, then expose job creation safely and implement dispatcher/worker transitions. Credit wallet and ledger RPCs follow only after transaction semantics and pricing assumptions are reviewed. Existing `ai_usage` remains telemetry only and must never be treated as a credit balance.
