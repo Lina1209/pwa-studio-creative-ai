@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.api.direct_messaging import router as direct_messaging_router
+from app.api.profiles import router as profiles_router
 from app.schemas import VisionAnalyzeRequest, VisionAnalyzeResponse, ChatRequest, ChatResponse, PromptRequest, PromptResponse, MovieScriptRequest, MovieScriptResponse, MovieDirectorRequest, MovieDirectorScene, MovieDirectorResponse, MovieStoryboardRequest, MovieStoryboardFrame, MovieStoryboardScene, MovieStoryboardResponse, MovieCharacterReference, SceneImageJobRequest, VideoGenerationJobRequest, AudioGenerationJobRequest, SpeechGenerationJobRequest, PricingQuoteRequest, SiteVisitRequest, CreditWalletResponse, FinanceRoleGrantRequest, FinanceRoleRevocationRequest, FinanceOperationRequestCreate, FinanceOperationDecisionRequest, FinanceOperationCancelRequest, PrivacyConsentChangeRequest, PrivacyRequestCreate, PrivacyRequestItem, PrivacyConsentStatusItem
 from app.services.ai_service import AIConfigurationError, AIOverloadedError, ask_ai, ask_ai_vision
 from app.services.ai_cost_admission import AIProviderBudgetRejected, AIProviderBudgetUnavailable
@@ -143,6 +144,7 @@ app = FastAPI(
 # This does not expose or activate a payment endpoint.
 app.state.payment_provider_registry = payment_provider_registry
 app.include_router(direct_messaging_router)
+app.include_router(profiles_router)
 
 app.add_middleware(
     CORSMiddleware,

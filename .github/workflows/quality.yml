@@ -92,6 +92,11 @@ jobs:
         run: |
           psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/direct_messaging_migration_test.sql
 
+      - name: Verify public creator profile privacy and username rules
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d studio_test -v ON_ERROR_STOP=1 -f supabase/tests/creator_profiles_migration_test.sql
       - name: Verify payment order idempotency and merchant reference integrity
         env:
           PGPASSWORD: postgres
