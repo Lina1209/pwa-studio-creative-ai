@@ -63,7 +63,7 @@ def update_global_budget(settings: Settings, *, enabled: bool, daily_budget_usd:
 
 
 def update_provider_budget(settings: Settings, *, provider: str, enabled: bool, daily_budget_usd: Any) -> dict:
-    if provider not in {"deepseek", "gemini"}:
+    if provider != "deepseek":
         raise ValueError("unsupported_ai_provider")
     daily = _amount(daily_budget_usd)
     result = _rpc(settings, "update_ai_provider_daily_budget", {
