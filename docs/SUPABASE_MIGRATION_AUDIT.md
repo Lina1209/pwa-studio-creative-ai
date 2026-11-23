@@ -90,3 +90,46 @@ Migration `0012_atomic_ai_rate_limit.sql` is source-only and has not been applie
 ## AI output-token ceiling
 
 The AI service now sends a server-controlled `max_tokens` value with every provider completion request. The setting is `AI_MAX_OUTPUT_TOKENS`, defaults to 2048, and is validated to remain between 256 and 8192. This bounds generated output tokens per request and makes the maximum output budget explicit in deployment configuration. It is not a full monetary cap: input tokens, model pricing, retries, and actual provider billing still require usage reconciliation and budget controls. The limit should be tuned against the selected DeepSeek model's supported parameters and the quality/length requirements of each studio workflow.
+
+
+## Unified credits migration 0013 — source-level review
+
+Reviewed `0013_unified_credit_wallet.sql` from the PR branch. This is a static source review only; it was not executed against PostgreSQL or Supabase.
+
+- Creates one account-level wallet, idempotent reservation records, and a ledger with grant/reserve/capture/release/reconciliation events.
+- Wallet rows are locked before reservation rows in grant/reserve/settle/release/reconciliation paths. This consistent lock order reduces deadlock risk for concurrent lifecycle operations.
+- Reservation retries are checked after acquiring the wallet lock and must match operation code, pricing version, and reserved amount.
+- Grant retries are serialized on the wallet row and checked against the existing ledger event; reusing the same source/reference with a different amount raises an error.
+- Client roles have no table privileges. The service role receives SELECT only; mutation is intended to happen through SECURITY DEFINER RPCs whose EXECUTE privilege is revoked from PUBLIC/anon/authenticated and granted to service_role.
+- Settlement returns the unused reservation amount to available balance; release returns the full reservation. Ambiguous provider outcomes retain reserved funds in `reconciliation_required`.
+- The migration does not create subscription tables, a plan catalogue, persistent operation-pricing rows, payment records, expiry jobs, or frontend wallet support. Those remain future work.
+
+### Review notes / preconditions
+
+1. The RPC functions trust the backend service role to supply the correct user UUID, grant source, and operation outcome. This is acceptable only while the service key remains server-only and every caller derives user identity from verified auth context. Never expose these RPCs to browser clients.
+2. The grant-source allowlist is enforced in the Python adapter, not duplicated in the database function. Keep the RPC service-role-only; consider a database-side allowlist before adding more callers or administrative tooling.
+3. The current source review does not establish PostgreSQL behavior under concurrent sessions. Test concurrent grants/reservations, duplicate idempotency keys, settlement-vs-release races, and reconciliation transitions against a disposable PostgreSQL/Supabase project before rollout.
+4. The migration's `CREATE TABLE IF NOT EXISTS` statements do not reconcile an existing table with a different shape. Before applying it anywhere, inspect whether any of these names already exist and compare every column, constraint, index, grant, and policy.
+5. The migration does not seed wallets or create a wallet for a user during reservation. A first verified grant must create the wallet; a reservation without a wallet returns insufficient credits. Confirm this is the intended onboarding flow.
+6. No production pricing is possible yet: the pricing catalog is empty and no provider rates, conversion factor, plan allowance, or operation price has been approved.
+
+## Subscription and entitlement structure — design boundary
+
+The next layer should remain a design/service foundation until migration history is reconciled. It should model:
+
+- immutable, versioned plan definitions;
+- subscription state and verified billing-period boundaries;
+- feature entitlements and hard resource limits separately from credits;
+- one-time, idempotent allowance grants per subscription period;
+- a usage-event record that distinguishes requested operation, accepted job, provider usage, measured provider cost, and reconciliation status;
+- an auditable link from subscription period to credit grant reference.
+
+Do not create active paid plans, prices, credit allowances, payment webhooks, or credit deductions as part of this source audit. Guest demo limits must remain separate from registered-account subscription entitlements. Provider cost telemetry must remain separate from the user credit ledger.
+
+## Source-only status of the newer migrations
+
+- `0011_atomic_message_rate_limit.sql`: source-only fixed-window message limiter.
+- `0012_atomic_ai_rate_limit.sql`: source-only fixed-window AI endpoint limiter.
+- `0013_unified_credit_wallet.sql`: source-only wallet, ledger, and reservation lifecycle.
+- None of these files has been verified against the live migration ledger or executed on the connected Supabase project.
+- The two `0005` files and the `studio-exports` policy overlap remain the first migration-history blockers. Do not rename, reorder, or replay historical files based only on repository filenames.
