@@ -5158,10 +5158,7 @@ begin
        'anon',
        'public.request_generation_job_cancellation(uuid)', 'EXECUTE'
      )
-     or has_function_privilege(
-       'public',
-       'public.request_generation_job_cancellation(uuid)', 'EXECUTE'
-     ) then
+ then
     raise exception 'Cancellation RPC privileges are not restricted to authenticated users';
   end if;
 
