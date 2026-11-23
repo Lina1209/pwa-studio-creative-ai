@@ -117,9 +117,9 @@ begin
     end if;
 
     if not exists (
-        select 1 from public.direct_conversation_participants
-         where conversation_id = p_conversation_id
-           and user_id = p_sender_user_id
+        select 1 from public.direct_conversation_participants as participant
+         where participant.conversation_id = p_conversation_id
+           and participant.user_id = p_sender_user_id
     ) then
         raise exception 'sender is not a conversation participant'
           using errcode = '42501';
@@ -136,18 +136,18 @@ begin
     if not found then
         v_replayed := true;
         select * into v_message
-          from public.direct_messages
-         where sender_user_id = p_sender_user_id
-           and idempotency_key = p_idempotency_key;
+          from public.direct_messages as existing_message
+         where existing_message.sender_user_id = p_sender_user_id
+           and existing_message.idempotency_key = p_idempotency_key;
         if v_message.conversation_id <> p_conversation_id
            or v_message.body <> v_body then
             raise exception 'idempotency key was already used for another message'
               using errcode = '23505';
         end if;
     else
-        update public.direct_conversations
+        update public.direct_conversations as conversation
            set last_message_at = v_message.created_at
-         where id = p_conversation_id;
+         where conversation.id = p_conversation_id;
     end if;
 
     return query select v_message.id, v_message.conversation_id,
