@@ -1072,7 +1072,7 @@ def admin_user_finance_integrity_audit(
         ) from exc
     _audit_admin_read(
         user,
-        resource_type="credit_financial_integrity",
+        resource_type="credit_wallet",
         reason="Viewed user finance integrity audit",
     )
     response.headers["Cache-Control"] = "private, no-store"
