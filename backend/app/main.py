@@ -304,7 +304,7 @@ def health():
         "environment": settings.app_env,
         "ai_provider": provider,
         "ai_configured": ai_configured,
-        "vision_analysis_enabled": bool(settings.vision_input_enabled and settings.vision_privacy_review_approved and settings.ai_model == "deepseek-flash" and settings.deepseek_api_key and settings.supabase_url and settings.supabase_service_role_key),
+        "vision_analysis_enabled": bool(settings.vision_input_enabled and settings.vision_privacy_review_approved and settings.privacy_notice_version != "unpublished" and settings.vision_consent_version != "unpublished" and settings.ai_model == "deepseek-flash" and settings.deepseek_api_key and settings.supabase_url and settings.supabase_service_role_key),
         "ai_capacity": settings.ai_max_concurrent_requests,
         "authentication_configured": bool(settings.supabase_url),
         "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
@@ -1731,7 +1731,12 @@ def analyze_vision_input(
     user: StudioUser = Depends(get_current_user),
 ):
     """Analyze one consented image; disabled by default and never persists image bytes."""
-    if not (settings.vision_input_enabled and settings.vision_privacy_review_approved):
+    if not (
+        settings.vision_input_enabled
+        and settings.vision_privacy_review_approved
+        and settings.privacy_notice_version != "unpublished"
+        and settings.vision_consent_version != "unpublished"
+    ):
         raise HTTPException(status_code=503, detail="Анализ изображений пока отключён.")
     check_content(payload.prompt)
     system_prompt = (
