@@ -3,6 +3,7 @@
 
 \set ON_ERROR_STOP on
 \ir ../migrations/0078_atomic_payment_fulfillment.sql
+\ir ../migrations/0100_finance_integrity_payments_subscriptions_quotas.sql
 
 insert into auth.users(id)
 values
@@ -328,3 +329,57 @@ begin
   end if;
 end;
 $payment_fulfillment_privilege_boundary$;
+
+
+-- The expanded finance snapshot sees successful credit-pack and subscription
+-- purchases, their immutable purchase snapshots, fulfillment records and
+-- entitlements from one statement snapshot. It remains service-role-only.
+do $finance_commerce_snapshot_test$
+declare
+  v_credit jsonb;
+  v_subscription jsonb;
+begin
+  if not has_function_privilege(
+       'service_role',
+       'public.get_finance_integrity_audit_snapshot(uuid)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.get_finance_integrity_audit_snapshot(uuid)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.get_finance_integrity_audit_snapshot(uuid)',
+       'EXECUTE'
+     ) then
+    raise exception 'Expanded finance snapshot RPC privileges are not service-role-only';
+  end if;
+
+  v_credit := public.get_finance_integrity_audit_snapshot(
+    '88888888-8888-4888-8888-888888888888'
+  );
+  if v_credit ->> 'complete' <> 'true'
+     or (v_credit -> 'counts' ->> 'payment_orders')::integer <> 1
+     or (v_credit -> 'counts' ->> 'payment_provider_events')::integer <> 1
+     or (v_credit -> 'counts' ->> 'purchase_items')::integer <> 1
+     or (v_credit -> 'counts' ->> 'fulfillment_outbox')::integer <> 1
+     or (v_credit -> 'counts' ->> 'lots')::integer <> 1 then
+    raise exception 'Credit-pack finance snapshot is incomplete or missing settlement/fulfillment evidence: %', v_credit;
+  end if;
+
+  v_subscription := public.get_finance_integrity_audit_snapshot(
+    '33333333-3333-4333-8333-333333333333'
+  );
+  if v_subscription ->> 'complete' <> 'true'
+     or (v_subscription -> 'counts' ->> 'payment_orders')::integer <> 2
+     or (v_subscription -> 'counts' ->> 'plan_assignments')::integer < 2
+     or (v_subscription -> 'counts' ->> 'plan_assignment_events')::integer < 4
+     or (v_subscription -> 'counts' ->> 'approved_plans')::integer <> 1 then
+    raise exception 'Subscription finance snapshot is incomplete or missing plan entitlement evidence: %', v_subscription;
+  end if;
+end;
+$finance_commerce_snapshot_test$;
+
+select 'expanded finance commerce snapshot checks passed' as result;
