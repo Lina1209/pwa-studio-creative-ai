@@ -1,4 +1,4 @@
-"""Atomic USD reservations for synchronous DeepSeek/Gemini requests.
+"""Atomic USD reservations for synchronous DeepSeek requests.
 
 The estimator intentionally uses peak paid-tier token rates, not free-tier assumptions.
 The reserve is based on UTF-8 input bytes (a conservative token upper bound), maximum
@@ -16,7 +16,6 @@ from app.core.config import Settings
 PRICE_USD_PER_MILLION = {
     ("deepseek", "deepseek-flash"): (Decimal("0.30"), Decimal("1.20")),
     ("deepseek", "deepseek-v4-pro"): (Decimal("1.32"), Decimal("3.96")),
-    ("gemini", "gemini-3.1-flash-lite"): (Decimal("0.25"), Decimal("1.50")),
 }
 SAFETY_MULTIPLIER = Decimal("1.25")
 MONEY_QUANTUM = Decimal("0.0000000001")
