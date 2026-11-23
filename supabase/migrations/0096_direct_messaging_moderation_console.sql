@@ -60,16 +60,18 @@ begin
  return v_id;
 end; $$;
 
-create or replace function public.review_direct_message_report(p_report_id uuid,p_status text)
+create or replace function public.review_direct_message_report(p_report_id uuid,p_reviewer_user_id uuid,p_status text)
 returns boolean language plpgsql security definer set search_path=''
-as $$
+as $
 begin
- if p_report_id is null or p_status not in ('reviewing','resolved','dismissed') then
+ if p_report_id is null or p_reviewer_user_id is null or p_status not in ('reviewing','resolved','dismissed') then
  raise exception 'invalid report review state' using errcode='22023'; end if;
  update public.direct_message_reports set status=p_status,
- reviewed_at=case when p_status in ('resolved','dismissed') then now() else null end where id=p_report_id;
+ reviewed_at=case when p_status in ('resolved','dismissed') then now() else null end,
+ reviewed_by=case when p_status in ('resolved','dismissed') then p_reviewer_user_id else null end
+ where id=p_report_id;
  return found;
-end; $$;
+end; $;
 
 create or replace function public.create_direct_moderation_appeal(p_user_id uuid,p_reason text)
 returns uuid language plpgsql security definer set search_path=''
@@ -87,7 +89,7 @@ end; $$;
 create or replace function public.review_direct_moderation_appeal(p_appeal_id uuid,p_reviewer_user_id uuid,p_status text,p_decision_reason text)
 returns boolean language plpgsql security definer set search_path=''
 as $$
-declare v_user_id uuid;
+declare v_user_id uuid; v_restriction_status text;
 begin
  if p_appeal_id is null or p_reviewer_user_id is null or p_status not in ('accepted','rejected')
  or p_decision_reason is null or char_length(btrim(p_decision_reason)) not between 1 and 500 then
@@ -95,9 +97,16 @@ begin
  update public.direct_moderation_appeals set status=p_status,reviewed_at=now(),reviewed_by=p_reviewer_user_id,decision_reason=btrim(p_decision_reason)
  where id=p_appeal_id and status='pending' returning user_id into v_user_id;
  if v_user_id is null then return false; end if;
- if p_status='accepted' then delete from public.direct_user_moderation where user_id=v_user_id; end if;
+ if p_status='accepted' then
+   select status into v_restriction_status from public.direct_user_moderation where user_id=v_user_id;
+   delete from public.direct_user_moderation where user_id=v_user_id;
+   if v_restriction_status is not null then
+     insert into public.direct_moderation_events(target_user_id,actor_user_id,action,reason)
+     values(v_user_id,p_reviewer_user_id,case when v_restriction_status='muted' then 'unmute' else 'unban' end,btrim(p_decision_reason));
+   end if;
+ end if;
  return true;
-end; $$;
+end; $;
 
 create or replace function public.enforce_direct_message_safety()
 returns trigger language plpgsql security definer set search_path=''
@@ -153,10 +162,10 @@ begin
 end; $$;
 
 revoke all on function public.apply_direct_user_moderation(uuid,uuid,text,text,timestamptz) from public,anon,authenticated;
-revoke all on function public.review_direct_message_report(uuid,text) from public,anon,authenticated;
+revoke all on function public.review_direct_message_report(uuid,uuid,text) from public,anon,authenticated;
 revoke all on function public.create_direct_moderation_appeal(uuid,text) from public,anon,authenticated;
 revoke all on function public.review_direct_moderation_appeal(uuid,uuid,text,text) from public,anon,authenticated;
 grant execute on function public.apply_direct_user_moderation(uuid,uuid,text,text,timestamptz) to service_role;
-grant execute on function public.review_direct_message_report(uuid,text) to service_role;
+grant execute on function public.review_direct_message_report(uuid,uuid,text) to service_role;
 grant execute on function public.create_direct_moderation_appeal(uuid,text) to service_role;
 grant execute on function public.review_direct_moderation_appeal(uuid,uuid,text,text) to service_role;
