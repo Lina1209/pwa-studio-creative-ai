@@ -81,6 +81,6 @@ The single-job executor and separately deployable polling loop are implemented a
 - `app.services.generation_worker_runner.run_generation_worker_loop` claims durable work, applies idle polling/error backoff, and supports graceful process shutdown.
 - `app.services.supabase_generation_worker_repository.SupabaseGenerationJobRepository` owns the service-role RPC boundary.
 
-The runner does not construct or register providers, storage clients, or credentials. No real image-generation provider or private Storage adapter is registered yet. DeepSeek remains the only text AI provider; it is not treated as an image-generation API.
+The runner does not construct or register providers, storage clients, or credentials. No real image-generation provider is registered yet. DeepSeek remains the only AI provider: its current API supports image input for vision analysis, but its model output modality is text, so it is not an image-generation API. The health endpoint reports image generation as unavailable until a real output-capable adapter is registered.
 
 Keep `GENERATION_JOBS_ENABLED`, `GENERATION_JOB_WORKER_READY`, and `GENERATION_WORKER_RUNTIME_ENABLED` false until the provider, private storage adapter, dedicated worker entrypoint, deployment controls, and spend limits have passed separate review. See [generation worker runtime](../docs/architecture/generation-worker-runtime.md).
