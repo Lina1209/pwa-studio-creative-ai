@@ -1,5 +1,5 @@
 import httpx
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from fastapi import HTTPException
 
@@ -65,6 +65,15 @@ def _get_or_create_thread(settings: Settings, user_id: str, recipient_id: str):
 
 def send_message(settings: Settings, sender_id: str, recipient_id: str, body: str):
     _canonical_pair(sender_id, recipient_id)
+    if not body or not body.strip():
+        raise HTTPException(status_code=422, detail="Message text cannot be empty.")
+    recent = _request(settings, "GET", "direct_messages", params={
+        "select": "id", "sender_id": f"eq.{sender_id}",
+        "created_at": f"gte.{(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()}",
+        "limit": "21",
+    })
+    if len(recent) >= 20:
+        raise HTTPException(status_code=429, detail="Please wait before sending more messages.")
     thread = _get_or_create_thread(settings, sender_id, recipient_id)
     rows = _request(settings, "POST", "direct_messages",
         params={"select": "id,thread_id,sender_id,recipient_id,body,read_at,created_at"},
