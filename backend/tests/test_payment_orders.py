@@ -4,6 +4,7 @@ import pytest
 
 from app.core.config import Settings
 from app.services import payment_orders as service
+from app.services.payment_provider_contracts import VerifiedProviderEvent
 
 USER = UUID("11111111-1111-4111-8111-111111111111")
 ORDER = UUID("22222222-2222-4222-8222-222222222222")
@@ -41,45 +42,84 @@ def test_create_payment_order_rejects_invalid_amount_before_rpc(monkeypatch, amo
     assert called == []
 
 
-def test_webhook_event_requires_verified_signature_before_rpc(monkeypatch):
+class FakeVerifiedAdapter:
+    provider_code = "examplepay"
+
+    def __init__(self, event=None, error=None):
+        self.event = event or VerifiedProviderEvent(
+            provider_event_id="evt-123",
+            payment_order_id=ORDER,
+            event_type="payment.succeeded",
+            amount_minor=1250,
+            currency_code="KZT",
+            provider_payment_id="pay-123",
+        )
+        self.error = error
+        self.received_body = None
+        self.received_headers = None
+
+    def verify_webhook(self, *, raw_body, headers):
+        self.received_body = raw_body
+        self.received_headers = headers
+        if self.error:
+            raise self.error
+        return self.event
+
+
+def test_webhook_signature_failure_stops_before_privileged_rpc(monkeypatch):
     called = []
     monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
-    with pytest.raises(ValueError):
+    adapter = FakeVerifiedAdapter(error=ValueError("invalid provider signature"))
+    with pytest.raises(ValueError, match="invalid provider signature"):
         service.record_verified_provider_event(
-            SETTINGS, provider_code="examplepay", provider_event_id="evt-123",
-            payment_order_id=ORDER, event_type="payment.succeeded",
-            raw_body=b'{"paid":true}', signature_verified=False,
-            amount_minor=1250, currency_code="KZT", provider_payment_id="pay-123",
+            SETTINGS, adapter=adapter, raw_body=b'{"paid":true}',
+            headers={"x-signature": "invalid"},
         )
     assert called == []
+    assert adapter.received_body == b'{"paid":true}'
 
 
 def test_verified_webhook_persists_raw_body_digest_and_replay_flag(monkeypatch):
     body = b'{"id":"evt-123","status":"succeeded"}'
+    adapter = FakeVerifiedAdapter()
     calls = []
     monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or [{
         "event_id": str(EVENT), "replayed": True, "resulting_status": "succeeded",
     }])
     result = service.record_verified_provider_event(
-        SETTINGS, provider_code="examplepay", provider_event_id="evt-123",
-        payment_order_id=ORDER, event_type="payment.succeeded",
-        raw_body=body, signature_verified=True, amount_minor=1250,
-        currency_code="KZT", provider_payment_id="pay-123",
+        SETTINGS, adapter=adapter, raw_body=body,
+        headers={"x-signature": "valid"},
     )
     assert result == {"event_id": EVENT, "replayed": True, "resulting_status": "succeeded"}
+    assert adapter.received_body == body
     assert calls[0][0] == "record_verified_payment_provider_event"
     assert calls[0][1]["p_payload_sha256"] == hashlib.sha256(body).hexdigest()
+    assert calls[0][1]["p_amount_minor"] == 1250
+    assert calls[0][1]["p_currency_code"] == "KZT"
 
 
-def test_webhook_rejects_unknown_normalized_event(monkeypatch):
+def test_webhook_rejects_unknown_normalized_event_before_rpc(monkeypatch):
     called = []
     monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
-    with pytest.raises(ValueError):
+    adapter = FakeVerifiedAdapter(event=VerifiedProviderEvent(
+        provider_event_id="evt-123", payment_order_id=ORDER,
+        event_type="client.redirect", amount_minor=1250,
+        currency_code="KZT", provider_payment_id="pay-123",
+    ))
+    with pytest.raises(ValueError, match="Unsupported normalized"):
         service.record_verified_provider_event(
-            SETTINGS, provider_code="examplepay", provider_event_id="evt-123",
-            payment_order_id=ORDER, event_type="client.redirect",
-            raw_body=b"redirect", signature_verified=True, amount_minor=1250,
-            currency_code="KZT", provider_payment_id="pay-123",
+            SETTINGS, adapter=adapter, raw_body=b"redirect", headers={},
+        )
+    assert called == []
+
+
+def test_webhook_rejects_non_verified_adapter_result_before_rpc(monkeypatch):
+    called = []
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
+    adapter = FakeVerifiedAdapter(event={"event_type": "payment.succeeded"})
+    with pytest.raises(ValueError, match="did not return verified event facts"):
+        service.record_verified_provider_event(
+            SETTINGS, adapter=adapter, raw_body=b"payload", headers={},
         )
     assert called == []
 
