@@ -241,3 +241,14 @@ def test_generation_result_download_hides_jobs_owned_by_another_user(monkeypatch
         app.dependency_overrides.pop(get_current_user, None)
 
     assert response.status_code == 404
+
+
+def test_health_never_claims_image_generation_is_configured_without_registered_adapter(monkeypatch):
+    monkeypatch.setattr(main_module, "settings", Settings(
+        image_generation_provider=None,
+        image_generation_model=None,
+    ))
+    response = TestClient(app).get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["image_generation_configured"] is False
+    assert response.json()["image_generation_status"] == "unavailable_no_registered_provider"
