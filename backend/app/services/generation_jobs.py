@@ -405,3 +405,187 @@ def store_pricing_quote(
     if not isinstance(snapshot, dict) or not isinstance(created, bool) or not isinstance(expired, bool):
         raise GenerationJobsServiceError("Pricing quote persistence returned incomplete metadata.")
     return PersistedPricingQuote(snapshot=snapshot, created=created, expired=expired)
+
+
+
+@dataclass(frozen=True)
+class PlanQuotaReservationResult:
+    reservation_id: UUID
+    feature_key: str
+    feature_limit: int
+    used_units: int
+    remaining_units: int
+    status: str
+    replayed: bool
+
+
+@dataclass(frozen=True)
+class PlanCreditedGenerationJobCreateResult:
+    job_id: UUID
+    event_id: UUID
+    hold_id: UUID
+    available_credits: int
+    reserved_credits: int
+    created: bool
+    replayed: bool
+    quota_reservations: tuple[PlanQuotaReservationResult, ...]
+
+
+def _expected_plan_quota_features(job_type: str) -> tuple[str, ...]:
+    mapping = {
+        "image_generation": ("daily_image_generations", "monthly_image_generations"),
+        "video_generation": ("daily_video_generations", "monthly_video_generations"),
+        "audio_generation": ("daily_audio_generations", "monthly_audio_generations"),
+        "speech_generation": ("daily_audio_generations", "monthly_audio_generations"),
+        "ai_processing": (
+            "daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests"
+        ),
+    }
+    try:
+        return mapping[job_type]
+    except KeyError as exc:
+        raise GenerationJobsServiceError(
+            "This generation type has no approved customer-plan quota mapping."
+        ) from exc
+
+
+def create_plan_credited_generation_job(
+    settings: Settings,
+    *,
+    user_id: UUID,
+    project_id: UUID | None,
+    studio_scene_id: UUID | None,
+    job_type: str,
+    provider: str,
+    model: str,
+    idempotency_key: str,
+    request_hash: str,
+    request_snapshot: dict[str, Any],
+    quote_snapshot: dict[str, Any],
+) -> PlanCreditedGenerationJobCreateResult:
+    """Verify a signed quote, then atomically reserve plan quota, credits, job and outbox."""
+    if not settings.generation_jobs_enabled:
+        raise GenerationJobsNotConfiguredError(
+            "Generation jobs are not enabled on this server."
+        )
+    if not isinstance(user_id, UUID) or (project_id is not None and not isinstance(project_id, UUID)):
+        raise GenerationJobsServiceError("Verified owner and project identities are required.")
+    if studio_scene_id is not None and not isinstance(studio_scene_id, UUID):
+        raise GenerationJobsServiceError("Verified studio scene identity is required.")
+    if project_id is not None and studio_scene_id is not None:
+        raise GenerationJobsServiceError("A generation job cannot target two project types.")
+    if not isinstance(request_snapshot, dict):
+        raise GenerationJobsServiceError("Generation request snapshot must be an object.")
+
+    expected_features = _expected_plan_quota_features(job_type)
+    try:
+        if canonical_request_hash(request_snapshot) != request_hash:
+            raise PricingError("Generation request hash does not match its canonical snapshot.")
+        quote = verify_pricing_quote(
+            quote_snapshot,
+            secret=settings.pricing_quote_signing_secret,
+            user_id=user_id,
+            job_type=job_type,
+            provider=provider,
+            model=model,
+            request_hash=request_hash,
+            idempotency_key=idempotency_key,
+            project_id=project_id,
+            studio_scene_id=studio_scene_id,
+        )
+    except PricingError as exc:
+        raise GenerationJobsServiceError(
+            "The server pricing quote is invalid or expired."
+        ) from exc
+
+    payload = {
+        "p_user_id": str(user_id),
+        "p_project_id": str(project_id) if project_id else None,
+        "p_studio_scene_id": str(studio_scene_id) if studio_scene_id else None,
+        "p_job_type": job_type,
+        "p_provider": provider,
+        "p_model": model,
+        "p_idempotency_key": idempotency_key,
+        "p_request_hash": request_hash,
+        "p_request_snapshot": request_snapshot,
+        "p_quote_snapshot": quote.snapshot(),
+        "p_credit_amount": quote.amount,
+    }
+    url = (
+        f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/"
+        "create_plan_credited_generation_job_with_outbox"
+    )
+    headers = _headers(settings)
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        raise GenerationJobsServiceError(
+            f"Could not atomically admit plan-based generation (HTTP {status_code})."
+        ) from exc
+
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise GenerationJobsServiceError(
+            "The plan-based generation service returned an invalid response."
+        )
+    row = data[0]
+    try:
+        available = row["available_credits"]
+        reserved = row["reserved_credits"]
+        created = row["created"]
+        replayed = row["replayed"]
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
+               for value in (available, reserved)):
+            raise ValueError("wallet balances")
+        if not isinstance(created, bool) or not isinstance(replayed, bool) or created == replayed:
+            raise ValueError("operation flags")
+        raw_quotas = row["quota_reservations"]
+        if not isinstance(raw_quotas, list) or len(raw_quotas) != len(expected_features):
+            raise ValueError("quota reservation list")
+        parsed_quotas: list[PlanQuotaReservationResult] = []
+        for item in raw_quotas:
+            if not isinstance(item, dict):
+                raise ValueError("quota reservation item")
+            feature = item["feature_key"]
+            if feature not in expected_features:
+                raise ValueError("unexpected quota feature")
+            limit = item["feature_limit"]
+            used = item["used_units"]
+            remaining = item["remaining_units"]
+            status = item["status"]
+            item_replayed = item["replayed"]
+            if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
+                   for value in (limit, used, remaining)):
+                raise ValueError("quota totals")
+            if used > limit or remaining != max(limit - used, 0):
+                raise ValueError("inconsistent quota totals")
+            if status not in {"reserved", "completed", "released"} or not isinstance(item_replayed, bool):
+                raise ValueError("quota lifecycle")
+            parsed_quotas.append(PlanQuotaReservationResult(
+                reservation_id=UUID(str(item["reservation_id"])),
+                feature_key=feature,
+                feature_limit=limit,
+                used_units=used,
+                remaining_units=remaining,
+                status=status,
+                replayed=item_replayed,
+            ))
+        if {item.feature_key for item in parsed_quotas} != set(expected_features):
+            raise ValueError("missing quota dimension")
+        return PlanCreditedGenerationJobCreateResult(
+            job_id=UUID(str(row["job_id"])),
+            event_id=UUID(str(row["event_id"])),
+            hold_id=UUID(str(row["hold_id"])),
+            available_credits=available,
+            reserved_credits=reserved,
+            created=created,
+            replayed=replayed,
+            quota_reservations=tuple(parsed_quotas),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GenerationJobsServiceError(
+            "The plan-based generation service returned incomplete or inconsistent metadata."
+        ) from exc
