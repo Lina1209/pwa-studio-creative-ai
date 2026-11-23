@@ -99,6 +99,7 @@ def unsuspend_user(payload: SuspensionRevokeRequest, user: StudioUser = Depends(
 
 @app.post(f"{settings.api_prefix}/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "assistant")
     check_content(payload.message)
     system = (
         "You are Studio AI Companion, a helpful creative assistant inside PWA Studio. "
@@ -126,6 +127,7 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
 def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "assistant")
     check_content(payload.idea)
     system = (
         "You are an expert prompt engineer for creative AI tools. "
