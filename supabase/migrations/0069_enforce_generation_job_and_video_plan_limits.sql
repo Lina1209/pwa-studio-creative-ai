@@ -237,7 +237,6 @@ declare
   v_quota_results jsonb := '[]'::jsonb;
   v_quote_quantity text;
   v_plan public.approved_plan_versions%rowtype;
-  v_active_assignment_id uuid;
   v_active_assignment_count integer;
   v_video_seconds integer;
   v_max_video_seconds integer;
@@ -294,8 +293,8 @@ begin
         using errcode = '42501';
     end if;
 
-    select a.id, apv.*
-      into v_active_assignment_id, v_plan
+    select apv.*
+      into v_plan
       from public.user_plan_assignments a
       join lateral (
         select e.event_type
