@@ -44,7 +44,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ## AI configuration
 
-Set `AI_PROVIDER`, `AI_MODEL` and the matching server-side secret. Only DeepSeek (default) and Google Gemini are supported. Automatic fallback is disabled. Never expose provider keys in frontend code or health responses.
+Set `AI_PROVIDER`, `AI_MODEL` and the matching server-side secret. Only DeepSeek is supported. Google Gemini and all automatic provider fallback are disabled. Never expose provider keys in frontend code or health responses.
 
 ## AI usage metering and atomic USD admission
 
@@ -54,11 +54,10 @@ Every synchronous AI call first reserves a worst-case USD amount in PostgreSQL. 
 
 Initial limits seeded by `supabase/migrations/0050_sync_ai_provider_cost_reservations.sql`:
 - DeepSeek: $1.00 per UTC day.
-- Gemini: $1.00 per UTC day.
-- Combined daily budget: $2.00.
+- Combined daily budget: $1.00.
 - Maximum outstanding reservations: $0.50.
 
-The owner-only `GET /api/admin/ai/budget` endpoint and admin panel show settled estimates, outstanding reserves, unknown outcomes and remaining limits. This is not invoice-level billing reconciliation or a guaranteed provider billing cap. Keep separate spending limits in the DeepSeek/Google consoles. Price assumptions must be updated when provider pricing changes. The estimator uses paid-tier rates even when a model is listed as Free Tier eligible; project eligibility is never assumed.
+The owner-only `GET /api/admin/ai/budget` endpoint and admin panel show settled estimates, outstanding reserves, unknown outcomes and remaining limits. This is not invoice-level billing reconciliation or a guaranteed provider billing cap. Keep separate spending limits in the DeepSeek console. Price assumptions must be updated when provider pricing changes. The estimator uses paid-tier rates even when a model is listed as Free Tier eligible; project eligibility is never assumed.
 
 Before enabling this in production:
 
