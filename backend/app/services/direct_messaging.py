@@ -134,3 +134,56 @@ def mark_read(settings: Settings, conversation_id: UUID, user_id: UUID):
         "conversation_id": f"eq.{conversation_id}", "user_id": f"eq.{user_id}",
     }, payload={"last_read_at": datetime.now(timezone.utc).isoformat()})
     return True
+
+
+def create_message_notification(settings: Settings, message: dict):
+    """Persist a recipient notification through a server-only RPC."""
+    message_id = message.get("message_id") or message.get("id")
+    conversation_id = message.get("conversation_id")
+    sender_id = message.get("sender_user_id")
+    body = str(message.get("body") or "").strip()
+    if not message_id or not conversation_id or not sender_id:
+        return None
+    rows = _request(settings, "POST", "rpc/create_direct_message_notification", payload={
+        "p_conversation_id": str(conversation_id),
+        "p_message_id": str(message_id),
+        "p_actor_user_id": str(sender_id),
+        "p_title": "Новое личное сообщение",
+        "p_body": body[:300] or "Вам отправили сообщение.",
+        "p_dedupe_key": f"direct-message:{message_id}",
+    })
+    if isinstance(rows, str):
+        return rows
+    if isinstance(rows, list) and rows:
+        value = rows[0]
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            return value.get("create_direct_message_notification") or value.get("id")
+    raise DirectMessagingUnavailable("Could not persist direct message notification.")
+
+
+def list_user_notifications(settings: Settings, user_id: UUID, *, limit: int = 50):
+    rows = _request(settings, "GET", "user_notifications", params={
+        "select": "id,conversation_id,message_id,kind,title,body,created_at,read_at",
+        "recipient_user_id": f"eq.{user_id}",
+        "order": "created_at.desc",
+        "limit": str(max(1, min(limit, 100))),
+    })
+    if not isinstance(rows, list):
+        raise DirectMessagingUnavailable("Invalid notification list.")
+    return rows
+
+
+def mark_user_notification_read(settings: Settings, notification_id: UUID, user_id: UUID):
+    owned = _request(settings, "GET", "user_notifications", params={
+        "select": "id", "id": f"eq.{notification_id}",
+        "recipient_user_id": f"eq.{user_id}", "read_at": "is.null", "limit": "1",
+    })
+    if not isinstance(owned, list) or not owned:
+        return 0
+    _request(settings, "PATCH", "user_notifications", params={
+        "id": f"eq.{notification_id}", "recipient_user_id": f"eq.{user_id}",
+        "read_at": "is.null",
+    }, payload={"read_at": datetime.now(timezone.utc).isoformat()})
+    return 1
