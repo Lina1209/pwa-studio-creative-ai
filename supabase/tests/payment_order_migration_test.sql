@@ -184,3 +184,56 @@ begin
   end if;
 end;
 $payment_fulfillment_execution_state_test$;
+
+
+-- Atomic claim, expired-lease recovery, and stale-worker fencing.
+do $payment_fulfillment_worker_lease_test$
+declare
+  v_order_id uuid;
+  v_claim1 record;
+  v_claim2 record;
+  v_claim3 record;
+  v_complete boolean;
+  v_status text;
+begin
+  select * into v_claim1 from public.claim_payment_fulfillment(15);
+  if v_claim1.fulfillment_id is null or v_claim1.attempt_count <> 2 then
+    raise exception 'Expected the queued fulfillment to be atomically claimed';
+  end if;
+
+  select * into v_claim2 from public.claim_payment_fulfillment(15);
+  if v_claim2.fulfillment_id is not null then
+    raise exception 'A live lease was claimed by a second worker';
+  end if;
+
+  -- Simulate a crashed worker by expiring the lease in the isolated test database.
+  update public.payment_fulfillment_outbox
+     set locked_at = now() - interval '16 seconds'
+   where id = v_claim1.fulfillment_id;
+
+  select * into v_claim3 from public.claim_payment_fulfillment(15);
+  if v_claim3.fulfillment_id <> v_claim1.fulfillment_id
+     or v_claim3.lease_token = v_claim1.lease_token
+     or v_claim3.attempt_count <> v_claim1.attempt_count + 1 then
+    raise exception 'Expired lease was not recovered with a fresh fencing token';
+  end if;
+
+  select public.complete_payment_fulfillment(v_claim1.fulfillment_id, v_claim1.lease_token)
+    into v_complete;
+  if v_complete then
+    raise exception 'Stale worker was allowed to complete a reclaimed task';
+  end if;
+
+  select public.complete_payment_fulfillment(v_claim3.fulfillment_id, v_claim3.lease_token)
+    into v_complete;
+  if not v_complete then
+    raise exception 'Current lease holder could not complete the task';
+  end if;
+
+  select status into v_status from public.payment_fulfillment_outbox
+   where id = v_claim3.fulfillment_id;
+  if v_status <> 'completed' then
+    raise exception 'Fulfillment did not reach completed after valid lease completion';
+  end if;
+end;
+$payment_fulfillment_worker_lease_test$;
