@@ -32,6 +32,9 @@
     const nextUserId = session?.user?.id || null;
     if (nextUserId !== assistantUserId) {
       const adminPanel = $("#adminPanel"); if (adminPanel) adminPanel.hidden = true;
+      const notificationPanel = $("#notificationPanel"); if (notificationPanel) notificationPanel.hidden = true;
+      const notificationList = $("#notificationList"); if (notificationList) notificationList.replaceChildren();
+      const notificationBadge = $("#notificationUnread"); if (notificationBadge) notificationBadge.hidden = true;
       assistantUserId = nextUserId;
       authContextVersion += 1;
       activeAssistantConversationId = null;
@@ -89,7 +92,7 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
+      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
   }
@@ -243,6 +246,80 @@ const movieHistoryStyle = document.createElement("style");
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
     return data;
   };
+
+  const notificationFeedback = message => { const el = $("#notificationFeedback"); if (el) el.textContent = message; };
+  const renderNotifications = notifications => {
+    const list = $("#notificationList");
+    if (!list) return;
+    const items = Array.isArray(notifications) ? notifications : [];
+    const unread = items.filter(item => !item.read_at).length;
+    const badge = $("#notificationUnread");
+    if (badge) { badge.textContent = String(unread); badge.hidden = unread === 0; }
+    const readAll = $("#notificationReadAll");
+    if (readAll) readAll.disabled = unread === 0;
+    list.replaceChildren();
+    if (!items.length) { list.append(adminNode("div","admin-empty","Пока нет уведомлений. Здесь появятся важные обновления.")); return; }
+    items.forEach(item => {
+      const card = adminNode("article","notification-item" + (item.read_at ? "" : " is-unread"));
+      const heading = adminNode("div","notification-item-heading");
+      heading.append(adminNode("b","",item.title || "Уведомление"),adminNode("time","",formatAdminDate(item.created_at)));
+      card.append(heading,adminNode("p","notification-item-body",item.body || ""));
+      if (!item.read_at) {
+        const button = adminNode("button","notification-read-button","Отметить прочитанным");
+        button.type = "button";
+        button.addEventListener("click", () => markOneNotificationRead(item.id, button));
+        card.append(button);
+      } else {
+        card.append(adminNode("span","notification-read-label","Прочитано"));
+      }
+      list.append(card);
+    });
+  };
+  const loadNotifications = async () => {
+    const panel = $("#notificationPanel");
+    if (!panel) return;
+    if (!authSession?.user) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const version = authContextVersion, userId = authSession.user.id;
+    notificationFeedback("Проверяем новые сообщения…");
+    const list = $("#notificationList");
+    if (list) list.replaceChildren(adminNode("div","admin-empty","Загружаем уведомления…"));
+    try {
+      const items = await apiRequest("/api/notifications");
+      if (version !== authContextVersion || authSession?.user?.id !== userId) return;
+      renderNotifications(items);
+      notificationFeedback(items.length ? "Уведомления синхронизированы с вашим аккаунтом." : "Новых сообщений пока нет.");
+    } catch (error) {
+      if (version !== authContextVersion || authSession?.user?.id !== userId) return;
+      notificationFeedback("Не удалось загрузить уведомления: " + error.message);
+      if (list) list.replaceChildren(adminNode("div","admin-empty","Центр уведомлений временно недоступен."));
+    }
+  };
+  const markOneNotificationRead = async (id, button) => {
+    const version = authContextVersion, userId = authSession?.user?.id;
+    if (!userId) return;
+    button.disabled = true;
+    try {
+      await apiRequest("/api/notifications/" + encodeURIComponent(id) + "/read", {method:"POST"});
+      if (version === authContextVersion && authSession?.user?.id === userId) loadNotifications();
+    } catch (error) {
+      if (version === authContextVersion) notificationFeedback("Не удалось отметить уведомление: " + error.message);
+      button.disabled = false;
+    }
+  };
+  $("#notificationRefresh")?.addEventListener("click", loadNotifications);
+  $("#notificationReadAll")?.addEventListener("click", async event => {
+    const button = event.currentTarget, version = authContextVersion, userId = authSession?.user?.id;
+    if (!userId) return;
+    button.disabled = true;
+    try {
+      await apiRequest("/api/notifications/read-all", {method:"POST"});
+      if (version === authContextVersion && authSession?.user?.id === userId) loadNotifications();
+    } catch (error) {
+      if (version === authContextVersion) notificationFeedback("Не удалось обновить уведомления: " + error.message);
+      button.disabled = false;
+    }
+  });
 
   const reportFeedback = message => { const el = $("#reportFeedback"); if (el) el.textContent = message; };
   $("#userReportForm")?.addEventListener("submit", async event => {
