@@ -52,7 +52,7 @@ $;
 create or replace function storage.extension(object_name text)
 returns text
 language sql immutable
-as $ select lower(regexp_replace(object_name, '^.*\\.', '')) $;
+as $ select lower(split_part(object_name, '.', array_length(string_to_array(object_name, '.'), 1))) $;
 
 \ir ../migrations/0005_cloud_projects_and_storage.sql
 \ir ../migrations/0007_enforce_project_owner_integrity.sql
