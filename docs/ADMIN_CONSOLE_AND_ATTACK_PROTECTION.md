@@ -116,3 +116,12 @@ owner capability `admin.ai.budget.manage`. This capability is independently allo
 server-side and is not implied by `admin.platform.overview.read`. All three mutation
 routes fail closed before their database RPC when the dedicated capability is absent;
 the denial is recorded through the administrative audit path on a best-effort basis.
+
+
+## Audit reference identity validation
+
+Administrative audit writes accept resource and correlation references only as
+verified UUID values. Audit reads validate and canonicalize optional
+`resource_id` and `correlation_id` fields before returning events. A malformed
+reference makes the audit page fail closed rather than passing untrusted
+identifiers into the administrator interface.
