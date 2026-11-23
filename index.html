@@ -143,7 +143,20 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <button type="button" class="secondary-button" id="wrapQuotePrompt">Цитата</button>
             <button type="button" class="secondary-button" id="wrapCodePrompt">Блок кода</button>
           </div>
-          <div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button><button class="secondary-button full-button" id="savePromptToMovie">＋ Сохранить в выбранный фильм</button><button class="secondary-button full-button" id="cancelPromptEdit" hidden>Отменить редактирование</button><p class="helper-text" id="promptSaveFeedback" aria-live="polite">Выберите фильм в Миникиностудии, чтобы сохранять промпты вместе с его материалами.</p></div></div>
+          <section class="prompt-workbench" aria-label="Шаблоны и переменные промпта">
+            <div class="prompt-workbench-head"><b>Быстрый старт</b><span>Шаблоны и переменные</span></div>
+            <div class="form-row">
+              <div><label for="promptTemplateSelect">Шаблон промпта</label><select id="promptTemplateSelect"><option value="">Выберите шаблон…</option><option value="cinematic">Кинематографичный кадр</option><option value="character">Постоянство персонажа</option><option value="video">Движение и камера</option><option value="music">Музыкальная сцена</option><option value="sound">Атмосфера и звуки</option></select></div>
+              <div class="prompt-workbench-action"><button type="button" class="secondary-button" id="applyPromptTemplate">Вставить шаблон</button></div>
+            </div>
+            <div class="prompt-variable-tools"><label for="promptVariableValues">Значения переменных</label><textarea id="promptVariableValues" rows="3" placeholder="Например: subject=девушка-астроном\nlocation=обсерватория\nmood=таинственный"></textarea><button type="button" class="secondary-button" id="applyPromptVariables">Подставить значения</button><small>В шаблонах используются обозначения {{subject}}, {{location}}, {{mood}} и другие. Укажите по одной переменной в строке: имя=значение.</small></div>
+          </section>
+          <div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div>
+          <section class="prompt-fragments">
+            <div class="prompt-workbench-head"><b>Мои фрагменты</b><span>Сохраняйте удачные части промптов</span></div>
+            <div class="prompt-fragment-actions"><button type="button" class="secondary-button" id="savePromptFragment">＋ Сохранить выделенное</button><input id="promptFragmentName" type="text" maxlength="60" placeholder="Название фрагмента"></div>
+            <div id="promptFragmentList" class="prompt-fragment-list"><p class="helper-text">Сохранённых фрагментов пока нет.</p></div>
+          </section><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button><button class="secondary-button full-button" id="savePromptToMovie">＋ Сохранить в выбранный фильм</button><button class="secondary-button full-button" id="cancelPromptEdit" hidden>Отменить редактирование</button><p class="helper-text" id="promptSaveFeedback" aria-live="polite">Выберите фильм в Миникиностудии, чтобы сохранять промпты вместе с его материалами.</p></div></div>
         <section class="panel prompt-library" aria-labelledby="promptLibraryTitle">
           <div class="result-head"><div><b id="promptLibraryTitle">Библиотека промптов</b><p class="helper-text">Сохранённые промпты из ваших фильмов. Они синхронизируются вместе с проектами.</p></div><span class="draft-badge" id="promptLibraryCount">0</span></div>
           <div class="form-row">
