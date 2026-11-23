@@ -1,6 +1,6 @@
 # PWA Studio — platform roadmap
 
-Updated: 2026-11-22
+Updated: 2026-11-23
 
 ## Product direction
 
@@ -19,6 +19,21 @@ PWA Studio is a multi-user creative platform with a public guest-facing area, pr
 - Migration 0002 defines private Storage buckets and owner-path policies only; it does not create moderation reports or an admin audit log. Migration 0005 defines the private `studio-media` bucket and project table.
 - PWA shell cache is v15; core HTML/JS/CSS assets are refreshed network-first with cached offline fallback, including version-insensitive cache fallback for query-string asset versions.
 
+## Review-branch additions — implemented in code, not production verified
+
+The open Draft PR adds several foundations that are not yet part of the live production release:
+
+- Private support inbox: user ticket creation, history and replies; owner-only inbox, replies and status changes; named admin capabilities and audit events. Migration 0055 is extended by 0091 with categories, bounded optional context and atomic ticket/message RPCs. The migrations are not applied to live Supabase.
+- Durable generation: job/outbox schema, worker orchestration, cancellation/recovery and provider-operation journal. Runtime flags remain disabled; no production worker is running.
+- Private generated-image storage and signed result access contracts exist, but a concrete production image provider and live end-to-end image generation are not verified.
+- Provider idempotency review (2026-11-23) blocks production video generation: no concrete video-provider adapter exists in the repository.
+- Credit wallet, quota reservation, pricing/plan drafts and payment-order/fulfillment foundations exist in the review branch. No real payment provider is configured; payment execution and billing remain disabled.
+- Character reference-storage and visual metadata migrations exist; complete character CRUD is not yet verified.
+- First-party site analytics and privacy-governance foundations exist; production data quality, retention and legal review remain open.
+
+The latest PR checks on 2026-11-23 passed syntax/backend tests/manifest validation and PostgreSQL migration integration. This is CI evidence only, not a live deployment or a production Supabase migration.
+
+
 ## Important gaps — do not describe these as finished
 
 - The live Supabase schema was created through SQL Editor and later migrations. Compare it with the repository's original 0001_initial_schema.sql before running older migrations. Do not rerun 0001 blindly.
@@ -30,7 +45,13 @@ PWA Studio is a multi-user creative platform with a public guest-facing area, pr
 - The text safety guard is only a first layer. It is not comprehensive moderation and does not inspect images, video, audio or generated output.
 - The report form, moderation queue, user restrictions, appeals and full audit workflow still need implementation.
 - Password recovery still needs a secure new-password screen after the email callback.
-- Owner DB role and backend owner role must be reconciled and verified; never trust a role value supplied by the browser.
+- Backend owner access is derived from the verified Supabase subject UUID and the server-only OWNER_USER_IDS allowlist. Confirm the intended owner UUID is configured in Render; never trust a role value supplied by the browser.
+
+## New product workstreams
+
+- Private support and feedback inbox: see [SUPPORT_AND_FEEDBACK_DESIGN.md](./SUPPORT_AND_FEEDBACK_DESIGN.md). Keep it separate from AI Companion and community chat.
+- Inspiration page and opt-in Creator Showcase, plus audio/speech/voice/video capability map: see [CREATOR_SHOWCASE_AND_MULTIMODAL_ROADMAP.md](./CREATOR_SHOWCASE_AND_MULTIMODAL_ROADMAP.md).
+- Public user works must remain opt-in. A marketplace is deferred until creator rights, moderation, payouts and billing are ready.
 
 ## Target architecture
 
