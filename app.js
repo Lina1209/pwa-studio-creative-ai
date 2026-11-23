@@ -480,6 +480,68 @@ const movieHistoryStyle = document.createElement("style");
     finally { if (button) button.disabled = false; }
   });
 
+
+  const loadAdminPlanDrafts = async () => {
+    const status = $("#planDraftStatus");
+    if (!adminUiAuthorized) { if (status) status.textContent = "Нет доступа."; return; }
+    if (status) status.textContent = "Загружаем тарифные планы…";
+    try {
+      const data = await apiRequest("/api/admin/plans/drafts");
+      const list = $("#planDraftList");
+      if (list) {
+        list.replaceChildren();
+        (data.drafts || []).forEach(plan => {
+          const card = document.createElement("article");
+          card.className = "assistant-message";
+          const title = document.createElement("b");
+          title.textContent = plan.display_name + " · " + plan.plan_code + " v" + plan.plan_version;
+          const price = plan.price_minor === null ? "Цена не задана" : String(plan.price_minor) + " " + plan.currency;
+          const detail = document.createElement("p");
+          detail.textContent = String(plan.credits_per_period) + " кредитов / " + String(plan.period_days) + " дней · " + price;
+          const note = document.createElement("p");
+          note.textContent = "Черновик · не опубликован · начисления и checkout отключены.";
+          card.append(title, detail, note);
+          list.append(card);
+        });
+      }
+      if (status) status.textContent = "Черновики загружены. Публикация и начисление кредитов пока отключены.";
+    } catch (error) { if (status) status.textContent = error.message; }
+  };
+  $("#refreshPlanDrafts")?.addEventListener("click", loadAdminPlanDrafts);
+  $("#planDraftForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!adminUiAuthorized) return;
+    const status = $("#planDraftStatus");
+    const button = event.submitter; if (button) button.disabled = true;
+    try {
+      const limits = JSON.parse($("#planDraftLimits").value || "{}");
+      const features = JSON.parse($("#planDraftFeatures").value || "[]");
+      if (!limits || typeof limits !== "object" || Array.isArray(limits) || !Array.isArray(features)) throw new Error("Проверьте формат JSON: лимиты — объект, возможности — массив.");
+      const rawPrice = $("#planDraftPrice").value.trim();
+      const rawCurrency = $("#planDraftCurrency").value.trim().toUpperCase();
+      if (Boolean(rawPrice) !== Boolean(rawCurrency)) throw new Error("Укажите одновременно цену и валюту либо оставьте оба поля пустыми.");
+      const payload = {
+        plan_code: $("#planDraftCode").value.trim(),
+        plan_version: Number($("#planDraftVersion").value),
+        display_name: $("#planDraftName").value.trim(),
+        billing_period: $("#planDraftPeriod").value,
+        period_days: $("#planDraftPeriod").value === "week" ? 7 : 30,
+        credits_per_period: Number($("#planDraftCredits").value),
+        price_minor: rawPrice ? Number(rawPrice) : null,
+        currency: rawCurrency || null,
+        limits, features
+      };
+      await apiRequest("/api/admin/plans/drafts", {method:"POST",body:JSON.stringify(payload)});
+      $("#planDraftForm").reset();
+      $("#planDraftVersion").value = "1";
+      $("#planDraftLimits").value = "{}";
+      $("#planDraftFeatures").value = "[]";
+      if (status) status.textContent = "План сохранён как черновик. Кредиты не начислены, оплата не включена.";
+      await loadAdminPlanDrafts();
+    } catch (error) { if (status) status.textContent = error instanceof SyntaxError ? "Проверьте синтаксис JSON." : error.message; }
+    finally { if (button) button.disabled = false; }
+  });
+
   const loadFinanceAccess = async () => {
     const userId = authSession?.user?.id;
     const panel = $("#financePanel");
@@ -1189,7 +1251,7 @@ const movieHistoryStyle = document.createElement("style");
     $("#sidebar").classList.remove("open");
     window.location.hash = view === "home" ? "" : view;
     window.scrollTo({top:0,behavior:"smooth"});
-    if (view === "account" && authSession?.user) { loadMySupportTickets(); if (adminUiAuthorized) { loadAdminSupportTickets(); loadAdminPricingDrafts(); } }
+    if (view === "account" && authSession?.user) { loadMySupportTickets(); if (adminUiAuthorized) { loadAdminSupportTickets(); loadAdminPricingDrafts(); loadAdminPlanDrafts(); } }
   }
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
