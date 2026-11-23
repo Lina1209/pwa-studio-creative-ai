@@ -454,6 +454,16 @@ begin
     raise exception 'Verified refund provider event replay was not idempotent';
   end if;
 
+  begin
+    perform public.record_verified_payment_refund_provider_event(
+      'examplepay', 'refund-event-partial-success-001', v_refund.refund_id,
+      'refund.succeeded', repeat('b',64), 24999, 'KZT', 'provider-refund-partial-001'
+    );
+    raise exception 'Provider refund event replay with altered amount was accepted';
+  exception when sqlstate '23505' then
+    null;
+  end;
+
   select status into v_order_status from public.payment_orders where id = v_order.id;
   if v_order_status <> 'partially_refunded' then
     raise exception 'Partial refund did not update payment order status';
@@ -533,6 +543,11 @@ begin
        'EXECUTE'
      ) then
     raise exception 'Untrusted roles can execute refund financial RPCs';
+  end if;
+  if has_table_privilege('service_role', 'public.payment_refunds', 'INSERT')
+     or has_table_privilege('service_role', 'public.payment_refunds', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.payment_refunds', 'SELECT') then
+    raise exception 'Direct refund table access bypasses the controlled RPC boundary';
   end if;
   if not has_function_privilege(
        'service_role',
