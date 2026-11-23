@@ -283,3 +283,19 @@ def review_moderation_appeal(settings: Settings,appeal_id: UUID,reviewer_id: UUI
         "p_appeal_id":str(appeal_id),"p_reviewer_user_id":str(reviewer_id),
         "p_status":status,"p_decision_reason":decision_reason})
     return rows is True or rows == [True]
+
+
+def get_admin_report_detail(settings: Settings, report_id: UUID):
+    reports=_request(settings,"GET","direct_message_reports",params={
+        "select":"id,reporter_user_id,target_user_id,message_id,category,details,status,created_at,reviewed_at",
+        "id":f"eq.{report_id}","limit":"1"})
+    if not isinstance(reports,list) or not reports:
+        return None
+    report=reports[0]
+    message=None
+    if report.get("message_id"):
+        rows=_request(settings,"GET","direct_messages",params={
+            "select":"id,conversation_id,sender_user_id,body,created_at",
+            "id":f"eq.{report['message_id']}","limit":"1"})
+        message=rows[0] if isinstance(rows,list) and rows else None
+    return {"report":report,"message":message}
