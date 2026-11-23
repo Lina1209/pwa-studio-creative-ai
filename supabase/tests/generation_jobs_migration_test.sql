@@ -103,6 +103,14 @@ create table public.studio_media (
 \ir ../migrations/0029_ai_request_admission.sql
 \ir ../migrations/0030_credit_wallet_snapshot.sql
 
+-- Minimal AI usage table required by synchronous provider cost migration 0050.
+create table public.ai_usage (
+  endpoint text not null constraint ai_usage_endpoint_check
+    check (endpoint in ('chat', 'prompts'))
+);
+\ir ../migrations/0050_sync_ai_provider_cost_reservations.sql
+\ir ../migrations/0088_ai_provider_cost_request_modality.sql
+
 \ir ../migrations/0046_admin_credit_ledger_read.sql
 
 do $admin_credit_ledger_privileges_test$
