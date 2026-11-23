@@ -419,22 +419,32 @@ const movieHistoryStyle = document.createElement("style");
     const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
+    const contextIsCurrent = () => authSession?.user?.id === requestUserId && authContextVersion === requestVersion;
     try {
       if (!activeAssistantConversationId) await startAssistantConversation();
+      if (!contextIsCurrent()) return;
+      const conversationId = activeAssistantConversationId;
       const { error: userSaveError } = await supabaseClient.from("assistant_messages")
-        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "user", content: value });
+        .insert({ conversation_id: conversationId, user_id: requestUserId, role: "user", content: value });
       if (userSaveError) throw userSaveError;
+      if (!contextIsCurrent()) return;
       renderAssistantMessage("user", value);
       const { data: titleRow } = await supabaseClient.from("assistant_conversations")
-        .select("title").eq("id", activeAssistantConversationId).single();
+        .select("title").eq("id", conversationId).eq("user_id", requestUserId).single();
+      if (!contextIsCurrent()) return;
       if (titleRow?.title === "Новый диалог") {
         await supabaseClient.from("assistant_conversations")
-          .update({ title: value.slice(0, 72) }).eq("id", activeAssistantConversationId);
+          .update({ title: value.slice(0, 72) }).eq("id", conversationId).eq("user_id", requestUserId);
       }
+      if (!contextIsCurrent()) return;
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
+      if (!contextIsCurrent()) return;
       const { error: assistantSaveError } = await supabaseClient.from("assistant_messages")
-        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "assistant", content: result.reply });
+        .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
+      if (!contextIsCurrent()) return;
       renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
     } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
     finally { button.disabled = false; input.disabled = false; input.focus(); }
