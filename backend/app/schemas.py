@@ -7,10 +7,33 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class ChatProjectContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=120)
+    idea: str = Field(default="", max_length=2000)
+    genre: str = Field(default="", max_length=80)
+    duration_minutes: int | None = Field(default=None, strict=True, ge=1, le=30)
+    frame: Literal["16:9", "9:16", "1:1"] | None = None
+    story: str = Field(default="", max_length=6000)
+    storyboard: str = Field(default="", max_length=6000)
+    characters: str = Field(default="", max_length=3000)
+    voices: str = Field(default="", max_length=2000)
+    edit: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def limit_total_context(self):
+        total = sum(len(value) for value in self.model_dump().values() if isinstance(value, str))
+        if total > 18000:
+            raise ValueError("Project context is too large.")
+        return self
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1, max_length=12000)
+    project_context: ChatProjectContext | None = None
 
 
 class ChatResponse(BaseModel):
