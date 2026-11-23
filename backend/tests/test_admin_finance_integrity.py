@@ -82,7 +82,15 @@ def test_service_calls_one_snapshot_rpc_and_returns_read_only_report(monkeypatch
 
 def test_service_marks_over_limit_snapshot_incomplete(monkeypatch):
     payload = snapshot(complete=False, ledger_count=10001)
-    payload["ledger"] = [{"entry_id": index + 1} for index in range(10000)]
+    payload["ledger"] = [{
+        "entry_id": index + 1,
+        "user_id": str(USER_ID),
+        "delta_available": 0,
+        "delta_reserved": 0,
+        "balance_available_after": 0,
+        "balance_reserved_after": 0,
+        "created_at": "2026-11-23T10:00:00Z",
+    } for index in range(10000)]
     FakeClient.payload = payload
     monkeypatch.setattr(service.httpx, "Client", FakeClient)
     settings = SimpleNamespace(
