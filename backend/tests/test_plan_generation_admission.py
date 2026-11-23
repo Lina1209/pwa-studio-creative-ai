@@ -3,11 +3,51 @@ from uuid import UUID
 
 import pytest
 
+from app.core.config import Settings
 from app.services import generation_jobs
 from app.services.pricing_service import (
     PricingCatalog, PricingRule, canonical_request_hash, issue_pricing_quote,
 )
-from test_generation_jobs_service import configured_settings, FakeClient, FakeResponse
+
+
+class FakeResponse:
+    def __init__(self, data, status_code=200):
+        self._data = data
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            error = RuntimeError("HTTP error")
+            error.response = type("Response", (), {"status_code": self.status_code})()
+            raise error
+
+    def json(self):
+        return self._data
+
+
+class FakeClient:
+    def __init__(self, response, calls):
+        self.response = response
+        self.calls = calls
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def post(self, url, *, json, headers):
+        self.calls.append(("POST", url, json, headers))
+        return self.response
+
+
+def configured_settings():
+    return Settings(
+        supabase_url="https://example.supabase.co/",
+        supabase_service_role_key="sb_secret_test_key",
+        generation_jobs_enabled=True,
+        pricing_quote_signing_secret="test-signing-secret-with-at-least-32-bytes",
+    )
 
 
 USER_ID = UUID("11111111-1111-4111-8111-111111111111")
