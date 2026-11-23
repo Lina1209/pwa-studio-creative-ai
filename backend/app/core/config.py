@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         "https://lina1209.github.io"
     )
 
-    # Only DeepSeek and Google Gemini are supported. DeepSeek remains the default.
+    Only DeepSeek is supported; provider fallback is disabled.
     ai_provider: Literal["deepseek"] = "deepseek"
     ai_model: str = "deepseek-flash"
     ai_max_concurrent_requests: int = Field(default=4, ge=1, le=32)
@@ -30,11 +30,9 @@ class Settings(BaseSettings):
     # Hard operational ceiling, independent of customer plan credits.
     ai_max_requests_per_month_per_user: int = Field(default=1200, ge=1, le=100000)
     ai_daily_budget_usd_deepseek: Decimal | None = Field(default=None, gt=0, le=Decimal('1000000000'))
-    ai_daily_budget_usd_gemini: Decimal | None = Field(default=None, gt=0, le=Decimal('1000000000'))
     ai_max_concurrent_requests_per_user: int = Field(default=2, ge=1, le=16)
     ai_max_global_concurrent_requests: int = Field(default=16, ge=1, le=128)
     deepseek_api_key: str | None = None
-    gemini_api_key: str | None = None
 
     # Supabase Auth verifies user sessions. Never put the service-role key in the frontend.
     supabase_url: str | None = None
