@@ -66,3 +66,38 @@ def test_wallet_endpoint_fails_closed_when_storage_is_unavailable(
         )
 
     assert error.value.status_code == expected_status
+
+
+def test_wallet_checks_initial_entitlement_before_snapshot(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        main, "grant_initial_free_entitlement",
+        lambda settings, user_id: calls.append(("grant", user_id)),
+    )
+    monkeypatch.setattr(
+        main, "get_credit_wallet_snapshot",
+        lambda settings, user_id, history_limit: (
+            calls.append(("snapshot", user_id)) or SimpleNamespace(
+                user_id=user_id, available_credits=0, reserved_credits=0,
+                holds=[], ledger=[], lots=[], allocations=[]
+            )
+        ),
+    )
+    main.get_my_credit_wallet(
+        Response(), main.StudioUser(str(USER_ID), None, "creator")
+    )
+    assert calls == [("grant", USER_ID), ("snapshot", USER_ID)]
+
+
+def test_wallet_fails_closed_when_configured_entitlement_cannot_be_verified(monkeypatch):
+    from app.services.initial_entitlement import EntitlementGrantUnavailable
+
+    def fail(*args, **kwargs):
+        raise EntitlementGrantUnavailable("policy unavailable")
+
+    monkeypatch.setattr(main, "grant_initial_free_entitlement", fail)
+    with pytest.raises(HTTPException) as error:
+        main.get_my_credit_wallet(
+            Response(), main.StudioUser(str(USER_ID), None, "creator")
+        )
+    assert error.value.status_code == 503
