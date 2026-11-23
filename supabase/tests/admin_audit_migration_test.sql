@@ -90,6 +90,12 @@ begin
   if v_id is null then raise exception 'Finance request creation audit action was not recorded'; end if;
 
   v_id := public.record_admin_audit_event(
+    v_actor, 'admin.finance.request.create', 'executed', 'finance_request', v_resource, null,
+    'Test finance request audit resource'
+  );
+  if v_id is null then raise exception 'Finance request audit resource was not recorded'; end if;
+
+  v_id := public.record_admin_audit_event(
     v_actor, 'admin.finance.request.decide', 'executed', 'payment', v_resource, null,
     'Test finance request decision completion'
   );
