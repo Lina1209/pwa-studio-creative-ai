@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     ai_max_requests_per_minute_per_user: int = Field(default=10, ge=1, le=120)
     ai_max_requests_per_day_per_user: int = Field(default=100, ge=1, le=10000)
     ai_max_requests_per_day_global: int = Field(default=2000, ge=1, le=100000)
+    # Hard operational ceiling, independent of customer plan credits.
+    ai_max_requests_per_month_per_user: int = Field(default=1200, ge=1, le=100000)
     ai_daily_budget_usd_deepseek: Decimal | None = Field(default=None, gt=0, le=Decimal('1000000000'))
     ai_daily_budget_usd_gemini: Decimal | None = Field(default=None, gt=0, le=Decimal('1000000000'))
     ai_max_concurrent_requests_per_user: int = Field(default=2, ge=1, le=16)
