@@ -265,6 +265,31 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
         <div class="account-grid"><article class="account-tile"><span>🎬</span><b>Мои фильмы</b><p>Проекты, сценарии и версии фильмов.</p><button data-go="movie">Открыть Миникиностудию →</button></article><article class="account-tile"><span>♙</span><b>Мои персонажи</b><p>Личная библиотека цифровых героев и их образов.</p><button data-go="library">Открыть медиатеку →</button></article><article class="account-tile"><span>♫</span><b>Мои голоса и материалы</b><p>Аудио, изображения и файлы проектов.</p><button data-go="voice">Открыть раздел →</button></article></div>
         <div class="account-notice" id="accountStorageNotice">Фильмы авторизованных пользователей синхронизируются с Supabase. Гостевые черновики хранятся только в этом браузере. Файловое хранилище подключается отдельно.</div>
+        <section class="report-panel panel" id="reportPanel">
+          <div class="eyebrow">COMMUNITY CARE · TRUST & SAFETY</div>
+          <h2>Сообщить о проблеме</h2>
+          <p>Если вы столкнулись со спамом, нарушением авторских прав, выдачей себя за другого человека или небезопасным контентом, отправьте обращение команде модерации.</p>
+          <form id="userReportForm" class="admin-form">
+            <label for="reportCategory">Категория обращения</label>
+            <select id="reportCategory" required>
+              <option value="harassment">Оскорбления или преследование</option>
+              <option value="impersonation">Выдача себя за другого человека</option>
+              <option value="spam">Спам или злоупотребление</option>
+              <option value="copyright">Нарушение авторских прав</option>
+              <option value="unsafe_content">Опасный или недопустимый контент</option>
+              <option value="privacy">Нарушение приватности</option>
+              <option value="other">Другая проблема</option>
+            </select>
+            <label for="reportDescription">Что произошло?</label>
+            <textarea id="reportDescription" required minlength="10" maxlength="4000" rows="4" placeholder="Опишите ситуацию. Не добавляйте пароли, платёжные данные или лишнюю личную информацию."></textarea>
+            <label for="reportUserId">UUID пользователя (если известен, необязательно)</label>
+            <input id="reportUserId" maxlength="64" autocomplete="off" placeholder="Необязательно">
+            <label for="reportReference">Ссылка или ID материала (необязательно)</label>
+            <input id="reportReference" maxlength="500" placeholder="Ссылка на материал или его идентификатор">
+            <button class="primary-button" type="submit">Отправить обращение</button>
+            <p id="reportFeedback" class="report-feedback" role="status" aria-live="polite">Для отправки обращения войдите в аккаунт.</p>
+          </form>
+        </section>
         <div class="account-admin panel" id="adminPanel" hidden>
           <div class="eyebrow">OWNER WORKSPACE · MODERATION</div><h2>Панель управления</h2>
           <p>Работа с жалобами и ограничениями доступа. Личные проекты пользователей здесь не открываются. Все действия проверяются backend и фиксируются в журнале.</p>
