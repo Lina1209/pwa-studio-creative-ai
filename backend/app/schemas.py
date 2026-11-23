@@ -78,6 +78,20 @@ class ChatRequest(BaseModel):
         return self
 
 
+class VisionAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(default="Опиши изображение и выдели важные детали.", min_length=1, max_length=2000)
+    image_data_url: str = Field(min_length=32, max_length=7_000_000)
+    consent_to_deepseek: Literal[True]
+
+
+class VisionAnalyzeResponse(BaseModel):
+    analysis: str
+    provider: str
+    model: str
+
+
 class ChatResponse(BaseModel):
     reply: str
     provider: str
