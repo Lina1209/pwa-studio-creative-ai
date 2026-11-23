@@ -226,3 +226,23 @@ def test_zero_delta_ledger_entry_is_invalid():
     report = audit(ledger_entries=[ledger(1, 0, 0, 100, 0)])
     assert report["status"] == "critical"
     assert any(item["code"] == "invalid_ledger_row" for item in report["findings"])
+
+
+def test_captured_allocations_cannot_exceed_original_lot_grant():
+    report = audit(
+        ledger_entries=[],
+        wallets={USER: {"available_credits": 0, "reserved_credits": 0}},
+        credit_lots=[{
+            "lot_id": "lot-1", "user_id": USER, "granted_credits": 20,
+            "available_credits": 0, "reserved_credits": 0,
+        }],
+        credit_holds=[{
+            "hold_id": "hold-1", "user_id": USER, "amount": 21, "status": "captured",
+        }],
+        hold_allocations=[{
+            "allocation_id": "allocation-1", "user_id": USER,
+            "hold_id": "hold-1", "lot_id": "lot-1", "amount": 21, "status": "captured",
+        }],
+    )
+    assert report["status"] == "critical"
+    assert any(item["code"] == "lot_consumption_exceeds_grant" for item in report["findings"])
