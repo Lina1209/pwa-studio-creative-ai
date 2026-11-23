@@ -4280,3 +4280,129 @@ begin
    where id = v_job.job_id;
 end;
 $media_generation_quota_unit_test$;
+
+
+-- Video duration and resolution are validated against the immutable active plan
+-- before any job, outbox event, or credit hold can be created.
+do $video_plan_limits_test$
+declare
+  v_before_jobs integer;
+  v_after_jobs integer;
+  v_rejected boolean;
+begin
+  select count(*) into v_before_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+
+  v_rejected := false;
+  begin
+    perform * from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null, null,
+      'video_generation', 'quota-test-provider', 'quota-test-model',
+      'video-plan-duration-overflow', repeat('a',64),
+      '{"quantity":1,"duration_seconds":61,"resolution":"1080p"}'::jsonb,
+      '{"amount":1,"quantity":1,"price_version":"test-v1"}'::jsonb, 1
+    );
+  exception when insufficient_privilege then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Video duration above the approved plan limit was accepted';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform * from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null, null,
+      'video_generation', 'quota-test-provider', 'quota-test-model',
+      'video-plan-resolution-overflow', repeat('b',64),
+      '{"quantity":1,"duration_seconds":30,"resolution":"4k"}'::jsonb,
+      '{"amount":1,"quantity":1,"price_version":"test-v1"}'::jsonb, 1
+    );
+  exception when insufficient_privilege then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'Video resolution above the approved plan limit was accepted';
+  end if;
+
+  select count(*) into v_after_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  if v_after_jobs <> v_before_jobs then
+    raise exception 'Rejected video limits created a job or credit hold';
+  end if;
+end;
+$video_plan_limits_test$;
+
+
+-- max_parallel_jobs is a cross-provider, cross-feature temporary reservation.
+do $parallel_generation_limit_test$
+declare
+  v_first record;
+  v_second record;
+  v_third record;
+  v_before_jobs integer;
+  v_after_jobs integer;
+  v_rejected boolean := false;
+begin
+  select * into v_first from public.create_plan_credited_generation_job_with_outbox(
+    '22222222-2222-4222-8222-222222222222', null, null,
+    'image_generation', 'quota-test-provider', 'quota-test-model',
+    'parallel-job-first', repeat('c',64),
+    '{"quantity":1,"prompt":"parallel first"}'::jsonb,
+    '{"amount":1,"quantity":1,"price_version":"test-v1"}'::jsonb, 1
+  );
+  select * into v_second from public.create_plan_credited_generation_job_with_outbox(
+    '22222222-2222-4222-8222-222222222222', null, null,
+    'image_generation', 'quota-test-provider', 'quota-test-model',
+    'parallel-job-second', repeat('d',64),
+    '{"quantity":1,"prompt":"parallel second"}'::jsonb,
+    '{"amount":1,"quantity":1,"price_version":"test-v1"}'::jsonb, 1
+  );
+
+  select count(*) into v_before_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  begin
+    perform * from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222', null, null,
+      'image_generation', 'quota-test-provider', 'quota-test-model',
+      'parallel-job-third-denied', repeat('e',64),
+      '{"quantity":1,"prompt":"parallel third"}'::jsonb,
+      '{"amount":1,"quantity":1,"price_version":"test-v1"}'::jsonb, 1
+    );
+  exception when sqlstate '54000' then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'A third job exceeded the max_parallel_jobs limit';
+  end if;
+  select count(*) into v_after_jobs from public.generation_jobs
+   where user_id = '22222222-2222-4222-8222-222222222222';
+  if v_after_jobs <> v_before_jobs then
+    raise exception 'Parallel-job denial did not roll back its job';
+  end if;
+
+  update public.generation_jobs
+     set status = 'succeeded', completed_at = now(), updated_at = now()
+   where id = v_first.job_id;
+
+  select * into v_third from public.create_plan_credited_generation_job_with_outbox(
+    '22222222-2222-4222-8222-222222222222', null, null,
+    'image_generation', 'quota-test-provider', 'quota-test-model',
+    'parallel-job-third-after-release', repeat('f',64),
+    '{"quantity":1,"prompt":"parallel third after release"}'::jsonb,
+    '{"amount":1,"quantity":1,"price_version":"test-v1"}'::jsonb, 1
+  );
+  if v_third.job_id is null then
+    raise exception 'Released parallel slot was not reusable';
+  end if;
+
+  update public.generation_jobs
+     set status = 'failed', completed_at = now(), updated_at = now()
+   where id in (v_second.job_id, v_third.job_id);
+  if (select count(*) from public.plan_quota_reservations
+       where request_id in (v_first.job_id,v_second.job_id,v_third.job_id)
+         and feature_key = 'max_parallel_jobs' and status = 'released') <> 3 then
+    raise exception 'Parallel slots were not released on terminal job states';
+  end if;
+end;
+$parallel_generation_limit_test$;
