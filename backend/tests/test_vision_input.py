@@ -93,6 +93,6 @@ def test_vision_feature_flag_requires_privacy_approval_and_deepseek_flash():
     with pytest.raises(ValidationError):
         Settings(vision_input_enabled=True, ai_model="deepseek-flash")
     with pytest.raises(ValidationError):
-        Settings(vision_input_enabled=True, vision_privacy_review_approved=True, ai_model="deepseek-v4-pro")
-    approved = Settings(vision_input_enabled=True, vision_privacy_review_approved=True, ai_model="deepseek-flash")
+        Settings(vision_input_enabled=True, vision_privacy_review_approved=True, privacy_notice_version="privacy-v1", vision_consent_version="vision-v1", ai_model="deepseek-v4-pro")
+    approved = Settings(vision_input_enabled=True, vision_privacy_review_approved=True, privacy_notice_version="privacy-v1", vision_consent_version="vision-v1", ai_model="deepseek-flash")
     assert approved.vision_input_enabled is True
