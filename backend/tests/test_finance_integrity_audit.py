@@ -363,6 +363,7 @@ def subscription_rows():
         "credit_quantity": 1300, "credit_validity_days": None, "plan_period_days": 30,
     }]
     rows["fulfillment_outbox"][0]["payment_order_id"] = order_id
+    rows["fulfillment_outbox"][0]["amount_minor"] = 149000
     rows["plan_assignments"] = [{
         "id": assignment_id, "user_id": USER,
         "approved_plan_version_id": "55555555-5555-4555-8555-555555555555",
