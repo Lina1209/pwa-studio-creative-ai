@@ -3914,6 +3914,7 @@ select 'finance operation request lifecycle checks passed' as result;
 \ir ../migrations/0066_plan_quota_rpc_only_privileges.sql
 \ir ../migrations/0067_atomic_plan_credited_generation.sql
 \ir ../migrations/0068_resolve_plan_quotas_with_job_lifecycle.sql
+\ir ../migrations/0069_enforce_generation_job_and_video_plan_limits.sql
 
 insert into public.plan_catalog_drafts(
   id, plan_code, plan_version, display_name, billing_period, period_days,
@@ -3930,7 +3931,12 @@ insert into public.plan_catalog_drafts(
     "daily_video_generations": 5,
     "monthly_video_generations": 40,
     "daily_audio_generations": 10,
-    "monthly_audio_generations": 100
+    "monthly_audio_generations": 100,
+    "daily_generation_jobs": 20,
+    "monthly_generation_jobs": 100,
+    "max_parallel_jobs": 2,
+    "max_video_seconds": 60,
+    "max_resolution": "1080p"
   }'::jsonb,
   '["image","video","audio","ai"]'::jsonb,
   '11111111-1111-4111-8111-111111111111'
@@ -4022,12 +4028,12 @@ begin
   if not v_created.created or v_created.replayed then
     raise exception 'First plan-based generation admission was not a new job';
   end if;
-  if jsonb_array_length(v_created.quota_reservations) <> 2 then
-    raise exception 'Image job must reserve both daily and monthly quotas';
+  if jsonb_array_length(v_created.quota_reservations) <> 5 then
+    raise exception 'Image job must reserve image, general-job, and parallel quota dimensions';
   end if;
   if (select count(*) from public.plan_quota_reservations
        where user_id = '22222222-2222-4222-8222-222222222222'
-         and request_id = v_job_id and status = 'reserved') <> 2 then
+         and request_id = v_job_id and status = 'reserved') <> 5 then
     raise exception 'Plan quota reservations were not persisted with the job';
   end if;
   if (select count(*) from public.outbox_events
@@ -4081,15 +4087,15 @@ begin
    where id = v_job_id;
   select count(*) into v_completed from public.plan_quota_reservations
    where request_id = v_job_id and status = 'completed';
-  if v_completed <> 2 then
-    raise exception 'Successful job did not consume daily and monthly plan quotas';
+  if v_completed <> 4 then
+    raise exception 'Successful job did not consume image and general daily/monthly quotas';
   end if;
   select count(*) into v_reservations from public.plan_quota_events
    where reservation_id in (
      select id from public.plan_quota_reservations where request_id = v_job_id
    ) and event_type = 'completed';
-  if v_reservations <> 2 then
-    raise exception 'Successful job did not append both quota completion events';
+  if v_reservations <> 4 then
+    raise exception 'Successful job did not append all period quota completion events';
   end if;
 
   -- AI request concurrency is a temporary hold and must be released on success.
@@ -4107,8 +4113,8 @@ begin
       '{"amount":5,"quantity":1,"price_version":"test-v1"}'::jsonb,
       5
     );
-  if jsonb_array_length(v_created.quota_reservations) <> 3 then
-    raise exception 'AI request must reserve daily, monthly and concurrency dimensions';
+  if jsonb_array_length(v_created.quota_reservations) <> 6 then
+    raise exception 'AI request must reserve AI, general-job, and parallel dimensions';
   end if;
 
   -- One concurrent AI slot is available. A second active job must fail and
@@ -4144,12 +4150,12 @@ begin
    where id = v_created.job_id;
 
   if (select count(*) from public.plan_quota_reservations
-       where request_id = v_created.job_id and status = 'completed') <> 2
+       where request_id = v_created.job_id and status = 'completed') <> 4
      or (select count(*) from public.plan_quota_reservations
        where request_id = v_created.job_id
-         and feature_key = 'max_concurrent_ai_requests'
-         and status = 'released') <> 1 then
-    raise exception 'AI success must consume period quotas and release concurrency';
+         and feature_key in ('max_concurrent_ai_requests','max_parallel_jobs')
+         and status = 'released') <> 2 then
+    raise exception 'AI success must consume period quotas and release both concurrency slots';
   end if;
 
   -- Once the slot is released, a later request can enter; failure then releases
@@ -4168,8 +4174,8 @@ begin
      set status = 'failed', completed_at = now(), updated_at = now()
    where id = v_created.job_id;
   if (select count(*) from public.plan_quota_reservations
-       where request_id = v_created.job_id and status = 'released') <> 3 then
-    raise exception 'Terminal failure must release all AI quota dimensions';
+       where request_id = v_created.job_id and status = 'released') <> 6 then
+    raise exception 'Terminal failure must release all AI and general quota dimensions';
   end if;
 end;
 $plan_quota_atomic_admission_test$;
@@ -4258,7 +4264,7 @@ begin
       'quota-test-model',
       'plan-quota-video-duration-001',
       repeat('9', 64),
-      '{"prompt":"video duration is not generation count","quantity":30}'::jsonb,
+      '{"prompt":"video duration is not generation count","quantity":30,"duration_seconds":30,"resolution":"1080p"}'::jsonb,
       '{"amount":30,"quantity":30,"price_version":"test-v1"}'::jsonb,
       30
     );
