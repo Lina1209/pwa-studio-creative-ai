@@ -3,7 +3,7 @@
 -- drop idempotent for databases that may still have that legacy function.
 drop function if exists public.read_admin_audit_events(timestamptz, integer);
 
-create function public.read_admin_audit_events(
+create or replace function public.read_admin_audit_events(
   p_before timestamptz default null,
   p_before_id uuid default null,
   p_limit integer default 100
