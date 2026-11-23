@@ -25,6 +25,10 @@ SNAPSHOT_LIMITS = {
     "approved_plans": 10000,
     "quota_reservations": 20000,
     "quota_events": 40000,
+    "payment_refunds": 10000,
+    "payment_refund_provider_events": 20000,
+    "payment_refund_events": 20000,
+    "payment_refund_reconciliations": 10000,
 }
 
 
@@ -56,6 +60,10 @@ def _validate_snapshot(raw: Any, user_id: UUID) -> dict[str, Any]:
         "approved_plans": "approved_plans",
         "quota_reservations": "quota_reservations",
         "quota_events": "quota_events",
+        "payment_refunds": "payment_refunds",
+        "payment_refund_provider_events": "payment_refund_provider_events",
+        "payment_refund_events": "payment_refund_events",
+        "payment_refund_reconciliations": "payment_refund_reconciliations",
     }
     counts, limits = raw.get("counts"), raw.get("limits")
     if not isinstance(counts, dict) or not isinstance(limits, dict):
@@ -134,6 +142,10 @@ def get_finance_integrity_audit(settings: Settings, *, user_id: UUID) -> dict[st
             approved_plans=snapshot["approved_plans"],
             quota_reservations=snapshot["quota_reservations"],
             quota_events=snapshot["quota_events"],
+            payment_refunds=snapshot["payment_refunds"],
+            payment_refund_provider_events=snapshot["payment_refund_provider_events"],
+            payment_refund_events=snapshot["payment_refund_events"],
+            payment_refund_reconciliations=snapshot["payment_refund_reconciliations"],
             complete=snapshot["complete"],
         )
         if not wallet:
