@@ -21,6 +21,16 @@ declare
 begin
   insert into auth.users(id) values (v_user) on conflict (id) do nothing;
 
+  if not has_function_privilege('service_role',
+       'public.reserve_ai_request(uuid,uuid,text,integer,integer,integer,integer,integer,integer)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.reserve_ai_request(uuid,uuid,text,integer,integer,integer,integer,integer,integer)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.reserve_ai_request(uuid,uuid,text,integer,integer,integer,integer,integer,integer)', 'EXECUTE') then
+    raise exception 'Vision AI admission RPC must remain service-role-only';
+  end if;
+  insert into public.ai_usage(endpoint) values ('vision');
+
   -- The versioned distributed admission RPC accepts Vision as a distinct operation.
   v_admission_result := public.reserve_ai_request(
     v_user, v_admission_request, 'vision', 10, 2, 16, 100, 2000, 1200
