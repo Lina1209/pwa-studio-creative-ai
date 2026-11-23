@@ -9,6 +9,8 @@ declare
   v_request_2 jsonb;
   v_consent uuid;
   v_transfer uuid;
+  v_correlation uuid := 'a31c7e5a-45a1-4bde-8b6c-8f7f95d7a904';
+  v_race_correlation uuid := 'a31c7e5a-45a1-4bde-8b6c-8f7f95d7a905';
   v_action text;
   v_failed boolean := false;
 begin
@@ -31,14 +33,21 @@ begin
   if v_action <> 'accepted' then raise exception 'latest Vision consent was not accepted'; end if;
 
   v_transfer := public.record_ai_data_transfer_event(
-    v_user,'deepseek','deepseek-flash','vision','succeeded',v_consent,null
+    v_user,'deepseek','deepseek-flash','vision','attempted',v_consent,v_correlation
+  );
+  perform public.record_ai_data_transfer_event(
+    v_user,'deepseek','deepseek-flash','vision','succeeded',v_consent,v_correlation
+  );
+  -- A request that started with valid consent may finish its audit after a concurrent withdrawal.
+  perform public.record_ai_data_transfer_event(
+    v_user,'deepseek','deepseek-flash','vision','attempted',v_consent,v_race_correlation
   );
   if v_transfer is null then raise exception 'Vision transfer audit did not return an ID'; end if;
 
   v_failed := false;
   begin
     perform public.record_ai_data_transfer_event(
-      v_other,'deepseek','deepseek-flash','vision','attempted',v_consent,null
+      v_other,'deepseek','deepseek-flash','vision','attempted',v_consent,v_correlation
     );
   exception when sqlstate '22023' then v_failed := true;
   end;
@@ -50,10 +59,13 @@ begin
   select action into v_action from public.get_privacy_consent_status(v_user)
    where consent_scope='vision_deepseek';
   if v_action <> 'withdrawn' then raise exception 'Vision withdrawal did not become current status'; end if;
+  perform public.record_ai_data_transfer_event(
+    v_user,'deepseek','deepseek-flash','vision','succeeded',v_consent,v_race_correlation
+  );
   v_failed := false;
   begin
     perform public.record_ai_data_transfer_event(
-      v_user,'deepseek','deepseek-flash','vision','attempted',v_consent,null
+      v_user,'deepseek','deepseek-flash','vision','attempted',v_consent,v_correlation
     );
   exception when sqlstate '22023' then v_failed := true;
   end;
