@@ -167,10 +167,16 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
     assert result["capabilities"]["image"]["available"] is True
     assert result["capabilities"]["video"]["available"] is False
     assert result["capabilities"]["ai"]["available"] is False
-    assert result["quotas"]["daily_image_generations"] == {
-        "limit": 10, "used": 3, "remaining": 7, "enforced": True, "configured": True
-    }
+    assert result["quotas"]["daily_image_generations"]["limit"] == 10
+    assert result["quotas"]["daily_image_generations"]["used"] == 3
+    assert result["quotas"]["daily_image_generations"]["remaining"] == 7
+    assert result["quotas"]["daily_image_generations"]["enforced"] is True
+    assert result["quotas"]["daily_image_generations"]["configured"] is True
+    assert result["quotas"]["daily_image_generations"]["reset_at"] == (day_start + timedelta(days=1)).isoformat()
     assert result["quotas"]["monthly_image_generations"]["used"] == 7
+    assert result["quotas"]["monthly_image_generations"]["reset_at"] == (
+        (month_start.replace(day=28) + timedelta(days=4)).replace(day=1).isoformat()
+    )
     assert result["quotas"]["max_concurrent_ai_requests"]["used"] == 1
     assert result["quotas"]["max_video_seconds"]["enforced"] is True
     assert result["quotas"]["max_video_seconds"]["limit"] == 60
