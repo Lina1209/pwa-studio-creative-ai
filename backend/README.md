@@ -10,6 +10,7 @@ FastAPI backend for PWA Studio — Creative AI.
 - `GET /api/admin/me` — owner-only authorization check
 - `POST /api/chat` — authenticated Studio AI Companion; text safety checks run before provider calls
 - `POST /api/prompts` — authenticated prompt generation; text safety checks run before provider calls
+- `POST /api/vision/analyze` — authenticated image analysis; disabled unless both `VISION_INPUT_ENABLED=true` and `VISION_PRIVACY_REVIEW_APPROVED=true` are explicitly configured
 
 ## Accounts and roles
 
@@ -84,3 +85,8 @@ The single-job executor and separately deployable polling loop are implemented a
 The runner does not construct or register providers, storage clients, or credentials. No real image-generation provider is registered yet. DeepSeek remains the only AI provider: its current API supports image input for vision analysis, but its model output modality is text, so it is not an image-generation API. The health endpoint reports image generation as unavailable until a real output-capable adapter is registered.
 
 Keep `GENERATION_JOBS_ENABLED`, `GENERATION_JOB_WORKER_READY`, and `GENERATION_WORKER_RUNTIME_ENABLED` false until the provider, private storage adapter, dedicated worker entrypoint, deployment controls, and spend limits have passed separate review. See [generation worker runtime](../docs/architecture/generation-worker-runtime.md).
+
+
+## Vision privacy release gate
+
+Vision is off by default. The independent `VISION_PRIVACY_REVIEW_APPROVED` setting must remain `false` until the operator has verified the DeepSeek API-specific terms, processing/storage regions, retention and deletion commitments, published the approved PWA Studio privacy notice, implemented approved consent and withdrawal handling, and completed a legal review for every launch market (including Kazakhstan cross-border transfer and local-storage requirements where applicable). Setting `VISION_INPUT_ENABLED=true` alone is rejected by configuration validation. See `docs/privacy/PRIVACY_POLICY_DRAFT.md` and `docs/privacy/VISION_CONSENT_AND_DATA_FLOW.md`; both are internal drafts/specifications, not public legal notices.
