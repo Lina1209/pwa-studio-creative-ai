@@ -2,57 +2,88 @@
 
 ## Purpose
 
-PWA Studio keeps DeepSeek as its only text/vision AI provider. DeepSeek Vision can
-interpret image inputs, but it does not synthesize image outputs. This document
-defines the safe intake boundary for a future, opt-in reference-image analysis
-feature in Studio AI Companion and Prompt Studio.
+PWA Studio uses DeepSeek as its only text and image-understanding provider.
+DeepSeek Vision interprets image inputs; it does not synthesize image outputs.
+The feature is intended for Studio AI Companion and Prompt Studio, where a
+creator can ask for analysis of a visual reference, frame or sketch.
 
-## Implemented groundwork
+## Implemented backend boundary
 
-`backend/app/services/vision_input.py` provides an in-memory validation and
-normalization function. It:
+`backend/app/services/vision_input.py` validates and normalizes images in memory:
 
-- accepts only base64 data URLs for JPEG, PNG, WebP, and still GIF;
-- rejects remote URLs, SVG, malformed base64, MIME/signature mismatches, and animation;
-- applies a 5 MiB default byte limit, 20 megapixel limit, and 8192-pixel edge limit;
-- decodes and verifies the image, then re-encodes pixels to strip EXIF/GPS and
-  ancillary metadata before a future provider handoff;
-- returns normalized MIME type, dimensions, byte length, and SHA-256 digest;
-- does not write to disk, object storage, logs, or browser-visible server secrets.
+- accepts base64 data URLs for JPEG, PNG, WebP and still GIF;
+- rejects remote URLs, SVG, malformed base64, MIME/signature mismatches and animation;
+- enforces 5 MiB, 20 megapixels and an 8,192-pixel edge limit;
+- decodes and verifies pixels, then re-encodes them to strip EXIF/GPS and ancillary metadata;
+- returns normalized MIME type, dimensions, byte length and SHA-256 digest;
+- never writes source or normalized image bytes to disk, object storage or logs.
 
-The helper is connected to the authenticated `POST /api/vision/analyze` route. The route is protected by the `VISION_INPUT_ENABLED` server setting, which defaults to `false`; it returns 503 while disabled. The frontend upload/preview and explicit consent panel are implemented and remain hidden unless health reports the capability enabled. A complete product privacy notice, provider retention disclosure and final policy/legal review are still required before enabling it.
+The authenticated `POST /api/vision/analyze` route requires the explicit
+`consent_to_deepseek: true` field. It records distributed request admission
+before image decoding, then validates the image and calls the typed
+`ask_ai_vision` service. The service accepts only a `ValidatedVisionImage`,
+uses only `deepseek-flash`, disables automatic retries, reserves the Vision
+modality in the shared global/provider USD ledger before transmission, and
+settles from provider usage. Missing usage or ambiguous provider outcomes remain
+`unknown` and retain the full reservation.
 
-## Required gates before provider integration
+The endpoint is disabled unless `VISION_INPUT_ENABLED=true`. The health endpoint
+reports `vision_analysis_enabled=true` only when the flag, DeepSeek Flash model,
+DeepSeek API key and server-side Supabase credentials are present. The frontend
+upload/preview and explicit consent panel are implemented; the panel remains
+hidden unless health reports the capability enabled.
 
-1. **Explicit user consent:** the UI must clearly state that the selected image will
-   be sent to DeepSeek for analysis. No silent upload, background analysis, or
-   inclusion of images in ordinary chat requests.
-2. **Authentication and admission:** implemented at the backend boundary. The route requires a verified account and uses the existing PostgreSQL admission controls under the distinct `vision` operation, with the same per-user limits, global concurrency, and daily/monthly ceilings as text requests.
-3. **Multimodal cost reservation:** implemented as a conservative server-side estimate using a 1,024-image-token bound, DeepSeek Flash peak cache-miss rates, maximum output tokens, and a 25% margin. The Vision reservation is atomically recorded in the same global/provider USD ledger as text. Settlement uses provider-reported usage; missing usage or ambiguous provider outcomes remain `unknown` and retain the full reserve.
-4. **Provider payload contract:** use only the configured DeepSeek model and
-   server-side API key. Build the multimodal `messages[].content` structure from
-   validated normalized data URLs. Do not accept user-supplied remote URLs, model
-   names, provider names, or arbitrary provider parameters.
-5. **Request limits:** keep image count low (initially one image per request),
-   enforce aggregate payload limits, timeout/concurrency bounds, and output-token
-   caps. Reject animated and vector images.
-6. **Privacy:** process images in memory only for the initial release. Do not persist
-   source or normalized images, include image bytes in logs, or expose signed URLs.
-   Explain provider-side processing/retention in the consent copy and privacy notice.
-7. **Testing:** mock the provider; test payload shape, consent, auth, owner scoping,
-   image validation, cost reservation rejection, timeout ambiguity, and no provider
-   call when any gate fails.
+## Consent and privacy
+
+Before the feature may be enabled in a public deployment, PWA Studio must publish
+a complete privacy notice that identifies DeepSeek as the external recipient and
+explains provider-side processing and retention under the provider's applicable
+terms and privacy policy. The current consent panel already states that the image
+and prompt are sent to DeepSeek, that PWA Studio does not persist the source image,
+and that users must not submit confidential materials and must have rights to use
+the image. That short notice is not a substitute for the complete privacy notice
+or final legal/policy review.
+
+The browser holds the selected image in memory, previews it through a temporary
+object URL, and posts the normalized data URL directly to the authenticated
+backend only after the user checks the consent box and presses Analyze. The
+frontend does not place image bytes in localStorage, IndexedDB, chat history or
+the media library. The backend does not persist them or include them in logs.
+
+## Admission and cost controls
+
+- Vision is a distinct distributed AI admission operation with the same per-user,
+  per-minute, daily, monthly and global concurrency ceilings as text requests.
+- The image is bounded to one per request and a maximum of 1,024 image tokens.
+- Reservation uses the peak DeepSeek Flash cache-miss input/output rates, maximum
+  output tokens and a 25% safety margin.
+- Text and Vision share the same global daily budget, provider daily budget and
+  outstanding exposure ceiling. No separate Vision budget can bypass text limits.
+- A reservation is created before the provider call. Unknown outcomes are never
+  assumed to cost zero and are not automatically released.
+- The browser cannot choose the provider, model, token count, price or request
+  modality. The service derives all of these on the server.
+
+## Remaining launch gates
+
+1. Publish and legally review the complete product privacy notice and provider
+   retention disclosure.
+2. Reconfirm DeepSeek Vision support, pricing and token accounting immediately
+   before any deployment or enablement.
+3. Run the full Python and PostgreSQL CI suite on the final integration head.
+4. Obtain explicit approval before changing the production feature flag or
+   deploying the feature.
 
 ## Not enabled
 
-- The Vision endpoint exists but is disabled by default; no frontend upload/consent control is exposed.
-- No image is sent to DeepSeek while `VISION_INPUT_ENABLED=false`; do not enable it until frontend consent UX, privacy copy, provider retention disclosures, and final policy review are complete.
-- No provider API call, subscription, billing, or deployment is activated.
-- No image-generation provider is selected; DeepSeek remains text/vision input
+- `VISION_INPUT_ENABLED` defaults to `false`.
+- No image is sent to DeepSeek while the flag is false.
+- No production migration, deployment, billing change or paid provider call is
+  authorized by this implementation.
+- No image-generation provider is selected; DeepSeek remains text/Vision input
   only, not image output.
 
 ## Provider documentation
 
 - DeepSeek Vision guide: https://api-docs.deepseek.com/guides/vision/
 - DeepSeek model catalogue: https://api-docs.deepseek.com/api/list-models/
-\n## Current backend boundary\n\nThe typed service accepts only a `ValidatedVisionImage`, reserves the Vision modality before the provider call, uses only `deepseek-flash`, disables automatic retries, and records usage under the `vision` endpoint. The route records distributed request admission before decoding image bytes, limiting CPU work from repeated invalid uploads. It requires `consent_to_deepseek: true`, but that field alone is not a substitute for a reviewed user-facing consent flow. The feature flag remains off by default.\n
