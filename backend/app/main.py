@@ -1710,7 +1710,7 @@ def support_reply_my_ticket(ticket_id: UUID, payload: SupportMessageCreate, user
     except SupportUnavailable: _support_error()
 
 @app.get(f"{settings.api_prefix}/admin/support/tickets")
-def admin_support_list_tickets(user: StudioUser = Depends(require_admin)):
+def admin_support_list_tickets(user: StudioUser = Depends(require_permission("admin.support.read"))):
     try:
         rows=list_tickets(settings,limit=100)
         _audit_admin_read(user,resource_type="support_ticket",reason="Admin opened support inbox")
@@ -1718,7 +1718,7 @@ def admin_support_list_tickets(user: StudioUser = Depends(require_admin)):
     except SupportUnavailable: _support_error()
 
 @app.get(f"{settings.api_prefix}/admin/support/tickets/{{ticket_id}}")
-def admin_support_read_ticket(ticket_id: UUID, user: StudioUser = Depends(require_admin)):
+def admin_support_read_ticket(ticket_id: UUID, user: StudioUser = Depends(require_permission("admin.support.read"))):
     try:
         ticket=get_ticket(settings,ticket_id)
         if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
@@ -1728,26 +1728,36 @@ def admin_support_read_ticket(ticket_id: UUID, user: StudioUser = Depends(requir
     except SupportUnavailable: _support_error()
 
 @app.post(f"{settings.api_prefix}/admin/support/tickets/{{ticket_id}}/messages", status_code=201)
-def admin_support_reply(ticket_id: UUID, payload: SupportMessageCreate, user: StudioUser = Depends(require_admin)):
+def admin_support_reply(ticket_id: UUID, payload: SupportMessageCreate, user: StudioUser = Depends(require_permission("admin.support.reply"))):
     body=payload.message.strip()
     if not body: raise HTTPException(status_code=422,detail="Сообщение не может быть пустым.")
     try:
         ticket=get_ticket(settings,ticket_id)
         if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
+        # Persist intent before the irreversible support-message write.
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="requested",resource_type="support_ticket",resource_id=ticket_id,reason="Admin reply requested")
         add_message(settings,ticket_id,UUID(user.user_id),"admin",body)
-        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason="Admin replied to support ticket")
+        try:
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.reply",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason="Admin reply persisted")
+        except (AdminAuditUnavailable, ValueError):
+            logger.error("Support reply persisted but completion audit could not be written.")
         return {"status":"sent"}
     except SupportUnavailable: _support_error()
 
 @app.patch(f"{settings.api_prefix}/admin/support/tickets/{{ticket_id}}/status")
-def admin_support_update_status(ticket_id: UUID, payload: SupportStatusUpdate, user: StudioUser = Depends(require_admin)):
+def admin_support_update_status(ticket_id: UUID, payload: SupportStatusUpdate, user: StudioUser = Depends(require_permission("admin.support.status.manage"))):
     try:
         ticket=get_ticket(settings,ticket_id)
         if ticket is None: raise HTTPException(status_code=404,detail="Обращение не найдено.")
         # Status transitions are explicit; closed/resolved tickets may be reopened by an administrator.
         from app.services.support_inbox import update_ticket_status
+        # Persist intent before changing the ticket state.
+        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.status.changed",outcome="requested",resource_type="support_ticket",resource_id=ticket_id,reason=f"Admin requested ticket status {payload.status}")
         update_ticket_status(settings,ticket_id,payload.status)
-        record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.status.changed",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason=f"Admin changed ticket status to {payload.status}")
+        try:
+            record_admin_audit_event(settings,actor_user_id=UUID(user.user_id),action="admin.support.status.changed",outcome="executed",resource_type="support_ticket",resource_id=ticket_id,reason=f"Admin changed ticket status to {payload.status}")
+        except (AdminAuditUnavailable, ValueError):
+            logger.error("Support status changed but completion audit could not be written.")
         return {"status":payload.status}
     except SupportUnavailable: _support_error()
     except HTTPException: raise
