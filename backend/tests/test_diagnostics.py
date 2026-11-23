@@ -39,18 +39,21 @@ def test_diagnostics_report_table_availability_without_reading_rows(monkeypatch)
 
 
 def test_diagnostics_classify_missing_and_inaccessible_tables(monkeypatch):
-    statuses = iter([200, 404, 403, 503, 200, 200, 200])
+    statuses = iter([200, 404, 403, "network_error", 200, 200, 200])
 
     monkeypatch.setattr(
         diagnostics_service.httpx,
         "get",
         lambda *args, **kwargs: Mock(status_code=200),
     )
-    monkeypatch.setattr(
-        diagnostics_service.httpx,
-        "request",
-        lambda *args, **kwargs: Mock(status_code=next(statuses)),
-    )
+
+    def fake_request(*args, **kwargs):
+        status = next(statuses)
+        if status == "network_error":
+            raise httpx.ConnectError("simulated network failure")
+        return Mock(status_code=status)
+
+    monkeypatch.setattr(diagnostics_service.httpx, "request", fake_request)
 
     result = diagnostics_service.inspect_supabase(_settings())
 
