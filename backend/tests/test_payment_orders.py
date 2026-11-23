@@ -130,3 +130,58 @@ def test_snapshot_purchase_rejects_non_uuid_product_version_before_rpc(monkeypat
             credit_pack_version_id="not-a-uuid",
         )
     assert called == []
+
+
+def test_claim_payment_fulfillment_parses_database_lease(monkeypatch):
+    fulfillment = UUID("77777777-7777-4777-8777-777777777777")
+    lease = UUID("88888888-8888-4888-8888-888888888888")
+    calls = []
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or [{
+        "fulfillment_id": str(fulfillment), "payment_order_id": str(ORDER),
+        "user_id": str(USER), "provider_code": "examplepay",
+        "amount_minor": 99000, "currency_code": "KZT", "attempt_count": 1,
+        "lease_token": str(lease), "lease_expires_at": "2026-11-23T10:00:00+00:00",
+    }])
+    result = service.claim_payment_fulfillment(SETTINGS, lease_seconds=180, batch_size=5)
+    assert result[0]["fulfillment_id"] == fulfillment
+    assert result[0]["lease_token"] == lease
+    assert calls[0][0] == "claim_payment_fulfillment"
+    assert calls[0][1] == {"p_lease_seconds": 180, "p_batch_size": 5}
+
+
+@pytest.mark.parametrize("batch", [0, 21, True, 1.5])
+def test_claim_payment_fulfillment_rejects_unbounded_batch(monkeypatch, batch):
+    called = []
+    monkeypatch.setattr(service, "_rpc", lambda *a, **k: called.append(True))
+    with pytest.raises(ValueError):
+        service.claim_payment_fulfillment(SETTINGS, batch_size=batch)
+    assert called == []
+
+
+def test_fulfill_payment_order_uses_fencing_token_and_returns_entitlement(monkeypatch):
+    fulfillment = UUID("77777777-7777-4777-8777-777777777777")
+    lease = UUID("88888888-8888-4888-8888-888888888888")
+    calls = []
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or [{
+        "fulfillment_status": "completed", "purchase_type": "credit_pack",
+        "entitlement_reference": "credit-lot-123", "replayed": False,
+    }])
+    result = service.fulfill_payment_order(SETTINGS, fulfillment_id=fulfillment, lease_token=lease)
+    assert result["fulfillment_status"] == "completed"
+    assert result["purchase_type"] == "credit_pack"
+    assert calls[0][0] == "fulfill_payment_order"
+    assert calls[0][1]["p_lease_token"] == str(lease)
+
+
+def test_fail_payment_fulfillment_uses_fenced_retry_rpc(monkeypatch):
+    fulfillment = UUID("77777777-7777-4777-8777-777777777777")
+    lease = UUID("88888888-8888-4888-8888-888888888888")
+    calls = []
+    monkeypatch.setattr(service, "_rpc", lambda settings, name, payload: calls.append((name, payload)) or "queued")
+    result = service.fail_payment_fulfillment(
+        SETTINGS, fulfillment_id=fulfillment, lease_token=lease,
+        error_code="temporary_storage_error", retry_after_seconds=90,
+    )
+    assert result == "queued"
+    assert calls[0][0] == "fail_payment_fulfillment"
+    assert calls[0][1]["p_max_attempts"] == 5
