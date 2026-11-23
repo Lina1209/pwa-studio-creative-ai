@@ -190,3 +190,11 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
 .direct-message-form .primary-button{flex:0 0 auto}
 @media(max-width:760px){.message-new-form{grid-template-columns:1fr}.messages-layout{grid-template-columns:1fr}.conversation-list{max-height:190px}.direct-message-list{min-height:190px;max-height:48vh}}
 body.light .message-new-form input,body.light .direct-message-form input{background:#f8f6fd;color:#28223c}
+
+.conversation-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.conversation-title-row .conversation-title{flex:1}
+.conversation-title-row .secondary-button{white-space:nowrap;padding:8px 10px;font-size:9px}
+.direct-message-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:7px}
+.message-action{border:1px solid var(--line);background:rgba(15,14,30,.35);color:#c8b9f4;border-radius:6px;padding:4px 7px;font-size:8px}
+.message-action.is-danger{color:#f1a5b4}
+.message-action:hover{border-color:#a88cff}
