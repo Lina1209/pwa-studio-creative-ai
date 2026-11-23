@@ -71,3 +71,29 @@ These tests are committed on an isolated review branch. They have **not** been e
 - Every allocation references an existing hold and lot belonging to the same user.
 - Each lot's held allocation total equals its reserved amount.
 - Duplicate allocations and duplicate hold/lot pairs are critical findings.
+
+## Payment, subscription, and plan-quota reconciliation (migration 0100)
+
+The expanded snapshot includes these per-user sources in the same SQL statement:
+- payment orders, verified provider inbox events, and append-only order transition events;
+- immutable purchase-item snapshots and payment fulfillment outbox rows;
+- credit-lot source references needed to verify payment-backed credit grants;
+- plan assignments, immutable assignment lifecycle events, and the approved plan versions referenced by those assignments;
+- plan quota reservations and append-only quota lifecycle events.
+
+The audit cross-checks:
+- payment identity/idempotency, amount and currency against the immutable purchase snapshot;
+- successful settlement against a processed, signature-verified provider success event and exactly one fulfillment outbox row;
+- outbox identity against the order and completed fulfillment against the resulting credit lot or plan assignment;
+- assignment ownership, plan-version identity, payment source reference, and creation event;
+- quota reservation ownership against the plan assignment and generation job, plus event-key idempotency, terminal outcome, plan limit, and usage totals.
+
+### Refund limitation — explicit, not hidden
+
+The current schema has refunded and partially_refunded payment-order statuses, but it does not yet provide a first-class immutable refund record with refund ID, amount, currency, provider settlement reference, and event lifecycle. The current normalized provider webhook RPC accepts payment pending/succeeded/failed/cancelled events, not refund events. Therefore the audit deliberately emits refund_amounts_not_auditable and refund_lifecycle_not_implemented warnings for refunded/partially-refunded orders. It does not claim to verify refunded amounts or net settlement, and it does not attempt to infer refund values from status changes.
+
+A separate reviewed refund foundation is still required before enabling refunds: immutable refund intents/events, provider signature verification, partial/full refund amount constraints, idempotent provider refund references, append-only compensating credit entries or entitlement suspension rules, and atomic reconciliation across payment, wallet, lot, and plan-assignment state. No automatic clawback or entitlement revocation is performed by this audit.
+
+### Limits and operational boundaries
+
+The expanded source caps are included in the RPC response and any over-cap source makes the snapshot incomplete. The snapshot is one user's point-in-time view, not a platform-wide reconciliation. The RPC is service-role-only and read-only. The new migration and endpoint are not deployed to a live Supabase project; production data was not accessed. The audit reports discrepancies only and never modifies payment, credit, plan, or quota state.
