@@ -348,11 +348,12 @@ def audit_finance_integrity(
         if job.get("expects_provider_cost") is True and event_counts[job_id] == 0:
             findings.append(_finding("expected_provider_cost_missing", "warning", job_id=job_id))
 
+    if not complete:
+        findings.append(_finding("source_snapshot_incomplete", "warning"))
     if any(item["severity"] == "critical" for item in findings):
         status = "critical"
     elif not complete:
         status = "incomplete"
-        findings.append(_finding("source_snapshot_incomplete", "warning"))
     elif findings:
         status = "warning"
     else:
