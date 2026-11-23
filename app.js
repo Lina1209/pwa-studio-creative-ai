@@ -1975,8 +1975,8 @@ const movieHistoryStyle = document.createElement("style");
       if(!isCurrentSync())return;
       // Never replace the device library with an incomplete cloud snapshot.
       // Malformed rows may represent valid local work that must remain recoverable.
-      if(invalidRows||unmigratedLocalAssets){
-        $("#promptSaveFeedback").textContent="Синхронизация частичная: повреждённых облачных записей — "+invalidRows+", локальных материалов, которые не удалось безопасно перенести, — "+unmigratedLocalAssets+". Локальная библиотека сохранена без перезаписи; недоступных изображений — "+missingImages+".";
+      if(invalidRows||unmigratedLocalAssets||missingImages){
+        $("#promptSaveFeedback").textContent="Синхронизация частичная: повреждённых облачных записей — "+invalidRows+", локальных материалов, которые не удалось безопасно перенести, — "+unmigratedLocalAssets+", недоступных изображений — "+missingImages+". Локальная библиотека сохранена без перезаписи. Повторите синхронизацию при стабильном соединении.";
         return;
       }
       localStorage.setItem(visualLibraryKey(),JSON.stringify(activeItems));
