@@ -224,3 +224,8 @@ The finance request queue is exposed through `GET /api/finance/requests`. It is 
 Request scopes are bound to the target UUID as `user:<uuid>` in the service, RPC validation, and database constraint. A mismatch is rejected before storage. The queue returns request metadata and decision metadata only; it does not read credit ledger rows, payment-provider records, or execute approved operations. Approval means reviewed/approved, not paid or credited.
 
 The current workspace can submit proposals, inspect the bounded queue, and allow the original requester to cancel a pending proposal or an independent approver to approve/reject it. The decision reason is retained. The append-only event timeline is available through `GET /api/finance/requests/{request_id}/events` and is loaded on demand in the workspace. Execution workflow, payment-provider integration, and credit ledger mutation remain separate future stages and are not enabled.
+
+
+### Runtime validity verification
+
+The backend independently validates the validity window returned by the server-only active-role RPC. An assignment is accepted only when `valid_from <= current time < valid_until`, both timestamps are timezone-aware, and the expiry is strictly later than the start. This is defense in depth against malformed or inconsistent authorization snapshots; the database RPC remains responsible for filtering active, non-revoked rows.
