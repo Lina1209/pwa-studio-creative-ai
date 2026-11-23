@@ -7,6 +7,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class VisualContinuityReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["character", "scene"]
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=3000)
+
+
 class ChatProjectContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -18,12 +26,15 @@ class ChatProjectContext(BaseModel):
     story: str = Field(default="", max_length=6000)
     storyboard: str = Field(default="", max_length=6000)
     characters: str = Field(default="", max_length=3000)
+    visual_continuity: list[VisualContinuityReference] = Field(default_factory=list, max_length=12)
     voices: str = Field(default="", max_length=2000)
     edit: str = Field(default="", max_length=2000)
 
     @model_validator(mode="after")
     def limit_total_context(self):
-        total = sum(len(value) for value in self.model_dump().values() if isinstance(value, str))
+        data = self.model_dump()
+        total = sum(len(value) for value in data.values() if isinstance(value, str))
+        total += sum(len(ref.name) + len(ref.description) for ref in self.visual_continuity)
         if total > 18000:
             raise ValueError("Project context is too large.")
         return self
