@@ -558,7 +558,7 @@ comment on function public.create_subscription_payment_order(uuid,text,text,uuid
     p_actor_user_id,
     'admin.tariff.change.approved',
     'approved',
-    'credit_pack',
+    'tariff',
     v_id,
     null,
     p_approval_reason
