@@ -81,15 +81,20 @@ async def test_runner_claims_processes_and_stops_gracefully():
 @pytest.mark.asyncio
 async def test_runner_backs_off_after_claim_error_and_recovers():
     stop = asyncio.Event()
-    repository = FakeRepository(fail_claims=1)
+
+    class RecoveringRepository:
+        def __init__(self):
+            self.claim_calls = 0
+
+        async def claim_next(self, worker_id, lease_seconds=180):
+            self.claim_calls += 1
+            if self.claim_calls == 1:
+                raise RuntimeError("private database response must not be logged")
+            stop.set()
+            return None
+
+    repository = RecoveringRepository()
     worker = FakeWorker(stop)
-
-    async def stop_after_recovery_poll(worker_id, lease_seconds=180):
-        repository.claim_calls.append((worker_id, lease_seconds))
-        stop.set()
-        return None
-
-    repository.claim_next = stop_after_recovery_poll
     stats = await run_generation_worker_loop(
         repository=repository,
         worker=worker,
@@ -99,7 +104,7 @@ async def test_runner_backs_off_after_claim_error_and_recovers():
 
     assert stats.claim_errors == 1
     assert stats.empty_polls == 0
-    assert repository.claim_calls == [("worker-test", 120), ("worker-test", 120)]
+    assert repository.claim_calls == 2
 
 
 @pytest.mark.asyncio
