@@ -3591,6 +3591,143 @@ const movieHistoryStyle = document.createElement("style");
   $("#testBackend").addEventListener("click", checkBackend);
   setTimeout(checkBackend, 1200);
 
+  // Privacy controls are authenticated and account-scoped. Requests are intake only;
+  // the UI never claims that an export or deletion has already been executed.
+  const privacyCenterStatus = $("#privacyCenterStatus");
+  const privacyConsentList = $("#privacyConsentList");
+  const privacyRequestList = $("#privacyRequestList");
+  const privacyRequestLabels = {
+    access: "Доступ к данным",
+    export: "Экспорт данных",
+    correction: "Исправление данных",
+    deletion: "Удаление аккаунта и данных"
+  };
+  const privacyRequestStatusLabels = {
+    submitted: "Отправлен · ожидает проверки",
+    in_review: "На рассмотрении",
+    completed: "Завершён",
+    rejected: "Отклонён",
+    cancelled: "Отменён"
+  };
+  const loadPrivacyCenter = async () => {
+    if (!privacyCenterStatus) return;
+    if (!authSession?.user) {
+      privacyCenterStatus.textContent = "Войдите в аккаунт, чтобы управлять запросами и согласиями.";
+      if (privacyConsentList) privacyConsentList.replaceChildren();
+      if (privacyRequestList) privacyRequestList.replaceChildren();
+      return;
+    }
+    const requestUserId = authSession.user.id;
+    privacyCenterStatus.textContent = "Загружаем сведения о согласиях и запросах…";
+    try {
+      const [consents, requests] = await Promise.all([
+        apiRequest("/api/privacy/consent"),
+        apiRequest("/api/privacy/requests")
+      ]);
+      if (authSession?.user?.id !== requestUserId) return;
+      if (privacyConsentList) {
+        privacyConsentList.replaceChildren();
+        const title = document.createElement("b");
+        title.textContent = "Текущие согласия";
+        privacyConsentList.append(title);
+        if (!consents.length) {
+          const empty = document.createElement("p");
+          empty.textContent = "Сохранённых решений о согласии пока нет.";
+          privacyConsentList.append(empty);
+        }
+        consents.forEach(item => {
+          const row = document.createElement("p");
+          const scope = item.consent_scope === "vision_deepseek" ? "Анализ изображений DeepSeek" : "Политика конфиденциальности";
+          row.textContent = scope + ": " + (item.action === "accepted" ? "согласие действует" : "согласие отозвано") +
+            " · версия " + item.consent_version + " · " + new Date(item.occurred_at).toLocaleString();
+          privacyConsentList.append(row);
+        });
+      }
+      if (privacyRequestList) {
+        privacyRequestList.replaceChildren();
+        const title = document.createElement("b");
+        title.textContent = "Ваши запросы";
+        privacyRequestList.append(title);
+        if (!requests.length) {
+          const empty = document.createElement("p");
+          empty.textContent = "Запросов пока нет.";
+          privacyRequestList.append(empty);
+        }
+        requests.forEach(item => {
+          const row = document.createElement("p");
+          row.textContent = (privacyRequestLabels[item.request_type] || item.request_type) +
+            " · " + (privacyRequestStatusLabels[item.status] || item.status) +
+            " · " + new Date(item.created_at).toLocaleString();
+          privacyRequestList.append(row);
+        });
+      }
+      privacyCenterStatus.textContent = "Сведения обновлены. Статус «Отправлен» означает регистрацию обращения, а не автоматическое удаление или экспорт.";
+    } catch (error) {
+      if (authSession?.user?.id === requestUserId) privacyCenterStatus.textContent = "Не удалось загрузить сведения: " + error.message;
+    }
+  };
+  const submitPrivacyRequest = async requestType => {
+    if (!authSession?.user) {
+      setAuthMode("login");
+      setAuthMessage("Войдите в аккаунт, чтобы отправить запрос о персональных данных.");
+      return;
+    }
+    const requestUserId = authSession.user.id;
+    if (requestType === "deletion" && !window.confirm(
+      "Отправить запрос на удаление аккаунта и связанных данных? Сейчас это только зарегистрирует обращение для проверки; аккаунт не будет удалён автоматически."
+    )) return;
+    if (privacyCenterStatus) privacyCenterStatus.textContent = "Отправляем запрос…";
+    try {
+      const result = await apiRequest("/api/privacy/requests", {
+        method: "POST",
+        body: JSON.stringify({ request_type: requestType, idempotency_key: crypto.randomUUID() })
+      });
+      if (authSession?.user?.id !== requestUserId) return;
+      if (privacyCenterStatus) privacyCenterStatus.textContent =
+        "Запрос зарегистрирован: " + (privacyRequestLabels[result.request_type] || result.request_type) +
+        ". Это обращение для обработки, а не подтверждение выполнения операции.";
+      await loadPrivacyCenter();
+    } catch (error) {
+      if (authSession?.user?.id === requestUserId && privacyCenterStatus) {
+        privacyCenterStatus.textContent = "Не удалось отправить запрос: " + error.message;
+      }
+    }
+  };
+  $("#privacyRefresh")?.addEventListener("click", loadPrivacyCenter);
+  $("#privacyRequestAccess")?.addEventListener("click", () => submitPrivacyRequest("access"));
+  $("#privacyRequestExport")?.addEventListener("click", () => submitPrivacyRequest("export"));
+  $("#privacyRequestDeletion")?.addEventListener("click", () => submitPrivacyRequest("deletion"));
+  $("#privacyWithdrawVision")?.addEventListener("click", async () => {
+    if (!authSession?.user) {
+      setAuthMode("login");
+      setAuthMessage("Войдите в аккаунт, чтобы отозвать согласие.");
+      return;
+    }
+    const requestUserId = authSession.user.id;
+    if (!window.confirm("Отозвать согласие на будущие запросы анализа изображений через DeepSeek?")) return;
+    try {
+      await apiRequest("/api/privacy/consent", {
+        method: "POST",
+        body: JSON.stringify({
+          consent_scope: "vision_deepseek",
+          action: "withdrawn",
+          source: "account_settings"
+        })
+      });
+      if (authSession?.user?.id !== requestUserId) return;
+      if (privacyCenterStatus) privacyCenterStatus.textContent = "Согласие отозвано. Новые Vision-запросы будут заблокированы.";
+      await loadPrivacyCenter();
+    } catch (error) {
+      if (authSession?.user?.id === requestUserId && privacyCenterStatus) {
+        privacyCenterStatus.textContent = "Не удалось отозвать согласие: " + error.message;
+      }
+    }
+  });
+  document.querySelectorAll('.nav-item[data-view="settings"]').forEach(button =>
+    button.addEventListener("click", () => setTimeout(loadPrivacyCenter, 0))
+  );
+  if (location.hash === "#settings") setTimeout(loadPrivacyCenter, 0);
+
   // A single account-scoped generation job is persisted locally so a page
   // refresh never loses the ability to inspect or request cancellation.
   const generationJobStorageKey = () => "pwaStudio.activeGenerationJob." + (authSession?.user?.id || "guest");
