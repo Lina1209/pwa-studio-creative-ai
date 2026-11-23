@@ -4452,9 +4452,12 @@ insert into public.user_plan_assignment_events(
 do $plan_replacement_inflight_job_test$
 declare
   v_job record;
+  v_completed record;
+  v_completion_replay record;
   v_old_assignment_completed integer;
   v_old_assignment_released integer;
   v_new_assignment_reservations integer;
+  v_capture_count integer;
 begin
   select * into v_job
     from public.create_plan_credited_generation_job_with_outbox(
@@ -4511,9 +4514,44 @@ begin
      'activated','11111111-1111-4111-8111-111111111111',
      'activated:quota-replacement-successor-001','Activate successor assignment fixture');
 
+  -- Complete through the real credited-job RPC, not a direct status update.
+  -- This exercises credit capture and quota settlement in the same transaction.
   update public.generation_jobs
-     set status = 'succeeded', completed_at = now(), updated_at = now()
+     set status = 'running',
+         lease_owner = 'plan-replacement-worker',
+         lease_expires_at = now() + interval '2 minutes',
+         heartbeat_at = now(),
+         updated_at = now()
    where id = v_job.job_id;
+
+  select * into v_completed
+    from public.complete_credited_generation_job(
+      v_job.job_id,
+      'plan-replacement-worker',
+      '22222222-2222-4222-8222-222222222222/generated/plan-replacement-result.png',
+      repeat('9', 64)
+    );
+  if not v_completed.completed or v_completed.replayed then
+    raise exception 'Credited job did not complete after plan replacement';
+  end if;
+
+  select * into v_completion_replay
+    from public.complete_credited_generation_job(
+      v_job.job_id,
+      'plan-replacement-worker',
+      '22222222-2222-4222-8222-222222222222/generated/plan-replacement-result.png',
+      repeat('9', 64)
+    );
+  if not v_completion_replay.completed or not v_completion_replay.replayed then
+    raise exception 'Completion replay after plan replacement was not idempotent';
+  end if;
+
+  select count(*) into v_capture_count
+    from public.credit_ledger
+   where hold_id = v_job.hold_id and operation_type = 'capture';
+  if v_capture_count <> 1 then
+    raise exception 'Plan replacement caused missing or duplicate credit capture';
+  end if;
 
   select count(*) into v_old_assignment_completed
     from public.plan_quota_reservations
@@ -4535,8 +4573,9 @@ begin
 
   if v_old_assignment_completed <> 4
      or v_old_assignment_released <> 1
-     or v_new_assignment_reservations <> 0 then
-    raise exception 'Plan replacement changed or detached the original job quota reservations';
+     or v_new_assignment_reservations <> 0
+     or v_capture_count <> 1 then
+    raise exception 'Plan replacement changed original quota reservations or credit settlement';
   end if;
 end;
 $plan_replacement_inflight_job_test$;
