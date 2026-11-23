@@ -499,6 +499,8 @@ def audit_finance_integrity(
             if key in provider_event_keys:
                 findings.append(_finding("duplicate_payment_provider_event", "critical", payment_order_id=oid))
             provider_event_keys.add(key)
+            if event.get("event_type") not in {"payment.pending", "payment.succeeded", "payment.failed", "payment.cancelled"}:
+                findings.append(_finding("invalid_payment_provider_event_type", "critical", payment_order_id=oid))
             if event.get("signature_verified") is not True or not isinstance(event.get("payload_sha256"), str) or not re.fullmatch(r"[a-f0-9]{64}", event["payload_sha256"]):
                 findings.append(_finding("unverified_payment_provider_event", "critical", payment_order_id=oid))
             if event.get("processing_status") != "processed" or not event.get("processed_at"):
@@ -534,6 +536,7 @@ def audit_finance_integrity(
                 if (order is None or order.get("status") not in {"succeeded", "partially_refunded", "refunded"}
                     or item is None or item.get("item_type") != "subscription"
                     or item.get("approved_plan_version_id") != assignment.get("approved_plan_version_id")
+                    or assignment.get("idempotency_key") != ref
                     or assignment.get("user_id") != (order or {}).get("user_id")):
                     findings.append(_finding("payment_plan_assignment_mismatch", "critical", payment_order_id=oid))
                 if assignment.get("assignment_source") != "verified_payment":
