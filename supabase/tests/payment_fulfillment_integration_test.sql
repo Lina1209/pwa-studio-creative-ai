@@ -5,7 +5,9 @@
 \ir ../migrations/0078_atomic_payment_fulfillment.sql
 
 insert into auth.users(id)
-values ('33333333-3333-4333-8333-333333333333')
+values
+  ('33333333-3333-4333-8333-333333333333'),
+  ('88888888-8888-4888-8888-888888888888')
 on conflict (id) do nothing;
 
 insert into public.approved_credit_pack_versions(
@@ -54,7 +56,7 @@ declare
   v_status text;
 begin
   select * into v_order from public.create_credit_pack_payment_order(
-    '11111111-1111-4111-8111-111111111111',
+    '88888888-8888-4888-8888-888888888888',
     'examplepay',
     'purchase-credit-pack-001',
     'aaaaaaaa-1111-4111-8111-111111111111',
@@ -94,13 +96,13 @@ begin
   end if;
 
   select count(*) into v_lots from public.credit_lots
-   where user_id = '11111111-1111-4111-8111-111111111111'
+   where user_id = '88888888-8888-4888-8888-888888888888'
      and idempotency_key = 'payment-order:' || v_order.payment_order_id::text;
   select count(*) into v_grants from public.credit_ledger
-   where user_id = '11111111-1111-4111-8111-111111111111'
+   where user_id = '88888888-8888-4888-8888-888888888888'
      and operation_key = 'grant:payment-order:' || v_order.payment_order_id::text;
   select available_credits into v_balance from public.credit_wallets
-   where user_id = '11111111-1111-4111-8111-111111111111';
+   where user_id = '88888888-8888-4888-8888-888888888888';
   select status into v_status from public.payment_fulfillment_outbox
    where id = v_claim.fulfillment_id;
 
