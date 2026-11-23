@@ -5,6 +5,8 @@ raw request bytes before returning normalized event facts. No generic verifier
 is supplied because signature schemes and canonicalization are provider-specific.
 """
 from dataclasses import dataclass
+import os
+import re
 from typing import Mapping, Protocol
 from uuid import UUID
 
@@ -19,6 +21,25 @@ class VerifiedProviderEvent:
     provider_payment_id: str
 
 
+class PaymentProviderSecretStore:
+    """Read provider secrets from server environment/secret-manager injection.
+
+    Secret values are never serialized, returned in errors, or persisted by this
+    helper. Rotate a value in the hosting secret manager and restart/redeploy
+    the service; adapters should resolve secrets at initialization.
+    """
+
+    _NAME = re.compile(r"^PAYMENT_PROVIDER_[A-Z0-9_]{2,100}_SECRET$")
+
+    def get_required_secret(self, variable_name: str) -> str:
+        if not isinstance(variable_name, str) or not self._NAME.fullmatch(variable_name):
+            raise ValueError("Payment provider secret reference is invalid.")
+        value = os.environ.get(variable_name)
+        if not isinstance(value, str) or not value or value.strip() != value:
+            raise PaymentProviderNotConfigured("Required payment provider secret is unavailable.")
+        return value
+
+
 class PaymentProviderWebhookAdapter(Protocol):
     """Trusted, provider-specific adapter configured only on the server."""
 
@@ -26,7 +47,7 @@ class PaymentProviderWebhookAdapter(Protocol):
     def provider_code(self) -> str:
         """Stable lowercase provider/account namespace used by payment orders."""
 
-    def validate_configuration(self, settings: object) -> None:
+    def validate_configuration(self, settings: object, secrets: PaymentProviderSecretStore) -> None:
         """Validate required provider-specific server settings; never log secrets."""
 
     def verify_webhook(
@@ -50,7 +71,7 @@ class PaymentProviderAdapterRegistry:
     cannot be processed. Adapters are never selected from request data.
     """
 
-    def __init__(self, adapters=(), *, enabled: bool = False, settings=None):
+    def __init__(self, adapters=(), *, enabled: bool = False, settings=None, secret_store=None):
         from types import MappingProxyType
         import re
 
@@ -58,6 +79,7 @@ class PaymentProviderAdapterRegistry:
             raise ValueError("Payment provider runtime flag must be boolean.")
         if enabled and (settings is None or getattr(settings, "payment_provider_runtime_enabled", False) is not True):
             raise PaymentProviderNotConfigured("Payment provider runtime is disabled.")
+        secrets = secret_store or PaymentProviderSecretStore()
         registered = {}
         for adapter in adapters:
             code = getattr(adapter, "provider_code", None)
@@ -72,7 +94,7 @@ class PaymentProviderAdapterRegistry:
             if enabled:
                 # Provider-specific code validates required credentials, account scope,
                 # webhook secret and environment. It must fail closed and never log them.
-                validator(settings)
+                validator(settings, secrets)
             if code in registered:
                 raise ValueError("Duplicate payment provider adapter identity.")
             registered[code] = adapter
