@@ -149,8 +149,8 @@ begin
     v_pack.credit_validity_days, null
   ) on conflict on constraint payment_order_purchase_items_pkey do nothing;
 
-  select * into v_existing from public.payment_order_purchase_items
-   where payment_order_id = v_order_id;
+  select * into v_existing from public.payment_order_purchase_items as purchase
+   where purchase.payment_order_id = v_order_id;
   if not found or v_existing.user_id is distinct from p_user_id
      or v_existing.item_type <> 'credit_pack'
      or v_existing.approved_credit_pack_version_id is distinct from v_pack.id
@@ -230,8 +230,8 @@ begin
     null, v_plan.period_days
   ) on conflict on constraint payment_order_purchase_items_pkey do nothing;
 
-  select * into v_existing from public.payment_order_purchase_items
-   where payment_order_id = v_order_id;
+  select * into v_existing from public.payment_order_purchase_items as purchase
+   where purchase.payment_order_id = v_order_id;
   if not found or v_existing.user_id is distinct from p_user_id
      or v_existing.item_type <> 'subscription'
      or v_existing.approved_plan_version_id is distinct from v_plan.id
