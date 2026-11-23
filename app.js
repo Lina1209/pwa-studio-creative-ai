@@ -1605,7 +1605,7 @@ const movieHistoryStyle = document.createElement("style");
     renderPromptLibrary(); renderMovieProjects();
     feedback.textContent = wasEditing ? "✓ Изменения сохранены в фильме «" + String(project.name || "Без названия").slice(0,80) + "»." : "✓ Промпт сохранён в фильме «" + String(project.name || "Без названия").slice(0,80) + "».";
   });
-  renderPromptLibrary();
+  setTimeout(() => renderPromptLibrary(), 0);
 
   $("#copyPrompt").addEventListener("click", async () => {
     if (editingPromptRef) $("#promptLibraryFeedback").textContent = "Вы можете сначала сохранить изменения или отменить редактирование.";
@@ -2024,6 +2024,7 @@ const movieHistoryStyle = document.createElement("style");
         if (feedback) feedback.textContent = "Проект сохранён в браузере, но резервная копия IndexedDB недоступна. Скачайте JSON-копию."; 
       });
       scheduleMovieCloudSync();
+      if (typeof renderPromptLibrary === "function") renderPromptLibrary();
       return true;
     } catch (error) {
       console.error("Movie project storage failed:", error);
