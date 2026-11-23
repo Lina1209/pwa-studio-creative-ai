@@ -154,15 +154,17 @@ Done when: users can discover examples and intentionally publish selected works 
 
 ## Recommended implementation order
 
-1. Stabilize current foundation: account switching, AI context/isolation, admin authorization, Mini Movie Studio labels, version restore, cloud conflict/deletion behavior.
-2. Build private media upload and asset metadata on the already-applied Storage foundation.
-3. Verify schema/RLS and build Character Library.
-4. Implement platform rules, backend safety filters, moderation, reports, bans, appeals, and audit controls before opening community posting or unrestricted generation.
-5. Build Audio Studio upload and provider/job framework.
-6. Build image/video provider/job pipeline and then timeline/export.
-7. Implement privacy-preserving visitor analytics and Live World.
-8. Implement community chat after moderation controls are enforceable.
-9. Complete quotas, billing, rights/privacy review, and launch readiness.
+1. Stabilize current foundation: account switching, AI context/isolation, admin authorization, Mini Movie Studio version restore, cloud conflict/deletion behavior and cross-device tests.
+2. Complete private media upload and asset metadata on the already-applied Storage foundation.
+3. Verify schema/RLS and complete owner-scoped Character Library CRUD.
+4. Implement platform rules, backend safety filters, moderation, reports, bans, appeals and audit controls before public sharing or unrestricted generation.
+5. Complete the private support inbox and feedback flow; it is separate from AI Companion and community chat.
+6. Build Audio Studio upload, speech-to-text, text-to-speech, music/SFX and provider/job framework.
+7. Build image/video provider adapters, scene generation, timeline and verified export; video remains blocked until a concrete adapter passes its idempotency and pricing review.
+8. Implement privacy-preserving visitor analytics and Live World.
+9. Publish platform-owned examples and starter templates, then add an opt-in creator showcase after moderation, rights and takedown controls are enforceable.
+10. Implement community chat only after moderation controls are enforceable.
+11. Complete quotas, billing, rights/privacy review and launch readiness.
 
 ## Release and safety rules
 
