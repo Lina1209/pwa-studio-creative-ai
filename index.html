@@ -265,7 +265,22 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
         <div class="account-grid"><article class="account-tile"><span>🎬</span><b>Мои фильмы</b><p>Проекты, сценарии и версии фильмов.</p><button data-go="movie">Открыть Миникиностудию →</button></article><article class="account-tile"><span>♙</span><b>Мои персонажи</b><p>Личная библиотека цифровых героев и их образов.</p><button data-go="library">Открыть медиатеку →</button></article><article class="account-tile"><span>♫</span><b>Мои голоса и материалы</b><p>Аудио, изображения и файлы проектов.</p><button data-go="voice">Открыть раздел →</button></article></div>
         <div class="account-notice" id="accountStorageNotice">Фильмы авторизованных пользователей синхронизируются с Supabase. Гостевые черновики хранятся только в этом браузере. Файловое хранилище подключается отдельно.</div>
-        <div class="account-admin panel" id="adminPanel" hidden><div class="eyebrow">OWNER WORKSPACE</div><h2>Панель владельца</h2><p>Административные инструменты будут доступны только владельцу после серверной проверки роли. Просмотр личных проектов пользователей не является открытым по умолчанию.</p><span class="account-role">Доступ владельца подтверждён сервером</span></div>
+        <div class="account-admin panel" id="adminPanel" hidden>
+          <div class="eyebrow">OWNER WORKSPACE · MODERATION</div><h2>Панель управления</h2>
+          <p>Работа с жалобами и ограничениями доступа. Личные проекты пользователей здесь не открываются. Все действия проверяются backend и фиксируются в журнале.</p>
+          <div class="admin-toolbar"><span class="account-role">✓ Доступ владельца подтверждён сервером</span><button class="secondary-button" id="adminRefresh" type="button">↻ Обновить данные</button></div>
+          <p class="admin-feedback" id="adminFeedback" role="status" aria-live="polite">Загрузка административных данных…</p>
+          <section class="admin-section"><div class="admin-section-heading"><div><h3>Жалобы пользователей</h3><p>Проверяйте обращения и сохраняйте решение.</p></div><span class="admin-count" id="adminReportCount">—</span></div><div id="adminReportsList" class="admin-list"><div class="admin-empty">Загрузка жалоб…</div></div></section>
+          <section class="admin-section"><div class="admin-section-heading"><div><h3>Ограничения доступа</h3><p>Временные и постоянные ограничения по конкретным разделам.</p></div><span class="admin-count" id="adminSuspensionCount">—</span></div>
+            <form id="adminSuspensionForm" class="admin-form">
+              <label for="suspensionUserId">UUID пользователя</label><input id="suspensionUserId" required minlength="36" maxlength="36" autocomplete="off" placeholder="UUID из Supabase Auth">
+              <label for="suspensionReason">Причина ограничения</label><textarea id="suspensionReason" required minlength="5" maxlength="1000" rows="2" placeholder="Укажите причину и основание действия"></textarea>
+              <div class="admin-form-row"><div><label for="suspensionScope">Область действия</label><select id="suspensionScope"><option value="platform">Вся платформа</option><option value="assistant">AI Companion и Prompt Studio</option><option value="community">Сообщество</option></select></div><div><label for="suspensionExpiry">Окончание (необязательно)</label><input id="suspensionExpiry" type="datetime-local"></div></div>
+              <button class="primary-button" type="submit">Применить ограничение</button>
+            </form>
+            <div id="adminSuspensionsList" class="admin-list"><div class="admin-empty">Загрузка ограничений…</div></div>
+          </section>
+        </div>
       </section>
 
       <section class="view" id="view-rules">
