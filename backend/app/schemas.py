@@ -64,6 +64,7 @@ class PromptRequest(BaseModel):
     purpose: str = Field(default="video", max_length=80)
     language: str = Field(default="English", max_length=40)
     style: str | None = Field(default=None, max_length=300)
+    project_context: ChatProjectContext | None = None
 
 
 class PromptResponse(BaseModel):
