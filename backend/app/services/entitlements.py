@@ -69,37 +69,53 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
 
     now = datetime.now(timezone.utc)
     now_text = _utc_datetime(now)
-    active = _get(
+    assignments = _get(
         settings,
         "user_plan_assignments",
         {
-            "select": "id,user_id,approved_plan_version_id,status,starts_at,ends_at",
+            "select": "id,user_id,approved_plan_version_id,starts_at,ends_at,created_at",
             "user_id": f"eq.{user_id}",
-            "status": "eq.active",
             "starts_at": f"lte.{now_text}",
             "ends_at": f"gt.{now_text}",
             "order": "starts_at.desc,id.desc",
-            "limit": "2",
+            "limit": "1001",
         },
     )
-    if not isinstance(active, list) or len(active) > 2 or any(not isinstance(x, dict) for x in active):
-        raise EntitlementsUnavailable("Active plan assignment query returned invalid data.")
+    if not isinstance(assignments, list) or len(assignments) > 1000 or any(not isinstance(x, dict) for x in assignments):
+        raise EntitlementsUnavailable("Plan assignment query returned invalid or excessive data.")
 
-    pending = _get(
-        settings,
-        "user_plan_assignments",
-        {
-            "select": "id,status,starts_at,ends_at",
-            "user_id": f"eq.{user_id}",
-            "status": "in.(pending,scheduled)",
-            "order": "created_at.desc,id.desc",
-            "limit": "1",
-        },
-    )
-    if not isinstance(pending, list) or any(not isinstance(x, dict) for x in pending):
-        raise EntitlementsUnavailable("Pending plan assignment query returned invalid data.")
+    events = []
+    if assignments:
+        assignment_ids = ",".join(str(item.get("id")) for item in assignments)
+        events = _get(
+            settings,
+            "user_plan_assignment_events",
+            {
+                "select": "id,assignment_id,event_type,occurred_at",
+                "assignment_id": f"in.({assignment_ids})",
+                "order": "occurred_at.desc,id.desc",
+                "limit": "10000",
+            },
+        )
+    if not isinstance(events, list) or len(events) >= 10000 or any(not isinstance(x, dict) for x in events):
+        raise EntitlementsUnavailable("Plan assignment lifecycle history is invalid or incomplete.")
 
-    if len(active) > 1:
+    latest_event_by_assignment = {}
+    for event in events:
+        assignment_id = str(event.get("assignment_id") or "")
+        if assignment_id and assignment_id not in latest_event_by_assignment:
+            latest_event_by_assignment[assignment_id] = event.get("event_type")
+
+    activated = [
+        item for item in assignments
+        if latest_event_by_assignment.get(str(item.get("id"))) == "activated"
+    ]
+    pending = [
+        item for item in assignments
+        if latest_event_by_assignment.get(str(item.get("id"))) in {"created", "scheduled"}
+    ]
+
+    if len(activated) > 1:
         return {
             "status": "ambiguous_active_assignments",
             "plan": None,
@@ -114,7 +130,7 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             "reason": "More than one active assignment exists; access is denied until reviewed.",
         }
 
-    if not active:
+    if not activated:
         return {
             "status": "no_active_plan",
             "plan": None,
@@ -129,7 +145,7 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             "reason": "No time-valid active plan assignment exists.",
         }
 
-    assignment = active[0]
+    assignment = activated[0]
     if (
         str(assignment.get("user_id")) != str(user_id)
         or assignment.get("status") != "active"
