@@ -91,7 +91,7 @@ def test_verified_webhook_persists_raw_body_digest_and_replay_flag(monkeypatch):
         "event_id": str(EVENT), "replayed": True, "resulting_status": "succeeded",
     }])
     result = service.record_verified_provider_event(
-        SETTINGS, adapter=adapter, raw_body=body,
+        SETTINGS, registry=PaymentProviderAdapterRegistry([adapter]), provider_code="examplepay", raw_body=body,
         headers={"x-signature": "valid"},
     )
     assert result == {"event_id": EVENT, "replayed": True, "resulting_status": "succeeded"}
@@ -112,7 +112,7 @@ def test_webhook_rejects_unknown_normalized_event_before_rpc(monkeypatch):
     ))
     with pytest.raises(ValueError, match="Unsupported normalized"):
         service.record_verified_provider_event(
-            SETTINGS, adapter=adapter, raw_body=b"redirect", headers={},
+            SETTINGS, registry=PaymentProviderAdapterRegistry([adapter]), provider_code="examplepay", raw_body=b"redirect", headers={},
         )
     assert called == []
 
@@ -123,7 +123,7 @@ def test_webhook_rejects_non_verified_adapter_result_before_rpc(monkeypatch):
     adapter = FakeVerifiedAdapter(event={"event_type": "payment.succeeded"})
     with pytest.raises(ValueError, match="did not return verified event facts"):
         service.record_verified_provider_event(
-            SETTINGS, adapter=adapter, raw_body=b"payload", headers={},
+            SETTINGS, registry=PaymentProviderAdapterRegistry([adapter]), provider_code="examplepay", raw_body=b"payload", headers={},
         )
     assert called == []
 
