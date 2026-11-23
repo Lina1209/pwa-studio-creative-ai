@@ -265,6 +265,15 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="account-hero panel"><div class="account-avatar" id="accountAvatar">✦</div><div class="account-identity"><div class="eyebrow">ВАШ ПРОФИЛЬ</div><h2 id="accountName">Гостевой просмотр</h2><p id="accountEmail">Войдите или зарегистрируйтесь, чтобы открыть личное пространство.</p><span class="account-role" id="accountRole">Гость</span></div><div class="account-actions"><button class="primary-button" id="accountLogin" type="button">Войти / Регистрация</button><button class="secondary-button" id="accountLogout" type="button" hidden>Выйти</button></div></div>
         <div class="account-grid"><article class="account-tile"><span>🎬</span><b>Мои фильмы</b><p>Проекты, сценарии и версии фильмов.</p><button data-go="movie">Открыть Миникиностудию →</button></article><article class="account-tile"><span>♙</span><b>Мои персонажи</b><p>Личная библиотека цифровых героев и их образов.</p><button data-go="library">Открыть медиатеку →</button></article><article class="account-tile"><span>♫</span><b>Мои голоса и материалы</b><p>Аудио, изображения и файлы проектов.</p><button data-go="voice">Открыть раздел →</button></article></div>
         <div class="account-notice" id="accountStorageNotice">Фильмы авторизованных пользователей синхронизируются с Supabase. Гостевые черновики хранятся только в этом браузере. Файловое хранилище подключается отдельно.</div>
+        <section class="notification-panel panel" id="notificationPanel" hidden>
+          <div class="notification-heading">
+            <div><div class="eyebrow">YOUR WORKSPACE · UPDATES</div><h2>Центр уведомлений <span class="notification-unread" id="notificationUnread" hidden>0</span></h2>
+              <p>Здесь появляются ответы модерации и важные сообщения студии.</p></div>
+            <div class="notification-actions"><button class="secondary-button" id="notificationRefresh" type="button">↻ Обновить</button><button class="secondary-button" id="notificationReadAll" type="button">Отметить всё прочитанным</button></div>
+          </div>
+          <div id="notificationList" class="notification-list" aria-live="polite"><div class="admin-empty">Загрузка уведомлений…</div></div>
+          <p id="notificationFeedback" class="notification-feedback" role="status"></p>
+        </section>
         <section class="report-panel panel" id="reportPanel">
           <div class="eyebrow">COMMUNITY CARE · TRUST & SAFETY</div>
           <h2>Сообщить о проблеме</h2>
@@ -394,7 +403,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./supabase-config.js"></script>
-  <script src="./app.js?v=20261123-2" defer></script>
+  <script src="./app.js?v=20261123-3" defer></script>
   <script src="./audio-lab.js?v=20261121-1" defer></script>
 </body>
 </html>
