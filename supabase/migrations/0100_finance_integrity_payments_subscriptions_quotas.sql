@@ -206,7 +206,6 @@ as $function$
       ) order by p.id) from costs_page p
     ), '[]'::jsonb),
 
-    ,
     'payment_orders', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from payment_orders_page p), '[]'::jsonb),
     'payment_provider_events', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from payment_provider_events_page p), '[]'::jsonb),
     'payment_order_events', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from payment_order_events_page p), '[]'::jsonb),
@@ -216,16 +215,14 @@ as $function$
     'plan_assignment_events', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from assignment_events_page p), '[]'::jsonb),
     'approved_plans', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from approved_plans_page p), '[]'::jsonb),
     'quota_reservations', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from quota_reservations_page p), '[]'::jsonb),
-    'quota_events', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from quota_events_page p), '[]'::jsonb)
+    'quota_events', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from quota_events_page p), '[]'::jsonb),
     'counts', jsonb_build_object(
       'ledger', (select total from ledger_count),
       'holds', (select total from holds_count),
       'lots', (select total from lots_count),
       'allocations', (select total from allocations_count),
       'jobs', (select total from jobs_count),
-      'provider_cost_events', (select total from costs_count)
-
-      ,
+      'provider_cost_events', (select total from costs_count),
       'payment_orders', (select total from payment_orders_count),
       'payment_provider_events', (select total from payment_provider_events_count),
       'payment_order_events', (select total from payment_order_events_count),
@@ -239,9 +236,7 @@ as $function$
     ),
     'limits', jsonb_build_object(
       'ledger', 10000, 'holds', 5000, 'lots', 5000,
-      'allocations', 10000, 'jobs', 10000, 'provider_cost_events', 10000
-
-      ,
+      'allocations', 10000, 'jobs', 10000, 'provider_cost_events', 10000,
       'payment_orders', 10000, 'payment_provider_events', 20000,
       'payment_order_events', 20000, 'purchase_items', 10000,
       'fulfillment_outbox', 10000, 'plan_assignments', 10000,
