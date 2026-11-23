@@ -253,6 +253,42 @@ async def test_worker_waits_for_inflight_provider_result_before_acknowledging_ca
 
 
 @pytest.mark.asyncio
+async def test_worker_keeps_cancellation_pending_when_provider_outcome_is_ambiguous():
+    repo = FakeRepository(
+        heartbeat_states=["active", "cancel_requested"]
+    )
+    provider = FakeProvider(
+        error=ImageGenerationError(
+            "provider_response_unknown", retryable=True, ambiguous=True
+        )
+    )
+
+    result = await make_worker(repo, provider).process(make_job())
+
+    assert result.outcome == "cancellation_pending"
+    assert any(call[0] == "journal_unknown" for call in repo.calls)
+    assert not any(call[0] == "cancel_ack" for call in repo.calls)
+    assert not any(call[0] in {"complete", "retry", "fail"} for call in repo.calls)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_keeps_lease_when_cancellation_is_requested():
+    repo = FakeRepository(heartbeat="cancel_requested")
+    worker = make_worker(repo)
+    lost = asyncio.Event()
+    cancel_requested = asyncio.Event()
+    task = asyncio.create_task(
+        worker._maintain_lease(JOB_ID, lost, cancel_requested)
+    )
+    try:
+        await asyncio.wait_for(cancel_requested.wait(), timeout=0.2)
+        assert not lost.is_set()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 async def test_worker_blocks_provider_call_when_server_budget_gate_denies_admission():
     repo = FakeRepository(budget_allowed=False)
     provider = FakeProvider()
