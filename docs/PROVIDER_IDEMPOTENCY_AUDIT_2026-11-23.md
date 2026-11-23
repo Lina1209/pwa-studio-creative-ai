@@ -129,3 +129,8 @@ instance instead of creating request-scoped registries. This state attachment
 does not add a webhook route or expose payment processing. A dedicated app
 test verifies that the registered instance remains empty and rejects provider
 lookup under the default configuration.
+
+
+## Entitlement read-path identity hardening
+
+The effective-plan resolver validates every assignment UUID and owner UUID returned by the user-scoped assignment query before constructing the subsequent service-role event-history filter. Duplicate assignment identifiers and cross-owner or malformed rows fail closed before the privileged event lookup. This prevents untrusted or corrupt row values from being interpolated into a privileged PostgREST `in` filter.
