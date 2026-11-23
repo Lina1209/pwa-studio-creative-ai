@@ -30,7 +30,7 @@ def test_chat_uses_authenticated_owner_and_records_usage(monkeypatch):
         request_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     )
 
-    def run(operation, user_id, call):
+    def run(operation, user_id, call, **kwargs):
         calls.append((operation, user_id))
         return result
 
@@ -170,7 +170,7 @@ def test_prompt_studio_returns_finished_prompt_and_records_usage(monkeypatch):
         request_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     )
 
-    def run(operation, user_id, call):
+    def run(operation, user_id, call, **kwargs):
         calls.append((operation, user_id))
         return result
 
@@ -389,6 +389,7 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
     monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main, "get_consent_status", lambda settings, user_id: [{"consent_scope": "vision_deepseek", "action": "accepted", "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}])
     validated = ValidatedVisionImage(
         mime_type="image/png",
         data_url="data:image/png;base64,aGVsbG8gd29ybGQ=",
@@ -408,7 +409,7 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
         actual_model="deepseek-flash",
         request_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     )
-    def run(operation, user_id, call):
+    def run(operation, user_id, call, **kwargs):
         calls.append((operation, user_id))
         return call()
     def ask(settings, *, system_prompt, user_prompt, image, user_id):
@@ -444,12 +445,13 @@ def test_vision_analysis_rejects_invalid_image_after_admission(monkeypatch):
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
     monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main, "get_consent_status", lambda settings, user_id: [{"consent_scope": "vision_deepseek", "action": "accepted", "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}])
     monkeypatch.setattr(
         main, "validate_vision_data_url",
         lambda value: (_ for _ in ()).throw(VisionInputError("invalid image")),
     )
     calls = []
-    def run(operation, user_id, call):
+    def run(operation, user_id, call, **kwargs):
         calls.append((operation, user_id))
         return call()
     monkeypatch.setattr(main, "_run_admitted_ai", run)
@@ -472,6 +474,7 @@ def test_health_exposes_vision_only_when_flag_and_server_credentials_are_present
 
     monkeypatch.setattr(main.settings, "vision_input_enabled", True)
     monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main, "get_consent_status", lambda settings, user_id: [{"consent_scope": "vision_deepseek", "action": "accepted", "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}])
     monkeypatch.setattr(main.settings, "ai_model", "deepseek-flash")
     monkeypatch.setattr(main.settings, "deepseek_api_key", "server-only-test-key")
     monkeypatch.setattr(main.settings, "supabase_url", "https://project.example.supabase.co")
