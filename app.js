@@ -125,7 +125,7 @@
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
-        if (typeof syncCloudVisualLibrary === "function" && authSession?.user?.id === nextUserId) syncCloudVisualLibrary();
+        if (accountChanged && nextUserId && typeof syncCloudVisualLibrary === "function" && authSession?.user?.id === nextUserId) syncCloudVisualLibrary();
         if (typeof renderMovieProjects === "function") renderMovieProjects();
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
       }, 0);
