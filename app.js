@@ -3470,6 +3470,130 @@ const movieHistoryStyle = document.createElement("style");
   });
   $("#testBackend").addEventListener("click", checkBackend);
 
+  // A single account-scoped generation job is persisted locally so a page
+  // refresh never loses the ability to inspect or request cancellation.
+  const generationJobStorageKey = () => "pwaStudio.activeGenerationJob." + (authSession?.user?.id || "guest");
+  const generationJobLabels = {
+    queued: "В очереди",
+    running: "Выполняется",
+    retry_wait: "Ожидает повторной попытки",
+    cancel_requested: "Отмена запрошена · проверяем результат",
+    succeeded: "Завершено успешно",
+    failed: "Завершилось с ошибкой",
+    cancelled: "Отменено",
+    expired: "Срок выполнения истёк"
+  };
+  const generationJobTerminal = new Set(["succeeded", "failed", "cancelled", "expired"]);
+  let activeGenerationJobId = null;
+  let generationJobPollTimer = null;
+  let generationJobBusy = false;
+  const generationJobElements = {
+    empty: $("#generationJobsEmpty"),
+    card: $("#generationJobCard"),
+    badge: $("#generationJobBadge"),
+    id: $("#generationJobId"),
+    status: $("#generationJobStatus"),
+    detail: $("#generationJobDetail"),
+    feedback: $("#generationJobFeedback"),
+    cancel: $("#cancelGenerationJob"),
+    refresh: $("#refreshGenerationJob")
+  };
+  const renderGenerationJob = (job) => {
+    if (!generationJobElements.card) return;
+    const status = String(job?.status || "queued");
+    generationJobElements.empty.hidden = Boolean(job);
+    generationJobElements.card.hidden = !job;
+    generationJobElements.badge.textContent = job ? (generationJobTerminal.has(status) ? "ЗАВЕРШЕНО" : "АКТИВНО") : "НЕТ ЗАДАНИЙ";
+    if (!job) return;
+    generationJobElements.id.textContent = "ID: " + job.id;
+    generationJobElements.status.textContent = generationJobLabels[status] || "Состояние: " + status;
+    const detail = job.last_error_code
+      ? "Код события: " + String(job.last_error_code).replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 80)
+      : status === "cancel_requested"
+        ? "Задача ещё сверяется с обработчиком. Кредиты остаются зарезервированными до безопасного подтверждения."
+        : status === "cancelled"
+          ? "Отмена подтверждена. Зарезервированные кредиты обработаны сервером."
+          : status === "succeeded"
+            ? "Результат готов. Отмена успешной задачи не выполняется."
+            : "Состояние обновляется автоматически.";
+    generationJobElements.detail.textContent = detail;
+    generationJobElements.cancel.hidden = !["queued", "retry_wait", "running"].includes(status);
+    generationJobElements.cancel.disabled = generationJobBusy;
+    generationJobElements.refresh.disabled = generationJobBusy;
+  };
+  const stopGenerationJobPolling = () => {
+    if (generationJobPollTimer) clearInterval(generationJobPollTimer);
+    generationJobPollTimer = null;
+  };
+  const loadGenerationJobStatus = async (quiet = false) => {
+    if (!activeGenerationJobId || !authSession?.user?.id) return;
+    try {
+      const job = await apiRequest("/api/jobs/" + encodeURIComponent(activeGenerationJobId));
+      if (job?.id !== activeGenerationJobId || !generationJobLabels[job.status]) {
+        throw new Error("Сервер вернул неизвестное состояние задания.");
+      }
+      renderGenerationJob(job);
+      localStorage.setItem(generationJobStorageKey(), activeGenerationJobId);
+      if (generationJobTerminal.has(job.status)) stopGenerationJobPolling();
+      if (!quiet) generationJobElements.feedback.textContent = "Статус обновлён.";
+    } catch (error) {
+      if (!quiet) generationJobElements.feedback.textContent = error.message;
+    }
+  };
+  const startGenerationJobPolling = () => {
+    stopGenerationJobPolling();
+    if (activeGenerationJobId && authSession?.user?.id) {
+      loadGenerationJobStatus(true);
+      generationJobPollTimer = setInterval(() => loadGenerationJobStatus(true), 5000);
+    }
+  };
+  const trackGenerationJob = (job) => {
+    const id = String(job?.job_id || job?.id || "");
+    if (!authSession?.user?.id) throw new Error("Войдите в аккаунт, чтобы отслеживать генерацию.");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+      throw new Error("Сервер не вернул корректный ID задания.");
+    }
+    activeGenerationJobId = id;
+    localStorage.setItem(generationJobStorageKey(), id);
+    generationJobElements.feedback.textContent = "Задание добавлено. Загружаем состояние…";
+    renderGenerationJob({id, status: job.status || "queued"});
+    startGenerationJobPolling();
+    return id;
+  };
+  const cancelTrackedGenerationJob = async () => {
+    if (!activeGenerationJobId || generationJobBusy) return;
+    generationJobBusy = true;
+    generationJobElements.feedback.textContent = "Отправляем запрос отмены…";
+    renderGenerationJob({id: activeGenerationJobId, status: "cancel_requested"});
+    try {
+      const result = await apiRequest("/api/jobs/" + encodeURIComponent(activeGenerationJobId) + "/cancel", {method: "POST"});
+      generationJobElements.feedback.textContent = result.cancellation_action === "cancelled_immediately"
+        ? "Задание отменено. Обновляем состояние и баланс…"
+        : result.cancellation_action === "awaiting_worker_confirmation"
+          ? "Запрос принят. Обработчик проверяет внешнюю операцию; кредиты пока зарезервированы."
+          : "Задание уже завершено. Обновляем итоговый статус.";
+      await loadGenerationJobStatus(true);
+      if (result.status === "cancel_requested") startGenerationJobPolling();
+    } catch (error) {
+      generationJobElements.feedback.textContent = error.message;
+    } finally {
+      generationJobBusy = false;
+      generationJobElements.cancel.disabled = false;
+      generationJobElements.refresh.disabled = false;
+      await loadGenerationJobStatus(true);
+    }
+  };
+  generationJobElements.cancel?.addEventListener("click", cancelTrackedGenerationJob);
+  generationJobElements.refresh?.addEventListener("click", () => loadGenerationJobStatus(false));
+  window.PWAStudioGenerationJobs = Object.freeze({track: trackGenerationJob, refresh: () => loadGenerationJobStatus(false)});
+  if (authSession?.user?.id) {
+    const savedGenerationJobId = localStorage.getItem(generationJobStorageKey());
+    if (savedGenerationJobId) {
+      try { trackGenerationJob({job_id: savedGenerationJobId}); }
+      catch (error) { generationJobElements.feedback.textContent = error.message; }
+    }
+  }
+
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("./sw.js").catch(error => console.warn("PWA service worker:", error));
