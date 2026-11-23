@@ -173,11 +173,7 @@ def root():
 @app.get(f"{settings.api_prefix}/health")
 def health():
     provider = settings.ai_provider.strip().lower()
-    ai_configured = (
-        bool(settings.deepseek_api_key) if provider == "deepseek"
-        else bool(settings.gemini_api_key) if provider == "gemini"
-        else False
-    )
+    ai_configured = bool(settings.deepseek_api_key) if provider == "deepseek" else False
     try:
         pricing_catalog_ready = bool(load_pricing_catalog(settings.pricing_catalog_json).rules)
     except PricingError:
@@ -560,18 +556,6 @@ def admin_ai_provider_status(
             "pricing_mode": "paid_api",
             "free_tier_eligible": False,
         },
-        {
-            "id": "gemini",
-            "label": "Google Gemini",
-            "supported": True,
-            "selected": selected == "gemini",
-            "model": settings.ai_model if selected == "gemini" else "gemini-3.1-flash-lite",
-            "api_key_configured": bool(settings.gemini_api_key),
-            "pricing_mode": "google_free_tier_eligible",
-            "free_tier_eligible": True,
-            "project_free_tier_verified": False,
-            "billing_tier_verifiable": False,
-        },
     ]
     _audit_admin_read(user, resource_type="platform", reason="Viewed AI provider readiness")
     response.headers["Cache-Control"] = "private, no-store"
@@ -579,7 +563,7 @@ def admin_ai_provider_status(
         "selected_provider": selected,
         "selected_model": settings.ai_model,
         "ai_ready": bool(
-            settings.deepseek_api_key if selected == "deepseek" else settings.gemini_api_key
+            settings.deepseek_api_key if selected == "deepseek" else None
         ),
         "automatic_fallback": False,
         "runtime_provider_switching": False,
@@ -593,10 +577,8 @@ def admin_ai_provider_status(
         },
         "providers": providers,
         "safety_note": (
-            "Gemini 3.1 Flash-Lite is listed as Free Tier eligible by Google, but actual project "
-            "quota and billing tier cannot be verified by this backend. Google may change quotas, and some projects may not be eligible for the free tier. "
-            "Free-tier data may be used to improve Google products. Provider changes require a "
-            "controlled backend configuration update and redeployment."
+            "Only DeepSeek is enabled. Provider changes require a controlled backend "
+            "configuration update, security review and redeployment."
         ),
     }
 
@@ -732,7 +714,6 @@ def admin_ai_usage_report(
         raise HTTPException(status_code=502, detail="AI usage report is temporarily unavailable.") from exc
     budgets = {
         "deepseek": settings.ai_daily_budget_usd_deepseek,
-        "gemini": settings.ai_daily_budget_usd_gemini,
     }
     daily_rows = {
         row["provider"]: row for row in report.get("today_by_provider", [])
@@ -1788,7 +1769,7 @@ def admin_create_pricing_draft(payload: PricingCatalogDraftCreate,user: StudioUs
         validated=load_pricing_catalog(json.dumps(catalog_payload,ensure_ascii=False,allow_nan=False))
         if not validated.rules:
             raise HTTPException(status_code=422,detail="Нельзя сохранить пустой тарифный каталог.")
-        supported_models={"deepseek":{"deepseek-flash","deepseek-v4-pro"},"gemini":{"gemini-3.1-flash-lite"}}
+        supported_models={"deepseek":{"deepseek-flash","deepseek-v4-pro"}}
         for rule in validated.rules:
             if rule.provider not in supported_models or rule.model not in supported_models[rule.provider]:
                 raise HTTPException(status_code=422,detail="Тариф содержит неподдерживаемую модель.")
