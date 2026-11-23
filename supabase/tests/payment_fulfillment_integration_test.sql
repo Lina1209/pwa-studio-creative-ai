@@ -243,6 +243,73 @@ begin
 end;
 $payment_scheduled_plan_activation_worker$;
 
+do $payment_subscription_period_stacking$
+declare
+  v_order record;
+  v_event record;
+  v_claim record;
+  v_result record;
+  v_assignment public.user_plan_assignments%rowtype;
+  v_prior_end timestamptz;
+  v_latest_event text;
+begin
+  select max(a.ends_at) into v_prior_end
+    from public.user_plan_assignments a
+    join lateral (
+      select e.event_type
+        from public.user_plan_assignment_events e
+       where e.assignment_id = a.id
+       order by e.occurred_at desc, e.id desc
+       limit 1
+    ) latest_event on latest_event.event_type in ('activated','scheduled')
+   where a.user_id = '33333333-3333-4333-8333-333333333333'
+     and a.ends_at > now();
+
+  select * into v_order from public.create_subscription_payment_order(
+    '33333333-3333-4333-8333-333333333333',
+    'examplepay',
+    'purchase-subscription-002',
+    'cccccccc-1111-4111-8111-111111111111',
+    '66666666-6666-4666-8666-666666666666',
+    '{}'::jsonb
+  );
+
+  select * into v_event from public.record_verified_payment_provider_event(
+    'examplepay', 'purchase-subscription-event-002',
+    v_order.payment_order_id, 'payment.succeeded', repeat('e',64),
+    149000, 'KZT', 'purchase-subscription-provider-payment-002'
+  );
+  if v_event.resulting_status <> 'succeeded' then
+    raise exception 'Second subscription payment did not settle';
+  end if;
+
+  select * into v_claim from public.claim_payment_fulfillment(120,1);
+  if v_claim.payment_order_id <> v_order.payment_order_id then
+    raise exception 'Second subscription fulfillment was not claimed';
+  end if;
+
+  select * into v_result from public.fulfill_payment_order(
+    v_claim.fulfillment_id, v_claim.lease_token
+  );
+  if v_result.fulfillment_status <> 'completed' then
+    raise exception 'Second subscription fulfillment did not complete';
+  end if;
+
+  select * into v_assignment from public.user_plan_assignments
+   where user_id = '33333333-3333-4333-8333-333333333333'
+     and idempotency_key = 'payment-order:' || v_order.payment_order_id::text;
+  select event_type into v_latest_event
+    from public.user_plan_assignment_events
+   where assignment_id = v_assignment.id
+   order by occurred_at desc, id desc limit 1;
+
+  if v_prior_end is null or v_assignment.starts_at < v_prior_end
+     or v_latest_event <> 'scheduled' then
+    raise exception 'Second paid subscription overlaps an existing paid period';
+  end if;
+end;
+$payment_subscription_period_stacking$;
+
 do $payment_fulfillment_privilege_boundary$
 begin
   if has_function_privilege(
