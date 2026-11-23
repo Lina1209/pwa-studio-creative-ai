@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 import json
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,12 +81,15 @@ from app.services.credit_wallet_service import (
     get_credit_wallet_snapshot,
 )
 from app.services.payment_provider_contracts import build_payment_provider_registry
+from app.services.supabase_private_image_storage import SupabasePrivateImageStorage
+from app.services.generation_result_storage import GenerationResultStorageError, GenerationStorageAdapterError
 from app.services.generation_jobs import (
     GenerationJobsNotConfiguredError,
     GenerationJobsServiceError,
     GenerationPricingQuoteConflictError,
     GenerationJobNotFoundError,
     get_generation_job,
+    get_generation_job_result_asset,
     request_generation_job_cancellation,
     create_plan_credited_generation_job,
     store_pricing_quote,
@@ -313,6 +317,54 @@ def generation_job_status(
         # Do not reveal whether a job with this id belongs to another account.
         raise HTTPException(status_code=404, detail="Generation job was not found.")
     return job
+
+
+@app.get(f"{settings.api_prefix}/jobs/{{job_id}}/result")
+async def generation_job_result_download(
+    job_id: UUID,
+    response: Response,
+    user: StudioUser = Depends(get_current_user),
+):
+    """Return a short-lived private download URL only for the verified job owner."""
+    if not settings.generation_jobs_enabled:
+        raise HTTPException(status_code=503, detail="Generation job results are not enabled yet.")
+    try:
+        owner_id = UUID(user.user_id)
+        asset = get_generation_job_result_asset(
+            settings, user_id=owner_id, job_id=job_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="The sign-in identity is invalid.") from exc
+    except GenerationJobsNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail="Generation result access is not configured.") from exc
+    except GenerationJobsServiceError as exc:
+        raise HTTPException(status_code=502, detail="Could not load generation result.") from exc
+
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Generation job was not found.")
+    if asset.status != "succeeded" or not asset.result_storage_path or not asset.result_sha256:
+        raise HTTPException(status_code=409, detail="Generation result is not ready.")
+    try:
+        async with httpx.AsyncClient(timeout=settings.generation_storage_timeout_seconds) as client:
+            storage = SupabasePrivateImageStorage(
+                settings, client, timeout_seconds=settings.generation_storage_timeout_seconds
+            )
+            signed_url = await storage.create_signed_download_url(
+                owner_id=owner_id,
+                job_id=job_id,
+                object_path=asset.result_storage_path,
+                expected_sha256_hex=asset.result_sha256,
+                expires_in=60,
+            )
+    except (GenerationResultStorageError, GenerationStorageAdapterError) as exc:
+        raise HTTPException(status_code=503, detail="The private generation result is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
+    return {
+        "job_id": str(job_id),
+        "signed_url": signed_url,
+        "expires_in": 60,
+    }
 
 
 @app.post(f"{settings.api_prefix}/jobs/{{job_id}}/cancel")
