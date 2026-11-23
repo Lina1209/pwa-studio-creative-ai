@@ -441,6 +441,34 @@ def test_vision_analysis_validates_image_and_records_modality_usage(monkeypatch)
         app.dependency_overrides.clear()
 
 
+def test_vision_analysis_requires_latest_persisted_consent(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main.settings, "vision_input_enabled", True)
+    monkeypatch.setattr(main.settings, "vision_privacy_review_approved", True)
+    monkeypatch.setattr(main.settings, "privacy_notice_version", "privacy-v1")
+    monkeypatch.setattr(main.settings, "vision_consent_version", "vision-v1")
+    monkeypatch.setattr(main, "get_consent_status", lambda settings, user_id: [{
+        "consent_scope": "vision_deepseek",
+        "action": "withdrawn",
+        "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    }])
+    monkeypatch.setattr(
+        main, "_run_admitted_ai",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider must not run")),
+    )
+    client = _client()
+    try:
+        response = client.post("/api/vision/analyze", json={
+            "prompt": "Опиши изображение.",
+            "image_data_url": "data:image/png;base64,aGVsbG8gd29ybGQ=",
+            "consent_to_deepseek": True,
+        })
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_vision_analysis_rejects_invalid_image_after_admission(monkeypatch):
     import app.main as main
     from app.services.vision_input import VisionInputError
