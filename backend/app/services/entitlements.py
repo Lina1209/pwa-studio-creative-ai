@@ -189,7 +189,14 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
     quotas: dict[str, dict[str, Any]] = {}
     for feature in sorted(_ENFORCED_DIMENSIONS | _NOT_YET_ENFORCED_DIMENSIONS):
         raw_limit = limits.get(feature)
-        limit = raw_limit if isinstance(raw_limit, int) and not isinstance(raw_limit, bool) and raw_limit >= 0 else None
+        if raw_limit is not None and (
+            isinstance(raw_limit, bool)
+            or not isinstance(raw_limit, (int, str))
+            or (isinstance(raw_limit, int) and raw_limit < 0)
+            or (isinstance(raw_limit, str) and not raw_limit.isdigit())
+        ):
+            raise EntitlementsUnavailable("Approved plan contains an invalid quota limit.")
+        limit = int(raw_limit) if raw_limit is not None else None
         used = usage.get(feature, 0)
         enforced = feature in _ENFORCED_DIMENSIONS
         quotas[feature] = {
@@ -198,6 +205,29 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             "remaining": max(limit - used, 0) if limit is not None else None,
             "enforced": enforced,
             "configured": limit is not None,
+        }
+
+    capability_dimensions = {
+        "ai": ("ai", ("daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests")),
+        "image": ("image", ("daily_image_generations", "monthly_image_generations")),
+        "video": ("video", ("daily_video_generations", "monthly_video_generations")),
+        "audio": ("audio", ("daily_audio_generations", "monthly_audio_generations")),
+    }
+    capabilities = {}
+    for capability, (feature_name, required_dimensions) in capability_dimensions.items():
+        included = feature_name in features
+        configured = all(
+            quotas.get(dimension, {}).get("configured")
+            and (quotas[dimension]["limit"] or 0) > 0
+            for dimension in required_dimensions
+        )
+        capabilities[capability] = {
+            "available": included and configured,
+            "included_in_plan": included,
+            "quota_ready": configured,
+            "reason": None if included and configured else (
+                "feature_not_included" if not included else "required_quota_not_configured"
+            ),
         }
 
     return {
@@ -219,9 +249,10 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             "ends_at": assignment.get("ends_at"),
         },
         "features": features,
+        "capabilities": capabilities,
         "quotas": quotas,
         "pending_assignment_exists": bool(pending),
-        "capabilities_enabled": True,
+        "capabilities_enabled": any(item["available"] for item in capabilities.values()),
         "activation_enabled": False,
         "checkout_enabled": False,
         "credits_granted": False,
