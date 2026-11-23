@@ -71,15 +71,17 @@ def _validate_snapshot(raw: Any, user_id: UUID) -> dict[str, Any]:
             not isinstance(rows, list)
             or isinstance(count, bool) or not isinstance(count, int) or count < 0
             or limit != SNAPSHOT_LIMITS[source]
-            or len(rows) > limit
+            or len(rows) > limit + 1
             or count < len(rows)
         ):
             raise ValueError("invalid_snapshot_source")
-        if count != len(rows):
+        if count != len(rows) or count > limit or len(rows) > limit:
             complete = False
         if any(not isinstance(row, dict) for row in rows):
             raise ValueError("invalid_snapshot_row")
-        validated[key] = rows
+        # SQL deliberately returns one sentinel row beyond the cap. Never pass
+        # that row into reconciliation; its presence only proves truncation.
+        validated[key] = rows[:limit]
     expected_complete = all(counts[name] <= SNAPSHOT_LIMITS[name] for name in SNAPSHOT_LIMITS)
     if complete and not expected_complete:
         raise ValueError("snapshot_claims_false_completeness")
