@@ -1,6 +1,6 @@
 # Unified subscriptions and credits architecture
 
-Status: design specification only. No database migration, payment integration, production setting, or live data has been changed.
+Status: source-only foundation in the open draft PR. No database migration has been applied, no payment integration or production setting has been changed, and no live wallet data exists.
 
 ## 1. Product model
 
@@ -139,7 +139,9 @@ The repository currently has:
 - private ai_usage telemetry (best-effort writes, no credit debits);
 - an atomic per-user/per-endpoint AI request-frequency limiter;
 - a server-side AI output-token ceiling;
-- a source-only migration draft (0013_unified_credit_wallet.sql) for wallet balances, append-only ledger entries, idempotent reservations, and atomic grant/reserve/settle/release RPCs.
+- a source-only migration draft (0013_unified_credit_wallet.sql) for wallet balances, append-only ledger entries, idempotent reservations, and atomic grant/reserve/settle/release/reconciliation RPCs;
+- a backend credit-service adapter with strict UUID/amount/operation validation, a server-side grant-source allowlist, RPC response validation, and fail-closed storage handling;
+- unit tests for the credit-service adapter. The adapter is intentionally not connected to paid AI or media endpoints until server-owned operation pricing exists.
 
 The wallet migration has not been applied, its SQL has not been executed against Supabase, and the RPCs are not yet called by application endpoints. Subscription entitlements, payment webhooks, operation pricing, frontend wallet views, and end-to-end paid-operation enforcement are not implemented. The credit foundation must not be described as active until migration history is reconciled, the SQL is reviewed and applied with authorization, backend integration is tested, and live behavior is verified.
 
