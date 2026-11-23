@@ -155,6 +155,10 @@ create trigger payment_refund_events_append_only
 before update or delete on public.payment_refund_events
 for each row execute function public.prevent_payment_refund_journal_mutation();
 
+create trigger payment_refund_reconciliations_append_only
+before update or delete on public.payment_refund_reconciliations
+for each row execute function public.prevent_payment_refund_journal_mutation();
+
 create or replace function public.create_payment_refund_intent(
   p_payment_order_id uuid,
   p_amount_minor bigint,
@@ -225,10 +229,10 @@ begin
 
   insert into public.payment_refund_events(
     refund_id, actor_type, actor_user_id, event_type, previous_status,
-    new_status, event_key, reason_code
+    new_status, event_key, reason_code, occurred_at
   ) values (
     v_refund_id, 'admin', p_requested_by, 'refund.requested', null,
-    'requested', 'requested:' || p_idempotency_key, p_reason_code
+    'requested', 'requested:' || p_idempotency_key, p_reason_code, clock_timestamp()
   );
 
   return query select v_refund_id, 'requested'::text, false;
@@ -350,11 +354,11 @@ begin
 
   insert into public.payment_refund_events(
     refund_id, actor_type, event_type, previous_status, new_status,
-    event_key, reason_code
+    event_key, reason_code, occurred_at
   ) values (
     p_refund_id, 'provider', p_event_type, v_refund.status, v_new_status,
     'provider-event:' || md5(p_provider_code || ':' || p_provider_event_id),
-    replace(p_event_type, '.', '_')
+    replace(p_event_type, '.', '_'), clock_timestamp()
   );
 
   if v_new_status = 'succeeded' then
@@ -378,11 +382,11 @@ begin
 
     insert into public.payment_order_events(
       payment_order_id, actor_type, event_type, previous_status,
-      new_status, reason_code
+      new_status, reason_code, occurred_at
     ) values (
       v_order.id, 'provider',
       case when v_order_status = 'refunded' then 'payment.refunded' else 'payment.partially_refunded' end,
-      v_order.status, v_order_status, 'provider_refund_succeeded'
+      v_order.status, v_order_status, 'provider_refund_succeeded', clock_timestamp()
     );
 
     select i.item_type into v_purchase_type
