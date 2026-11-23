@@ -1,6 +1,6 @@
 # PWA Studio — implementation roadmap and status
 
-Last reviewed: 2026-11-22
+Last reviewed: 2026-11-23
 
 For the complete product vision, platform rules, prohibited-content taxonomy, filters, bans, appeals, privacy/security requirements, rights/consent, testing strategy, and phased plan, see [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md).
 
@@ -18,6 +18,23 @@ This document is the working source of truth for the next implementation stages.
 - AI Companion history is connected to Supabase; a new conversation and both messages were visible after a browser refresh on 2026-11-21. RLS owner policies are present; logout/login, account-switch behavior, and two-account isolation still require end-to-end verification.
 - Mini Movie Studio has a local-first cloud sync implementation in `app.js`. Migration `0005_cloud_projects_and_storage.sql` was applied to live Supabase; `public.projects` and the private `studio-media` bucket were verified. A test movie row was independently confirmed in Supabase and remained visible after browser refresh. Cross-device persistence, conflict behavior, and deletion synchronization still require verification.
 - Audio Studio has a navigable UI and local microphone/file preview only. It does not yet upload media or call speech/music generation services.
+
+## Review-branch additions — not production verified (2026-11-23)
+
+The current Draft PR/review branch adds substantial foundations beyond the earlier roadmap. These must not be described as deployed or live:
+
+- **Support inbox:** private ticket/message schema, FastAPI user and owner endpoints, user-facing account panel, owner inbox, scoped support permissions and administrative audit events. Migration 0055 is the base schema; migration 0091 adds categories, optional bounded context and atomic ticket/message RPCs. The code is under CI review; neither migration has been applied to live Supabase and no real user support conversation has been verified.
+- **Support correction:** the earlier implementation had non-atomic ticket/message writes and inverted user/admin reply status transitions. Migration 0091 and the service update make creation and reply/state changes atomic and align the lifecycle. This still requires PostgreSQL CI and live verification.
+- **Generation foundation:** durable jobs, outbox, worker orchestration, cancellation/recovery, provider-operation journal and private image-result storage code exist. Runtime feature flags remain fail-closed; no production worker is enabled.
+- **Provider boundary:** the 2026-11-23 provider idempotency audit marks production video generation as blocked. No concrete production video-provider adapter is present; do not enable video generation or promise MP4 output.
+- **Image/Vision:** API contracts and admission/storage foundations exist, but a production image-generation provider adapter and live end-to-end generation are not verified. DeepSeek remains the configured text provider.
+- **Credits and billing:** wallet, ledger, quota reservation, payment-order and fulfillment foundations/tests exist in the review branch. No concrete payment provider is configured, payment execution is disabled, and production billing/credit activation is not approved.
+- **Admin controls:** support, audit, finance-role, pricing/plan draft and approval/assignment capabilities have backend authorization and audit foundations. Drafts are not live prices or active subscriptions.
+- **Analytics and privacy:** first-party visit analytics and privacy-consent/governance foundations are in the branch; live collection, retention, legal review and public analytics behavior remain to be verified.
+- **Character assets:** private character reference storage and visual metadata migrations exist; complete owner-scoped character CRUD and user workflow are not yet verified.
+
+CI on the current PR head passed both the syntax/backend-test/manifest job and PostgreSQL migration integration job on 2026-11-23. CI success is not a production deployment or proof that live Supabase has the migrations.
+
 
 ## Workstreams and acceptance criteria
 
@@ -103,6 +120,37 @@ Tasks:
 7. Keep community chat separate from private AI Companion conversations.
 
 Done when: users can chat safely, moderation is enforced server-side, and admin actions are auditable.
+
+
+### 8. Private support inbox and feedback
+**Current state:** first version exists in the review branch, including user ticket creation/replies, owner inbox, role checks and audit actions. Migration 0091 adds categories and atomic mutations. It is not merged/deployed or live-verified.
+
+Next tasks:
+1. Pass CI including the support-inbox PostgreSQL migration test.
+2. Review the atomic RPCs and status lifecycle; verify RLS/grants and cross-account access on a disposable database.
+3. Apply migrations 0055 and 0091 only after a reviewed production migration plan; verify the live schema.
+4. Test user A/user B isolation and owner-only queue/reply/status capabilities.
+5. Add the native support launcher, unread notifications and email notifications only after delivery configuration is verified.
+6. Add admin queue filters, priority, assignment and internal notes with separate protected storage.
+7. Add attachments only after private media upload, malware/content validation and retention are ready.
+
+See [SUPPORT_AND_FEEDBACK_DESIGN.md](./SUPPORT_AND_FEEDBACK_DESIGN.md).
+
+Done when: users can privately contact the team, see replies/status, and no support data leaks across accounts or into AI Companion/community chat.
+
+### 9. Inspiration page and creator showcase
+**Current state:** not implemented.
+
+Next tasks:
+1. Publish platform-owned example workflows and starter templates.
+2. Add an opt-in publication workflow; private-by-default must remain unchanged.
+3. Add creator attribution, explicit display/remix licenses, moderation, report/takedown and unpublish.
+4. Add search, filters, collections and “Use as template” copy semantics.
+5. Defer a paid marketplace until rights, billing, creator verification and payouts are reviewed.
+
+See [CREATOR_SHOWCASE_AND_MULTIMODAL_ROADMAP.md](./CREATOR_SHOWCASE_AND_MULTIMODAL_ROADMAP.md).
+
+Done when: users can discover examples and intentionally publish selected works without exposing their private projects or source assets.
 
 ## Recommended implementation order
 
