@@ -236,3 +236,60 @@ def test_user_cannot_submit_short_appeal():
     response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).post(
         "/api/messages/direct/moderation/appeals", json={"reason":"No"})
     assert response.status_code == 422
+
+
+
+def test_edit_message_uses_authenticated_sender_and_validated_body(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "edit_message", lambda settings, conversation, message, sender, body:
+                        captured.update(conversation=conversation, message=message,
+                                        sender=sender, body=body) or True)
+    message_id = "55555555-5555-4555-8555-555555555555"
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).patch(
+        f"/api/messages/direct/conversations/{CONVERSATION}/messages/{message_id}",
+        json={"body": "  updated text  "})
+    assert response.status_code == 200
+    assert captured == {"conversation": UUID(CONVERSATION), "message": UUID(message_id),
+                        "sender": UUID(OWNER), "body": "updated text"}
+
+
+def test_edit_message_rejects_empty_body():
+    message_id = "55555555-5555-4555-8555-555555555555"
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).patch(
+        f"/api/messages/direct/conversations/{CONVERSATION}/messages/{message_id}",
+        json={"body": "   "})
+    assert response.status_code == 422
+
+
+def test_edit_message_returns_not_found_when_not_owned_or_expired(monkeypatch):
+    import app.api.direct_messaging as api
+    monkeypatch.setattr(api, "edit_message", lambda *args, **kwargs: False)
+    message_id = "55555555-5555-4555-8555-555555555555"
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).patch(
+        f"/api/messages/direct/conversations/{CONVERSATION}/messages/{message_id}",
+        json={"body": "updated"})
+    assert response.status_code == 404
+
+
+def test_delete_message_uses_authenticated_sender(monkeypatch):
+    import app.api.direct_messaging as api
+    captured = {}
+    monkeypatch.setattr(api, "delete_message", lambda settings, conversation, message, sender:
+                        captured.update(conversation=conversation, message=message,
+                                        sender=sender) or True)
+    message_id = "55555555-5555-4555-8555-555555555555"
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).delete(
+        f"/api/messages/direct/conversations/{CONVERSATION}/messages/{message_id}")
+    assert response.status_code == 200
+    assert captured == {"conversation": UUID(CONVERSATION), "message": UUID(message_id),
+                        "sender": UUID(OWNER)}
+
+
+def test_delete_message_returns_not_found_for_non_owner(monkeypatch):
+    import app.api.direct_messaging as api
+    monkeypatch.setattr(api, "delete_message", lambda *args, **kwargs: False)
+    message_id = "55555555-5555-4555-8555-555555555555"
+    response = client_for(StudioUser(user_id=OWNER, email=None, role="creator")).delete(
+        f"/api/messages/direct/conversations/{CONVERSATION}/messages/{message_id}")
+    assert response.status_code == 404
