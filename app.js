@@ -94,6 +94,7 @@
         if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
         if (typeof loadAccountRole === "function") loadAccountRole();
         if (typeof loadMyEntitlements === "function") loadMyEntitlements();
+        if (typeof loadDirectConversations === "function") loadDirectConversations();
         if (typeof renderAssistantHistory === "function") renderAssistantHistory();
         if (typeof syncCloudVisualLibrary === "function") syncCloudVisualLibrary();
       }, 0);

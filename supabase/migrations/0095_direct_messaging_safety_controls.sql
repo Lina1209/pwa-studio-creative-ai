@@ -77,13 +77,18 @@ begin
     select m.conversation_id into v_conversation_id
     from public.direct_messages m
     where m.id = p_message_id and m.sender_user_id = p_target_user_id;
-    if v_conversation_id is null or not exists (
-      select 1 from public.direct_conversation_participants p
-      where p.conversation_id = v_conversation_id and p.user_id = p_reporter_user_id
-    ) then
-      raise exception 'reported message is not in reporter conversation'
-        using errcode = '42501';
-    end if;
+  end if;
+  if not exists (
+    select 1
+    from public.direct_conversation_participants reporter
+    join public.direct_conversation_participants target
+      on target.conversation_id = reporter.conversation_id
+    where reporter.user_id = p_reporter_user_id
+      and target.user_id = p_target_user_id
+      and (v_conversation_id is null or reporter.conversation_id = v_conversation_id)
+  ) then
+    raise exception 'reporter and target must share a conversation'
+      using errcode = '42501';
   end if;
   insert into public.direct_message_reports(
     reporter_user_id,target_user_id,message_id,category,details
