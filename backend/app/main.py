@@ -1619,14 +1619,24 @@ def create_movie_storyboard(payload: MovieStoryboardRequest, user: StudioUser = 
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
 def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
     check_content(payload.idea)
+    mode_guidance = {
+        "video": "Write a video-generation prompt with shot sequence, subject motion, camera movement, pacing, duration cues, transitions, lighting and temporal continuity.",
+        "image": "Write an image-generation prompt with subject, environment, composition, lens perspective, lighting, palette, materials, detail level and negative constraints.",
+        "music": "Write a music-generation prompt with genre, instrumentation, tempo, rhythm, mood arc, arrangement, dynamics, duration and production texture.",
+        "sound": "Write a sound-design prompt with ambience, foley, effects, spatial perspective, timing, layering, intensity and clean mix requirements.",
+        "script": "Write a screenplay-writing prompt with premise, characters, motivations, conflict, scene progression, dialogue tone, emotional arc and ending.",
+        "character": "Write a character-design prompt with identity-neutral visual traits, silhouette, age-appropriate appearance, wardrobe, props, personality cues, expressions and consistency anchors.",
+        "voice": "Write a voice-generation or voice-direction prompt with delivery, timbre, pace, emotion, accent only when specified, pronunciation and recording quality. Do not imitate a real person without consent.",
+        "storyboard": "Write a storyboard prompt with numbered shots, shot sizes, camera angles, composition, movement, lighting, transitions and continuity.",
+    }
+    guidance = mode_guidance.get(payload.purpose, "Create a coherent production-ready creative prompt suited to the stated purpose.")
     system = (
         "You are an expert prompt engineer for creative AI tools. "
-        "Turn the user's idea into one detailed, coherent, production-ready prompt. "
-        "Include subject, setting, action, composition, lighting, camera movement, mood "
-        "and constraints when relevant. Do not create content involving sexual exploitation of "
-        "minors, non-consensual intimate imagery, instructions for real-world harm, fraud, doxxing "
-        "or deceptive impersonation. Respect consent for real people's likenesses and voices. "
-        "Return only the finished prompt."
+        + guidance + " "
+        "Use clear, actionable language and organize details in a useful order. "
+        "Do not create content involving sexual exploitation of minors, non-consensual intimate imagery, "
+        "instructions for real-world harm, fraud, doxxing or deceptive impersonation. "
+        "Respect consent for real people's likenesses and voices. Return only the finished prompt."
     )
     request_data = {
         "purpose": payload.purpose,
