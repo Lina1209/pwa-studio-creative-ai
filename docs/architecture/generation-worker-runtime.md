@@ -33,3 +33,20 @@ Existing runtime flags remain fail-closed:
 - `GENERATION_WORKER_RUNTIME_ENABLED=false`
 
 No production environment variables were changed and no deployment was performed.
+
+
+## Private image result storage and retrieval
+
+`SupabasePrivateImageStorage` is a server-only adapter using the Supabase Storage REST API. It:
+- requires the server-side service key and never exposes it to the browser;
+- uses deterministic owner/job paths and create-only uploads (`x-upsert=false`);
+- verifies that the configured bucket is private before accepting an object;
+- checks the owner-scoped object listing, MIME type, bounded file size, and downloads the stored bytes through the authenticated endpoint;
+- compares the stored bytes with the provider result and calculates SHA-256;
+- preserves objects on transient verification errors so a retry can safely reconcile them, and removes only newly created objects after definitive verification failures.
+
+The authenticated `GET /api/jobs/{job_id}/result` route first loads the result locator with both the job ID and verified user ID. Only `succeeded` jobs with a valid storage path and SHA-256 can receive a signed URL. Before signing, the adapter re-verifies the owner/job path and the full stored object checksum. Signed URLs expire after 60 seconds and the API response is marked `private, no-store`.
+
+Supabase private bucket downloads and signed URL behavior follow the official Storage documentation: [private downloads](https://supabase.com/docs/guides/storage/serving/downloads) and [create signed URL](https://supabase.com/docs/reference/python/storage-from-createsignedurl).
+
+The worker runtime remains disabled. No real provider is registered and no storage credentials or production settings were changed.
