@@ -31,6 +31,7 @@ def _grant(actor, permissions, scope):
 
 def test_create_finance_request_uses_verified_actor_and_exact_permission_scope(monkeypatch):
     import app.main as main_module
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: "audit-id")
 
     captured = {}
     monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
@@ -107,6 +108,7 @@ def test_finance_decision_rejects_self_approval_before_rpc(monkeypatch):
 
 def test_approval_checks_approver_role_and_server_actor(monkeypatch):
     import app.main as main_module
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: "audit-id")
 
     captured = {}
     monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
@@ -134,6 +136,7 @@ def test_approval_checks_approver_role_and_server_actor(monkeypatch):
 
 def test_cancel_is_limited_to_requester_and_its_scope(monkeypatch):
     import app.main as main_module
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: "audit-id")
 
     captured = {}
     monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
@@ -348,5 +351,60 @@ def test_finance_event_timeline_denies_missing_read_permission(monkeypatch):
         response = client.get(f"/api/finance/requests/{REQUEST}/events")
         assert response.status_code == 403
         assert called == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_request_audit_intent_precedes_creation_and_completion_follows(monkeypatch):
+    import app.main as main_module
+
+    calls = []
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
+        ACTOR, {"credit.compensation.request"}, f"user:{OTHER}"
+    ))
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: calls.append(("audit", k)) or "audit-id")
+    monkeypatch.setattr(main_module, "create_finance_operation_request", lambda *a, **k: calls.append(("create", k)) or REQUEST)
+    monkeypatch.setattr(main_module, "read_finance_operation_request", lambda *a, **k: {
+        "request_id": REQUEST, "requester_id": ACTOR, "request_type": "credit_compensation",
+        "target_user_id": OTHER, "amount": Decimal("12"), "currency_code": "CRD",
+        "scope_key": f"user:{OTHER}", "status": "pending",
+    })
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.post("/api/finance/requests", json={
+            "request_type": "credit_compensation", "target_user_id": str(OTHER),
+            "amount": "12", "currency_code": "CRD", "reason": "Support case",
+            "idempotency_key": str(IDEMPOTENCY),
+        })
+        assert response.status_code == 201
+        assert [entry[0] for entry in calls] == ["audit", "create", "audit"]
+        assert calls[0][1]["action"] == "admin.finance.request.create"
+        assert calls[0][1]["outcome"] == "requested"
+        assert calls[1][1]["requester_id"] == ACTOR
+        assert calls[2][1]["outcome"] == "executed"
+        assert calls[2][1]["resource_id"] == REQUEST
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_finance_request_fails_closed_when_intent_audit_is_unavailable(monkeypatch):
+    import app.main as main_module
+    from app.services.admin_audit_service import AdminAuditUnavailable
+
+    mutations = []
+    monkeypatch.setattr(main_module, "resolve_finance_grant", lambda *a, **k: _grant(
+        ACTOR, {"credit.compensation.request"}, f"user:{OTHER}"
+    ))
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: (_ for _ in ()).throw(AdminAuditUnavailable("unavailable")))
+    monkeypatch.setattr(main_module, "create_finance_operation_request", lambda *a, **k: mutations.append(True) or REQUEST)
+    client = _client(StudioUser(user_id=str(ACTOR), email=None, role="creator"))
+    try:
+        response = client.post("/api/finance/requests", json={
+            "request_type": "credit_compensation", "target_user_id": str(OTHER),
+            "amount": "12", "currency_code": "CRD", "reason": "Support case",
+            "idempotency_key": str(IDEMPOTENCY),
+        })
+        assert response.status_code == 503
+        assert mutations == []
     finally:
         app.dependency_overrides.clear()
