@@ -160,6 +160,11 @@ begin
         using errcode = '23514';
     end if;
 
+    -- Serialize subscription purchases per user. Without this transaction-scoped
+    -- lock, two different paid orders for one user could read the same last end
+    -- time concurrently and create overlapping paid periods.
+    perform pg_advisory_xact_lock(hashtextextended(v_item.user_id::text, 0));
+
     -- Stack a paid period after any currently active or already scheduled period.
     select max(a.ends_at) into v_last_end
       from public.user_plan_assignments a
