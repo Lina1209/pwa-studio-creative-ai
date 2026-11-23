@@ -124,7 +124,15 @@ def conversation_messages(thread_id: str, user: StudioUser = Depends(get_current
 def create_direct_message(recipient_id: str, payload: DirectMessageCreateRequest,
                           user: StudioUser = Depends(get_current_user)):
     ensure_user_not_suspended(settings, user.user_id, "community")
-    return send_message(settings, user.user_id, recipient_id, payload.body)
+    result = send_message(settings, user.user_id, recipient_id, payload.body)
+    try:
+        preview = payload.body.strip().replace("\\n", " ")[:140]
+        create_notification(settings, recipient_id, "direct_message", "Новое личное сообщение",
+            "Вам пришло новое сообщение: " + preview,
+            {"thread_id": result["thread_id"], "message_id": result["id"]})
+    except Exception:
+        logger.exception("Could not deliver direct message notification")
+    return result
 
 
 @app.post(f"{settings.api_prefix}/conversations/{{thread_id}}/read")
