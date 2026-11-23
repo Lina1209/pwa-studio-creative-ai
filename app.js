@@ -816,7 +816,16 @@ const movieHistoryStyle = document.createElement("style");
       if(status)status.textContent="Жалоб: "+(reportData.reports||[]).length+" · апелляций: "+(appealData.appeals||[]).length+".";
     } catch(error){if(status)status.textContent=error.message;}
   };
-  $("#refreshDirectModeration")?.addEventListener("click",loadDirectModerationConsole);
+  $("#refreshDirectModeration")?.addEventListener("click",loadDirectModerationConsole);\n  $("#loadModerationHistory")?.addEventListener("click",async()=>{
+    const userId=$("#moderationTargetUserId").value.trim();const box=$("#directModerationHistory");
+    if(!userId){if(box)box.textContent="Сначала укажите ID пользователя.";return;}
+    try{const data=await apiRequest("/api/messages/direct/admin/users/"+encodeURIComponent(userId)+"/history");
+      box?.replaceChildren();
+      (data.events||[]).forEach(event=>{const p=document.createElement("p");p.textContent=event.action+" · "+event.reason+" · "+new Date(event.created_at).toLocaleString()+(event.expires_at?" · до "+new Date(event.expires_at).toLocaleString():"");box?.append(p);});
+      if(box&&!data.events?.length)box.textContent="История санкций пока пуста.";
+    }catch(error){if(box)box.textContent=error.message;}
+  });
+
   $("#directModerationReportFilter")?.addEventListener("change",loadDirectModerationConsole);
   $("#directModerationActionForm")?.addEventListener("submit",async event=>{
     event.preventDefault();const button=event.submitter;if(button)button.disabled=true;

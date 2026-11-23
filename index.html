@@ -419,7 +419,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <div id="directModerationReports" class="assistant-messages"></div>
             <h4>Апелляции пользователей</h4><div id="directModerationAppeals" class="assistant-messages"></div>
             <form id="directModerationActionForm" class="finance-queue-controls">
-              <label>ID пользователя<input id="moderationTargetUserId" required maxlength="36" placeholder="UUID пользователя"></label>
+              <label>ID пользователя<input id="moderationTargetUserId" required maxlength="36" placeholder="UUID пользователя"></label>\n              <button class="secondary-button" id="loadModerationHistory" type="button">История санкций</button>
               <label>Действие<select id="moderationAction"><option value="warn">Предупреждение</option><option value="mute">Временное ограничение</option><option value="ban">Блокировка сообщений</option><option value="unmute">Снять ограничение</option><option value="unban">Снять блокировку</option></select></label>
               <label>Срок, часов<input id="moderationDuration" type="number" min="1" max="8760" placeholder="Пусто — бессрочно"></label>
               <label>Причина<textarea id="moderationReason" rows="2" maxlength="500" required></textarea></label>
