@@ -31,6 +31,7 @@
   const refreshAuthUI = session => {
     const nextUserId = session?.user?.id || null;
     if (nextUserId !== assistantUserId) {
+      const adminPanel = $("#adminPanel"); if (adminPanel) adminPanel.hidden = true;
       assistantUserId = nextUserId;
       authContextVersion += 1;
       activeAssistantConversationId = null;
@@ -218,12 +219,17 @@ const movieHistoryStyle = document.createElement("style");
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
     if (!authSession?.user || !panel) { if (panel) panel.hidden = true; return; }
+    const userId = authSession.user.id;
+    const version = authContextVersion;
     try {
       const data = await apiRequest("/api/auth/me");
+      if (version !== authContextVersion || authSession?.user?.id !== userId) return;
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
       panel.hidden = data.role !== "admin";
       if (data.role === "admin") loadAdminWorkspace();
-    } catch { panel.hidden = true; }
+    } catch {
+      if (version === authContextVersion && authSession?.user?.id === userId) panel.hidden = true;
+    }
   };
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
