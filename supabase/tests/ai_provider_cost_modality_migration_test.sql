@@ -7,6 +7,10 @@ declare
   v_user uuid := '8c1a9a44-47b8-4d58-9f9c-30b0f55e9a88';
   v_text_request uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a101';
   v_vision_request uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a102';
+  v_text_request_2 uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a104';
+  v_vision_request_2 uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a105';
+  v_text_request_3 uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a106';
+  v_vision_request_3 uuid := '9d19c9c8-4e51-43c4-9f1b-1bff3f49a107';
   v_result jsonb;
   v_count integer;
   v_state text;
@@ -95,6 +99,49 @@ begin
    where request_modality in ('text', 'vision');
   if v_count <> 1 then
     raise exception 'Expected exactly one committed reservation in this test transaction, got %', v_count;
+  end if;
+
+  -- Provider-specific daily budget is also shared across modalities.
+  delete from public.ai_provider_cost_reservations;
+  update public.ai_provider_budget_policy
+     set global_daily_budget_usd = 10.00,
+         max_outstanding_reserved_usd = 10.00, updated_at = now();
+  update public.ai_provider_daily_budgets
+     set daily_budget_usd = 1.00, updated_at = now()
+   where provider = 'deepseek';
+  v_result := public.reserve_ai_provider_cost_v2(
+    v_text_request_2, v_user, 'deepseek', 'deepseek-flash', 0.60, 'text'
+  );
+  if coalesce((v_result ->> 'admitted')::boolean, false) is not true then
+    raise exception 'Text reservation should fit provider budget: %', v_result;
+  end if;
+  v_result := public.reserve_ai_provider_cost_v2(
+    v_vision_request_2, v_user, 'deepseek', 'deepseek-flash', 0.60, 'vision'
+  );
+  if coalesce((v_result ->> 'admitted')::boolean, true) is not false
+     or v_result ->> 'reason' <> 'provider_daily_budget_reached' then
+    raise exception 'Vision reservation must share the provider daily budget: %', v_result;
+  end if;
+
+  -- Outstanding exposure is likewise modality-independent.
+  delete from public.ai_provider_cost_reservations;
+  update public.ai_provider_daily_budgets
+     set daily_budget_usd = 10.00, updated_at = now()
+   where provider = 'deepseek';
+  update public.ai_provider_budget_policy
+     set max_outstanding_reserved_usd = 0.70, updated_at = now();
+  v_result := public.reserve_ai_provider_cost_v2(
+    v_text_request_3, v_user, 'deepseek', 'deepseek-flash', 0.60, 'text'
+  );
+  if coalesce((v_result ->> 'admitted')::boolean, false) is not true then
+    raise exception 'Text reservation should fit outstanding exposure cap: %', v_result;
+  end if;
+  v_result := public.reserve_ai_provider_cost_v2(
+    v_vision_request_3, v_user, 'deepseek', 'deepseek-flash', 0.20, 'vision'
+  );
+  if coalesce((v_result ->> 'admitted')::boolean, true) is not false
+     or v_result ->> 'reason' <> 'outstanding_exposure_limit' then
+    raise exception 'Vision reservation must share outstanding exposure cap: %', v_result;
   end if;
 end;
 $$;
