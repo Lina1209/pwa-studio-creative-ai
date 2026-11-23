@@ -7,6 +7,7 @@ from app.services import payment_orders as service
 from app.services.payment_provider_contracts import (
     PaymentProviderAdapterRegistry,
     PaymentProviderNotConfigured,
+    PaymentProviderSecretStore,
     VerifiedProviderEvent,
 )
 
@@ -62,7 +63,7 @@ class FakeVerifiedAdapter:
         self.received_body = None
         self.received_headers = None
 
-    def validate_configuration(self, settings):
+    def validate_configuration(self, settings, secrets):
         if getattr(settings, "test_adapter_ready", True) is not True:
             raise ValueError("adapter configuration is incomplete")
 
@@ -163,7 +164,7 @@ def test_provider_registry_cannot_enable_without_server_runtime_flag():
 
 def test_provider_registry_validates_adapter_configuration_before_registration():
     class IncompleteAdapter(FakeVerifiedAdapter):
-        def validate_configuration(self, settings):
+        def validate_configuration(self, settings, secrets):
             raise ValueError("missing webhook secret")
 
     with pytest.raises(ValueError, match="missing webhook secret"):
@@ -171,6 +172,35 @@ def test_provider_registry_validates_adapter_configuration_before_registration()
             [IncompleteAdapter()], enabled=True,
             settings=Settings(payment_provider_runtime_enabled=True),
         )
+
+
+def test_secret_store_reads_only_named_server_environment_secret(monkeypatch):
+    store = PaymentProviderSecretStore()
+    monkeypatch.setenv("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET", "secret-value")
+    assert store.get_required_secret("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET") == "secret-value"
+
+
+@pytest.mark.parametrize("name", ["WEBHOOK_SECRET", "PAYMENT_PROVIDER_SECRET", "PAYMENT_PROVIDER_X_SECRET/"])
+def test_secret_store_rejects_unapproved_environment_variable_names(name):
+    with pytest.raises(ValueError, match="secret reference is invalid"):
+        PaymentProviderSecretStore().get_required_secret(name)
+
+
+def test_secret_store_fails_closed_for_missing_or_blank_secret(monkeypatch):
+    store = PaymentProviderSecretStore()
+    monkeypatch.delenv("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET", raising=False)
+    with pytest.raises(PaymentProviderNotConfigured, match="unavailable"):
+        store.get_required_secret("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET")
+    monkeypatch.setenv("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET", " ")
+    with pytest.raises(PaymentProviderNotConfigured, match="unavailable"):
+        store.get_required_secret("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET")
+
+
+def test_secret_store_error_never_includes_secret_value(monkeypatch):
+    monkeypatch.setenv("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET", "")
+    with pytest.raises(PaymentProviderNotConfigured) as error:
+        PaymentProviderSecretStore().get_required_secret("PAYMENT_PROVIDER_EXAMPLEPAY_WEBHOOK_SECRET")
+    assert "secret-value" not in str(error.value)
 
 
 def test_disabled_registry_rejects_even_registered_provider():
