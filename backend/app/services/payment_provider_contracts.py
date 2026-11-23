@@ -7,8 +7,6 @@ is supplied because signature schemes and canonicalization are provider-specific
 from dataclasses import dataclass
 import os
 import re
-import os
-import re
 from typing import Mapping, Protocol
 from uuid import UUID
 
@@ -21,25 +19,6 @@ class VerifiedProviderEvent:
     amount_minor: int
     currency_code: str
     provider_payment_id: str
-
-
-class PaymentProviderSecretStore:
-    """Read provider secrets from server environment/secret-manager injection.
-
-    Secret values are never serialized, returned in errors, or persisted by this
-    helper. Rotate a value in the hosting secret manager and restart/redeploy
-    the service; adapters should resolve secrets at initialization.
-    """
-
-    _NAME = re.compile(r"^PAYMENT_PROVIDER_[A-Z0-9_]{2,100}_SECRET$")
-
-    def get_required_secret(self, variable_name: str) -> str:
-        if not isinstance(variable_name, str) or not self._NAME.fullmatch(variable_name):
-            raise ValueError("Payment provider secret reference is invalid.")
-        value = os.environ.get(variable_name)
-        if not isinstance(value, str) or not value or value.strip() != value:
-            raise PaymentProviderNotConfigured("Required payment provider secret is unavailable.")
-        return value
 
 
 class PaymentProviderSecretStore:
@@ -100,7 +79,6 @@ class PaymentProviderAdapterRegistry:
             raise ValueError("Payment provider runtime flag must be boolean.")
         if enabled and (settings is None or getattr(settings, "payment_provider_runtime_enabled", False) is not True):
             raise PaymentProviderNotConfigured("Payment provider runtime is disabled.")
-        secrets = secret_store or PaymentProviderSecretStore()
         secrets = secret_store or PaymentProviderSecretStore()
         registered = {}
         for adapter in adapters:
