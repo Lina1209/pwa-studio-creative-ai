@@ -303,7 +303,7 @@ def record_verified_provider_event(
         raise ValueError("Provider event identifier is invalid.")
     if not isinstance(event.payment_order_id, UUID):
         raise ValueError("Payment order UUID is required.")
-    if event.event_type not in _EVENT_TYPES:
+    if not isinstance(event.event_type, str) or event.event_type not in _EVENT_TYPES:
         raise ValueError("Unsupported normalized provider event type.")
     if isinstance(event.amount_minor, bool) or not isinstance(event.amount_minor, int) or event.amount_minor <= 0:
         raise ValueError("Verified provider amount is invalid.")
