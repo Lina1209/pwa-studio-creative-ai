@@ -1864,7 +1864,10 @@ const movieHistoryStyle = document.createElement("style");
     catch{$("#promptSaveFeedback").textContent="Не удалось сохранить материал: проверьте свободное место браузера.";return;}
     $("#visualAssetName").value="";$("#visualAssetDescription").value="";
     ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
-    renderVisualLibrary();
+    const syncPassportFields=()=>{$("#characterPassportFields").hidden=$("#visualAssetType").value!=="character";};
+  $("#visualAssetType").addEventListener("change",syncPassportFields);
+  syncPassportFields();
+  renderVisualLibrary();
     $("#promptSaveFeedback").textContent="«"+name+"» сохранён в библиотеке и доступен в других фильмах на этом устройстве.";
   });
   renderVisualLibrary();
