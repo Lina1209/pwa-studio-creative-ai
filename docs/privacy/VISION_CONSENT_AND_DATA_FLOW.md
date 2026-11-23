@@ -79,3 +79,8 @@ The existing short checkbox copy in the UI is temporary, not final consent langu
 - `POST /api/vision/analyze` additionally checks the latest persisted `vision_deepseek` event. A stale acceptance cannot override a later withdrawal.
 - The external AI transfer journal records a metadata-only attempt before the provider call and fails closed if the audit store is unavailable. Outcome metadata is appended afterward. An in-flight call that began with valid consent can finish its outcome audit after a later withdrawal; no new attempt can start with withdrawn consent.
 
+
+
+## Frontend behavior
+
+The AI Companion Vision panel records the user's explicit checkbox decision through `POST /api/privacy/consent` before it calls `POST /api/vision/analyze`. The server assigns the published policy/consent versions; the browser cannot choose or spoof those versions. If the consent write fails, the image request is not sent. Account Settings provides a withdrawal action that records a new append-only `withdrawn` event. A later attempt requires a new explicit acceptance.
