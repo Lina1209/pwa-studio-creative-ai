@@ -104,7 +104,10 @@ def _response_row(features):
 
 def test_plan_credited_admission_uses_atomic_rpc_and_verifies_quote(monkeypatch):
     calls = []
-    features = ["daily_image_generations", "monthly_image_generations"]
+    features = [
+        "daily_image_generations", "monthly_image_generations",
+        "daily_generation_jobs", "monthly_generation_jobs", "max_parallel_jobs",
+    ]
     monkeypatch.setattr(
         generation_jobs.httpx, "Client",
         lambda timeout: FakeClient(FakeResponse([_response_row(features)]), calls),
