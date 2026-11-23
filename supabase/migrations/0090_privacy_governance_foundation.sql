@@ -59,7 +59,8 @@ as $$
 declare
   v_request public.privacy_requests%rowtype;
 begin
-  if p_user_id is null or p_request_type not in ('access','export','correction','deletion')
+  if p_user_id is null or p_request_type is null
+     or p_request_type not in ('access','export','correction','deletion')
      or p_idempotency_key is null then
     raise exception 'invalid privacy request' using errcode = '22023';
   end if;
@@ -109,7 +110,8 @@ set search_path = pg_catalog, public
 as $$
 declare v_id uuid;
 begin
-  if p_user_id is null
+  if p_user_id is null or p_consent_scope is null or p_action is null
+     or p_source is null
      or p_consent_scope not in ('privacy_notice','vision_deepseek')
      or p_action not in ('accepted','withdrawn')
      or p_policy_version is null or length(p_policy_version) not between 1 and 80
@@ -173,7 +175,8 @@ set search_path = pg_catalog, public
 as $$
 declare v_id uuid;
 begin
-  if p_user_id is null or p_provider not in ('deepseek')
+  if p_user_id is null or p_provider is null or p_operation is null or p_outcome is null
+     or p_provider not in ('deepseek')
      or p_model is null or length(p_model) not between 1 and 100
      or p_operation not in ('text','vision')
      or p_outcome not in ('attempted','succeeded','failed','unknown') then
@@ -182,12 +185,24 @@ begin
   if p_operation = 'vision' and p_consent_event_id is null then
     raise exception 'Vision transfer audit requires a consent event' using errcode = '22023';
   end if;
-  if p_consent_event_id is not null and not exists (
-    select 1 from public.privacy_consent_events e
-     where e.id = p_consent_event_id and e.user_id = p_user_id
-       and e.consent_scope = 'vision_deepseek' and e.action = 'accepted'
+  if p_operation = 'vision' and not exists (
+    select 1
+      from public.privacy_consent_events e
+     where e.id = p_consent_event_id
+       and e.user_id = p_user_id
+       and e.consent_scope = 'vision_deepseek'
+       and e.action = 'accepted'
+       and not exists (
+         select 1 from public.privacy_consent_events later
+          where later.user_id = e.user_id
+            and later.consent_scope = e.consent_scope
+            and (later.occurred_at, later.id) > (e.occurred_at, e.id)
+       )
   ) then
-    raise exception 'Vision consent event does not match user' using errcode = '22023';
+    raise exception 'Current Vision consent is missing or withdrawn' using errcode = '22023';
+  end if;
+  if p_operation = 'text' and p_consent_event_id is not null then
+    raise exception 'Text transfer must not reference Vision consent' using errcode = '22023';
   end if;
   insert into public.ai_data_transfer_events(
     user_id,provider,model,operation,outcome,consent_event_id,correlation_id
