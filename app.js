@@ -344,7 +344,7 @@ const movieHistoryStyle = document.createElement("style");
     cards.replaceChildren();
     if (data.status === "no_active_plan") {
       status.textContent = data.pending_assignment_exists
-        ? "Назначение тарифа ожидает активации. Пока действует гостевой доступ без тарифных преимуществ."
+        ? "Назначение тарифа ожидает активации. Тарифные преимущества пока недоступны."
         : "Активный тариф пока не назначен. Доступные функции будут показаны здесь после активации тарифа.";
       planBox.hidden = true;
       return;
