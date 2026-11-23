@@ -14,6 +14,9 @@ insert into auth.users(id) values ('11111111-1111-4111-8111-111111111111') on co
 \i supabase/migrations/0053_payment_order_rpcs.sql
 \i supabase/migrations/0073_payment_order_merchant_reference_idempotency.sql
 \i supabase/migrations/0072_payment_fulfillment_outbox.sql
+\i supabase/migrations/0074_payment_fulfillment_execution_state.sql
+\i supabase/migrations/0075_payment_fulfillment_worker_leases.sql
+\i supabase/migrations/0076_payment_fulfillment_lease_hardening.sql
 
 do $payment_order_merchant_reference_idempotency_test$
 declare
@@ -167,6 +170,7 @@ begin
      set status = 'processing',
          attempt_count = 1,
          locked_at = now(),
+         lease_expires_at = now() + interval '15 seconds',
          lock_token = 'bbbbbbbb-0000-4000-8000-000000000001'
    where payment_order_id = v_order_id;
 
@@ -174,6 +178,7 @@ begin
      set status = 'completed',
          locked_at = null,
          lock_token = null,
+         lease_expires_at = null,
          completed_at = now()
    where payment_order_id = v_order_id;
 
@@ -218,7 +223,7 @@ begin
     'provider-payment-lease-002'
   );
 
-  select * into v_claim1 from public.claim_payment_fulfillment(15);
+  select * into v_claim1 from public.claim_payment_fulfillment(15, 1);
   if v_claim1.fulfillment_id is null or v_claim1.attempt_count <> 1 then
     raise exception 'Expected the queued fulfillment to be atomically claimed';
   end if;
@@ -230,7 +235,8 @@ begin
 
   -- Simulate a crashed worker by expiring the lease in the isolated test database.
   update public.payment_fulfillment_outbox
-     set locked_at = now() - interval '16 seconds'
+     set locked_at = now() - interval '16 seconds',
+         lease_expires_at = now() - interval '1 second'
    where id = v_claim1.fulfillment_id;
 
   select * into v_claim3 from public.claim_payment_fulfillment(15);
