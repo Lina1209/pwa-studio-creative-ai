@@ -84,3 +84,9 @@ class NotificationResponse(BaseModel):
 class DirectMessageCreateRequest(BaseModel):
     body: str = Field(min_length=1, max_length=8000)
 
+class DirectMessageEditRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=8000)
+
+
+class UserBlockRequest(BaseModel):
+    user_id: str = Field(min_length=36, max_length=36)
