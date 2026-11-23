@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     vision_input_enabled: bool = False
     # Separate legal/privacy release gate; must be explicitly approved before Vision can start.
     vision_privacy_review_approved: bool = False
+    # These versions stay unpublished until approved documents are actually served by the app.
+    privacy_notice_version: str = "unpublished"
+    vision_consent_version: str = "unpublished"
 
     # Payment provider adapters remain disabled until a concrete provider is reviewed.
     payment_provider_runtime_enabled: bool = False
@@ -94,6 +97,8 @@ class Settings(BaseSettings):
     def validate_vision_model_capability(self):
         if self.vision_input_enabled and not self.vision_privacy_review_approved:
             raise ValueError("VISION_INPUT_ENABLED requires explicit privacy/legal review approval.")
+        if self.vision_input_enabled and (self.privacy_notice_version == "unpublished" or self.vision_consent_version == "unpublished"):
+            raise ValueError("Vision requires published privacy and consent document versions.")
         if self.vision_input_enabled and self.ai_model != "deepseek-flash":
             raise ValueError("VISION_INPUT_ENABLED requires the DeepSeek Flash model.")
         return self
