@@ -36,7 +36,13 @@ def test_finance_role_grant_uses_verified_actor_and_audited_registry_rpc(monkeyp
     import app.main as main_module
 
     captured = {}
-    monkeypatch.setattr(main_module, "grant_finance_role", lambda *a, **k: captured.update(k) or UUID(ASSIGNMENT))
+    audit = []
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: audit.append(k) or "audit-id")
+    def grant(*a, **k):
+        audit.append({"mutation": "grant"})
+        captured.update(k)
+        return UUID(ASSIGNMENT)
+    monkeypatch.setattr(main_module, "grant_finance_role", grant)
     client = _client_for(StudioUser(user_id=ACTOR, email="ignored@example.test", role="admin"))
     try:
         response = client.post("/api/admin/finance/roles", json={
@@ -51,6 +57,8 @@ def test_finance_role_grant_uses_verified_actor_and_audited_registry_rpc(monkeyp
         assert captured["granted_by"] == UUID(ACTOR)
         assert captured["principal_id"] == UUID(TARGET)
         assert captured["role_code"] == "finance_operator"
+        assert [item.get("outcome", item.get("mutation")) for item in audit] == ["requested", "grant", "executed"]
+        assert audit[0]["action"] == audit[2]["action"] == "admin.finance.role.grant"
     finally:
         app.dependency_overrides.clear()
 
@@ -75,7 +83,13 @@ def test_finance_role_revoke_uses_verified_actor(monkeypatch):
     import app.main as main_module
 
     captured = {}
-    monkeypatch.setattr(main_module, "revoke_finance_role", lambda *a, **k: captured.update(k) or UUID(ASSIGNMENT))
+    audit = []
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: audit.append(k) or "audit-id")
+    def revoke(*a, **k):
+        audit.append({"mutation": "revoke"})
+        captured.update(k)
+        return UUID(ASSIGNMENT)
+    monkeypatch.setattr(main_module, "revoke_finance_role", revoke)
     client = _client_for(StudioUser(user_id=ACTOR, email=None, role="admin"))
     try:
         response = client.post(f"/api/admin/finance/roles/{ASSIGNMENT}/revoke", json={
@@ -85,6 +99,8 @@ def test_finance_role_revoke_uses_verified_actor(monkeypatch):
         assert response.json() == {"revocation_id": ASSIGNMENT, "status": "revoked"}
         assert captured["revoked_by"] == UUID(ACTOR)
         assert captured["assignment_id"] == UUID(ASSIGNMENT)
+        assert [item.get("outcome", item.get("mutation")) for item in audit] == ["requested", "revoke", "executed"]
+        assert audit[0]["action"] == audit[2]["action"] == "admin.finance.role.revoke"
     finally:
         app.dependency_overrides.clear()
 
@@ -94,6 +110,7 @@ def test_finance_role_grant_duplicate_returns_conflict(monkeypatch):
     import app.main as main_module
     from app.services.finance_registry import FinanceRoleConflict
 
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: "audit-id")
     monkeypatch.setattr(
         main_module, "grant_finance_role",
         lambda *a, **k: (_ for _ in ()).throw(FinanceRoleConflict("duplicate")),
@@ -127,5 +144,26 @@ def test_finance_role_grant_requires_explicit_scope_and_expiry(monkeypatch):
         assert missing_scope.status_code == 422
         assert missing_expiry.status_code == 422
         assert called == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+
+def test_finance_role_grant_fails_closed_when_intent_audit_is_unavailable(monkeypatch):
+    import app.main as main_module
+    from app.services.admin_audit_service import AdminAuditUnavailable
+
+    mutations = []
+    monkeypatch.setattr(main_module, "record_admin_audit_event", lambda *a, **k: (_ for _ in ()).throw(AdminAuditUnavailable("unavailable")))
+    monkeypatch.setattr(main_module, "grant_finance_role", lambda *a, **k: mutations.append("grant"))
+    client = _client_for(StudioUser(user_id=ACTOR, email=None, role="admin"))
+    try:
+        response = client.post("/api/admin/finance/roles", json={
+            "principal_id": TARGET, "role_code": "finance_operator",
+            "scope_key": "tenant-a", "valid_until": "2027-01-01T00:00:00Z",
+            "reason": "Must fail closed",
+        })
+        assert response.status_code == 503
+        assert mutations == []
     finally:
         app.dependency_overrides.clear()
