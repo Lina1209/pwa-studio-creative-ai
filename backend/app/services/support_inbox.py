@@ -1,5 +1,6 @@
 """Private support-ticket persistence. Access is mediated by the API and service-role key."""
 from uuid import UUID
+from datetime import datetime, timezone
 import httpx
 from app.core.config import Settings
 
@@ -57,3 +58,9 @@ def add_message(settings: Settings, ticket_id: UUID, user_id: UUID, role: str, b
     _request(settings,"PATCH","support_tickets",params={"id":f"eq.{ticket_id}"},
              payload={"last_message_at":"now()","updated_at":"now()",
                       **({"status":"in_progress"} if role=="admin" else {"status":"waiting_user"})})
+
+def update_ticket_status(settings: Settings, ticket_id: UUID, status: str):
+    if status not in {"open","in_progress","waiting_user","resolved","closed"}:
+        raise ValueError("Invalid support status.")
+    _request(settings,"PATCH","support_tickets",params={"id":f"eq.{ticket_id}"},
+             payload={"status":status,"updated_at":datetime.now(timezone.utc).isoformat()})
