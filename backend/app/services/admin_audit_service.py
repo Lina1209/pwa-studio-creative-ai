@@ -56,6 +56,10 @@ def record_admin_audit_event(
 ) -> str:
     if not isinstance(actor_user_id, UUID):
         raise ValueError("Verified actor UUID is required.")
+    if resource_id is not None and not isinstance(resource_id, UUID):
+        raise ValueError("Audit resource UUID is invalid.")
+    if correlation_id is not None and not isinstance(correlation_id, UUID):
+        raise ValueError("Audit correlation UUID is invalid.")
     if action not in _ALLOWED_ACTIONS or outcome not in _ALLOWED_OUTCOMES or resource_type not in _ALLOWED_RESOURCES:
         raise ValueError("Unsupported administrative audit event.")
     if reason is not None and (not isinstance(reason, str) or len(reason) > 500):
@@ -108,6 +112,15 @@ def get_admin_audit_events(
                 raise ValueError("naive timestamp")
         except (ValueError, TypeError, AttributeError) as exc:
             raise AdminAuditUnavailable("Administrative audit event identity is invalid.") from exc
+        resource_id = row.get("resource_id")
+        correlation_id = row.get("correlation_id")
+        try:
+            if resource_id is not None:
+                resource_id = str(UUID(str(resource_id)))
+            if correlation_id is not None:
+                correlation_id = str(UUID(str(correlation_id)))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise AdminAuditUnavailable("Administrative audit references are invalid.") from exc
         reason = row.get("reason")
         if reason is not None and (not isinstance(reason, str) or len(reason) > 500):
             raise AdminAuditUnavailable("Administrative audit reason is invalid.")
@@ -115,7 +128,7 @@ def get_admin_audit_events(
             "id": str(row["id"]), "occurred_at": str(row["occurred_at"]),
             "actor_user_id": str(row["actor_user_id"]), "action": row["action"],
             "outcome": row["outcome"], "resource_type": row["resource_type"],
-            "resource_id": row.get("resource_id"), "correlation_id": row.get("correlation_id"),
+            "resource_id": resource_id, "correlation_id": correlation_id,
             "reason": reason,
         })
     return safe_events
