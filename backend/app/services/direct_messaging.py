@@ -90,10 +90,10 @@ def list_conversations(settings: Settings, user_id: UUID, *, limit: int = 50):
         peer_profile = None
         if peer_ids:
             profiles = _request(settings, "GET", "profiles", params={
-                "select": "id,username,display_name",
+                "select": "id,username,display_name,profile_visibility",
                 "id": f"in.({','.join(peer_ids)})", "limit": "1",
             })
-            peer_profile = profiles[0] if isinstance(profiles, list) and profiles else None
+            peer_profile = profiles[0] if isinstance(profiles, list) and profiles and profiles[0].get("profile_visibility") == "public" else None
         latest = _request(settings, "GET", "direct_messages", params={
             "select": "id,sender_user_id,body,created_at", "conversation_id": f"eq.{conversation_id}",
             "order": "created_at.desc,id.desc", "limit": "1",
