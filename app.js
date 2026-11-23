@@ -2,6 +2,8 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const API_URL_KEY = "pwa-studio-api-url";
+  const API_TRUST_KEY = "pwa-studio-trusted-api-origin";
+  const DEFAULT_API_BASE = "https://pwa-studio-creative-ai.onrender.com";
   // Supabase Auth: only the public publishable key is used in the browser.
   const authGate = $("#authGate");
   const authFeedback = $("#authFeedback");
@@ -10,6 +12,12 @@
     ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.publishableKey)
     : null;
   let authSession = null;
+  let adminUiAuthorized = false;
+  let financeUiAuthorized = false;
+  let financeAccess = null;
+  let activeAssistantConversationId = null;
+  let lastAuthUserId = null;
+  let authStateEventReceived = false;
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -26,6 +34,9 @@
   };
   const refreshAuthUI = session => {
     authSession = session;
+    const adminPanel = $("#adminPanel");
+    adminUiAuthorized = false;
+    if (adminPanel) adminPanel.hidden = true;
     const user = session && session.user;
     authGate.hidden = true;
     $("#openLogin").hidden = !!user;
@@ -69,10 +80,52 @@
   } else {
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
-      refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); }, 0);
+      if (authStateEventReceived) return;
+      const session = data?.session || null;
+      lastAuthUserId = session?.user?.id || null;
+      refreshAuthUI(session);
+      setTimeout(() => {
+        if (typeof renderMovieProjects === "function") renderMovieProjects();
+        if (typeof restoreMovieStorageForCurrentUser === "function") restoreMovieStorageForCurrentUser();
+        if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
+        if (typeof loadAccountRole === "function") loadAccountRole();
+        if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+      }, 0);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      authStateEventReceived = true;
+      const nextUserId = session?.user?.id || null;
+      const accountChanged = lastAuthUserId !== nextUserId;
+      lastAuthUserId = nextUserId;
+      refreshAuthUI(session);
+      setTimeout(() => {
+        if (accountChanged) {
+          financeUiAuthorized = false; financeAccess = null;
+          const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
+          activeAssistantConversationId = null;
+          $("#assistantHistoryList")?.replaceChildren();
+          $("#assistantMessages")?.replaceChildren();
+          const assistantInput = $("#assistantInput"); if (assistantInput) assistantInput.value = "";
+          const promptIdea = $("#promptIdea"); if (promptIdea) promptIdea.value = "";
+          $("#promptOutput")?.replaceChildren();
+          const topic = $("#topic"); if (topic) topic.value = "";
+          $("#movieForm")?.reset();
+          const workflow = $("#movieWorkflowPanel");
+          if (workflow) { workflow.hidden = true; workflow.replaceChildren(); }
+          if (typeof setMovieCreationFormVisible === "function") setMovieCreationFormVisible(true);
+          if (typeof activeMovieId !== "undefined") activeMovieId = null;
+          if (typeof editingMovieId !== "undefined") editingMovieId = null;
+          if (typeof movieCloudState !== "undefined") {
+            clearTimeout(movieCloudState.timer);
+            movieCloudState.pending = false;
+          }
+        }
+        if (typeof loadAccountRole === "function") loadAccountRole();
+        if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+        if (typeof renderMovieProjects === "function") renderMovieProjects();
+        if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
+      }, 0);
+    });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -83,24 +136,6 @@
     .password-visibility-toggle:focus-visible{outline:2px solid #b9a0ff;border-radius:8px}
   `;
   document.head.appendChild(passwordStyle);
-  const movieListStyle = document.createElement("style");
-  movieListStyle.textContent = `
-    .movie-project-accordion{padding:0!important;overflow:hidden}
-    .movie-project-toggle{display:flex;align-items:center;gap:14px;width:100%;padding:18px 20px;text-align:left;color:inherit;background:transparent;border:0;cursor:pointer}
-    .movie-project-toggle:hover{background:rgba(160,130,230,.07)}
-    .movie-project-number{display:grid;place-items:center;flex:0 0 36px;height:36px;border-radius:11px;background:rgba(157,121,235,.15);color:#c8aaff;font-weight:800;font-size:12px}
-    .movie-project-heading{display:grid;gap:5px;min-width:0;flex:1}
-    .movie-project-heading b{font-size:15px;overflow-wrap:anywhere}
-    .movie-project-heading small,.movie-project-date{color:var(--muted);font-size:12px}
-    .movie-project-chevron{font-size:22px;color:#c8aaff;transition:transform .2s}
-    .movie-project-details{padding:0 20px 20px 70px}
-    .movie-project-details[hidden]{display:none}
-    .movie-project-details p{white-space:pre-wrap;line-height:1.65;margin:0 0 12px;color:var(--text)}
-    .movie-project-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-    .movie-project-actions button{min-height:40px;flex:0 1 auto}
-    @media(max-width:520px){.movie-project-toggle{padding:15px 13px;gap:10px}.movie-project-details{padding:0 13px 16px 59px}.movie-project-heading b{font-size:14px}}
-  `;
-  document.head.appendChild(movieListStyle);
 const movieHistoryStyle = document.createElement("style");
   movieHistoryStyle.textContent = `
     .movie-history-overlay{position:fixed;inset:0;z-index:9998;background:rgba(8,7,18,.82);backdrop-filter:blur(8px);display:grid;place-items:center;padding:16px;overflow:auto}
@@ -198,31 +233,774 @@ const movieHistoryStyle = document.createElement("style");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
 
 
-  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "https://pwa-studio-creative-ai.onrender.com").trim().replace(/\/+$/, "");
+  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || DEFAULT_API_BASE).trim().replace(/\/+$/, "");
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
-    if (!authSession?.user || !panel) { if (panel) panel.hidden = true; return; }
+    const userId = authSession?.user?.id;
+    if (!userId || !panel) {
+      if (panel) panel.hidden = true;
+      financeUiAuthorized = false; financeAccess = null;
+      const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
+      return;
+    }
     try {
       const data = await apiRequest("/api/auth/me");
+      if (authSession?.user?.id !== userId) return;
       $("#accountRole").textContent = data.role === "admin" ? "Владелец студии" : "Автор";
-      panel.hidden = data.role !== "admin";
-    } catch { panel.hidden = true; }
+      adminUiAuthorized = data.role === "admin";
+      panel.hidden = !adminUiAuthorized;
+      if (adminUiAuthorized) { loadAdminAnalytics(); loadAdminAuditEvents(true); loadAdminAiProviders(); loadAdminAiCostBudget(); }
+      loadFinanceAccess();
+    } catch {
+      if (authSession?.user?.id === userId) {
+        adminUiAuthorized = false; panel.hidden = true;
+        financeUiAuthorized = false; financeAccess = null;
+        const financePanel = $("#financePanel"); if (financePanel) financePanel.hidden = true;
+      }
+    }
   };
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
     if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
+    let apiUrl;
+    try { apiUrl = new URL(base); } catch { throw new Error("Адрес backend API имеет неверный формат."); }
+    const isLocalApi = apiUrl.protocol === "http:" && ["localhost", "127.0.0.1"].includes(apiUrl.hostname);
+    if ((apiUrl.protocol !== "https:" && !isLocalApi) || apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash) {
+      throw new Error("Для backend API нужен HTTPS-адрес без логина, пароля, query-параметров и hash. HTTP разрешён только для localhost.");
+    }
+    const defaultOrigin = new URL(DEFAULT_API_BASE).origin;
+    const trustedOrigin = localStorage.getItem(API_TRUST_KEY);
+    if (apiUrl.origin !== defaultOrigin && !isLocalApi && trustedOrigin !== apiUrl.origin) {
+      throw new Error("Этот адрес API ещё не подтверждён. Откройте «Настройки» и сохраните его, подтвердив доверие к серверу.");
+    }
     const token = authSession?.access_token;
-    const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(options.headers || {}) } });
-    let data = {};
-    try { data = await response.json(); } catch {}
-    if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
-    return data;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 100000);
+    try {
+      const response = await fetch(base + path, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...(token ? { Authorization: "Bearer " + token } : {}),
+          ...(options.headers || {})
+        }
+      });
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
+      return data;
+    } catch (error) {
+      if (error?.name === "AbortError") throw new Error("Сервер не ответил за 100 секунд. Попробуйте ещё раз.");
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
+
+  const loadFinanceAccess = async () => {
+    const userId = authSession?.user?.id;
+    const panel = $("#financePanel");
+    if (!userId || !panel) { financeUiAuthorized = false; financeAccess = null; if (panel) panel.hidden = true; return; }
+    try {
+      const data = await apiRequest("/api/finance/me");
+      if (authSession?.user?.id !== userId) return;
+      financeAccess = data;
+      financeUiAuthorized = Boolean(data.active && (
+        data.can_read_credit_requests || data.can_read_refund_requests
+        || (data.permissions || []).some(permission => permission.endsWith(".request"))
+      ));
+      panel.hidden = !financeUiAuthorized;
+      const createPanel = $("#financeRequestCreatePanel");
+      if (createPanel) createPanel.hidden = !(data.permissions || []).some(permission =>
+        permission === "credit.compensation.request" || permission === "billing.refund.request"
+      );
+      if (financeUiAuthorized) {
+        $("#financeAccessStatus").textContent = "Назначено областей доступа: " + Number(data.scope_count || 0) + ". Полномочия проверяются сервером при каждом действии.";
+        loadFinanceQueue(true);
+      }
+    } catch {
+      if (authSession?.user?.id === userId) {
+        financeUiAuthorized = false; financeAccess = null; panel.hidden = true;
+      }
+    }
+  };
+
   if (authSession?.user) setTimeout(loadAccountRole, 0);
-  const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  const routeLabels = {home:"Главная",create:"Создание",movie:"Миникиностудия",editor:"Редактор",prompts:"Prompt Studio",library:"Медиатека",account:"Кабинет",voice:"Голос и музыка",scenes:"Сцены",assistant:"AI Companion",guide:"Путеводитель",rules:"Правила",settings:"Настройки",other:"Другие"};
+  const formatMetric = value => new Intl.NumberFormat("ru-RU").format(value);
+  const loadAdminAiProviders = async () => {
+    const status = $("#adminAiProviderStatus"), rows = $("#adminAiProviderRows");
+    if (!status || !rows || !adminUiAuthorized) return;
+    status.textContent = "Проверяем безопасные метаданные провайдеров…";
+    rows.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/ai/providers");
+      if (!adminUiAuthorized) return;
+      $("#adminAiSelectedProvider").textContent = data.selected_provider || "—";
+      $("#adminAiSelectedModel").textContent = "Модель: " + (data.selected_model || "—");
+      $("#adminAiKeyStatus").textContent = data.ai_ready ? "Настроен" : "Не настроен";
+      $("#adminAiFallbackStatus").textContent = data.automatic_fallback ? "Включено" : "Выключено";
+      (data.providers || []).forEach(provider => {
+        const tr = document.createElement("tr");
+        const tier = provider.pricing_mode === "google_free_tier_eligible"
+          ? "Free Tier у модели · доступ проекта не подтверждён"
+          : "Платный API";
+        [
+          provider.label + (provider.selected ? " · активен" : ""),
+          provider.model,
+          provider.supported ? "Поддерживается" : "Недоступен",
+          provider.api_key_configured ? "Да" : "Нет",
+          tier
+        ].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      const note = $("#adminAiProviderSafetyNote");
+      if (note) note.textContent = data.safety_note || "Проверьте тариф и квоты в кабинете провайдера.";
+      const limits = data.admission_limits || {};
+      status.textContent = (data.runtime_provider_switching
+        ? "Провайдер может изменяться настройками."
+        : "Текущий провайдер: " + data.selected_provider + ". Переключение выполняется только контролируемым обновлением backend.")
+        + " Лимиты: " + (limits.requests_per_user_per_minute ?? "—") + " запросов/мин на пользователя; "
+        + (limits.requests_per_user_per_24h ?? "—") + " запросов/24 ч на пользователя; "
+        + (limits.requests_global_per_24h ?? "—") + " запросов/24 ч глобально; "
+        + "вывод до " + (limits.output_tokens_per_request ?? "—") + " токенов.";
+    } catch (error) {
+      status.textContent = "Не удалось получить состояние провайдеров: " + error.message;
+    }
+  };
+  $("#refreshAdminAiProviders")?.addEventListener("click", loadAdminAiProviders);
+
+  const loadAdminAiCostBudget = async () => {
+    const status = $("#adminAiCostBudgetStatus"), rows = $("#adminAiCostBudgetRows");
+    if (!status || !rows || !adminUiAuthorized) return;
+    status.textContent = "Загружаем атомарные резервы и дневные USD-лимиты…";
+    rows.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/ai/budget");
+      if (!adminUiAuthorized) return;
+      const money = value => "$" + Number(value || 0).toFixed(6);
+      $("#adminAiGlobalBudget").textContent = money(data.global_daily_budget_usd);
+      $("#adminAiOutstandingBudget").textContent = money(data.global_outstanding_reserved_usd);
+      $("#adminAiRemainingBudget").textContent = money(data.global_remaining_usd);
+      const labels = {
+        within_limit: "В пределах лимита",
+        warning: "Приближается к лимиту",
+        threshold_reached: "Дневной лимит достигнут",
+        unknown_costs: "Есть неизвестные расходы",
+        disabled: "Отключён"
+      };
+      (data.providers || []).forEach(item => {
+        const tr = document.createElement("tr");
+        [
+          item.provider,
+          money(item.daily_budget_usd),
+          money(item.settled_estimated_spend_usd),
+          money(item.outstanding_reserved_usd),
+          money(item.remaining_usd),
+          String(item.unknown_reservations || 0),
+          labels[item.status] || item.status
+        ].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      status.textContent = "Дата UTC: " + data.date_utc
+        + ". Общий дневной лимит: " + money(data.global_daily_budget_usd)
+        + "; остаток: " + money(data.global_remaining_usd)
+        + "; максимальная одновременная экспозиция: " + money(data.max_outstanding_reserved_usd) + ".";
+      const note = $("#adminAiCostBudgetNote");
+      if (note) note.textContent = data.note || "Оценка стоимости не является фактическим счётом провайдера.";
+      const unknown = $("#adminAiUnknownReservation");
+      if (unknown) {
+        unknown.replaceChildren();
+        const empty = document.createElement("option"); empty.value = ""; empty.textContent = "Нет доступных неизвестных резервов"; unknown.append(empty);
+        (data.unknown_reservations || []).forEach(item => {
+          const option = document.createElement("option"); option.value = item.request_id;
+          option.textContent = item.provider + " · " + item.model + " · " + money(item.reserved_cost_usd) + " · " + item.created_at;
+          unknown.append(option);
+        });
+      }
+      if ($("#adminAiGlobalDailyLimit")) $("#adminAiGlobalDailyLimit").value = data.global_daily_budget_usd;
+      if ($("#adminAiGlobalOutstandingLimit")) $("#adminAiGlobalOutstandingLimit").value = data.max_outstanding_reserved_usd;
+      if ($("#adminAiGlobalEnabled")) $("#adminAiGlobalEnabled").checked = Boolean(data.enabled);
+      const selectedProvider = (data.providers || []).find(item => item.provider === $("#adminAiBudgetProvider")?.value) || (data.providers || [])[0];
+      if (selectedProvider) {
+        $("#adminAiBudgetProvider").value = selectedProvider.provider;
+        $("#adminAiProviderDailyLimit").value = selectedProvider.daily_budget_usd;
+        $("#adminAiProviderEnabled").checked = Boolean(selectedProvider.enabled);
+      }
+    } catch (error) {
+      status.textContent = "Не удалось загрузить денежные лимиты AI: " + error.message;
+    }
+  };
+  $("#refreshAdminAiCostBudget")?.addEventListener("click", loadAdminAiCostBudget);
+
+  const adminAiBudgetControlStatus = $("#adminAiBudgetControlStatus");
+  const saveAdminAiGlobalBudget = async () => {
+    if (!adminUiAuthorized || !window.confirm("Сохранить новые глобальные USD-лимиты AI? Новые значения начнут действовать сразу после записи.")) return;
+    adminAiBudgetControlStatus.textContent = "Сохраняем глобальные лимиты…";
+    try {
+      await apiRequest("/api/admin/ai/budget/global", {
+        method: "PUT", body: JSON.stringify({
+          enabled: $("#adminAiGlobalEnabled").checked,
+          daily_budget_usd: $("#adminAiGlobalDailyLimit").value,
+          max_outstanding_usd: $("#adminAiGlobalOutstandingLimit").value
+        })
+      });
+      adminAiBudgetControlStatus.textContent = "Глобальные лимиты обновлены. Журнал аудита содержит запрос изменения.";
+      await loadAdminAiCostBudget();
+    } catch (error) { adminAiBudgetControlStatus.textContent = "Не удалось изменить лимиты: " + error.message; }
+  };
+  $("#saveAdminAiGlobalBudget")?.addEventListener("click", saveAdminAiGlobalBudget);
+
+  $("#saveAdminAiProviderBudget")?.addEventListener("click", async () => {
+    if (!adminUiAuthorized || !window.confirm("Сохранить дневной лимит и состояние выбранного AI-провайдера?")) return;
+    adminAiBudgetControlStatus.textContent = "Сохраняем лимит провайдера…";
+    try {
+      await apiRequest("/api/admin/ai/budget/provider", {
+        method: "PUT", body: JSON.stringify({
+          provider: $("#adminAiBudgetProvider").value,
+          enabled: $("#adminAiProviderEnabled").checked,
+          daily_budget_usd: $("#adminAiProviderDailyLimit").value
+        })
+      });
+      adminAiBudgetControlStatus.textContent = "Лимит провайдера обновлён.";
+      await loadAdminAiCostBudget();
+    } catch (error) { adminAiBudgetControlStatus.textContent = "Не удалось изменить лимит: " + error.message; }
+  });
+
+  $("#adminAiBudgetProvider")?.addEventListener("change", () => {
+    const current = ($("#adminAiCostBudgetRows")?.dataset || {});
+    const label = $("#adminAiBudgetProvider").value;
+    const row = [...($("#adminAiCostBudgetRows")?.querySelectorAll("tr") || [])].find(item => item.children[0]?.textContent === label);
+    if (!row) return;
+    $("#adminAiProviderDailyLimit").value = row.children[1].textContent.replace("$", "");
+    $("#adminAiProviderEnabled").checked = row.children[6].textContent !== "Отключён";
+  });
+
+  $("#resolveAdminAiReservation")?.addEventListener("click", async () => {
+    if (!adminUiAuthorized) return;
+    const requestId = $("#adminAiUnknownReservation").value;
+    const resolution = $("#adminAiReservationResolution").value;
+    const note = $("#adminAiReservationNote").value.trim();
+    if (!requestId || note.length < 8) {
+      adminAiBudgetControlStatus.textContent = "Выберите неизвестный резерв и укажите причину не короче 8 символов.";
+      return;
+    }
+    const cost = $("#adminAiReservationCost").value;
+    if (resolution === "record_estimated_cost" && (cost === "" || !Number.isFinite(Number(cost)) || Number(cost) < 0)) {
+      adminAiBudgetControlStatus.textContent = "Укажите неотрицательную оценку расхода в USD.";
+      return;
+    }
+    if (!window.confirm("Подтвердить решение по неизвестному резерву? Оно изменит финансовый журнал и не может быть отменено автоматически.")) return;
+    adminAiBudgetControlStatus.textContent = "Проверяем и разрешаем резерв…";
+    try {
+      await apiRequest("/api/admin/ai/budget/reservations/resolve", {
+        method: "POST", body: JSON.stringify({
+          request_id: requestId, resolution,
+          actual_estimated_cost_usd: resolution === "record_estimated_cost" ? cost : null,
+          note
+        })
+      });
+      $("#adminAiReservationNote").value = "";
+      $("#adminAiReservationCost").value = "";
+      adminAiBudgetControlStatus.textContent = "Резерв обработан. Обновляем финансовые показатели…";
+      await loadAdminAiCostBudget();
+    } catch (error) { adminAiBudgetControlStatus.textContent = "Не удалось обработать резерв: " + error.message; }
+  });
+
+  const setAdminAiUsageDefaultDates = () => {
+    const to = new Date(), from = new Date(to);
+    from.setDate(from.getDate() - 6);
+    const iso = value => value.toISOString().slice(0, 10);
+    if ($("#adminAiUsageDateFrom") && !$("#adminAiUsageDateFrom").value) $("#adminAiUsageDateFrom").value = iso(from);
+    if ($("#adminAiUsageDateTo") && !$("#adminAiUsageDateTo").value) $("#adminAiUsageDateTo").value = iso(to);
+  };
+  const loadAdminAiUsage = async () => {
+    const status = $("#adminAiUsageStatus"), rows = $("#adminAiUsageRows");
+    if (!status || !rows || !adminUiAuthorized) return;
+    const dateFrom = $("#adminAiUsageDateFrom")?.value;
+    const dateTo = $("#adminAiUsageDateTo")?.value;
+    if (!dateFrom || !dateTo || dateFrom > dateTo) {
+      status.textContent = "Укажите корректный период.";
+      return;
+    }
+    status.textContent = "Загружаем агрегированную статистику…";
+    rows.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/ai/usage?date_from=" + encodeURIComponent(dateFrom) + "&date_to=" + encodeURIComponent(dateTo));
+      if (!adminUiAuthorized) return;
+      const totals = data.totals || {};
+      const number = value => new Intl.NumberFormat("ru-RU").format(Number(value || 0));
+      $("#adminAiUsageRequests").textContent = number(totals.requests);
+      $("#adminAiUsageTokens").textContent = number((totals.input_tokens || 0) + (totals.output_tokens || 0));
+      $("#adminAiUsageCost").textContent = Number(totals.reported_estimated_cost_usd || 0).toFixed(6);
+      (data.by_provider_model || []).forEach(item => {
+        const tr = document.createElement("tr");
+        [
+          item.provider, item.model, number(item.requests),
+          number(item.input_tokens), number(item.output_tokens),
+          Number(item.reported_estimated_cost_usd || 0).toFixed(6),
+          number(item.cost_unknown_events)
+        ].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      const disclaimer = $("#adminAiUsageDisclaimer");
+      if (disclaimer) disclaimer.textContent = data.cost_disclaimer || "Оценка стоимости не является фактическим списанием.";
+      const budgetLabels = { unconfigured: "лимит не настроен", within_limit: "ниже порога", warning: "внимание: достигнуто 80% лимита", threshold_reached: "порог достигнут", unknown_costs: "есть запросы с неизвестной стоимостью", outside_report_period: "сегодня вне выбранного периода" };
+      const budgetSummary = (data.daily_budget_status || []).map(item =>
+        item.provider + ": " + (budgetLabels[item.status] || item.status)
+        + (item.utilization_percent === null ? "" : " (" + item.utilization_percent + "%)")
+      ).join("; ");
+      status.textContent = "Период UTC: " + data.period.from + " — " + data.period.to
+        + ". Запросов без оценки стоимости: " + number(totals.cost_unknown_events)
+        + ". Запросов с неполными данными токенов: " + number(totals.token_count_unknown_events)
+        + ". Сегодня: " + (budgetSummary || "нет данных")
+        + ". Фактические списания не сверены.";
+      if (disclaimer && data.budget_status_note) disclaimer.textContent += " " + data.budget_status_note;
+    } catch (error) {
+      status.textContent = "Не удалось загрузить статистику: " + error.message;
+    }
+  };
+  setAdminAiUsageDefaultDates();
+  $("#loadAdminAiUsage")?.addEventListener("click", loadAdminAiUsage);
+
+
+  const loadAdminAnalytics = async () => {
+    const status = $("#adminAnalyticsStatus");
+    const requestedUserId = authSession?.user?.id;
+    if (!requestedUserId || !$("#adminPanel") || $("#adminPanel").hidden) return;
+    if (status) status.textContent = "Обновляем агрегированную статистику…";
+    try {
+      const data = await apiRequest("/api/admin/analytics/site-visits");
+      if (authSession?.user?.id !== requestedUserId || $("#adminPanel").hidden) return;
+      $("#adminTotalVisits").textContent = formatMetric(data.total_page_views);
+      $("#adminTodayVisits").textContent = formatMetric(data.today_page_views);
+      $("#adminUniqueToday").textContent = formatMetric(data.today_unique_visitors);
+      $("#adminWeekVisits").textContent = formatMetric(data.last_7_days_page_views);
+      $("#adminMonthVisits").textContent = formatMetric(data.last_30_days_page_views);
+      $("#adminRateLimited").textContent = formatMetric(data.rate_limited_requests_last_24h);
+      const chart = $("#adminVisitsChart"); chart.replaceChildren();
+      const series = data.daily_series || [];
+      const max = Math.max(1, ...series.map(row => row.page_views));
+      series.forEach(row => {
+        const bar = document.createElement("button"); bar.type = "button";
+        bar.style.setProperty("--bar-height", Math.max(3, Math.round(row.page_views / max * 100)) + "%");
+        bar.title = row.date + ": " + formatMetric(row.page_views) + " просмотров";
+        bar.setAttribute("aria-label", bar.title);
+        const label = document.createElement("span"); label.textContent = row.date.slice(8, 10);
+        bar.appendChild(label); chart.appendChild(bar);
+      });
+      const routes = $("#adminPopularRoutes"); routes.replaceChildren();
+      const routeRows = data.top_routes || [];
+      if (!routeRows.length) {
+        const empty = document.createElement("span"); empty.className = "helper-text";
+        empty.textContent = "Пока нет накопленных данных по разделам."; routes.appendChild(empty);
+      } else {
+        const routeMax = Math.max(1, ...routeRows.map(row => row.page_views));
+        routeRows.forEach(row => {
+          const item = document.createElement("div"); item.className = "owner-route-row";
+          const name = document.createElement("span"); name.textContent = routeLabels[row.route_group] || "Другие";
+          const track = document.createElement("div"); track.className = "owner-route-bar";
+          const fill = document.createElement("i"); fill.style.width = Math.round(row.page_views / routeMax * 100) + "%"; track.appendChild(fill);
+          const count = document.createElement("strong"); count.textContent = formatMetric(row.page_views);
+          item.append(name, track, count); routes.appendChild(item);
+        });
+      }
+      if (status) status.textContent = "Данные обновлены. Период графика и разделов — последние 30 дней (UTC).";
+    } catch (error) {
+      if (status) status.textContent = "Не удалось загрузить статистику: " + error.message;
+    }
+  };
+  $("#refreshSiteAnalytics")?.addEventListener("click", loadAdminAnalytics);
+
+  let adminAuditCursor = null;
+  let adminAuditLoading = false;
+  const loadAdminAuditEvents = async (reset = false) => {
+    const status = $("#adminAuditStatus");
+    const body = $("#adminAuditRows");
+    const more = $("#loadMoreAdminAudit");
+    if (!body || adminAuditLoading || !adminUiAuthorized) return;
+    adminAuditLoading = true;
+    if (reset) { body.replaceChildren(); adminAuditCursor = null; }
+    if (status) status.textContent = "Загружаем защищённый журнал…";
+    if (more) more.disabled = true;
+    try {
+      const query = new URLSearchParams({limit:"50"});
+      if (adminAuditCursor) {
+        query.set("before", adminAuditCursor.before);
+        query.set("before_id", adminAuditCursor.before_id);
+      }
+      const data = await apiRequest("/api/admin/audit-events?" + query.toString());
+      if (!adminUiAuthorized) return;
+      const rows = Array.isArray(data.events) ? data.events : [];
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        [row.occurred_at, row.actor_user_id, row.action, row.outcome, row.resource_type, row.reason || "—"].forEach(value => {
+          const td = document.createElement("td");
+          td.textContent = String(value ?? "—");
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+      adminAuditCursor = data.next_cursor || null;
+      if (status) status.textContent = rows.length ? "Показаны последние события аудита. Секреты и содержимое пользовательских запросов не записываются." : "В журнале пока нет событий.";
+      if (more) more.hidden = !adminAuditCursor;
+    } catch (error) {
+      if (status) status.textContent = "Не удалось загрузить журнал: " + error.message;
+    } finally {
+      adminAuditLoading = false;
+      if (more) more.disabled = false;
+    }
+  };
+  $("#refreshAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(true));
+  $("#loadMoreAdminAudit")?.addEventListener("click", () => loadAdminAuditEvents(false));
+  
+  const localDateInput = (date) => {
+    const y = date.getFullYear(), m = String(date.getMonth() + 1).padStart(2, "0"), d = String(date.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + d;
+  };
+  const costFrom = $("#adminCostDateFrom"), costTo = $("#adminCostDateTo");
+  if (costFrom && costTo) {
+    const today = new Date(), weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 6);
+    costFrom.value = localDateInput(weekAgo); costTo.value = localDateInput(today);
+  }
+  const loadAdminProviderCosts = async () => {
+    const status = $("#adminProviderCostStatus"), body = $("#adminProviderCostRows");
+    if (!status || !body || !adminUiAuthorized) return;
+    const from = costFrom?.value, to = costTo?.value;
+    if (!from || !to || from > to) { status.textContent = "Укажите корректный период."; return; }
+    const days = (Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 86400000 + 1;
+    if (!Number.isInteger(days) || days < 1 || days > 31) { status.textContent = "Период должен составлять от 1 до 31 дня."; return; }
+    status.textContent = "Загружаем подтверждённые данные…"; body.replaceChildren();
+    try {
+      const data = await apiRequest("/api/admin/financial/provider-costs?date_from=" + encodeURIComponent(from) + "&date_to=" + encodeURIComponent(to));
+      if (!adminUiAuthorized) return;
+      $("#adminKnownProviderCost").textContent = String(data.known_provider_cost_usd ?? "—");
+      $("#adminProviderCostEvents").textContent = formatMetric(data.event_count ?? 0);
+      $("#adminUnknownProviderCosts").textContent = formatMetric(data.cost_evidence?.unknown ?? 0);
+      (data.by_provider_model || []).forEach(row => {
+        const tr = document.createElement("tr");
+        [row.provider, row.model, formatMetric(row.events), String(row.known_cost_usd), formatMetric(row.unknown_events)].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value ?? "—"); tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+      if (!body.children.length) {
+        const tr = document.createElement("tr"), td = document.createElement("td");
+        td.colSpan = 5; td.textContent = "За выбранный период записей нет."; tr.appendChild(td); body.appendChild(tr);
+      }
+      status.textContent = "Отчёт за " + from + " — " + to + " (UTC). Неизвестные суммы не включены в известный итог.";
+    } catch (error) { status.textContent = "Отчёт недоступен: " + error.message; }
+  };
+  $("#loadAdminProviderCosts")?.addEventListener("click", loadAdminProviderCosts);
+
+  const loadAdminWallet = async () => {
+    const status = $("#adminWalletStatus"), id = $("#adminWalletUserId")?.value.trim();
+    if (!status || !adminUiAuthorized) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id || "")) {
+      status.textContent = "Введите корректный UUID аккаунта."; return;
+    }
+    status.textContent = "Проверяем доступ и загружаем сводку…";
+    ["adminWalletAvailable","adminWalletReserved","adminWalletTotal"].forEach(key => { const el = $("#" + key); if (el) el.textContent = "—"; });
+    try {
+      const data = await apiRequest("/api/admin/financial/wallets/" + encodeURIComponent(id));
+      if (!adminUiAuthorized) return;
+      $("#adminWalletAvailable").textContent = formatMetric(data.available_credits);
+      $("#adminWalletReserved").textContent = formatMetric(data.reserved_credits);
+      $("#adminWalletTotal").textContent = formatMetric(data.total_credits);
+      $("#adminWalletDetails").textContent = "Активных резервов: " + formatMetric(data.active_holds_count) + " · партий: " + formatMetric(data.lot_count) + " · распределений: " + formatMetric(data.allocation_count) + ".";
+      status.textContent = "Сводка загружена. Доступ к кошельку записан в административный аудит.";
+      loadAdminCreditLedger(true);
+    } catch (error) { status.textContent = "Сводка недоступна: " + error.message; }
+  };
+  $("#loadAdminWallet")?.addEventListener("click", loadAdminWallet);
+
+  let adminCreditLedgerCursor = null, adminCreditLedgerLoading = false;
+  const loadAdminCreditLedger = async (reset = false) => {
+    const body = $("#adminCreditLedgerRows"), status = $("#adminCreditLedgerStatus");
+    const more = $("#loadMoreAdminCreditLedger"), id = $("#adminWalletUserId")?.value.trim();
+    if (!body || !status || adminCreditLedgerLoading || !adminUiAuthorized) return;
+    if (!id) { status.textContent = "Сначала укажите UUID пользователя в блоке кошелька."; return; }
+    adminCreditLedgerLoading = true;
+    if (reset) { body.replaceChildren(); adminCreditLedgerCursor = null; }
+    if (more) more.disabled = true;
+    status.textContent = "Загружаем журнал кредитных единиц…";
+    try {
+      const query = new URLSearchParams({limit:"50"});
+      if (adminCreditLedgerCursor) {
+        query.set("before_created_at", adminCreditLedgerCursor.before_created_at);
+        query.set("before_id", String(adminCreditLedgerCursor.before_id));
+      }
+      const data = await apiRequest("/api/admin/financial/ledger/" + encodeURIComponent(id) + "?" + query.toString());
+      if (!adminUiAuthorized || $("#adminWalletUserId")?.value.trim() !== id) return;
+      (data.entries || []).forEach(row => {
+        const tr = document.createElement("tr");
+        const operation = ({grant:"Начисление",reserve:"Резерв",capture:"Списание",release:"Возврат резерва",refund:"Возврат",adjustment:"Корректировка"})[row.operation_type] || row.operation_type;
+        const available = (row.delta_available > 0 ? "+" : "") + row.delta_available;
+        const reserved = (row.delta_reserved > 0 ? "+" : "") + row.delta_reserved;
+        const balance = row.balance_available_after + " / " + row.balance_reserved_after;
+        [new Date(row.created_at).toLocaleString("ru-RU",{timeZone:"UTC"}) + " UTC",operation,available,reserved,balance]
+          .forEach(value => { const td=document.createElement("td"); td.textContent=String(value); tr.appendChild(td); });
+        body.appendChild(tr);
+      });
+      adminCreditLedgerCursor = data.next_cursor || null;
+      if (!body.children.length) {
+        const tr=document.createElement("tr"),td=document.createElement("td");
+        td.colSpan=5; td.textContent="Записей в кредитном журнале пока нет."; tr.appendChild(td); body.appendChild(tr);
+      }
+      status.textContent = data.accounting_note || "Показан журнал кредитных единиц. Это не денежная отчётность.";
+      if (more) more.hidden = !adminCreditLedgerCursor;
+    } catch(error) { status.textContent = "Журнал недоступен: " + error.message; }
+    finally { adminCreditLedgerLoading=false; if(more) more.disabled=false; }
+  };
+  $("#loadMoreAdminCreditLedger")?.addEventListener("click", () => loadAdminCreditLedger(false));
+
+
+
+  let financeQueueCursor = null;
+  let financeQueueLoading = false;
+  const financePermission = (requestType, action) => {
+    const prefix = requestType === "credit_compensation" ? "credit.compensation" : "billing.refund";
+    return Boolean(financeAccess?.permissions?.includes(prefix + "." + action));
+  };
+  const loadFinanceQueue = async (reset = false) => {
+    const body = $("#financeQueueRows");
+    const statusText = $("#financeQueueStatusText");
+    const more = $("#loadMoreFinanceQueue");
+    if (!body || financeQueueLoading || !financeUiAuthorized) return;
+    financeQueueLoading = true;
+    if (reset) { body.replaceChildren(); financeQueueCursor = null; }
+    if (statusText) statusText.textContent = "Загружаем очередь в пределах назначенных полномочий…";
+    if (more) more.disabled = true;
+    try {
+      const query = new URLSearchParams({limit:"50"});
+      const selectedStatus = $("#financeQueueStatus")?.value || "";
+      if (selectedStatus) query.set("status", selectedStatus);
+      if (financeQueueCursor) {
+        query.set("before", financeQueueCursor.before);
+        query.set("before_id", financeQueueCursor.before_id);
+      }
+      const data = await apiRequest("/api/finance/requests?" + query.toString());
+      if (!financeUiAuthorized) return;
+      const rows = Array.isArray(data.items) ? data.items : [];
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        const typeLabel = row.request_type === "credit_compensation" ? "Компенсация кредитов" : "Денежный возврат";
+        const stateLabel = ({pending:"Ожидает",approved:"Подтверждена",rejected:"Отклонена",cancelled:"Отменена"})[row.status] || row.status;
+        const values = [
+          row.requested_at ? new Date(row.requested_at).toLocaleString("ru-RU") : "—",
+          row.requester_id, row.target_user_id, typeLabel,
+          String(row.amount) + " " + row.currency_code, stateLabel, row.reason || "—"
+        ];
+        values.forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value ?? "—"); tr.appendChild(td);
+        });
+        const actions = document.createElement("td");
+        if (row.status === "pending" && row.requester_id === authSession?.user?.id && financePermission(row.request_type, "cancel")) {
+          const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary-button"; cancel.textContent = "Отменить";
+          cancel.addEventListener("click", async () => {
+            const reason = window.prompt("Причина отмены заявки (1–500 символов):");
+            if (!reason || !reason.trim()) return;
+            try {
+              await apiRequest("/api/finance/requests/" + encodeURIComponent(row.request_id) + "/cancel", {
+                method:"POST", body:JSON.stringify({reason:reason.trim()})
+              });
+              loadFinanceQueue(true);
+            } catch (error) { if (statusText) statusText.textContent = "Не удалось отменить заявку: " + error.message; }
+          });
+          actions.appendChild(cancel);
+        } else if (row.status === "pending" && row.requester_id !== authSession?.user?.id && financePermission(row.request_type, "approve")) {
+          ["approve","reject"].forEach(decision => {
+            const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button";
+            button.textContent = decision === "approve" ? "Подтвердить" : "Отклонить";
+            button.addEventListener("click", async () => {
+              const reason = window.prompt("Обоснование решения (1–500 символов):");
+              if (!reason || !reason.trim()) return;
+              try {
+                await apiRequest("/api/finance/requests/" + encodeURIComponent(row.request_id) + "/decision", {
+                  method:"POST", body:JSON.stringify({decision,reason:reason.trim()})
+                });
+                loadFinanceQueue(true);
+              } catch (error) { if (statusText) statusText.textContent = "Решение не сохранено: " + error.message; }
+            });
+            actions.appendChild(button);
+          });
+        } else {
+          actions.textContent = row.decision_reason || "—";
+        }
+        const timelineButton = document.createElement("button");
+        timelineButton.type = "button"; timelineButton.className = "secondary-button"; timelineButton.textContent = "История";
+        timelineButton.addEventListener("click", async () => {
+          const existing = tr.nextElementSibling;
+          if (existing?.classList.contains("finance-event-row")) { existing.remove(); return; }
+          timelineButton.disabled = true;
+          try {
+            const history = await apiRequest("/api/finance/requests/" + encodeURIComponent(row.request_id) + "/events");
+            const detailRow = document.createElement("tr"); detailRow.className = "finance-event-row";
+            const detailCell = document.createElement("td"); detailCell.colSpan = 8;
+            const list = document.createElement("ol");
+            (history.events || []).forEach(event => {
+              const item = document.createElement("li");
+              const label = ({ "request.created":"Заявка создана", "request.approved":"Заявка подтверждена", "request.rejected":"Заявка отклонена", "request.cancelled":"Заявка отменена" })[event.event_type] || event.event_type;
+              item.textContent = new Date(event.occurred_at).toLocaleString("ru-RU") + " · " + label + " · " + event.actor_id + " · " + event.reason;
+              list.appendChild(item);
+            });
+            if (!list.children.length) {
+              const empty = document.createElement("span"); empty.textContent = "История пока пуста."; detailCell.appendChild(empty);
+            } else detailCell.appendChild(list);
+            detailRow.appendChild(detailCell); tr.after(detailRow);
+          } catch (error) {
+            const detailRow = document.createElement("tr"); detailRow.className = "finance-event-row";
+            const detailCell = document.createElement("td"); detailCell.colSpan = 8;
+            detailCell.textContent = "Не удалось загрузить историю: " + error.message;
+            detailRow.appendChild(detailCell); tr.after(detailRow);
+          } finally { timelineButton.disabled = false; }
+        });
+        actions.appendChild(timelineButton);
+        tr.appendChild(actions); body.appendChild(tr);
+      });
+      financeQueueCursor = data.next_cursor || null;
+      if (statusText) statusText.textContent = rows.length
+        ? "Заявки загружены. Все действия проходят повторную серверную проверку."
+        : "В назначенных областях пока нет заявок.";
+      if (more) more.hidden = !financeQueueCursor;
+    } catch (error) {
+      if (statusText) statusText.textContent = "Не удалось загрузить очередь: " + error.message;
+    } finally {
+      financeQueueLoading = false;
+      if (more) more.disabled = false;
+    }
+  };
+  $("#refreshFinanceQueue")?.addEventListener("click", () => loadFinanceQueue(true));
+  $("#loadMoreFinanceQueue")?.addEventListener("click", () => loadFinanceQueue(false));
+  $("#financeQueueStatus")?.addEventListener("change", () => loadFinanceQueue(true));
+
+  const updateFinanceRequestForm = () => {
+    const type = $("#financeRequestType")?.value;
+    const currency = $("#financeRequestCurrency");
+    const amount = $("#financeRequestAmount");
+    if (!currency || !amount) return;
+    if (type === "credit_compensation") {
+      currency.value = "CRD"; currency.disabled = true; amount.min = "1"; amount.step = "1";
+    } else {
+      currency.disabled = false;
+      if (currency.value === "CRD") currency.value = "KZT";
+      amount.min = "0.0001"; amount.step = "0.0001";
+    }
+  };
+  $("#financeRequestType")?.addEventListener("change", updateFinanceRequestForm);
+  updateFinanceRequestForm();
+  let financePendingSubmission = null;
+  $("#financeRequestCreateForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const type = $("#financeRequestType").value;
+    const permission = type === "credit_compensation" ? "credit.compensation.request" : "billing.refund.request";
+    if (!financeAccess?.permissions?.includes(permission)) return;
+    const button = $("#submitFinanceRequest"); button.disabled = true;
+    try {
+      const target = $("#financeTargetUserId").value.trim();
+      const draft = {
+        request_type:type, target_user_id:target,
+        amount:$("#financeRequestAmount").value,
+        currency_code:$("#financeRequestCurrency").value,
+        reason:$("#financeRequestReason").value.trim()
+      };
+      const fingerprint = JSON.stringify(draft);
+      if (!financePendingSubmission || financePendingSubmission.fingerprint !== fingerprint) {
+        financePendingSubmission = {fingerprint, key:crypto.randomUUID()};
+      }
+      const payload = {...draft, idempotency_key:financePendingSubmission.key};
+      await apiRequest("/api/finance/requests", {method:"POST",body:JSON.stringify(payload)});
+      financePendingSubmission = null;
+      $("#financeRequestCreateForm").reset(); updateFinanceRequestForm();
+      $("#financeQueueStatus").value = "pending";
+      loadFinanceQueue(true);
+      $("#financeQueueStatusText").textContent = "Заявка отправлена на независимое рассмотрение.";
+    } catch (error) {
+      $("#financeQueueStatusText").textContent = "Заявка не создана: " + error.message;
+    } finally { button.disabled = false; }
+  });
+
+  const financeRoleStatus = $("#financeRoleAdminStatus");
+  const loadFinanceRoles = async (principalId) => {
+    if (!adminUiAuthorized || !principalId) return;
+    const rows = $("#financeRoleRows"); if (!rows) return;
+    rows.replaceChildren();
+    if (financeRoleStatus) financeRoleStatus.textContent = "Загружаем активные назначения…";
+    try {
+      const data = await apiRequest("/api/admin/finance/roles/" + encodeURIComponent(principalId));
+      (data.assignments || []).forEach(assignment => {
+        const tr = document.createElement("tr");
+        [assignment.role_code, assignment.scope_key, assignment.valid_until, assignment.granted_by].forEach(value => {
+          const td = document.createElement("td"); td.textContent = String(value ?? "—"); tr.appendChild(td);
+        });
+        const actions = document.createElement("td");
+        const revoke = document.createElement("button"); revoke.type = "button"; revoke.className = "secondary-button"; revoke.textContent = "Отозвать";
+        revoke.addEventListener("click", async () => {
+          const reason = window.prompt("Причина отзыва роли (1–500 символов):");
+          if (!reason || !reason.trim()) return;
+          revoke.disabled = true;
+          try {
+            await apiRequest("/api/admin/finance/roles/" + encodeURIComponent(assignment.assignment_id) + "/revoke", {
+              method:"POST", body:JSON.stringify({reason:reason.trim()})
+            });
+            await loadFinanceRoles(principalId);
+          } catch (error) {
+            if (financeRoleStatus) financeRoleStatus.textContent = "Не удалось отозвать роль: " + error.message;
+            revoke.disabled = false;
+          }
+        });
+        actions.appendChild(revoke); tr.appendChild(actions); rows.appendChild(tr);
+      });
+      if (financeRoleStatus) financeRoleStatus.textContent = data.assignments?.length
+        ? "Показаны активные назначения. Истёкшие и отозванные назначения не выдаются как активные."
+        : "У аккаунта нет активных финансовых назначений.";
+    } catch (error) {
+      if (financeRoleStatus) financeRoleStatus.textContent = "Не удалось загрузить назначения: " + error.message;
+    }
+  };
+  $("#loadFinanceRoles")?.addEventListener("click", () => loadFinanceRoles($("#financeRoleLookupId").value.trim()));
+  $("#financeRoleGrantForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!adminUiAuthorized) return;
+    const button = $("#grantFinanceRoleButton"); button.disabled = true;
+    try {
+      const principalId = $("#financeRolePrincipalId").value.trim();
+      const scopeTargetId = $("#financeRoleScopeUserId").value.trim();
+      const validUntil = new Date($("#financeRoleValidUntil").value);
+      if (!Number.isFinite(validUntil.getTime()) || validUntil <= new Date()) {
+        throw new Error("Укажите будущую дату окончания полномочий.");
+      }
+      const payload = {
+        principal_id:principalId,
+        role_code:$("#financeRoleCode").value,
+        scope_key:"user:" + scopeTargetId.toLowerCase(),
+        valid_until:validUntil.toISOString(),
+        reason:$("#financeRoleReason").value.trim()
+      };
+      await apiRequest("/api/admin/finance/roles", {method:"POST",body:JSON.stringify(payload)});
+      $("#financeRoleLookupId").value = principalId;
+      $("#financeRoleReason").value = "";
+      if (financeRoleStatus) financeRoleStatus.textContent = "Роль назначена. Проверяем сохранённое назначение…";
+      await loadFinanceRoles(principalId);
+    } catch (error) {
+      if (financeRoleStatus) financeRoleStatus.textContent = "Назначение не сохранено: " + error.message;
+    } finally { button.disabled = false; }
+  });
+
+  const labels = {"finance-operations":"Финансовые операции","admin-platform":"Управление платформой","admin-technical":"Технический и финансовый центр",guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
+    if (view.startsWith("admin-") && !adminUiAuthorized) { view = "account"; window.location.hash = "account"; }
+    if (view === "finance-operations" && !financeUiAuthorized) { view = "account"; window.location.hash = "account"; }
     $$(".view").forEach(el => el.classList.toggle("active", el.id === "view-" + view));
     $$(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
     $("#crumbCurrent").textContent = labels[view];
@@ -244,6 +1022,10 @@ const movieHistoryStyle = document.createElement("style");
 
   const initial = location.hash.replace("#","");
   if (labels[initial]) navigate(initial);
+  window.addEventListener("hashchange", () => {
+    const view = location.hash.replace(/^#/, "") || "home";
+    if (labels[view]) navigate(view);
+  });
 
   $("#themeToggle").addEventListener("click", () => {
     document.body.classList.toggle("light");
@@ -272,6 +1054,7 @@ const movieHistoryStyle = document.createElement("style");
 
   $("#buildPrompt").addEventListener("click", async () => {
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы пользоваться AI-инструментами."); return; }
+    const requestUserId = authSession.user.id;
     const idea = $("#promptIdea").value.trim();
     if (!idea) {
       $("#promptFeedback").textContent = "Добавьте описание вашей задумки, чтобы сформировать промт.";
@@ -286,10 +1069,11 @@ const movieHistoryStyle = document.createElement("style");
         method: "POST",
         body: JSON.stringify({ idea, purpose: $("#promptType").value, language: $("#promptLanguage").value, style: "Cinematic, coherent, detailed" })
       });
+      if (authSession?.user?.id !== requestUserId) return;
       $("#promptOutput").textContent = result.prompt;
       $("#promptFeedback").textContent = "Готово: ответ получен от " + result.provider + " · " + result.model + ".";
     } catch (error) {
-      $("#promptFeedback").textContent = error.message;
+      if (authSession?.user?.id === requestUserId) $("#promptFeedback").textContent = error.message;
     } finally {
       button.disabled = false;
       button.textContent = "✦ Сформировать промт";
@@ -312,7 +1096,6 @@ const movieHistoryStyle = document.createElement("style");
     $("#assistantInput").focus();
   }));
   // AI Companion cloud history. Supabase RLS restricts every row to its owner.
-  let activeAssistantConversationId = null;
   let assistantHistoryBusy = false;
   const assistantHistoryList = $("#assistantHistoryList");
   const assistantMessages = $("#assistantMessages");
@@ -326,11 +1109,13 @@ const movieHistoryStyle = document.createElement("style");
   };
   const clearAssistantMessages = () => { if (assistantMessages) assistantMessages.replaceChildren(); };
   const loadAssistantMessages = async conversationId => {
-    if (!supabaseClient || !authSession?.user || !conversationId) return;
+    const userId = authSession?.user?.id;
+    if (!supabaseClient || !userId || !conversationId) return;
     const { data, error } = await supabaseClient.from("assistant_messages")
       .select("id,role,content,created_at").eq("conversation_id", conversationId)
-      .eq("user_id", authSession.user.id).order("created_at", { ascending: true });
+      .eq("user_id", userId).order("created_at", { ascending: true });
     if (error) throw error;
+    if (authSession?.user?.id !== userId) return;
     clearAssistantMessages();
     (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
     activeAssistantConversationId = conversationId;
@@ -343,12 +1128,14 @@ const movieHistoryStyle = document.createElement("style");
       clearAssistantMessages(); activeAssistantConversationId = null; return;
     }
     if (assistantHistoryBusy) return;
+    const userId = authSession.user.id;
     assistantHistoryBusy = true; setAssistantStatus("Загружаем ваши диалоги…");
     try {
       const { data, error } = await supabaseClient.from("assistant_conversations")
-        .select("id,title,updated_at").eq("user_id", authSession.user.id)
+        .select("id,title,updated_at").eq("user_id", userId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
+      if (authSession?.user?.id !== userId) return;
       assistantHistoryList.replaceChildren();
       (data || []).forEach(conversation => {
         const row = document.createElement("div"); row.className = "assistant-history-row";
@@ -375,20 +1162,28 @@ const movieHistoryStyle = document.createElement("style");
       });
       if (!activeAssistantConversationId && data?.length) {
         await loadAssistantMessages(data[0].id);
+        if (authSession?.user?.id !== userId) return;
       }
       setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
     } catch (error) {
       setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
-    } finally { assistantHistoryBusy = false; }
+    } finally {
+      assistantHistoryBusy = false;
+      if (authSession?.user?.id && authSession.user.id !== userId) setTimeout(renderAssistantHistory, 0);
+    }
   };
   const startAssistantConversation = async () => {
-    if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
+    const userId = authSession?.user?.id;
+    if (!userId || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
     const { data, error } = await supabaseClient.from("assistant_conversations")
-      .insert({ user_id: authSession.user.id, title: "Новый диалог" }).select("id").single();
+      .insert({ user_id: userId, title: "Новый диалог" }).select("id").single();
     if (error) throw error;
+    if (authSession?.user?.id !== userId) return null;
     activeAssistantConversationId = data.id; clearAssistantMessages();
     await renderAssistantHistory();
+    if (authSession?.user?.id !== userId) return null;
     setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
+    return data.id;
   };
   $("#assistantNewChat")?.addEventListener("click", async () => {
     try { await startAssistantConversation(); $("#assistantInput").focus(); }
@@ -398,32 +1193,52 @@ const movieHistoryStyle = document.createElement("style");
     event.preventDefault();
     const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
+    const requestUserId = authSession.user.id;
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     try {
       if (!activeAssistantConversationId) await startAssistantConversation();
-      const { error: userSaveError } = await supabaseClient.from("assistant_messages")
-        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "user", content: value });
-      if (userSaveError) throw userSaveError;
-      renderAssistantMessage("user", value);
-      const { data: titleRow } = await supabaseClient.from("assistant_conversations")
-        .select("title").eq("id", activeAssistantConversationId).single();
-      if (titleRow?.title === "Новый диалог") {
-        await supabaseClient.from("assistant_conversations")
-          .update({ title: value.slice(0, 72) }).eq("id", activeAssistantConversationId);
+      if (authSession?.user?.id !== requestUserId) {
+        setAssistantStatus("Сеанс аккаунта изменился. Сообщение не было сохранено.");
+        return;
       }
+      const conversationId = activeAssistantConversationId;
+      if (!conversationId) throw new Error("Не удалось открыть диалог. Начните новый разговор.");
+      const { error: userSaveError } = await supabaseClient.from("assistant_messages")
+        .insert({ conversation_id: conversationId, user_id: requestUserId, role: "user", content: value });
+      if (userSaveError) throw userSaveError;
+      if (authSession?.user?.id !== requestUserId) return;
+      renderAssistantMessage("user", value);
+      const { data: titleRow, error: titleReadError } = await supabaseClient.from("assistant_conversations")
+        .select("title").eq("id", conversationId).eq("user_id", requestUserId).single();
+      if (titleReadError) throw titleReadError;
+      if (authSession?.user?.id !== requestUserId) return;
+      if (titleRow?.title === "Новый диалог") {
+        const { error: titleUpdateError } = await supabaseClient.from("assistant_conversations")
+          .update({ title: value.slice(0, 72) }).eq("id", conversationId).eq("user_id", requestUserId);
+        if (titleUpdateError) throw titleUpdateError;
+      }
+      if (authSession?.user?.id !== requestUserId) return;
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
+      if (authSession?.user?.id !== requestUserId) {
+        setAssistantStatus("Сеанс аккаунта изменился. Ответ не был сохранён в другом аккаунте.");
+        return;
+      }
       const { error: assistantSaveError } = await supabaseClient.from("assistant_messages")
-        .insert({ conversation_id: activeAssistantConversationId, user_id: authSession.user.id, role: "assistant", content: result.reply });
+        .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
-      renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
-    } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
-    finally { button.disabled = false; input.disabled = false; input.focus(); }
+      if (authSession?.user?.id !== requestUserId) return;
+      renderAssistantMessage("assistant", result.reply);
+      await renderAssistantHistory();
+    } catch (error) {
+      if (authSession?.user?.id === requestUserId) setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message);
+    } finally { button.disabled = false; input.disabled = false; input.focus(); }
   });
   setTimeout(() => renderAssistantHistory(), 0);
 
 
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
+  const movieVaultKey = (kind, userId = authSession?.user?.id || "guest") => "movie:" + kind + ":" + userId;
   let activeMovieId = null;
   let editingMovieId = null;
   const movieStages = [
@@ -433,23 +1248,27 @@ const movieHistoryStyle = document.createElement("style");
     {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
   ];
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
-  const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
+  const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null, syncRetryCount: 0, syncRetryUser: null, loadRetryCount: 0, loadRetryUser: null, loadRetryTimer: null };
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
-  const readMovieTombstones = () => {
-    try { const value = JSON.parse(localStorage.getItem(movieDeletedKey()) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
+  const readMovieTombstones = (key = movieDeletedKey()) => {
+    try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
     catch { return []; }
   };
-  const writeMovieTombstones = ids => {
-    try { localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
+  const writeMovieTombstones = (ids, key = movieDeletedKey()) => {
+    const clean = [...new Set(ids.filter(isUuid))];
+    try { localStorage.setItem(key, JSON.stringify(clean)); }
     catch (error) { console.error("Movie deletion queue failed:", error); return false; }
+    const ownerId = authSession?.user?.id || "guest";
+    window.PWAMovieVault?.set(movieVaultKey("tombstones", ownerId), clean).catch(error => console.warn("IndexedDB tombstone mirror failed:", error));
+    return true;
   };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
-  const movieToCloudRow = project => {
+  const movieToCloudRow = (project, ownerId) => {
     if (!isUuid(project.id)) project.id = movieId();
     const snapshot = { ...project, cloudSchemaVersion: 1 };
     return {
       id: project.id,
-      owner_id: authSession.user.id,
+      owner_id: ownerId,
       title: project.name || "Без названия",
       description: project.idea || "",
       project_type: "movie",
@@ -474,50 +1293,76 @@ const movieHistoryStyle = document.createElement("style");
       versions: Array.isArray(saved.versions) ? saved.versions : []
     };
   };
-  const scheduleMovieCloudSync = () => {
-    if (!authSession?.user || !supabaseClient) return;
+  const scheduleMovieCloudSync = (delayMs = 350, expectedUserId = null) => {
+    const scheduledUserId = authSession?.user?.id;
+    if (!scheduledUserId || !supabaseClient || (expectedUserId && expectedUserId !== scheduledUserId)) return;
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
-      if (!authSession?.user) return;
+      const userId = scheduledUserId;
+      if (!userId || !supabaseClient || authSession?.user?.id !== userId) return;
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
+      const projectKey = "pwa-studio-movie-projects:" + userId;
+      const deletedKey = "pwa-studio-movie-deleted:" + userId;
       movieCloudState.syncing = true;
       try {
-        const deletedIds = readMovieTombstones();
+        const deletedIds = readMovieTombstones(deletedKey);
         if (deletedIds.length) {
           const { error: deleteError } = await supabaseClient.from("projects").delete()
-            .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
+            .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
           if (deleteError) throw deleteError;
-          writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
+          if (authSession?.user?.id !== userId) return;
+          writeMovieTombstones(readMovieTombstones(deletedKey).filter(id => !deletedIds.includes(id)), deletedKey);
         }
-        const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
-        const rows = localProjects.map(movieToCloudRow);
-        // Persist any UUID normalization before sending rows to Supabase.
-        localStorage.setItem(movieStorageKey(), JSON.stringify(localProjects));
+        if (authSession?.user?.id !== userId) return;
+        let localProjects;
+        try {
+          const stored = JSON.parse(localStorage.getItem(projectKey) || "[]");
+          localProjects = Array.isArray(stored)
+            ? stored.filter(project => project && typeof project === "object" && project.id && !deletedIds.includes(project.id))
+            : [];
+        } catch { localProjects = []; }
+        const rows = localProjects.map(project => movieToCloudRow(project, userId));
+        // Persist UUID normalization only to the account-specific local key captured above.
+        localStorage.setItem(projectKey, JSON.stringify(localProjects));
         if (rows.length) {
+          if (authSession?.user?.id !== userId) return;
           const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
           if (error) throw error;
         }
+        if (authSession?.user?.id !== userId) return;
+        movieCloudState.syncRetryCount = 0;
+        movieCloudState.syncRetryUser = userId;
         const feedback = $("#movieFeedback");
         if (feedback) feedback.textContent = deletedIds.length
           ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
           : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        if (authSession?.user?.id === userId) {
+          if (movieCloudState.syncRetryUser !== userId) { movieCloudState.syncRetryUser = userId; movieCloudState.syncRetryCount = 0; }
+          movieCloudState.syncRetryCount = Math.min(movieCloudState.syncRetryCount + 1, 9);
+        }
+        if (authSession?.user?.id === userId) {
+          const feedback = $("#movieFeedback");
+          if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        }
       } finally {
         movieCloudState.syncing = false;
         if (movieCloudState.pending) {
           movieCloudState.pending = false;
-          scheduleMovieCloudSync();
+          if (authSession?.user?.id === userId) scheduleMovieCloudSync(350, userId);
+        } else if (movieCloudState.syncRetryUser === userId && movieCloudState.syncRetryCount > 0 && authSession?.user?.id === userId) {
+          const retryDelay = Math.min(1000 * (2 ** (movieCloudState.syncRetryCount - 1)), 300000);
+          scheduleMovieCloudSync(retryDelay, userId);
         }
       }
-    }, 350);
+    }, Math.max(0, delayMs));
   };
   const loadMovieProjectsFromCloud = async () => {
     const userId = authSession?.user?.id;
     if (!userId || !supabaseClient || movieCloudState.loadingUser === userId) return;
     movieCloudState.loadingUser = userId;
+    const deletedKey = "pwa-studio-movie-deleted:" + userId;
     try {
       const { data, error } = await supabaseClient
         .from("projects")
@@ -526,13 +1371,19 @@ const movieHistoryStyle = document.createElement("style");
         .order("updated_at", { ascending: false });
       if (error) throw error;
       if (authSession?.user?.id !== userId) return;
-      const deletedIds = readMovieTombstones();
+      const deletedIds = readMovieTombstones(deletedKey);
       if (deletedIds.length) {
         const { error: deleteError } = await supabaseClient.from("projects").delete()
           .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
-        writeMovieTombstones([]);
+        if (authSession?.user?.id !== userId) return;
+        writeMovieTombstones([], deletedKey);
       }
+      if (authSession?.user?.id !== userId) return;
+      movieCloudState.loadRetryCount = 0;
+      movieCloudState.loadRetryUser = userId;
+      clearTimeout(movieCloudState.loadRetryTimer);
+      movieCloudState.loadRetryTimer = null;
       const deletedSet = new Set(deletedIds);
       const local = movieRead().filter(project => !deletedSet.has(project.id));
       const merged = new Map(local.map(project => [project.id, project]));
@@ -552,12 +1403,32 @@ const movieHistoryStyle = document.createElement("style");
       }
     } catch (error) {
       console.error("Movie cloud load failed:", error);
-      const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+      if (authSession?.user?.id === userId) {
+        if (movieCloudState.loadRetryUser !== userId) { movieCloudState.loadRetryUser = userId; movieCloudState.loadRetryCount = 0; }
+        movieCloudState.loadRetryCount = Math.min(movieCloudState.loadRetryCount + 1, 9);
+        const retryDelay = Math.min(2000 * (2 ** (movieCloudState.loadRetryCount - 1)), 300000);
+        clearTimeout(movieCloudState.loadRetryTimer);
+        movieCloudState.loadRetryTimer = setTimeout(() => {
+          if (authSession?.user?.id === userId) loadMovieProjectsFromCloud();
+        }, retryDelay);
+        const feedback = $("#movieFeedback");
+        if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены; повторная попытка запланирована.";
+      }
     } finally {
       if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
     }
   };
+  window.addEventListener("online", () => {
+    const userId = authSession?.user?.id;
+    if (!userId || !supabaseClient) return;
+    loadMovieProjectsFromCloud();
+    scheduleMovieCloudSync(0, userId);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && authSession?.user?.id) {
+      scheduleMovieCloudSync(0, authSession.user.id);
+    }
+  });
   const movieRead = () => {
     try {
       const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
@@ -589,8 +1460,14 @@ const movieHistoryStyle = document.createElement("style");
     } catch { return []; }
   };
   const movieWrite = projects => {
+    const ownerId = authSession?.user?.id || "guest";
     try {
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+      window.PWAMovieVault?.set(movieVaultKey("projects", ownerId), projects).catch(error => {
+        console.warn("IndexedDB project mirror failed:", error);
+        const feedback = $("#movieFeedback");
+        if (feedback) feedback.textContent = "Проект сохранён в браузере, но резервная копия IndexedDB недоступна. Скачайте JSON-копию."; 
+      });
       scheduleMovieCloudSync();
       return true;
     } catch (error) {
@@ -600,6 +1477,94 @@ const movieHistoryStyle = document.createElement("style");
       return false;
     }
   };
+
+  const restoreMovieStorageForCurrentUser = async () => {
+    const ownerId = authSession?.user?.id || "guest";
+    const localKey = "pwa-studio-movie-projects:" + ownerId;
+    try {
+      const record = await window.PWAMovieVault?.get(movieVaultKey("projects", ownerId));
+      if ((authSession?.user?.id || null) !== (ownerId === "guest" ? null : ownerId)) return;
+      const durableProjects = Array.isArray(record?.value) ? record.value : [];
+      let localProjects = [];
+      try { const parsed = JSON.parse(localStorage.getItem(localKey) || "[]"); if (Array.isArray(parsed)) localProjects = parsed; } catch {}
+      if (durableProjects.length) {
+        const merged = new Map(localProjects.filter(item => item && item.id).map(item => [item.id, item]));
+        durableProjects.filter(item => item && item.id).forEach(item => {
+          const current = merged.get(item.id);
+          if (!current || Date.parse(item.updatedAt || item.createdAt || 0) > Date.parse(current.updatedAt || current.createdAt || 0)) merged.set(item.id, item);
+        });
+        const recovered = [...merged.values()];
+        if (recovered.length > localProjects.length || recovered.some(item => !localProjects.some(local => local.id === item.id && Date.parse(local.updatedAt || local.createdAt || 0) >= Date.parse(item.updatedAt || item.createdAt || 0)))) {
+          localStorage.setItem(localKey, JSON.stringify(recovered));
+          renderMovieProjects();
+        }
+      } else if (localProjects.length) {
+        await window.PWAMovieVault?.set(movieVaultKey("projects", ownerId), localProjects);
+      }
+      const tombstoneRecord = await window.PWAMovieVault?.get(movieVaultKey("tombstones", ownerId));
+      const deletedKey = "pwa-studio-movie-deleted:" + ownerId;
+      if (Array.isArray(tombstoneRecord?.value) && !localStorage.getItem(deletedKey)) localStorage.setItem(deletedKey, JSON.stringify(tombstoneRecord.value.filter(isUuid)));
+      if (authSession?.user?.id !== (ownerId === "guest" ? null : ownerId)) return;
+      const feedback = $("#movieFeedback");
+      if (feedback && !feedback.textContent.includes("резервная копия")) feedback.textContent = "Локальная копия IndexedDB проверена. Облачная синхронизация работает отдельно.";
+    } catch (error) {
+      console.warn("IndexedDB recovery unavailable; localStorage remains active:", error);
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Работаем в резервном режиме браузера: IndexedDB недоступна. Скачивайте JSON-копии важных проектов.";
+    }
+  };
+  const downloadMovieBackup = () => {
+    const ownerId = authSession?.user?.id || null;
+    const projects = movieRead();
+    if (!projects.length) { window.alert("Пока нет проектов для резервного копирования."); return; }
+    const backup = { format: "PWA Studio movie workspace backup", schemaVersion: 1, exportedAt: new Date().toISOString(), scope: ownerId ? "account" : "guest", ownerId, projects };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = "pwa-studio-movie-backup-" + new Date().toISOString().slice(0,10) + ".json";
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const importMovieBackup = async file => {
+    if (!file || file.size > 10 * 1024 * 1024) throw new Error("Файл резервной копии пуст или превышает 10 МБ.");
+    const backup = JSON.parse(await file.text());
+    const ownerId = authSession?.user?.id || null;
+    if (!backup || backup.format !== "PWA Studio movie workspace backup" || backup.schemaVersion !== 1 || !Array.isArray(backup.projects) || backup.projects.length > 2000) throw new Error("Формат резервной копии не распознан или превышает допустимый объём.");
+    if (backup.scope !== (ownerId ? "account" : "guest") || (ownerId && backup.ownerId !== ownerId) || (!ownerId && backup.ownerId !== null)) throw new Error("Эта копия создана для другого аккаунта или другого режима. Переключитесь на исходный аккаунт.");
+    const valid = backup.projects.filter(project => project && typeof project === "object" && typeof project.id === "string" && project.id.length <= 128 && typeof project.name === "string" && project.name.length <= 300 && typeof (project.updatedAt || project.createdAt) === "string" && Number.isFinite(Date.parse(project.updatedAt || project.createdAt)));
+    if (valid.length !== backup.projects.length) throw new Error("В копии есть проекты с некорректными идентификаторами или датами. Импорт отменён.");
+    const merged = new Map(movieRead().map(project => [project.id, project]));
+    valid.forEach(project => {
+      const current = merged.get(project.id);
+      if (!current || Date.parse(project.updatedAt || project.createdAt) > Date.parse(current.updatedAt || current.createdAt)) merged.set(project.id, project);
+    });
+    if (!movieWrite([...merged.values()])) throw new Error("Не удалось сохранить импортированные проекты. Проверьте свободное место.");
+    renderMovieProjects();
+    window.alert("Импорт завершён. Проекты объединены по ID; более новые локальные версии сохранены.");
+  };
+  const installMovieBackupControls = () => {
+    const list = $("#movieProjectList");
+    if (!list || $("#movieBackupToolbar")) return;
+    const toolbar = document.createElement("div");
+    toolbar.id = "movieBackupToolbar";
+    toolbar.className = "movie-backup-toolbar";
+    toolbar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px";
+    const exportButton = document.createElement("button");
+    exportButton.type = "button"; exportButton.className = "secondary-button"; exportButton.textContent = "⇩ Резервная копия";
+    exportButton.addEventListener("click", downloadMovieBackup);
+    const importButton = document.createElement("button");
+    importButton.type = "button"; importButton.className = "secondary-button"; importButton.textContent = "⇧ Восстановить из копии";
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = "application/json,.json"; input.hidden = true;
+    importButton.addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      try { await importMovieBackup(input.files?.[0]); }
+      catch (error) { window.alert("Не удалось восстановить копию: " + (error.message || "неизвестная ошибка")); }
+      finally { input.value = ""; }
+    });
+    toolbar.append(exportButton, importButton, input);
+    list.parentNode.insertBefore(toolbar, list);
+  };
+
   const movieId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "movie-" + Date.now() + "-" + Math.random().toString(36).slice(2,9);
   const movieSnapshot = project => { const copy={...project}; delete copy.versions; return copy; };
   const addMovieVersion = project => {
@@ -656,7 +1621,7 @@ const movieHistoryStyle = document.createElement("style");
     if(!project||!panel)return;
     activeMovieId=projectId; editingMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards(); panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
-    const title=document.createElement("h2"); title.textContent="Этап 1 из 5 · Основные сведения о фильме";
+    const title=document.createElement("h2"); title.textContent="Основные сведения о фильме";
     const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+(project.name||"Без названия")+" · Измените сведения и перейдите к сценарию. Уже сохранённые материалы останутся на месте.";
     head.append(title,subtitle);
     const form=document.createElement("div"); form.className="movie-stage-fields movie-details-fields";
@@ -728,6 +1693,88 @@ const movieHistoryStyle = document.createElement("style");
     });
     const actions=document.createElement("div"); actions.className="movie-stage-actions";
     const draft=document.createElement("button"); draft.type="button"; draft.className="secondary-button"; draft.textContent="Сохранить черновик";
+    let aiScriptStatus=null;
+    if(stage.key==="story"){
+      const aiGenerate=document.createElement("button"); aiGenerate.type="button"; aiGenerate.className="secondary-button";
+      aiGenerate.textContent="✦ Создать сценарий и раскадровку с AI";
+      aiScriptStatus=document.createElement("p"); aiScriptStatus.className="movie-stage-feedback";
+      aiScriptStatus.setAttribute("role","status"); aiScriptStatus.setAttribute("aria-live","polite");
+      aiScriptStatus.style.cssText="display:block;flex-basis:100%;margin:4px 0;";
+      aiGenerate.addEventListener("click",async()=>{
+        if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите, чтобы создавать сценарии с AI.");return;}
+        if(!project.idea?.trim()){aiScriptStatus.textContent="Сначала заполните идею фильма в основных сведениях.";return;}
+        const userId=authSession.user.id; aiGenerate.disabled=true;
+        aiGenerate.textContent="✦ AI пишет сценарий…"; aiScriptStatus.textContent="Создаём сценарий и покадровую раскадровку. Это может занять некоторое время.";
+        try{
+          const result=await apiRequest("/api/movie/script",{method:"POST",body:JSON.stringify({
+            title:project.name||"Новый фильм",idea:project.idea,genre:project.genre||"Приключения",
+            duration_minutes:Number(project.duration)||5,frame:project.frame||"16:9",language:"Русский"
+          })});
+          if(authSession?.user?.id!==userId)return;
+          inputs.story.value=result.story; inputs.storyboard.value=result.storyboard;
+          aiScriptStatus.textContent="✓ Сценарий и раскадровка готовы ("+result.provider+" · "+result.model+"). Проверьте текст и нажмите «Сохранить черновик».";
+        }catch(error){if(authSession?.user?.id===userId)aiScriptStatus.textContent="Не удалось создать сценарий: "+error.message;}
+        finally{aiGenerate.disabled=false;aiGenerate.textContent="✦ Создать сценарий и раскадровку с AI";}
+      });
+      actions.append(aiGenerate,aiScriptStatus);
+    }
+    if(stage.key==="story"){
+      const directorButton=document.createElement("button"); directorButton.type="button"; directorButton.className="secondary-button";
+      directorButton.textContent="🎬 Разложить сценарий на сцены (AI-режиссёр)";
+      const directorStatus=document.createElement("p"); directorStatus.className="movie-stage-feedback";
+      directorStatus.setAttribute("role","status"); directorStatus.setAttribute("aria-live","polite");
+      directorStatus.style.cssText="display:block;flex-basis:100%;margin:4px 0;";
+      directorButton.addEventListener("click",async()=>{
+        if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите, чтобы использовать AI-режиссёра.");return;}
+        const screenplay=inputs.story.value.trim();
+        if(screenplay.length<50){directorStatus.textContent="Сначала создайте или вставьте сценарий (не менее 50 символов).";return;}
+        const userId=authSession.user.id; directorButton.disabled=true; directorButton.textContent="🎬 Режиссёр разбирает сценарий…";
+        directorStatus.textContent="Формируем сцены, действия, персонажей, планы камеры и свет.";
+        try{
+          const result=await apiRequest("/api/movie/director",{method:"POST",body:JSON.stringify({
+            title:project.name||"Новый фильм",story:screenplay,genre:project.genre||"Приключения",
+            duration_minutes:Number(project.duration)||5,frame:project.frame||"16:9",language:"Русский"
+          })});
+          if(authSession?.user?.id!==userId)return;
+          inputs.storyboard.value=JSON.stringify({scenes:result.scenes},null,2);
+          directorStatus.textContent="✓ Подготовлено сцен: "+result.scenes.length+" ("+result.provider+" · "+result.model+"). Проверьте и сохраните черновик.";
+        }catch(error){if(authSession?.user?.id===userId)directorStatus.textContent="Не удалось разбить сценарий на сцены: "+error.message;}
+        finally{directorButton.disabled=false;directorButton.textContent="🎬 Разложить сценарий на сцены (AI-режиссёр)";}
+      });
+      actions.append(directorButton,directorStatus);
+    }
+    if(stage.key==="story"){
+      const storyboardButton=document.createElement("button"); storyboardButton.type="button"; storyboardButton.className="secondary-button";
+      storyboardButton.textContent="🎞 Создать покадровую раскадровку";
+      const storyboardStatus=document.createElement("p"); storyboardStatus.className="movie-stage-feedback";
+      storyboardStatus.setAttribute("role","status"); storyboardStatus.setAttribute("aria-live","polite");
+      storyboardStatus.style.cssText="display:block;flex-basis:100%;margin:4px 0;";
+      storyboardButton.addEventListener("click",async()=>{
+        if(!authSession?.user){setAuthMode("signup");setAuthMessage("Войдите, чтобы создавать раскадровки с AI.");return;}
+        let sceneData;
+        try{sceneData=JSON.parse(inputs.storyboard.value);}
+        catch(_){storyboardStatus.textContent="Сначала запустите AI-режиссёра и получите структурированный список сцен.";return;}
+        if(!Array.isArray(sceneData?.scenes)||!sceneData.scenes.length){storyboardStatus.textContent="Сначала запустите AI-режиссёра: нужны готовые сцены.";return;}
+        const userId=authSession.user.id; storyboardButton.disabled=true; storyboardButton.textContent="🎞 Рисуем план кадров…";
+        storyboardStatus.textContent="Создаём последовательность кадров и описания для будущей генерации изображений.";
+        try{
+          const result=await apiRequest("/api/movie/storyboard",{method:"POST",body:JSON.stringify({
+            title:project.name||"Новый фильм",scenes:sceneData.scenes,
+            frame:project.frame||"16:9",visual_style:project.visualStyle||"Кинематографичный реализм",language:"Русский"
+          })});
+          if(authSession?.user?.id!==userId)return;
+          inputs.storyboard.value=JSON.stringify({
+            character_bible:result.characters,
+            scenes:sceneData.scenes.map((scene,index)=>({
+              ...scene,frames:result.scenes[index].frames
+            }))
+          },null,2);
+          storyboardStatus.textContent="✓ Создан паспорт внешности "+result.characters.length+" персонажей и "+result.scenes.reduce((n,scene)=>n+scene.frames.length,0)+" кадров в "+result.scenes.length+" сценах. Проверьте и сохраните черновик.";
+        }catch(error){if(authSession?.user?.id===userId)storyboardStatus.textContent="Не удалось создать раскадровку: "+error.message;}
+        finally{storyboardButton.disabled=false;storyboardButton.textContent="🎞 Создать покадровую раскадровку";}
+      });
+      actions.append(storyboardButton,storyboardStatus);
+    }
     const draftStatus=document.createElement("p"); draftStatus.className="movie-stage-feedback"; draftStatus.setAttribute("role","status"); draftStatus.setAttribute("aria-live","polite"); draftStatus.style.cssText="display:block;flex-basis:100%;margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,.12);font-size:14px;";
     let draftStatusTimer=null;
     draft.addEventListener("click",()=>{
@@ -938,10 +1985,16 @@ const movieHistoryStyle = document.createElement("style");
     updateMovieStageCards();
   };
   $("#movieStart").addEventListener("click",()=>{
-    editingMovieId=null; $("#movieForm").reset();
-    const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
+    editingMovieId=null;
+    $("#movieForm").reset();
+    setMovieCreationFormVisible(true);
+    const workflow=$("#movieWorkflowPanel");
+    if(workflow){workflow.hidden=true;workflow.removeAttribute("data-active-stage");}
+    const submit=$("#movieForm button[type='submit']");
+    if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
     $("#movieFeedback").textContent="Задайте основу нового фильма. Уже существующие проекты останутся без изменений.";
-    $("#movieName").focus(); $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
+    $("#movieName").focus();
+    $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
   });
   $("#movieForm").addEventListener("submit",event=>{
     event.preventDefault();
@@ -972,7 +2025,7 @@ const movieHistoryStyle = document.createElement("style");
     openMovieStage(project.id,index);
   }));
   const workflowStyle=document.createElement("style");
-  workflowStyle.textContent=".movie-project-accordion{padding:0!important;overflow:hidden}.movie-project-toggle{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;text-align:left;color:inherit;background:transparent;border:0;cursor:pointer}.movie-project-toggle:hover,.movie-project-card.is-active .movie-project-toggle{background:rgba(160,130,230,.08)}.movie-project-number{display:grid;place-items:center;flex:0 0 36px;height:36px;border-radius:11px;background:rgba(157,121,235,.15);color:#c8aaff;font-weight:800;font-size:12px}.movie-project-heading{display:grid;gap:5px;min-width:0;flex:1}.movie-project-heading b{font-size:15px;overflow-wrap:anywhere}.movie-project-heading small,.movie-project-date,.movie-project-progress{color:var(--muted);font-size:12px}.movie-project-chevron{font-size:22px;color:#c8aaff}.movie-project-details{padding:0 18px 18px 68px}.movie-project-details[hidden],.movie-workflow-panel[hidden]{display:none}.movie-project-details p{white-space:pre-wrap;line-height:1.65;margin:0 0 10px;color:var(--text)}.movie-project-progress{display:block;margin:8px 0}.movie-project-actions,.movie-stage-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.movie-project-actions button,.movie-stage-actions button{min-height:40px}.movie-tool-card:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.5)}.movie-tool-card.is-locked em{font-style:normal}.movie-workflow-panel{margin:24px 0;padding:22px}.movie-workflow-head h2{margin:0 0 8px}.movie-workflow-head p,.movie-workflow-complete p{color:var(--muted);line-height:1.6}.movie-stage-fields{display:grid;gap:16px;margin-top:18px}.movie-stage-field{display:grid;gap:8px;font-weight:600}.movie-stage-field textarea{width:100%;min-height:130px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font:inherit;resize:vertical}.movie-stage-actions{justify-content:space-between}.movie-workflow-complete h2{margin-top:0}.danger-button{border:1px solid rgba(255,90,90,.35);color:#ff9292;background:rgba(255,70,70,.08);border-radius:10px;padding:9px 12px}@media(max-width:520px){.movie-project-toggle{padding:14px 12px;gap:10px}.movie-project-details{padding:0 12px 14px 58px}.movie-project-heading b{font-size:14px}.movie-project-actions button{font-size:12px;padding:8px 10px}.movie-workflow-panel{padding:15px}}";
+  workflowStyle.textContent=".movie-project-accordion{padding:0!important;overflow:hidden}.movie-project-toggle{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;text-align:left;color:inherit;background:transparent;border:0;cursor:pointer}.movie-project-toggle:hover,.movie-project-card.is-active .movie-project-toggle{background:rgba(160,130,230,.08)}.movie-project-number{display:grid;place-items:center;flex:0 0 36px;height:36px;border-radius:11px;background:rgba(157,121,235,.15);color:#c8aaff;font-weight:800;font-size:12px}.movie-project-heading{display:grid;gap:5px;min-width:0;flex:1}.movie-project-heading b{font-size:15px;overflow-wrap:anywhere}.movie-project-heading small,.movie-project-date,.movie-project-progress{color:var(--muted);font-size:12px}.movie-project-chevron{font-size:22px;color:#c8aaff;transition:transform .2s}.movie-project-details{padding:0 18px 18px 68px}.movie-project-details[hidden],.movie-workflow-panel[hidden]{display:none}.movie-project-details p{white-space:pre-wrap;line-height:1.65;margin:0 0 10px;color:var(--text)}.movie-project-progress{display:block;margin:8px 0}.movie-project-actions,.movie-stage-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.movie-project-actions button,.movie-stage-actions button{min-height:40px}.movie-tool-card:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.5)}.movie-tool-card.is-locked em{font-style:normal}.movie-workflow-panel{margin:24px 0;padding:22px}.movie-workflow-head h2{margin:0 0 8px}.movie-workflow-head p,.movie-workflow-complete p{color:var(--muted);line-height:1.6}.movie-stage-fields{display:grid;gap:16px;margin-top:18px}.movie-stage-field{display:grid;gap:8px;font-weight:600}.movie-stage-field textarea{width:100%;min-height:130px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font:inherit;resize:vertical}.movie-stage-actions{justify-content:space-between}.movie-workflow-complete h2{margin-top:0}.danger-button{border:1px solid rgba(255,90,90,.35);color:#ff9292;background:rgba(255,70,70,.08);border-radius:10px;padding:9px 12px}@media(max-width:520px){.movie-project-toggle{padding:14px 12px;gap:10px}.movie-project-details{padding:0 12px 14px 58px}.movie-project-heading b{font-size:14px}.movie-project-actions button{font-size:12px;padding:8px 10px}.movie-workflow-panel{padding:15px}}";
   document.head.appendChild(workflowStyle);
   const formatGuestRemaining = expiresAt => {
     const ms = Math.max(0, Date.parse(expiresAt) - Date.now());
@@ -1028,6 +2081,8 @@ const movieHistoryStyle = document.createElement("style");
   setInterval(()=>{if(!authSession?.user && !$("#view-guestspace")?.hidden)renderGuestSpace();},60000);
 
   renderMovieProjects();
+  installMovieBackupControls();
+  restoreMovieStorageForCurrentUser();
 
   // Store only the backend URL in this browser; provider secrets stay server-side.
   const apiUrlInput = $("#backendUrl");
@@ -1044,13 +2099,35 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#saveBackend").addEventListener("click", () => {
     const value = apiUrlInput.value.trim().replace(/\/+$/, "");
-    if (value && !/^https:\/\//i.test(value) && !/^http:\/\/localhost(?::\d+)?$/i.test(value) && !/^http:\/\/127\.0\.0\.1(?::\d+)?$/i.test(value)) {
-      apiStatus.textContent = "Укажите полный адрес API с https:// (для локальной разработки допустим localhost).";
-      return;
+    if (value) {
+      let parsed;
+      try { parsed = new URL(value); } catch {
+        apiStatus.textContent = "Укажите корректный полный адрес backend API.";
+        return;
+      }
+      const isLocalApi = parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname);
+      if ((parsed.protocol !== "https:" && !isLocalApi) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+        apiStatus.textContent = "Нужен HTTPS-адрес без логина, пароля, query и hash. HTTP разрешён только для localhost.";
+        return;
+      }
+      const defaultOrigin = new URL(DEFAULT_API_BASE).origin;
+      if (parsed.origin !== defaultOrigin && !isLocalApi) {
+        const trusted = window.confirm("PWA Studio будет отправлять этому backend-серверу токен вашей сессии Supabase. Продолжайте только если вы владеете этим сервером или полностью ему доверяете. Разрешить этот адрес?");
+        if (!trusted) {
+          apiStatus.textContent = "Адрес не сохранён: сервер не подтверждён.";
+          return;
+        }
+        localStorage.setItem(API_TRUST_KEY, parsed.origin);
+      } else {
+        localStorage.removeItem(API_TRUST_KEY);
+      }
+    } else {
+      localStorage.removeItem(API_TRUST_KEY);
     }
     localStorage.setItem(API_URL_KEY, value);
-    apiStatus.textContent = value ? "Адрес сохранён. Проверяем соединение…" : "Адрес API очищен.";
+    apiStatus.textContent = value ? "Адрес сохранён. Проверяем соединение…" : "Используется адрес API по умолчанию.";
     if (value) checkBackend();
+    else checkBackend();
   });
   $("#testBackend").addEventListener("click", checkBackend);
 

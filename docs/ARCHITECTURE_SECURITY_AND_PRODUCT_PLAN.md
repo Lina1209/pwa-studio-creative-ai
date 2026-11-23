@@ -39,7 +39,7 @@ A committed migration is not proof it has been applied. A successful browser ref
 - Python / FastAPI hosted on Render.
 - LiteLLM routes AI requests to DeepSeek.
 - JWT verification uses Supabase signing keys and validates issuer, audience, expiry, and subject.
-- Admin identity is derived server-side from configured owner email; verify configuration and all protected routes before relying on it.
+- Admin identity is derived server-side from the verified Supabase JWT subject UUID matching OWNER_USER_IDS; email is display/contact data only. The UUID allowlist must be configured in hosting secrets before owner access is available.
 - Provider credentials must remain in Render environment variables.
 
 ### Supabase
