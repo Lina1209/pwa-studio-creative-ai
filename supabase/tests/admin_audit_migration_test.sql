@@ -21,14 +21,6 @@ declare
   v_count integer;
   v_rejected boolean;
 begin
-  foreach v_resource in array array[
-    '22222222-2222-4222-8222-222222222222'::uuid,
-    '33333333-3333-4333-8333-333333333333'::uuid,
-    '44444444-4444-4444-8444-444444444444'::uuid
-  ] loop
-    null;
-  end loop;
-
   v_id := public.record_admin_audit_event(
     v_actor, 'admin.access', 'allowed', 'credit_ledger', v_resource, null,
     'Test credit ledger audit resource'
