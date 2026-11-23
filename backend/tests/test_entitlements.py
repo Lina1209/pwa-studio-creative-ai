@@ -202,3 +202,27 @@ def test_invalid_active_plan_snapshot_fails_closed(monkeypatch):
     )
     with pytest.raises(entitlements.EntitlementsUnavailable):
         entitlements.resolve_user_entitlements(configured_settings(), user_id=USER)
+
+
+def test_future_scheduled_assignment_is_reported_pending_not_active(monkeypatch):
+    now = datetime.now(timezone.utc)
+    future = {
+        **_active_assignment(),
+        "starts_at": (now.replace(day=1) + __import__("datetime").timedelta(days=40)).isoformat(),
+        "ends_at": (now.replace(day=1) + __import__("datetime").timedelta(days=70)).isoformat(),
+    }
+    calls = []
+    responses = {
+        "user_plan_assignments": [[future]],
+        "user_plan_assignment_events": [[
+            {"id": 3, "assignment_id": ASSIGNMENT, "event_type": "scheduled", "occurred_at": now.isoformat()},
+        ]],
+    }
+    monkeypatch.setattr(
+        entitlements.httpx, "Client",
+        lambda timeout: FakeClient(responses, calls),
+    )
+    result = entitlements.resolve_user_entitlements(configured_settings(), user_id=USER)
+    assert result["status"] == "no_active_plan"
+    assert result["pending_assignment_exists"] is True
+    assert result["capabilities_enabled"] is False
