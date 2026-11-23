@@ -5311,6 +5311,7 @@ declare
   v_status text;
   v_hold_status text;
   v_count integer;
+  v_attempt_count integer;
 begin
   -- A single credited job exercises active/cancel_requested heartbeat states,
   -- rejects a stale worker, refuses to settle an unknown provider operation,
@@ -5374,6 +5375,8 @@ begin
 
   -- An expired cancel_requested lease is reclaimable for reconciliation,
   -- without changing the job status or consuming another generation attempt.
+  select attempt_count into v_attempt_count
+    from public.generation_jobs where id=v_job.job_id;
   update public.generation_jobs
      set lease_expires_at=now()-interval '1 second', updated_at=now()
    where id=v_job.job_id;
@@ -5381,7 +5384,7 @@ begin
     from public.claim_next_generation_job_v2('cancel-recovery-worker', 180);
   if v_claim.job_id <> v_job.job_id
      or v_claim.job_status <> 'cancel_requested'
-     or v_claim.attempt_count <> v_job.attempt_count then
+     or v_claim.attempt_count <> v_attempt_count then
     raise exception 'Expired cancellation lease was not reclaimed safely';
   end if;
 
