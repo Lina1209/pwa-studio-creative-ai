@@ -2067,10 +2067,24 @@ def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current
 
 
 
+class SupportTicketContext(BaseModel):
+    model_config = {"extra": "forbid"}
+    page_path: str | None = Field(default=None, max_length=160)
+    app_version: str | None = Field(default=None, max_length=40)
+    project_id: str | None = Field(default=None, max_length=80)
+    job_id: str | None = Field(default=None, max_length=80)
+    error_code: str | None = Field(default=None, max_length=80)
+
+
 class SupportTicketCreate(BaseModel):
     model_config = {"extra": "forbid"}
     subject: str = Field(min_length=3, max_length=160)
     message: str = Field(min_length=1, max_length=5000)
+    category: str = Field(
+        default="general",
+        pattern="^(general|bug|account|billing|feature_request|feedback|safety_privacy)$",
+    )
+    context: SupportTicketContext = Field(default_factory=SupportTicketContext)
 
 class SupportMessageCreate(BaseModel):
     model_config = {"extra": "forbid"}
@@ -2089,7 +2103,7 @@ def support_create_ticket(payload: SupportTicketCreate, user: StudioUser = Depen
     body=payload.message.strip()
     if len(subject)<3 or not body: raise HTTPException(status_code=422, detail="Тема и сообщение обязательны.")
     try:
-        ticket=create_ticket(settings, UUID(user.user_id), subject, body)
+        ticket=create_ticket(settings, UUID(user.user_id), subject, body, category=payload.category, context=payload.context.model_dump(exclude_none=True))
         return {"ticket":ticket}
     except SupportUnavailable: _support_error()
 
