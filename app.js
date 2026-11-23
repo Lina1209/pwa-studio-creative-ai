@@ -1925,17 +1925,20 @@ const movieHistoryStyle = document.createElement("style");
       throw error;
     }
   };
-  const deleteVisualAssetFromCloud=async(item)=>{
-    const userId=authSession?.user?.id;if(!supabaseClient||!userId)return;
+  const deleteVisualAssetFromCloud=async(item,expectedUserId=authSession?.user?.id)=>{
+    const userId=expectedUserId;if(!supabaseClient||!userId)return;
+    const assertOwner=()=>{if(authSession?.user?.id!==userId)throw new Error("Аккаунт изменился во время удаления.");};
+    const paths=(item?.referenceImages||[]).map(ref=>ref.storagePath).filter(Boolean);
+    if(paths.some(path=>!path.startsWith(userId+"/")))throw new Error("Отказано в удалении объекта вне текущего аккаунта.");
     const deletedAt=new Date().toISOString();
     const {error:markError}=await supabaseClient.from("character_visual_assets").upsert(
       {user_id:userId,asset_id:item.id,asset:item,deleted_at:deletedAt,updated_at:deletedAt},
       {onConflict:"user_id,asset_id"}
     );
     if(markError)throw markError;
-    const paths=(item?.referenceImages||[]).map(ref=>ref.storagePath).filter(Boolean);
-    if(paths.some(path=>!path.startsWith(userId+"/")))throw new Error("Отказано в удалении объекта вне текущего аккаунта.");
+    assertOwner();
     if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error)throw error;}
+    assertOwner();
   };
   const renderVisualLibrary = () => {
     const list=$("#visualAssetList");if(!list)return;
@@ -2032,19 +2035,24 @@ const movieHistoryStyle = document.createElement("style");
         actions.append(pack);
       }
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";remove.addEventListener("click",async()=>{
+        const ownerId=authSession?.user?.id||null,storageKey=visualLibraryKey();
         const current=readVisualLibrary(),removed=current.find(asset=>asset.id===item.id);if(!removed)return;
+        const stillOwner=()=>((authSession?.user?.id||null)===ownerId);
         remove.disabled=true;
         try{
           // Persist the cloud tombstone before removing the local copy, so a network error cannot resurrect it.
-          if(authSession?.user?.id)await deleteVisualAssetFromCloud(removed);
-          const next=readVisualLibrary().filter(asset=>asset.id!==removed.id);
-          localStorage.setItem(visualLibraryKey(),JSON.stringify(next));
+          if(ownerId)await deleteVisualAssetFromCloud(removed,ownerId);
+          if(!stillOwner())throw new Error("Аккаунт изменился во время удаления.");
+          const next=JSON.parse(localStorage.getItem(storageKey)||"[]").filter(asset=>asset.id!==removed.id);
+          localStorage.setItem(storageKey,JSON.stringify(next));
           (removed.referenceImages||[]).forEach(ref=>deleteVisualRefImage(ref.id).catch(()=>{}));
           $("#promptSaveFeedback").textContent="Материал удалён из библиотеки.";
           renderVisualLibrary();
         }catch(error){
           console.warn("Cloud asset delete failed:",error);
-          $("#promptSaveFeedback").textContent="Не удалось подтвердить удаление в облаке. Материал оставлен на устройстве; повторите попытку.";
+          $("#promptSaveFeedback").textContent=stillOwner()
+            ?"Не удалось подтвердить удаление в облаке. Материал оставлен на устройстве; повторите попытку."
+            :"Аккаунт изменился. Данные другого аккаунта не изменены; обновите библиотеку после входа.";
           remove.disabled=false;
         }
       });
@@ -2052,6 +2060,8 @@ const movieHistoryStyle = document.createElement("style");
     });
   };
   $("#saveVisualAsset").addEventListener("click",async()=>{
+    const ownerId=authSession?.user?.id||null,storageKey=visualLibraryKey();
+    const assertOwner=()=>{if((authSession?.user?.id||null)!==ownerId)throw new Error("Аккаунт изменился во время сохранения.");};
     const type=$("#visualAssetType").value,name=$("#visualAssetName").value.trim(),value=$("#visualAssetDescription").value.trim();
     if(!["character","scene"].includes(type)||!name||!value){$("#promptSaveFeedback").textContent="Укажите тип, название и описание материала.";return;}
     const items=readVisualLibrary();
@@ -2069,22 +2079,29 @@ const movieHistoryStyle = document.createElement("style");
     const assetId=crypto.randomUUID?crypto.randomUUID():String(Date.now());
     const refs=files.map((file,index)=>({id:assetId+"-"+index,name:file.name.slice(0,120),type:file.type}));
     items.unshift({id:assetId,type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),referenceImages:refs,createdAt:new Date().toISOString()});
-    const newAsset=items[0];
+    const newAsset=items[0],saveButton=$("#saveVisualAsset");
+    saveButton.disabled=true;
     try{
-      for(let i=0;i<files.length;i++) await saveVisualRefImage(refs[i].id,files[i],authSession?.user?.id||"guest");
-      if(authSession?.user?.id) await saveVisualAssetToCloud(newAsset,files);
-      localStorage.setItem(visualLibraryKey(),JSON.stringify(items));
+      for(let i=0;i<files.length;i++){
+        assertOwner();
+        await saveVisualRefImage(refs[i].id,files[i],ownerId||"guest");
+      }
+      assertOwner();
+      if(ownerId)await saveVisualAssetToCloud(newAsset,files);
+      assertOwner();
+      localStorage.setItem(storageKey,JSON.stringify(items));
     }catch(error){
       await Promise.all(refs.map(ref=>deleteVisualRefImage(ref.id).catch(()=>{})));
-      $("#promptSaveFeedback").textContent=authSession?.user?.id
-        ?"Не удалось загрузить материал в облако. Проверьте, что миграции 0070 и 0071 применены; локальная запись не создана."
+      $("#promptSaveFeedback").textContent=ownerId
+        ?"Не удалось сохранить материал в облако или аккаунт изменился. Проверьте подключение и повторите попытку."
         :"Не удалось сохранить референсы. Проверьте свободное место браузера и доступность IndexedDB.";
-      console.warn("Visual asset save failed:",error);return;
+      console.warn("Visual asset save failed:",error);saveButton.disabled=false;return;
     }
+    saveButton.disabled=false;
     $("#visualAssetName").value="";$("#visualAssetDescription").value="";$("#visualReferenceFiles").value="";
     ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
     renderVisualLibrary();
-    $("#promptSaveFeedback").textContent=authSession?.user?.id
+    $("#promptSaveFeedback").textContent=ownerId
       ?"«"+name+"» сохранён в облачной библиотеке вашего аккаунта."
       :"«"+name+"» сохранён локально. Войдите в аккаунт для облачной синхронизации.";
   });
