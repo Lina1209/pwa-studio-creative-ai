@@ -1664,7 +1664,7 @@ def admin_create_plan_draft(payload: PlanCatalogDraftCreate,user: StudioUser = D
         raise HTTPException(status_code=422,detail="Цена и валюта должны задаваться вместе либо оставаться незаданными.")
     if payload.plan_code == "free" and payload.price_minor not in (None,0):
         raise HTTPException(status_code=422,detail="Бесплатный план не может иметь ненулевую цену.")
-    allowed_limits={"max_parallel_jobs","max_video_seconds","max_resolution","daily_generation_jobs","monthly_generation_jobs"}
+    allowed_limits={"max_parallel_jobs","max_video_seconds","max_resolution","daily_generation_jobs","monthly_generation_jobs","daily_ai_requests","monthly_ai_requests","max_concurrent_ai_requests","daily_image_generations","monthly_image_generations","daily_video_generations","monthly_video_generations","daily_audio_generations","monthly_audio_generations"}
     if set(payload.limits)-allowed_limits:
         raise HTTPException(status_code=422,detail="Указан неизвестный лимит тарифа.")
     for key,value in payload.limits.items():
