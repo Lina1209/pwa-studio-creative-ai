@@ -391,7 +391,7 @@ def audit_finance_integrity(
     if check_commerce:
         orders_by_id: dict[str, dict[str, Any]] = {}
         order_keys: set[tuple[str, str]] = set()
-        merchant_keys: set[tuple[str, str]] = set()
+        merchant_keys: set[str] = set()
         provider_payment_keys: set[tuple[str, str]] = set()
         for order in payment_orders:
             try:
@@ -412,7 +412,7 @@ def audit_finance_integrity(
                 orders_by_id[oid] = order
                 for seen, key, code in (
                     (order_keys, (owner, idem), "duplicate_payment_idempotency_key"),
-                    (merchant_keys, (provider, merchant), "duplicate_payment_merchant_reference"),
+                    (merchant_keys, merchant, "duplicate_payment_merchant_reference"),
                 ):
                     if key in seen:
                         findings.append(_finding(code, "critical", payment_order_id=oid))
@@ -611,11 +611,18 @@ def audit_finance_integrity(
         # Plan quota reservations must have a matching owner-scoped assignment,
         # request job, append-only reserved event and exactly one terminal event.
         reservations_by_id: dict[str, dict[str, Any]] = {}
+        quota_operation_keys: set[tuple[str, str]] = set()
+        quota_request_keys: set[tuple[str, str]] = set()
+        quota_event_ids: set[Any] = set()
         quota_event_map: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for event in quota_events:
             if not isinstance(event, dict) or not isinstance(event.get("reservation_id"), str):
                 findings.append(_finding("invalid_plan_quota_event", "critical"))
                 continue
+            event_id = event.get("id")
+            if event_id in quota_event_ids:
+                findings.append(_finding("duplicate_plan_quota_event_id", "critical"))
+            quota_event_ids.add(event_id)
             quota_event_map[event["reservation_id"]].append(event)
         usage: dict[tuple[str, str, str], int] = defaultdict(int)
         for reservation in quota_reservations:
@@ -628,6 +635,16 @@ def audit_finance_integrity(
                 findings.append(_finding("duplicate_or_invalid_plan_quota_reservation", "critical"))
                 continue
             reservations_by_id[rid] = reservation
+            if isinstance(owner, str) and isinstance(reservation.get("operation_key"), str):
+                operation_identity = (owner, reservation["operation_key"])
+                if operation_identity in quota_operation_keys:
+                    findings.append(_finding("duplicate_plan_quota_operation_key", "critical", reservation_id=rid))
+                quota_operation_keys.add(operation_identity)
+            if isinstance(owner, str) and isinstance(reservation.get("request_id"), str):
+                request_identity = (owner, reservation["request_id"])
+                if request_identity in quota_request_keys:
+                    findings.append(_finding("duplicate_plan_quota_request", "critical", reservation_id=rid))
+                quota_request_keys.add(request_identity)
             assignment = assignment_by_id.get(aid)
             job = job_map.get(reservation.get("request_id"))
             if assignment is None or assignment.get("user_id") != owner:
