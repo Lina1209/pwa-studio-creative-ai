@@ -4,7 +4,11 @@ import pytest
 
 from app.core.config import Settings
 from app.services import payment_orders as service
-from app.services.payment_provider_contracts import VerifiedProviderEvent
+from app.services.payment_provider_contracts import (
+    PaymentProviderAdapterRegistry,
+    PaymentProviderNotConfigured,
+    VerifiedProviderEvent,
+)
 
 USER = UUID("11111111-1111-4111-8111-111111111111")
 ORDER = UUID("22222222-2222-4222-8222-222222222222")
@@ -72,7 +76,7 @@ def test_webhook_signature_failure_stops_before_privileged_rpc(monkeypatch):
     adapter = FakeVerifiedAdapter(error=ValueError("invalid provider signature"))
     with pytest.raises(ValueError, match="invalid provider signature"):
         service.record_verified_provider_event(
-            SETTINGS, adapter=adapter, raw_body=b'{"paid":true}',
+            SETTINGS, registry=PaymentProviderAdapterRegistry([adapter]), provider_code="examplepay", raw_body=b'{"paid":true}',
             headers={"x-signature": "invalid"},
         )
     assert called == []
@@ -122,6 +126,26 @@ def test_webhook_rejects_non_verified_adapter_result_before_rpc(monkeypatch):
             SETTINGS, adapter=adapter, raw_body=b"payload", headers={},
         )
     assert called == []
+
+
+
+def test_provider_registry_is_empty_by_default_and_fails_closed():
+    registry = PaymentProviderAdapterRegistry()
+    assert registry.provider_codes == ()
+    with pytest.raises(PaymentProviderNotConfigured):
+        registry.get("examplepay")
+
+
+def test_provider_registry_rejects_duplicate_adapter_identity():
+    adapter = FakeVerifiedAdapter()
+    with pytest.raises(ValueError, match="Duplicate"):
+        PaymentProviderAdapterRegistry([adapter, adapter])
+
+
+def test_provider_registry_does_not_select_provider_from_unknown_code():
+    registry = PaymentProviderAdapterRegistry([FakeVerifiedAdapter()])
+    with pytest.raises(PaymentProviderNotConfigured):
+        registry.get("otherpay")
 
 
 def test_credit_pack_order_uses_approved_version_rpc_and_no_client_price(monkeypatch):
