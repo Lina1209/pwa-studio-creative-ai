@@ -135,7 +135,7 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
             },
             "features_json": ["image", "video", "audio", "ai"],
         }]],
-        "plan_quota_reservations": [
+        "plan_quota_reservations": [[
             {"feature_key": "daily_image_generations", "reserved_units": 3,
              "status": "completed", "period_start": day_start.isoformat()},
             {"feature_key": "monthly_image_generations", "reserved_units": 7,
@@ -152,7 +152,7 @@ def test_active_plan_reports_utc_usage_and_unenforced_dimensions(monkeypatch):
              "status": "reserved", "period_start": "1970-01-01T00:00:00+00:00"},
             {"feature_key": "max_parallel_jobs", "reserved_units": 1,
              "status": "completed", "period_start": "1970-01-01T00:00:00+00:00"},
-        ],
+        ]],
     }
     monkeypatch.setattr(
         entitlements.httpx, "Client",
