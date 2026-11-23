@@ -1489,6 +1489,13 @@ const movieHistoryStyle = document.createElement("style");
     .prompt-version-history{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(135,105,220,.045)}
     .prompt-version-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--muted)}
     .prompt-version-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+    .prompt-workbench,.prompt-fragments{margin:14px 0;padding:14px;border:1px solid rgba(170,140,255,.2);border-radius:14px;background:rgba(135,105,220,.045)}
+    .prompt-workbench-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.prompt-workbench-head span,.prompt-variable-tools small{font-size:11px;color:var(--muted)}
+    .prompt-workbench-action{display:flex;align-items:end}.prompt-workbench-action button{width:100%;min-height:42px}
+    .prompt-variable-tools{display:grid;gap:8px;margin-top:12px}.prompt-variable-tools textarea{width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;resize:vertical}
+    .prompt-fragment-actions{display:flex;gap:8px;flex-wrap:wrap}.prompt-fragment-actions input{flex:1;min-width:150px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)}
+    .prompt-fragment-list{display:grid;gap:8px;margin-top:10px}.prompt-fragment-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px;border:1px solid var(--border);border-radius:10px}.prompt-fragment-info{display:grid;gap:5px;min-width:0}.prompt-fragment-info small{color:var(--muted);overflow-wrap:anywhere}
+    @media(max-width:520px){.prompt-fragment-row{align-items:stretch;flex-direction:column}.prompt-workbench-head{align-items:flex-start;flex-direction:column}}
     .prompt-editor-toolbar{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}
     .prompt-editor-toolbar button{font-size:12px;padding:8px 10px}
     .prompt-output[contenteditable="true"]{outline:1px solid rgba(170,140,255,.45);cursor:text}
@@ -1790,9 +1797,9 @@ const movieHistoryStyle = document.createElement("style");
     $("#promptSaveFeedback").textContent="Шаблон добавлен. Заполните переменные или отредактируйте текст.";
   });
   $("#applyPromptVariables").addEventListener("click",()=>{
-    const values={};$("#promptVariableValues").value.split("\\n").forEach(line=>{const at=line.indexOf("=");if(at>0){const key=line.slice(0,at).trim().replace(/^\\{\\{|\\}\\}$/g,"");const value=line.slice(at+1).trim();if(/^[a-zA-Z0-9_]{1,40}$/.test(key)&&value)values[key]=value;}});
+    const values={};$("#promptVariableValues").value.split(/\\r?\\n/).forEach(line=>{const at=line.indexOf("=");if(at>0){const key=line.slice(0,at).trim().replace(/^\\{\\{|\\}\\}$/g,"");const value=line.slice(at+1).trim();if(/^[a-zA-Z0-9_]{1,40}$/.test(key)&&value)values[key]=value;}});
     let result=promptOutput.textContent;let count=0;
-    Object.entries(values).forEach(([key,value])=>{const pattern=new RegExp("\\\\{\\\\{\\\\s*"+key+"\\\\s*\\\\}\\\\}","g");result=result.replace(pattern,()=>{count++;return value;});});
+    Object.entries(values).forEach(([key,value])=>{const pattern=new RegExp("\\{\\{\\s*"+key+"\\s*\\}\\}","g");result=result.replace(pattern,()=>{count++;return value;});});
     promptOutput.textContent=result;promptOutput.contentEditable="true";
     $("#promptSaveFeedback").textContent=count?"Подставлено значений: "+count+".":"Подходящие переменные не найдены. Проверьте формат имя=значение.";
   });
