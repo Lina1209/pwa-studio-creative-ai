@@ -99,7 +99,7 @@ def user_notifications(user: StudioUser = Depends(get_current_user)):
     return list_notifications(settings, user.user_id)
 
 
-@app.post(f"{settings.api_prefix}/notifications/{notification_id}/read")
+@app.post(f"{settings.api_prefix}/notifications/{{notification_id}}/read")
 def read_notification(notification_id: str, user: StudioUser = Depends(get_current_user)):
     return mark_notification_read(settings, user.user_id, notification_id)
 
