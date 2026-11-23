@@ -44,6 +44,7 @@ class ReportListItem(BaseModel):
     description: str
     content_reference: str | None = None
     status: str
+    moderator_note: str | None = None
     created_at: str
 
 class ReportReviewRequest(BaseModel):
