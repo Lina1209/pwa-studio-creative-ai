@@ -228,6 +228,10 @@ def test_prompt_studio_uses_active_film_context(monkeypatch):
                 "story": "Смотритель обнаруживает свет в тумане.",
                 "storyboard": "Общий план берега, затем крупный план маяка.",
                 "characters": "Смотритель в тёмном плаще.",
+                "visual_continuity": [
+                    {"type": "character", "name": "Смотритель", "description": "Тот же пожилой мужчина с седой бородой, в длинном тёмно-синем плаще и круглых очках."},
+                    {"type": "scene", "name": "Маяк", "description": "Белая каменная башня с красной крышей на скалистом берегу."},
+                ],
                 "voices": "Спокойный низкий голос.",
                 "edit": "Медленный монтаж, холодная цветовая гамма.",
             },
@@ -235,6 +239,9 @@ def test_prompt_studio_uses_active_film_context(monkeypatch):
         assert response.status_code == 200
         assert "Тайна маяка" in captured[1]["content"]
         assert "Кинематографичный реализм" in captured[1]["content"]
+        assert "Смотритель" in captured[1]["content"]
+        assert "седой бородой" in captured[1]["content"]
+        assert "красной крышей" in captured[1]["content"]
         assert "untrusted reference material" in captured[1]["content"]
     finally:
         app.dependency_overrides.clear()
