@@ -13,6 +13,7 @@ insert into auth.users(id) values ('11111111-1111-4111-8111-111111111111') on co
 \i supabase/migrations/0052_payment_order_foundation.sql
 \i supabase/migrations/0053_payment_order_rpcs.sql
 \i supabase/migrations/0070_payment_order_merchant_reference_idempotency.sql
+\i supabase/migrations/0072_payment_fulfillment_outbox.sql
 
 do $payment_order_merchant_reference_idempotency_test$
 declare
@@ -70,6 +71,7 @@ declare
   v_first record;
   v_replay record;
   v_event_count bigint;
+  v_fulfillment_count bigint;
   v_status text;
 begin
   select id into v_order_id
@@ -111,6 +113,18 @@ begin
   select status into v_status from public.payment_orders where id = v_order_id;
   if v_event_count <> 1 or v_status <> 'succeeded' then
     raise exception 'Duplicate success event changed payment state or duplicated the inbox row';
+  end if;
+
+  select count(*) into v_fulfillment_count
+    from public.payment_fulfillment_outbox
+   where payment_order_id = v_order_id
+     and user_id = '11111111-1111-4111-8111-111111111111'
+     and provider_code = 'examplepay'
+     and amount_minor = 1250
+     and currency_code = 'KZT'
+     and status = 'queued';
+  if v_fulfillment_count <> 1 then
+    raise exception 'Verified successful payment did not create exactly one matching fulfillment handoff';
   end if;
 end;
 $payment_success_event_idempotency_test$;
