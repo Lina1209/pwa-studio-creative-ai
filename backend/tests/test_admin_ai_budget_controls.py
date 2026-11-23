@@ -43,3 +43,10 @@ def test_unknown_reservation_requires_reason(monkeypatch):
             None, request_id=UUID("44444444-4444-4444-8444-444444444444"),
             resolution="confirm_no_charge", actual_estimated_cost_usd=None, note="bad",
         )
+
+
+def test_gemini_budget_updates_are_rejected(monkeypatch):
+    import app.services.admin_ai_cost_budget_controls as controls
+    monkeypatch.setattr(controls, "_rpc", lambda *a, **k: pytest.fail("RPC must not run"))
+    with pytest.raises(ValueError):
+        update_provider_budget(None, provider="gemini", enabled=True, daily_budget_usd="1")
