@@ -4418,6 +4418,33 @@ begin
 end;
 $plan_expiry_inflight_job_test$;
 
+-- Restore an active fixture assignment for subsequent independent quota tests.
+insert into public.user_plan_assignments(
+  id, user_id, approved_plan_version_id, assignment_source,
+  source_reference, idempotency_key, status, starts_at, ends_at, created_by
+) values (
+  '19191919-1919-4191-8191-191919191919',
+  '22222222-2222-4222-8222-222222222222',
+  '13131313-1313-4131-8131-131313131313',
+  'operator_grant', 'quota-expiry-inflight-restore',
+  'quota-expiry-inflight-restore-001',
+  'active', now() - interval '1 minute', now() + interval '30 days',
+  '11111111-1111-4111-8111-111111111111'
+);
+insert into public.user_plan_assignment_events(
+  assignment_id, user_id, event_type, actor_user_id, event_key, reason
+) values
+  ('19191919-1919-4191-8191-191919191919',
+   '22222222-2222-4222-8222-222222222222',
+   'created', '11111111-1111-4111-8111-111111111111',
+   'created:quota-expiry-inflight-restore-001',
+   'Restore active test entitlement after expiry settlement test'),
+  ('19191919-1919-4191-8191-191919191919',
+   '22222222-2222-4222-8222-222222222222',
+   'activated', '11111111-1111-4111-8111-111111111111',
+   'activated:quota-expiry-inflight-restore-001',
+   'Restore active test entitlement for later quota tests');
+
 
 -- A pending plan is not an entitlement, even when the account has credits.
 insert into public.user_plan_assignments(
