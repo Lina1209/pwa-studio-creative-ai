@@ -14,6 +14,8 @@
   let activeAssistantConversationId = null;
   let assistantHistoryBusy = false;
   let assistantUserId = null;
+  let activeMessageThreadId = null;
+  let activeMessagePartnerId = null;
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -35,6 +37,13 @@
       const notificationPanel = $("#notificationPanel"); if (notificationPanel) notificationPanel.hidden = true;
       const notificationList = $("#notificationList"); if (notificationList) notificationList.replaceChildren();
       const notificationBadge = $("#notificationUnread"); if (notificationBadge) notificationBadge.hidden = true;
+      const messagesPanel = $("#messagesPanel"); if (messagesPanel) messagesPanel.hidden = true;
+      const conversationList = $("#conversationList"); if (conversationList) conversationList.replaceChildren();
+      const directMessageList = $("#directMessageList"); if (directMessageList) directMessageList.replaceChildren();
+      const directMessageForm = $("#directMessageForm"); if (directMessageForm) directMessageForm.hidden = true;
+      const conversationTitle = $("#conversationTitle"); if (conversationTitle) conversationTitle.textContent = "Выберите диалог";
+      activeMessageThreadId = null;
+      activeMessagePartnerId = null;
       assistantUserId = nextUserId;
       authContextVersion += 1;
       activeAssistantConversationId = null;
@@ -92,9 +101,9 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
+      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -319,6 +328,115 @@ const movieHistoryStyle = document.createElement("style");
       if (version === authContextVersion) notificationFeedback("Не удалось обновить уведомления: " + error.message);
       button.disabled = false;
     }
+  });
+
+  const messagesFeedback = message => { const el = $("#messagesFeedback"); if (el) el.textContent = message; };
+  const messagePartnerId = thread => thread.user_a_id === authSession?.user?.id ? thread.user_b_id : thread.user_a_id;
+  const renderConversations = threads => {
+    const list = $("#conversationList"); if (!list) return;
+    list.replaceChildren();
+    if (!threads.length) { list.append(adminNode("div","admin-empty","Пока нет диалогов. Начните переписку с первого сообщения.")); return; }
+    threads.forEach(thread => {
+      const partnerId = messagePartnerId(thread);
+      const button = adminNode("button","conversation-button");
+      button.type = "button";
+      button.setAttribute("aria-current",String(thread.id === activeMessageThreadId));
+      button.append(adminNode("b","", "Пользователь · "+partnerId.slice(0,8)+"…"));
+      button.append(adminNode("small","",thread.last_message_at ? "Последнее сообщение · "+formatAdminDate(thread.last_message_at) : "Диалог создан"));
+      button.addEventListener("click",()=>openConversation(thread.id,partnerId));
+      list.append(button);
+    });
+  };
+  const loadConversations = async () => {
+    const panel=$("#messagesPanel");
+    if(!panel)return;
+    if(!authSession?.user){panel.hidden=true;return;}
+    panel.hidden=false;
+    const version=authContextVersion,userId=authSession.user.id;
+    const list=$("#conversationList");
+    if(list)list.replaceChildren(adminNode("div","admin-empty","Загружаем диалоги…"));
+    try{
+      const threads=await apiRequest("/api/conversations");
+      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      renderConversations(Array.isArray(threads)?threads:[]);
+      if(activeMessageThreadId && !(threads||[]).some(item=>item.id===activeMessageThreadId)){
+        activeMessageThreadId=null;activeMessagePartnerId=null;
+        $("#directMessageForm").hidden=true;
+        $("#conversationTitle").textContent="Выберите диалог";
+        $("#directMessageList").replaceChildren(adminNode("div","admin-empty","Выберите диалог из списка."));
+      }
+      messagesFeedback(threads.length ? "Диалоги загружены. Переписка доступна только её участникам." : "Создайте первый диалог.");
+    }catch(error){
+      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      messagesFeedback("Не удалось загрузить диалоги: "+error.message);
+      if(list)list.replaceChildren(adminNode("div","admin-empty","Список диалогов временно недоступен."));
+    }
+  };
+  const loadConversationMessages = async (threadId) => {
+    const version=authContextVersion,userId=authSession?.user?.id;
+    if(!userId||!threadId)return;
+    const list=$("#directMessageList");
+    if(list)list.replaceChildren(adminNode("div","admin-empty","Загружаем сообщения…"));
+    try{
+      const messages=await apiRequest("/api/conversations/"+encodeURIComponent(threadId)+"/messages");
+      if(version!==authContextVersion||authSession?.user?.id!==userId||activeMessageThreadId!==threadId)return;
+      list.replaceChildren();
+      if(!messages.length)list.append(adminNode("div","admin-empty","Пока нет сообщений. Напишите первым."));
+      messages.forEach(message=>{
+        const own=message.sender_id===userId;
+        const item=adminNode("article","direct-message"+(own?" is-own":""));
+        item.append(adminNode("p","",message.body||""));
+        item.append(adminNode("time","",formatAdminDate(message.created_at)+(message.read_at&&own?" · Прочитано":"")));
+        list.append(item);
+      });
+      list.scrollTop=list.scrollHeight;
+      await apiRequest("/api/conversations/"+encodeURIComponent(threadId)+"/read",{method:"POST"});
+      if(version===authContextVersion&&authSession?.user?.id===userId)loadConversations();
+    }catch(error){
+      if(version===authContextVersion&&authSession?.user?.id===userId)messagesFeedback("Не удалось загрузить переписку: "+error.message);
+    }
+  };
+  const openConversation = (threadId,partnerId) => {
+    activeMessageThreadId=threadId;activeMessagePartnerId=partnerId;
+    $("#conversationTitle").textContent="Диалог с пользователем "+partnerId;
+    $("#directMessageForm").hidden=false;
+    renderConversations([...document.querySelectorAll(".conversation-button")].map(()=>({id:""})));
+    loadConversationMessages(threadId);
+  };
+  $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
+  $("#newConversationForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();
+    if(!authSession?.user)return;
+    const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
+    const recipient=$("#messageRecipientId").value.trim(),body=$("#messageFirstText").value.trim();
+    if(!recipient||!body)return;
+    const version=authContextVersion,userId=authSession.user.id;
+    button.disabled=true;messagesFeedback("Открываем защищённый диалог…");
+    try{
+      const sent=await apiRequest("/api/conversations/"+encodeURIComponent(recipient)+"/messages",{method:"POST",body:JSON.stringify({body})});
+      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      form.reset();activeMessageThreadId=sent.thread_id;activeMessagePartnerId=recipient;
+      $("#conversationTitle").textContent="Диалог с пользователем "+recipient;
+      $("#directMessageForm").hidden=false;
+      await loadConversations();await loadConversationMessages(activeMessageThreadId);
+      messagesFeedback("Первое сообщение отправлено.");
+    }catch(error){if(version===authContextVersion)messagesFeedback("Не удалось начать диалог: "+error.message);}
+    finally{button.disabled=false;}
+  });
+  $("#directMessageForm")?.addEventListener("submit",async event=>{
+    event.preventDefault();
+    if(!authSession?.user||!activeMessagePartnerId)return;
+    const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
+    const body=$("#directMessageText").value.trim();if(!body)return;
+    const version=authContextVersion,userId=authSession.user.id,threadId=activeMessageThreadId;
+    button.disabled=true;
+    try{
+      await apiRequest("/api/conversations/"+encodeURIComponent(activeMessagePartnerId)+"/messages",{method:"POST",body:JSON.stringify({body})});
+      if(version!==authContextVersion||authSession?.user?.id!==userId||activeMessageThreadId!==threadId)return;
+      $("#directMessageText").value="";
+      await loadConversationMessages(threadId);
+    }catch(error){if(version===authContextVersion)messagesFeedback("Не удалось отправить сообщение: "+error.message);}
+    finally{button.disabled=false;}
   });
 
   const reportFeedback = message => { const el = $("#reportFeedback"); if (el) el.textContent = message; };
