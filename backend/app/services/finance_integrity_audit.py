@@ -612,7 +612,7 @@ def audit_finance_integrity(
         # request job, append-only reserved event and exactly one terminal event.
         reservations_by_id: dict[str, dict[str, Any]] = {}
         quota_operation_keys: set[tuple[str, str]] = set()
-        quota_request_keys: set[tuple[str, str]] = set()
+        quota_request_keys: set[tuple[str, str, str]] = set()
         quota_event_ids: set[Any] = set()
         quota_event_map: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for event in quota_events:
@@ -640,8 +640,9 @@ def audit_finance_integrity(
                 if operation_identity in quota_operation_keys:
                     findings.append(_finding("duplicate_plan_quota_operation_key", "critical", reservation_id=rid))
                 quota_operation_keys.add(operation_identity)
-            if isinstance(owner, str) and isinstance(reservation.get("request_id"), str):
-                request_identity = (owner, reservation["request_id"])
+            if (isinstance(owner, str) and isinstance(reservation.get("request_id"), str)
+                and isinstance(reservation.get("feature_key"), str)):
+                request_identity = (owner, reservation["request_id"], reservation["feature_key"])
                 if request_identity in quota_request_keys:
                     findings.append(_finding("duplicate_plan_quota_request", "critical", reservation_id=rid))
                 quota_request_keys.add(request_identity)
