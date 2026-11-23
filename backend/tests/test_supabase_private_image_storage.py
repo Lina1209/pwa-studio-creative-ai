@@ -603,7 +603,7 @@ async def test_signed_download_url_requires_verified_owner_path_and_checksum():
         )
 
     assert url == (
-        "https://example.supabase.co/storage/v1/object/sign/studio-media/"
+        "https://project.supabase.co/storage/v1/object/sign/studio-media/"
         f"{OWNER}/generated/{JOB}.png?token=temporary"
     )
 
