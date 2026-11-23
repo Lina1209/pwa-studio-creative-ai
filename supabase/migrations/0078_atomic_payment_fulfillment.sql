@@ -269,7 +269,7 @@ returns integer
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $activate_due$
 declare
   v_assignment record;
   v_activated integer := 0;
