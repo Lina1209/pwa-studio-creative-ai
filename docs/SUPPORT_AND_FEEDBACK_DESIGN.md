@@ -21,7 +21,7 @@ The current review branch already contains a first support-inbox implementation:
 - Migration 0055_private_support_inbox.sql defines private support_tickets and support_ticket_messages tables. Direct browser access is revoked; the API mediates access using the server-side service role.
 - FastAPI routes let a signed-in user create a ticket, list their own tickets, read their own conversation and reply.
 - Owner-only routes expose the admin queue, read a ticket, reply and change its status.
-- The frontend contains a user-facing support panel in the personal account and an owner-only inbox in the account dashboard.
+- The frontend contains a floating support launcher and native dialog widget with categorized request form, optional page-only diagnostic context, the user's ticket list and conversation view; the owner-only inbox remains in the account dashboard.
 - Permission checks use the named capabilities admin.support.read, admin.support.reply and admin.support.status.manage; administrative reads and mutations are audited.
 - Migration 0091_support_inbox_atomic_mutations_and_categories.sql adds request categories and optional diagnostic context, and moves ticket creation/message append into database transactions.
 
@@ -48,13 +48,13 @@ User replies to resolved/closed tickets are rejected; a user can start a new req
 
 Add a small, fixed **“Помощь и обратная связь”** launcher in the bottom corner on desktop and mobile. It should be keyboard accessible, screen-reader labelled, dismissible, respect safe-area insets and never cover the main action buttons.
 
-The supplied Miror/Forumotion snippet is useful as a visual reference for a compact, resizable chat panel, but it must not be pasted into PWA Studio as-is:
+The supplied Miror/Forumotion snippet was used as a visual reference for a compact, resizable chat panel. PWA Studio now uses a native dialog widget connected to its own support API; the forum snippet itself must not be pasted into PWA Studio as-is:
 
 - insertChatBox(...), {U_FRAME_CHATBOX} and resizeElement(...) are Forumotion-specific template/runtime hooks;
 - the placeholder URL and JavaScript helper do not exist in this Vanilla JS application;
 - an external forum iframe would create a separate identity, privacy, moderation and availability boundary.
 
-Build a native PWA Studio component and connect it to the existing authenticated support API. The widget is an entry point to a persistent support conversation, not a second independent chat backend.
+Keep the native PWA Studio dialog component connected to the existing authenticated support API. The widget is an entry point to a persistent support conversation, not a second independent chat backend. The current implementation is asynchronous and uses explicit refresh; it is not a realtime chat service.
 
 ### New request form
 
