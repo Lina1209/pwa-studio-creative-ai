@@ -142,3 +142,6 @@ Video duration and resolution are checked against the single time-valid assignme
 The entitlements resolver reads the latest immutable assignment event rather than the immutable assignment row's original `pending` status. It now reports general job usage, active parallel jobs, video duration, and resolution as enforced dimensions.
 
 The expected server-owned video request snapshot fields are `duration_seconds` and `resolution`. This is an admission contract; it does not itself enable generation routes, worker execution, provider calls, or billing.
+
+
+The entitlements response includes `window_start` and `reset_at` for daily and monthly counters. Concurrency and per-job capability limits have no calendar reset timestamp. The account panel shows the next daily/monthly reset date where applicable.
