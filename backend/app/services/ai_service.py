@@ -90,7 +90,7 @@ def ask_ai(
             "messages": messages,
             "api_key": api_key,
             "timeout": settings.ai_request_timeout_seconds,
-            "max_retries": settings.ai_max_retries,
+            "max_retries": 0,  # Ambiguous billable calls must never be retried blindly by LiteLLM.
             "max_tokens": settings.ai_max_output_tokens,
         }
         try:
