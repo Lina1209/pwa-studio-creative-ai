@@ -1922,7 +1922,13 @@ const movieHistoryStyle = document.createElement("style");
       for(const item of activeItems){
         if(!isCurrentSync())return;
         for(const ref of (Array.isArray(item.referenceImages)?item.referenceImages:[])){
-          if(!ref.storagePath)continue;
+          if(!ref.storagePath){
+            // Legacy metadata may still have a valid device-local image. Keep it;
+            // report it as unavailable only when this device has no cached blob.
+            const localBlob=await getVisualRefImage(ref.id,userId);
+            if(!localBlob)missingImages++;
+            continue;
+          }
           if(!ref.storagePath.startsWith(userId+"/")){missingImages++;continue;}
           const {data:blob,error:downloadError}=await supabaseClient.storage.from(cloudVisualBucket).download(ref.storagePath);
           if(downloadError||!blob){missingImages++;continue;}
