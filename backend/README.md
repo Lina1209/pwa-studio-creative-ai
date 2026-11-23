@@ -54,7 +54,7 @@ Every synchronous AI call first reserves a worst-case USD amount in PostgreSQL. 
 
 Initial limits seeded by `supabase/migrations/0050_sync_ai_provider_cost_reservations.sql`:
 - DeepSeek: $1.00 per UTC day.
-- Combined daily budget: $1.00.
+- Combined daily budget: $2.00 (the existing database policy retains an unused Gemini reservation row; the application no longer admits Gemini requests).
 - Maximum outstanding reservations: $0.50.
 
 The owner-only `GET /api/admin/ai/budget` endpoint and admin panel show settled estimates, outstanding reserves, unknown outcomes and remaining limits. This is not invoice-level billing reconciliation or a guaranteed provider billing cap. Keep separate spending limits in the DeepSeek console. Price assumptions must be updated when provider pricing changes. The estimator uses paid-tier rates even when a model is listed as Free Tier eligible; project eligibility is never assumed.
