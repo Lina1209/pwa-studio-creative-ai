@@ -70,3 +70,18 @@ A follow-up patch replaces the in-process read-then-count check with a database 
 - This is a fixed-window limiter, not a sliding-window limiter; a user may send up to the limit on either side of a minute boundary. Revisit the policy if abuse telemetry justifies a stricter sliding window.
 
 Migration `0011_atomic_message_rate_limit.sql` is a forward migration and has not been applied. It must be reconciled with the actual production migration history and reviewed before execution.
+
+
+## AI endpoint rate limiting
+
+The API now calls a separate database RPC before sending requests to the configured AI provider from `/api/chat` and `/api/prompts`.
+
+- The default policy is 10 accepted requests per user, per endpoint, per fixed 60-second window.
+- Each endpoint has its own counter so chat traffic does not consume prompt-generation slots.
+- The RPC uses an atomic unique-key upsert on `(user_id, endpoint)`; simultaneous requests cannot all pass using a stale read.
+- The counter table has RLS enabled, client roles have no table privileges, and function execution is granted only to `service_role`.
+- A denied request returns HTTP 429 before calling the AI provider. If storage protection is unavailable or returns an unexpected response, the API fails closed with HTTP 503.
+- This is a request-frequency guard, not a subscription quota or monetary spending cap. It does not replace future server-side credit accounting, daily/monthly plan quotas, provider budget alerts, or cost reconciliation.
+- The fixed-window design can permit a burst around a window boundary; revisit with real abuse telemetry.
+
+Migration `0012_atomic_ai_rate_limit.sql` is source-only and has not been applied to Supabase. It must be reconciled with the live migration ledger and schema before rollout.
