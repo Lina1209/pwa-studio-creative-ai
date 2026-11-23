@@ -327,3 +327,9 @@ body.light .guest-project-card{background:#fff;border-color:#e4deef}
 .direct-chat-unread{flex:0 0 auto;padding:.2rem .45rem;border-radius:999px;background:var(--accent,#6666cc);color:white;font-size:.68rem;font-weight:700}
 .messages-conversation-item.is-active{outline:2px solid var(--accent,#7777dd);outline-offset:-2px}
 @media(max-width:640px){.direct-chat-tools{align-items:stretch}.direct-chat-tools input{flex-basis:100%}#directUnreadCount{align-self:flex-start}}
+
+
+.direct-chat-composer-tools{display:flex;align-items:center;gap:.5rem;position:relative}
+.direct-emoji-picker{display:flex;flex-wrap:wrap;gap:.25rem;padding:.6rem;border:1px solid var(--border-color,rgba(127,127,127,.25));border-radius:14px;background:var(--panel-bg,Canvas);max-width:100%;box-shadow:0 8px 28px rgba(0,0,0,.12)}
+.direct-emoji-button{min-width:2.35rem;min-height:2.35rem;border:0;border-radius:9px;background:transparent;font-size:1.25rem;cursor:pointer}
+.direct-emoji-button:hover,.direct-emoji-button:focus-visible{background:var(--surface-soft,rgba(127,127,127,.15));outline:2px solid var(--accent,#7777dd)}

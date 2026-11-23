@@ -748,6 +748,27 @@ const movieHistoryStyle = document.createElement("style");
   };
   $("#refreshDirectConversations")?.addEventListener("click", loadDirectConversations);
   $("#directConversationSearch")?.addEventListener("input",renderDirectConversationList);
+  const directEmojiSet=["😀","😃","😄","😁","😊","😍","🥰","😘","😉","😂","🤣","😎","🤔","😭","😡","👍","👎","👏","🙏","❤️","💙","✨","🔥","🎉","🌸","🌟","☀️","🌙","💡","🎬"];
+  const emojiPicker=$("#directEmojiPicker");
+  if(emojiPicker){
+    directEmojiSet.forEach(emoji=>{
+      const button=document.createElement("button");button.type="button";button.className="direct-emoji-button";
+      button.textContent=emoji;button.setAttribute("aria-label","Вставить "+emoji);
+      button.addEventListener("click",()=>{
+        const input=$("#directMessageBody");if(!input)return;
+        const start=input.selectionStart??input.value.length,end=input.selectionEnd??input.value.length;
+        input.value=input.value.slice(0,start)+emoji+input.value.slice(end);
+        const cursor=start+emoji.length;input.focus();input.setSelectionRange(cursor,cursor);
+        input.dispatchEvent(new Event("input",{bubbles:true}));
+      });
+      emojiPicker.append(button);
+    });
+  }
+  $("#directEmojiToggle")?.addEventListener("click",()=>{
+    if(!emojiPicker)return;emojiPicker.hidden=!emojiPicker.hidden;
+    $("#directEmojiToggle").setAttribute("aria-expanded",String(!emojiPicker.hidden));
+  });
+
   let directMessageRefreshTimer=null;
   let directMessageRefreshBusy=false;
   if(!directMessageRefreshTimer) directMessageRefreshTimer=window.setInterval(async()=>{
