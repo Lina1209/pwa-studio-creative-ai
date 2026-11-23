@@ -25,7 +25,7 @@ _ALLOWED_ACTIONS = {
 _ALLOWED_OUTCOMES = {"allowed", "denied", "requested", "approved", "executed", "failed"}
 _ALLOWED_RESOURCES = {
     "platform", "user", "support_ticket", "tariff", "payment",
-    "credit_wallet", "credit_ledger", "pricing_catalog_draft",
+    "credit_wallet", "credit_ledger", "finance_request", "pricing_catalog_draft",
     "plan_catalog_draft", "permission", "security_setting",
 }
 
