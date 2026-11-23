@@ -159,6 +159,9 @@ create trigger payment_refund_reconciliations_append_only
 before update or delete on public.payment_refund_reconciliations
 for each row execute function public.prevent_payment_refund_journal_mutation();
 
+revoke all on function public.guard_payment_refund_update() from public, anon, authenticated;
+revoke all on function public.prevent_payment_refund_journal_mutation() from public, anon, authenticated;
+
 create or replace function public.create_payment_refund_intent(
   p_payment_order_id uuid,
   p_amount_minor bigint,
