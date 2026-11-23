@@ -74,13 +74,13 @@ as $function$
         coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from refund_events_page p), '[]'::jsonb),
       'payment_refund_reconciliations',
         coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from refund_reconciliations_page p), '[]'::jsonb),
-      'counts', base.data -> 'counts' || jsonb_build_object(
+      'counts', (base.data -> 'counts') || jsonb_build_object(
         'payment_refunds', (select total from refunds_count),
         'payment_refund_provider_events', (select total from refund_provider_events_count),
         'payment_refund_events', (select total from refund_events_count),
         'payment_refund_reconciliations', (select total from refund_reconciliations_count)
       ),
-      'limits', base.data -> 'limits' || jsonb_build_object(
+      'limits', (base.data -> 'limits') || jsonb_build_object(
         'payment_refunds', 10000,
         'payment_refund_provider_events', 20000,
         'payment_refund_events', 20000,
