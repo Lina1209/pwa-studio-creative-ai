@@ -53,8 +53,6 @@ def _provider_credentials(settings: Settings) -> tuple[str, str | None]:
     provider = settings.ai_provider
     if provider == "deepseek":
         return f"deepseek/{settings.ai_model}", settings.deepseek_api_key
-    if provider == "gemini":
-        return f"gemini/{settings.ai_model}", settings.gemini_api_key
     # Settings validation should make this unreachable; fail closed if bypassed.
     raise AIConfigurationError("Unsupported AI provider configuration.")
 
