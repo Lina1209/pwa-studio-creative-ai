@@ -40,6 +40,18 @@
 - A service worker provides offline shell fallback. Core HTML/JS/CSS assets use network-first updates with cached fallback.
 - Supabase migration files are source-of-truth drafts; do not rerun old migrations blindly against an already configured live project.
 
+## Product and implementation plans
+
+The working source of truth and product requirements are maintained in:
+
+- [Implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md) — completed, in-progress and remaining work with evidence labels.
+- [Architecture, safety and product plan](docs/ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md) — security, privacy, rights, moderation, quotas and release gates.
+- [Support and feedback design](docs/SUPPORT_AND_FEEDBACK_DESIGN.md) — private user-to-administration inbox, feedback intake and future support widget.
+- [Creator showcase and multimodal roadmap](docs/CREATOR_SHOWCASE_AND_MULTIMODAL_ROADMAP.md) — inspiration gallery, opt-in creator works, audio, speech, voice and video.
+- [Provider idempotency audit](docs/PROVIDER_IDEMPOTENCY_AUDIT_2026-11-23.md) — current production-provider blockers and retry-safety requirements.
+
+Important: review-branch code and passing CI do not mean a feature is deployed. Database migrations must be reviewed, applied and verified separately in the live Supabase project.
+
 ## Локальный запуск backend
 
 Требуется Python 3.11+.
