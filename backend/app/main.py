@@ -5,14 +5,14 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest)
+from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
-from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read
+from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
@@ -130,6 +130,33 @@ def create_direct_message(recipient_id: str, payload: DirectMessageCreateRequest
 @app.post(f"{settings.api_prefix}/conversations/{{thread_id}}/read")
 def read_conversation(thread_id: str, user: StudioUser = Depends(get_current_user)):
     return mark_conversation_read(settings, user.user_id, thread_id)
+
+
+@app.patch(f"{settings.api_prefix}/messages/{{message_id}}")
+def update_direct_message(message_id: str, payload: DirectMessageEditRequest,
+                          user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
+    return edit_message(settings, user.user_id, message_id, payload.body)
+
+
+@app.delete(f"{settings.api_prefix}/messages/{{message_id}}")
+def remove_direct_message(message_id: str, user: StudioUser = Depends(get_current_user)):
+    return delete_message_for_self(settings, user.user_id, message_id)
+
+
+@app.get(f"{settings.api_prefix}/blocks")
+def blocked_users(user: StudioUser = Depends(get_current_user)):
+    return list_blocked_users(settings, user.user_id)
+
+
+@app.post(f"{settings.api_prefix}/blocks", status_code=201)
+def create_user_block(payload: UserBlockRequest, user: StudioUser = Depends(get_current_user)):
+    return block_user(settings, user.user_id, payload.user_id)
+
+
+@app.delete(f"{settings.api_prefix}/blocks")
+def remove_user_block(payload: UserBlockRequest, user: StudioUser = Depends(get_current_user)):
+    return unblock_user(settings, user.user_id, payload.user_id)
 
 
 @app.post(f"{settings.api_prefix}/admin/suspensions", response_model=SuspensionResponse, status_code=201)
