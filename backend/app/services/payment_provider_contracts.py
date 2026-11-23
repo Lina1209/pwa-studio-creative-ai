@@ -26,6 +26,9 @@ class PaymentProviderWebhookAdapter(Protocol):
     def provider_code(self) -> str:
         """Stable lowercase provider/account namespace used by payment orders."""
 
+    def validate_configuration(self, settings: object) -> None:
+        """Validate required provider-specific server settings; never log secrets."""
+
     def verify_webhook(
         self, *, raw_body: bytes, headers: Mapping[str, str]
     ) -> VerifiedProviderEvent:
@@ -47,10 +50,14 @@ class PaymentProviderAdapterRegistry:
     cannot be processed. Adapters are never selected from request data.
     """
 
-    def __init__(self, adapters=()):
+    def __init__(self, adapters=(), *, enabled: bool = False, settings=None):
         from types import MappingProxyType
         import re
 
+        if not isinstance(enabled, bool):
+            raise ValueError("Payment provider runtime flag must be boolean.")
+        if enabled and (settings is None or getattr(settings, "payment_provider_runtime_enabled", False) is not True):
+            raise PaymentProviderNotConfigured("Payment provider runtime is disabled.")
         registered = {}
         for adapter in adapters:
             code = getattr(adapter, "provider_code", None)
@@ -59,12 +66,22 @@ class PaymentProviderAdapterRegistry:
                 raise ValueError("Payment provider adapter identity is invalid.")
             if not callable(verifier):
                 raise ValueError("Payment provider adapter has no verifier.")
+            validator = getattr(adapter, "validate_configuration", None)
+            if enabled and not callable(validator):
+                raise ValueError("Payment provider adapter has no configuration validator.")
+            if enabled:
+                # Provider-specific code validates required credentials, account scope,
+                # webhook secret and environment. It must fail closed and never log them.
+                validator(settings)
             if code in registered:
                 raise ValueError("Duplicate payment provider adapter identity.")
             registered[code] = adapter
         self._adapters = MappingProxyType(registered)
+        self._enabled = enabled
 
     def get(self, provider_code: str) -> PaymentProviderWebhookAdapter:
+        if not self._enabled:
+            raise PaymentProviderNotConfigured("Payment provider runtime is disabled.")
         if not isinstance(provider_code, str):
             raise PaymentProviderNotConfigured("Payment provider is not configured.")
         try:
