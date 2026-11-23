@@ -179,6 +179,31 @@ class SceneImageJobRequest(BaseModel):
         return value
 
 
+
+class VideoGenerationJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(min_length=1, max_length=8000)
+    duration_seconds: int = Field(ge=1, le=600)
+    resolution: Literal["480p", "720p", "1080p", "4k"] = "720p"
+    quote_snapshot: dict | None = None
+
+
+class AudioGenerationJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(min_length=1, max_length=8000)
+    duration_seconds: int = Field(ge=1, le=600)
+    format: Literal["mp3", "wav", "flac"] = "mp3"
+    quote_snapshot: dict | None = None
+
+
+class SpeechGenerationJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=12000)
+    voice: str | None = Field(default=None, min_length=1, max_length=100)
+    language: str = Field(default="ru", min_length=2, max_length=16)
+    quote_snapshot: dict | None = None
+
+
 class PricingQuoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
