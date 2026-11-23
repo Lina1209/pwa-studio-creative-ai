@@ -86,8 +86,14 @@ begin
 
   select a.* into v_assignment
     from public.user_plan_assignments a
+   join lateral (
+     select e.event_type
+       from public.user_plan_assignment_events e
+      where e.assignment_id = a.id
+      order by e.occurred_at desc, e.id desc
+      limit 1
+   ) latest_event on latest_event.event_type = 'activated'
    where a.user_id = p_user_id
-     and a.status = 'active'
      and a.starts_at <= now()
      and a.ends_at > now()
    order by a.starts_at desc
@@ -97,8 +103,16 @@ begin
     raise exception 'no active plan assignment' using errcode = 'P0002';
   end if;
 
-  if (select count(*) from public.user_plan_assignments a
-       where a.user_id = p_user_id and a.status = 'active'
+  if (select count(*)
+        from public.user_plan_assignments a
+        join lateral (
+          select e.event_type
+            from public.user_plan_assignment_events e
+           where e.assignment_id = a.id
+           order by e.occurred_at desc, e.id desc
+           limit 1
+        ) latest_event on latest_event.event_type = 'activated'
+       where a.user_id = p_user_id
          and a.starts_at <= now() and a.ends_at > now()) <> 1 then
     raise exception 'multiple active plan assignments; quota check denied' using errcode = '23514';
   end if;
