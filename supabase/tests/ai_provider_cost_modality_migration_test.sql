@@ -19,6 +19,21 @@ declare
 begin
   insert into auth.users(id) values (v_user) on conflict (id) do nothing;
 
+  if not has_function_privilege('service_role',
+       'public.reserve_ai_provider_cost_v2(uuid,uuid,text,text,numeric,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.reserve_ai_provider_cost_v2(uuid,uuid,text,text,numeric,text)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.reserve_ai_provider_cost_v2(uuid,uuid,text,text,numeric,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.settle_ai_provider_cost_v2(uuid,text,numeric,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.settle_ai_provider_cost_v2(uuid,text,numeric,text)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.settle_ai_provider_cost_v2(uuid,text,numeric,text)', 'EXECUTE') then
+    raise exception 'Modality-aware AI cost RPCs must be service-role-only';
+  end if;
+
   -- Isolate this transaction from unrelated reservations in the disposable test DB.
   delete from public.ai_provider_cost_reservations;
   update public.ai_provider_budget_policy
