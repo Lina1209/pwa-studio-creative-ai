@@ -11,6 +11,10 @@ from fastapi import HTTPException
 
 from app.core.config import Settings
 from app.services.supabase_rest import supabase_headers
+from app.services.pricing_service import (
+    AI_PRICING_CATALOG, AIPricingRule, PricingError, PricingQuote,
+    PricingSettlement, quote_ai_operation, settle_ai_operation,
+)
 
 _MAX_CREDITS = 100_000_000
 _OPERATION_RE = re.compile(r"^[a-z0-9_.-]{1,80}$")
@@ -127,3 +131,68 @@ def mark_reconciliation_required(
         "p_user_id": uid,
         "p_reservation_id": rid,
     })
+
+
+
+def reserve_priced_ai_operation(
+    settings: Settings,
+    *,
+    user_id: str,
+    idempotency_key: str,
+    operation_code: str,
+    provider: str,
+    model: str,
+    catalog: dict[tuple[str, str, str], AIPricingRule] = AI_PRICING_CATALOG,
+) -> tuple[PricingQuote, dict]:
+    """Calculate a server-owned quote, then reserve that exact amount atomically."""
+    quote = quote_ai_operation(
+        operation_code=operation_code,
+        provider=provider,
+        model=model,
+        catalog=catalog,
+    )
+    reservation = reserve_credits(
+        settings,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        operation_code=quote.operation_code,
+        pricing_version=quote.pricing_version,
+        amount=quote.reserved_credits,
+    )
+    return quote, reservation
+
+
+def settle_priced_ai_operation(
+    settings: Settings,
+    *,
+    user_id: str,
+    reservation_id: str,
+    quote: PricingQuote,
+    provider: str,
+    model: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    catalog: dict[tuple[str, str, str], AIPricingRule] = AI_PRICING_CATALOG,
+) -> tuple[PricingSettlement, dict]:
+    """Settle trusted usage; ambiguous/unpriceable usage is held for reconciliation."""
+    try:
+        settlement = settle_ai_operation(
+            quote,
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            catalog=catalog,
+        )
+    except PricingError:
+        mark_reconciliation_required(
+            settings, user_id=user_id, reservation_id=reservation_id
+        )
+        raise
+    result = settle_reservation(
+        settings,
+        user_id=user_id,
+        reservation_id=reservation_id,
+        capture_amount=settlement.captured_credits,
+    )
+    return settlement, result
