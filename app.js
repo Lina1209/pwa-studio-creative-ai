@@ -1490,6 +1490,15 @@ const movieHistoryStyle = document.createElement("style");
     .prompt-version-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--muted)}
     .prompt-version-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
     .prompt-version-row>div{min-width:0}.prompt-version-row b{font-size:12px}.prompt-version-row p{margin:5px 0 0;overflow-wrap:anywhere}
+    .prompt-version-compare{margin:12px 0;padding:12px;border:1px solid rgba(170,140,255,.22);border-radius:12px;background:rgba(8,7,18,.18)}
+    .prompt-version-compare-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .prompt-version-compare-pane{min-width:0}.prompt-version-compare-pane h4{margin:0 0 7px;font-size:12px;color:var(--muted)}
+    .prompt-version-compare-pane pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;margin:0;padding:10px;border-radius:8px;background:rgba(0,0,0,.16);font:12px/1.55 inherit}
+    .prompt-version-compare-pane pre span{display:block;padding:1px 4px;border-radius:3px}
+    .prompt-version-compare-pane pre .diff-added{background:rgba(65,180,115,.18)}
+    .prompt-version-compare-pane pre .diff-removed{background:rgba(220,90,90,.18)}
+    .prompt-version-compare-note{font-size:11px;color:var(--muted);margin:8px 0 0}
+    @media(max-width:640px){.prompt-version-compare-grid{grid-template-columns:1fr}}
     @media(max-width:480px){.prompt-version-row{flex-direction:column}.prompt-version-row button{width:100%}}
   `;
   document.head.appendChild(promptVersionStyle);
@@ -1556,6 +1565,32 @@ const movieHistoryStyle = document.createElement("style");
           const date = document.createElement("b"); date.textContent = "Версия " + (versions.length - versionIndex) + " · " + promptVersionLabel(version);
           const excerpt = document.createElement("p"); excerpt.className = "helper-text"; excerpt.textContent = String(version.prompt || "").slice(0,180) + (String(version.prompt || "").length > 180 ? "…" : "");
           info.append(date,excerpt);
+          const compare = document.createElement("button"); compare.type = "button"; compare.className = "secondary-button"; compare.textContent = "Сравнить с текущей";
+          compare.addEventListener("click", () => {
+            const oldLines = String(version.prompt || "").split("\\n");
+            const newLines = String(entry.prompt.prompt || "").split("\\n");
+            const rows = oldLines.length * newLines.length <= 40000 ? (() => {
+              const dp = Array.from({length:oldLines.length + 1}, () => new Uint16Array(newLines.length + 1));
+              for (let a=oldLines.length-1;a>=0;a--) for (let b=newLines.length-1;b>=0;b--)
+                dp[a][b] = oldLines[a] === newLines[b] ? dp[a+1][b+1] + 1 : Math.max(dp[a+1][b],dp[a][b+1]);
+              const left=[],right=[]; let a=0,b=0;
+              while(a<oldLines.length || b<newLines.length){
+                if(a<oldLines.length && b<newLines.length && oldLines[a]===newLines[b]){left.push({text:oldLines[a],kind:""});right.push({text:newLines[b],kind:""});a++;b++;}
+                else if(a<oldLines.length && (b>=newLines.length || dp[a+1][b]>=dp[a][b+1])){left.push({text:oldLines[a++],kind:"diff-removed"});}
+                else {right.push({text:newLines[b++],kind:"diff-added"});}
+              }
+              return {left,right};
+            })() : {left:oldLines.map(text=>({text,kind:"diff-removed"})),right:newLines.map(text=>({text,kind:"diff-added"}))};
+            const panel=document.createElement("section"); panel.className="prompt-version-compare";
+            const grid=document.createElement("div"); grid.className="prompt-version-compare-grid";
+            const makePane=(label,items)=>{const pane=document.createElement("div");pane.className="prompt-version-compare-pane";const h=document.createElement("h4");h.textContent=label;const pre=document.createElement("pre");items.forEach(item=>{const line=document.createElement("span");line.className=item.kind;line.textContent=item.text || " ";pre.appendChild(line);});pane.append(h,pre);return pane;};
+            grid.append(makePane("Старая версия · "+promptVersionLabel(version),rows.left),makePane("Текущая версия",rows.right));
+            const note=document.createElement("p");note.className="prompt-version-compare-note";note.textContent="Красным отмечены удалённые строки, зелёным — добавленные. Неизменившиеся строки показаны без выделения.";
+            const close=document.createElement("button");close.type="button";close.className="secondary-button";close.textContent="Закрыть сравнение";close.addEventListener("click",()=>panel.remove());
+            panel.append(grid,note,close);
+            const existing=card.querySelector(".prompt-version-compare");if(existing)existing.remove();
+            history.insertAdjacentElement("afterend",panel);
+          });
           const restore = document.createElement("button"); restore.type = "button"; restore.className = "secondary-button"; restore.textContent = "Восстановить";
           restore.addEventListener("click", () => {
             if (!window.confirm("Восстановить эту версию? Текущий текст сохранится в истории.")) return;
@@ -1580,7 +1615,8 @@ const movieHistoryStyle = document.createElement("style");
             renderPromptLibrary(); renderMovieProjects();
             $("#promptLibraryFeedback").textContent = "Предыдущая версия восстановлена. Текущий вариант сохранён в истории.";
           });
-          row.append(info,restore); history.appendChild(row);
+          const rowActions=document.createElement("div");rowActions.className="prompt-library-actions";rowActions.append(compare,restore);
+          row.append(info,rowActions); history.appendChild(row);
         });
       } else {
         const emptyHistory = document.createElement("p"); emptyHistory.className = "helper-text"; emptyHistory.textContent = "История появится после первого изменения промпта.";
