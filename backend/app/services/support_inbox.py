@@ -150,3 +150,47 @@ def update_ticket_status(settings: Settings, ticket_id: UUID, status: str):
             "closed_at": now if status == "closed" else None,
         },
     )
+
+
+def create_notification(settings: Settings, *, recipient_user_id: UUID, actor_user_id: UUID | None,
+                        ticket_id: UUID, kind: str, title: str, body: str, dedupe_key: str):
+    """Create a durable notification through an idempotent backend-only RPC."""
+    if kind not in {"support_ticket_new", "support_ticket_reply"}:
+        raise ValueError("Invalid support notification kind.")
+    rows = _request(settings, "POST", "rpc/create_support_notification", payload={
+        "p_recipient_user_id": str(recipient_user_id),
+        "p_actor_user_id": str(actor_user_id) if actor_user_id else None,
+        "p_ticket_id": str(ticket_id), "p_kind": kind,
+        "p_title": title[:120], "p_body": body[:300], "p_dedupe_key": dedupe_key[:180],
+    })
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    if isinstance(rows, str) and rows:
+        return rows
+    raise SupportUnavailable("Could not persist support notification.")
+
+
+def list_notifications(settings: Settings, recipient_user_id: UUID, *, limit: int = 50):
+    rows = _request(settings, "GET", "support_notifications", params={
+        "select": "id,ticket_id,kind,title,body,created_at,read_at",
+        "recipient_user_id": f"eq.{recipient_user_id}", "order": "created_at.desc",
+        "limit": str(max(1, min(limit, 100))),
+    })
+    if not isinstance(rows, list):
+        raise SupportUnavailable("Invalid support notification list.")
+    return rows
+
+
+def mark_notification_read(settings: Settings, notification_id: UUID, recipient_user_id: UUID):
+    # Confirm ownership before issuing a minimal-return update.
+    owned = _request(settings, "GET", "support_notifications", params={
+        "select": "id", "id": f"eq.{notification_id}",
+        "recipient_user_id": f"eq.{recipient_user_id}", "read_at": "is.null", "limit": "1",
+    })
+    if not isinstance(owned, list) or not owned:
+        return 0
+    _request(settings, "PATCH", "support_notifications", params={
+        "id": f"eq.{notification_id}", "recipient_user_id": f"eq.{recipient_user_id}",
+        "read_at": "is.null",
+    }, payload={"read_at": datetime.now(timezone.utc).isoformat()})
+    return 1
