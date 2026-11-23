@@ -1944,6 +1944,7 @@ const movieHistoryStyle = document.createElement("style");
     const list=$("#visualAssetList");if(!list)return;
     const items=readVisualLibrary();list.replaceChildren();
     if(!items.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent="Ваша библиотека пока пуста.";list.append(empty);return;}
+    const renderOwnerId=authSession?.user?.id||null;
     items.forEach((item,index)=>{
       const card=document.createElement("article");card.className="prompt-visual-card";
       const title=document.createElement("b");title.textContent=(item.type==="character"?"Персонаж · ":"Сцена · ")+item.name;
@@ -1957,9 +1958,13 @@ const movieHistoryStyle = document.createElement("style");
         const gallery=document.createElement("div");gallery.className="visual-reference-gallery";
         const label=document.createElement("p");label.className="helper-text";label.textContent="Прикреплённые референсы: "+item.referenceImages.length;gallery.append(label);
         item.referenceImages.slice(0,6).forEach(async(ref)=>{
-          try{const blob=await getVisualRefImage(ref.id,authSession?.user?.id||"guest");if(!blob)return;
-            const image=document.createElement("img");image.alt="Референс персонажа "+item.name;image.loading="lazy";image.src=URL.createObjectURL(blob);
-            image.addEventListener("load",()=>URL.revokeObjectURL(image.src),{once:true});gallery.append(image);
+          try{
+            const blob=await getVisualRefImage(ref.id,renderOwnerId||"guest");
+            if(!blob||(authSession?.user?.id||null)!==renderOwnerId||!card.isConnected)return;
+            const image=document.createElement("img");image.alt="Референс персонажа "+item.name;image.loading="lazy";
+            const objectUrl=URL.createObjectURL(blob);image.src=objectUrl;
+            image.addEventListener("load",()=>URL.revokeObjectURL(objectUrl),{once:true});
+            image.addEventListener("error",()=>URL.revokeObjectURL(objectUrl),{once:true});gallery.append(image);
           }catch{}
         });
         card.append(gallery);
