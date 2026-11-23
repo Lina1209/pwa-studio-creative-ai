@@ -42,6 +42,7 @@ begin
   if p_user_id is null
      or p_subject is null or char_length(btrim(p_subject)) < 3 or char_length(btrim(p_subject)) > 160
      or p_body is null or char_length(btrim(p_body)) < 1 or char_length(btrim(p_body)) > 5000
+     or p_category is null
      or p_category not in ('general','bug','account','billing','feature_request','feedback','safety_privacy')
      or jsonb_typeof(v_context) <> 'object'
      or octet_length(v_context::text) > 4096 then
@@ -76,6 +77,7 @@ declare
   v_now timestamptz := clock_timestamp();
 begin
   if p_ticket_id is null or p_sender_user_id is null
+     or p_sender_role is null
      or p_sender_role not in ('user','admin')
      or p_body is null or char_length(btrim(p_body)) < 1 or char_length(btrim(p_body)) > 5000 then
     raise exception 'invalid support message' using errcode = '22023';
