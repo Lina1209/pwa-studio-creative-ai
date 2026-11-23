@@ -1927,7 +1927,7 @@ const movieHistoryStyle = document.createElement("style");
     const assertOwner=()=>{if(authSession?.user?.id!==userId)throw new Error("Аккаунт изменился во время синхронизации.");};
     try{
       for(let i=0;i<files.length;i++){
-        const file=files[i],ref=item.referenceImages[i];
+        const entry=files[i],file=entry?.file||entry,ref=entry?.ref||item.referenceImages[i];
         if(ref.storagePath){
           if(!ref.storagePath.startsWith(userId+"/"))throw new Error("Путь к референсу не принадлежит текущему аккаунту.");
           continue;
@@ -1973,6 +1973,14 @@ const movieHistoryStyle = document.createElement("style");
     if(paths.length){const {error}=await supabaseClient.storage.from(cloudVisualBucket).remove(paths);if(error){const cleanupError=new Error("Запись удалена из облачной библиотеки, но не все файлы удалось очистить.");cleanupError.tombstoneCommitted=true;throw cleanupError;}}
     assertOwner();
   };
+  let editingVisualAssetId=null;
+  const resetVisualAssetEditor=()=>{
+    editingVisualAssetId=null;
+    $("#saveVisualAsset").textContent="＋ Сохранить в библиотеку";
+    $("#visualAssetName").value="";$("#visualAssetDescription").value="";$("#visualReferenceFiles").value="";
+    ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
+    syncPassportFields();
+  };
   const renderVisualLibrary = () => {
     const list=$("#visualAssetList");if(!list)return;
     const items=readVisualLibrary();list.replaceChildren();
@@ -2003,6 +2011,19 @@ const movieHistoryStyle = document.createElement("style");
         card.append(gallery);
       }
       const actions=document.createElement("div");actions.className="prompt-library-actions";
+      const edit=document.createElement("button");edit.type="button";edit.className="secondary-button";edit.textContent="Изменить";
+      edit.addEventListener("click",()=>{
+        const current=readVisualLibrary().find(entry=>entry.id===item.id);if(!current)return;
+        editingVisualAssetId=current.id;
+        $("#visualAssetType").value=current.type;$("#visualAssetName").value=current.name;$("#visualAssetDescription").value=current.text;
+        const p=current.passport||{};
+        $("#passportFace").value=p.face||"";$("#passportProfile").value=p.profile||"";$("#passportFullBody").value=p.fullBody||"";
+        $("#passportWardrobe").value=p.wardrobe||"";$("#passportPalette").value=p.palette||"";$("#passportExpressions").value=p.expressions||"";
+        $("#visualReferenceFiles").value="";$("#saveVisualAsset").textContent="Сохранить изменения";
+        syncPassportFields();$("#visualAssetName").scrollIntoView({behavior:"smooth",block:"center"});
+        $("#promptSaveFeedback").textContent="Режим редактирования: существующие референсы сохранятся. Новые изображения можно добавить отдельно.";
+      });
+      actions.append(edit);
       const insert=document.createElement("button");insert.type="button";insert.className="secondary-button";insert.textContent="Вставить в конструктор";insert.addEventListener("click",()=>{
         $("#promptBlockType").value=item.type;$("#promptBlockText").value=item.text;$("#promptBlockText").focus();
         $("#promptSaveFeedback").textContent="Материал «"+item.name+"» загружен в конструктор. При необходимости дополните его и добавьте блок.";
@@ -2112,10 +2133,13 @@ const movieHistoryStyle = document.createElement("style");
     const assertOwner=()=>{if((authSession?.user?.id||null)!==ownerId)throw new Error("Аккаунт изменился во время сохранения.");};
     const type=$("#visualAssetType").value,name=$("#visualAssetName").value.trim(),value=$("#visualAssetDescription").value.trim();
     if(!["character","scene"].includes(type)||!name||!value){$("#promptSaveFeedback").textContent="Укажите тип, название и описание материала.";return;}
-    const items=readVisualLibrary();
-    if(items.length>=100){$("#promptSaveFeedback").textContent="Библиотека вмещает до 100 материалов. Удалите ненужные записи.";return;}
+    const items=readVisualLibrary(),editingId=editingVisualAssetId;
+    const existing=editingId?items.find(item=>item.id===editingId):null;
+    if(editingId&&!existing){resetVisualAssetEditor();$("#promptSaveFeedback").textContent="Материал больше не найден. Обновите библиотеку.";return;}
+    if(!editingId&&items.length>=100){$("#promptSaveFeedback").textContent="Библиотека вмещает до 100 материалов. Удалите ненужные записи.";return;}
     const files=Array.from($("#visualReferenceFiles")?.files||[]);
-    if(files.length>6){$("#promptSaveFeedback").textContent="Можно прикрепить не более 6 изображений.";return;}
+    const oldRefs=existing&&Array.isArray(existing.referenceImages)?existing.referenceImages:[];
+    if(files.length+oldRefs.length>6){$("#promptSaveFeedback").textContent="Всего у одного материала может быть не более 6 референсов. Удалите старые или выберите меньше новых изображений.";return;}
     if(files.some(file=>!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>8*1024*1024)){
       $("#promptSaveFeedback").textContent="Поддерживаются PNG, JPEG и WebP до 8 МБ каждый.";return;
     }
@@ -2124,34 +2148,28 @@ const movieHistoryStyle = document.createElement("style");
       fullBody:$("#passportFullBody").value.trim().slice(0,600),wardrobe:$("#passportWardrobe").value.trim().slice(0,800),
       palette:$("#passportPalette").value.trim().slice(0,300),expressions:$("#passportExpressions").value.trim().slice(0,500)
     }:null;
-    const assetId=crypto.randomUUID?crypto.randomUUID():String(Date.now());
-    const refs=files.map((file,index)=>({id:assetId+"-"+index,name:file.name.slice(0,120),type:file.type}));
-    items.unshift({id:assetId,type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),referenceImages:refs,createdAt:new Date().toISOString()});
-    const newAsset=items[0],saveButton=$("#saveVisualAsset");
-    saveButton.disabled=true;
+    const assetId=existing?existing.id:(crypto.randomUUID?crypto.randomUUID():String(Date.now()));
+    const newRefs=files.map(file=>({id:assetId+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)),name:file.name.slice(0,120),type:file.type}));
+    const updated={...(existing||{}),id:assetId,type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),...(!passport?{passport:undefined}:{}),referenceImages:[...oldRefs,...newRefs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const next=existing?items.map(item=>item.id===assetId?updated:item):[updated,...items];
+    const saveButton=$("#saveVisualAsset");saveButton.disabled=true;
     try{
-      for(let i=0;i<files.length;i++){
-        assertOwner();
-        await saveVisualRefImage(refs[i].id,files[i],ownerId||"guest");
-      }
+      for(let i=0;i<files.length;i++){assertOwner();await saveVisualRefImage(newRefs[i].id,files[i],ownerId||"guest");}
       assertOwner();
-      if(ownerId)await saveVisualAssetToCloud(newAsset,files);
+      if(ownerId)await saveVisualAssetToCloud(updated,files.map((file,index)=>({file,ref:newRefs[index]})));
       assertOwner();
-      localStorage.setItem(storageKey,JSON.stringify(items));
+      localStorage.setItem(storageKey,JSON.stringify(next));
     }catch(error){
-      await Promise.all(refs.map(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{})));
+      if(!error?.tombstoneCommitted)await Promise.all(newRefs.map(ref=>deleteVisualRefImage(ref.id,ownerId||"guest").catch(()=>{})));
       $("#promptSaveFeedback").textContent=ownerId
         ?"Не удалось сохранить материал в облако или аккаунт изменился. Проверьте подключение и повторите попытку."
-        :"Не удалось сохранить референсы. Проверьте свободное место браузера и доступность IndexedDB.";
+        :"Не удалось сохранить материал. Проверьте свободное место браузера и доступность IndexedDB.";
       console.warn("Visual asset save failed:",error);saveButton.disabled=false;return;
     }
-    saveButton.disabled=false;
-    $("#visualAssetName").value="";$("#visualAssetDescription").value="";$("#visualReferenceFiles").value="";
-    ["#passportFace","#passportProfile","#passportFullBody","#passportWardrobe","#passportPalette","#passportExpressions"].forEach(id=>$(id).value="");
-    renderVisualLibrary();
+    saveButton.disabled=false;resetVisualAssetEditor();renderVisualLibrary();
     $("#promptSaveFeedback").textContent=ownerId
-      ?"«"+name+"» сохранён в облачной библиотеке вашего аккаунта."
-      :"«"+name+"» сохранён локально. Войдите в аккаунт для облачной синхронизации.";
+      ?(existing?"Изменения материала «"+name+"» сохранены в облачной библиотеке.":"«"+name+"» сохранён в облачной библиотеке вашего аккаунта.")
+      :(existing?"Изменения материала «"+name+"» сохранены локально.":"«"+name+"» сохранён локально. Войдите в аккаунт для облачной синхронизации.");
   });
   const syncPassportFields=()=>{$("#characterPassportFields").hidden=$("#visualAssetType").value!=="character";};
   $("#visualAssetType").addEventListener("change",syncPassportFields);
