@@ -4580,6 +4580,128 @@ begin
 end;
 $plan_replacement_inflight_job_test$;
 
+-- A permanent worker failure after plan replacement releases the original
+-- quota reservations and credit hold exactly once; it never charges the successor.
+do $plan_replacement_failure_test$
+declare
+  v_job record;
+  v_released integer;
+  v_successor_reservations integer;
+  v_release_count integer;
+  v_capture_count integer;
+  v_status text;
+begin
+  select * into v_job
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-replacement-failure-job-001',
+      repeat('a', 64),
+      '{"prompt":"fail after plan replacement","quantity":1}'::jsonb,
+      '{"amount":10,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      10
+    );
+
+  if not v_job.created or v_job.replayed then
+    raise exception 'Expected a new job under the current successor assignment';
+  end if;
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values (
+    '20202020-2020-4202-8202-202020202020',
+    '22222222-2222-4222-8222-222222222222',
+    'expired',
+    '11111111-1111-4111-8111-111111111111',
+    'expired:plan-replacement-failure-job-001',
+    'End current assignment while its admitted generation is running'
+  );
+
+  insert into public.user_plan_assignments(
+    id, user_id, approved_plan_version_id, assignment_source,
+    source_reference, idempotency_key, status, starts_at, ends_at, created_by
+  ) values (
+    '30303030-3030-4303-8303-303030303030',
+    '22222222-2222-4222-8222-222222222222',
+    '13131313-1313-4131-8131-131313131313',
+    'operator_grant', 'quota-replacement-failure-successor',
+    'quota-replacement-failure-successor-001',
+    'active', now() - interval '1 minute', now() + interval '30 days',
+    '11111111-1111-4111-8111-111111111111'
+  );
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values
+    ('30303030-3030-4303-8303-303030303030',
+     '22222222-2222-4222-8222-222222222222',
+     'created','11111111-1111-4111-8111-111111111111',
+     'created:quota-replacement-failure-successor-001','Create failure successor assignment'),
+    ('30303030-3030-4303-8303-303030303030',
+     '22222222-2222-4222-8222-222222222222',
+     'activated','11111111-1111-4111-8111-111111111111',
+     'activated:quota-replacement-failure-successor-001','Activate failure successor assignment');
+
+  update public.generation_jobs
+     set status = 'running',
+         lease_owner = 'plan-replacement-failure-worker',
+         lease_expires_at = now() + interval '2 minutes',
+         heartbeat_at = now(),
+         updated_at = now()
+   where id = v_job.job_id;
+
+  if not public.fail_generation_job(
+    v_job.job_id, 'plan-replacement-failure-worker', 'provider_rejected'
+  ) then
+    raise exception 'Active worker could not fail the credited job after plan replacement';
+  end if;
+
+  select status into v_status
+    from public.generation_jobs where id = v_job.job_id;
+  select count(*) into v_released
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and assignment_id = '20202020-2020-4202-8202-202020202020'
+     and status = 'released';
+  select count(*) into v_successor_reservations
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and assignment_id = '30303030-3030-4303-8303-303030303030';
+  select count(*) into v_release_count
+    from public.credit_ledger
+   where hold_id = v_job.hold_id and operation_type = 'release';
+  select count(*) into v_capture_count
+    from public.credit_ledger
+   where hold_id = v_job.hold_id and operation_type = 'capture';
+
+  if v_status <> 'failed'
+     or v_released <> 5
+     or v_successor_reservations <> 0
+     or v_release_count <> 1
+     or v_capture_count <> 0 then
+    raise exception 'Failure after plan replacement did not release original quotas and credits exactly once';
+  end if;
+
+  -- A repeated terminal failure must not create a second credit release.
+  if public.fail_generation_job(
+    v_job.job_id, 'plan-replacement-failure-worker', 'duplicate_failure'
+  ) then
+    raise exception 'A repeated failure unexpectedly changed the terminal job';
+  end if;
+  select count(*) into v_release_count
+    from public.credit_ledger
+   where hold_id = v_job.hold_id and operation_type = 'release';
+  if v_release_count <> 1 then
+    raise exception 'Repeated failure released the same credit hold more than once';
+  end if;
+end;
+$plan_replacement_failure_test$;
+
+
 
 -- A pending plan is not an entitlement, even when the account has credits.
 insert into public.user_plan_assignments(
