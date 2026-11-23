@@ -108,7 +108,10 @@ def audit_finance_integrity(
     quota_reservations = [] if quota_reservations is None else quota_reservations
     quota_events = [] if quota_events is None else quota_events
     if not all(isinstance(rows, list) for rows in (
-        credit_holds, credit_lots, hold_allocations, *commerce_sources.values()
+        credit_holds, credit_lots, hold_allocations,
+        payment_orders, payment_provider_events, payment_order_events,
+        purchase_items, fulfillment_outbox, plan_assignments,
+        plan_assignment_events, approved_plans, quota_reservations, quota_events,
     )):
         raise ValueError("invalid_audit_input")
     if not isinstance(complete, bool):
