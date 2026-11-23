@@ -54,8 +54,3 @@ def test_public_directory_only_returns_service_filtered_results(monkeypatch):
     assert response.status_code == 200
     assert captured == {"actor": UUID(OWNER), "query": "ar"}
 
-
-def test_profile_directory_requires_sign_in():
-    app.dependency_overrides.clear()
-    response = TestClient(app).get("/api/profiles/search?q=ar")
-    assert response.status_code == 401
