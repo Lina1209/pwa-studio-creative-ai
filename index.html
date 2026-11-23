@@ -274,6 +274,30 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div id="notificationList" class="notification-list" aria-live="polite"><div class="admin-empty">Загрузка уведомлений…</div></div>
           <p id="notificationFeedback" class="notification-feedback" role="status"></p>
         </section>
+        <section class="messages-panel panel" id="messagesPanel" hidden>
+          <div class="notification-heading">
+            <div><div class="eyebrow">PRIVATE COMMUNITY · DIRECT MESSAGES</div><h2>Личные сообщения</h2>
+              <p>Закрытые диалоги между пользователями. Ваши сообщения доступны только участникам переписки.</p></div>
+            <button class="secondary-button" id="messagesRefresh" type="button">↻ Обновить</button>
+          </div>
+          <form id="newConversationForm" class="message-new-form">
+            <div><label for="messageRecipientId">Начать диалог · UUID пользователя</label><input id="messageRecipientId" required minlength="36" maxlength="36" autocomplete="off" placeholder="UUID из профиля пользователя"></div>
+            <div><label for="messageFirstText">Первое сообщение</label><input id="messageFirstText" required maxlength="8000" placeholder="Напишите приветствие..."></div>
+            <button class="primary-button" type="submit">Начать диалог</button>
+          </form>
+          <div class="messages-layout">
+            <div class="conversation-list-wrap"><h3>Ваши диалоги</h3><div id="conversationList" class="conversation-list" aria-live="polite"><div class="admin-empty">Загрузка диалогов…</div></div></div>
+            <div class="conversation-chat">
+              <div id="conversationTitle" class="conversation-title">Выберите диалог</div>
+              <div id="directMessageList" class="direct-message-list" aria-live="polite"><div class="admin-empty">Здесь появятся сообщения выбранного диалога.</div></div>
+              <form id="directMessageForm" class="direct-message-form" hidden>
+                <input id="directMessageText" required maxlength="8000" autocomplete="off" placeholder="Ваше сообщение..." aria-label="Текст сообщения">
+                <button class="primary-button" type="submit">Отправить</button>
+              </form>
+            </div>
+          </div>
+          <p id="messagesFeedback" class="notification-feedback" role="status"></p>
+        </section>
         <section class="report-panel panel" id="reportPanel">
           <div class="eyebrow">COMMUNITY CARE · TRUST & SAFETY</div>
           <h2>Сообщить о проблеме</h2>
