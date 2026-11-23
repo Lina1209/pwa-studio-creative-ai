@@ -2203,6 +2203,8 @@ const movieHistoryStyle = document.createElement("style");
         const current=readVisualLibrary(),removed=current.find(asset=>asset.id===item.id);if(!removed)return;
         const stillOwner=()=>((authSession?.user?.id||null)===ownerId);
         remove.disabled=true;
+        // A sync started before this deletion must not restore its stale snapshot.
+        visualLibrarySyncSequence++;
         try{
           // Persist the cloud tombstone before removing the local copy, so a network error cannot resurrect it.
           if(ownerId)await deleteVisualAssetFromCloud(removed,ownerId);
@@ -2258,6 +2260,8 @@ const movieHistoryStyle = document.createElement("style");
     const updated={...(existing||{}),id:assetId,type,name:name.slice(0,80),text:value.slice(0,5000),...(passport?{passport}:{}),...(!passport?{passport:undefined}:{}),referenceImages:[...oldRefs,...newRefs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
     const next=existing?items.map(item=>item.id===assetId?updated:item):[updated,...items];
     const saveButton=$("#saveVisualAsset");saveButton.disabled=true;
+    // Invalidate any older cloud snapshot before saving or editing this asset.
+    visualLibrarySyncSequence++;
     let localImagesPrepared=false,cloudSaveAttempted=false;
     try{
       for(let i=0;i<files.length;i++){assertOwner();await saveVisualRefImage(newRefs[i].id,files[i],ownerId||"guest");}
