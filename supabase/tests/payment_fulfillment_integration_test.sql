@@ -396,6 +396,7 @@ declare
   v_lot public.credit_lots%rowtype;
   v_refunded bigint;
   v_reconciliation_count integer;
+  v_order_status text;
 begin
   select * into v_order from public.payment_orders
    where merchant_reference = 'purchase-credit-pack-001';
@@ -453,8 +454,8 @@ begin
     raise exception 'Verified refund provider event replay was not idempotent';
   end if;
 
-  select status into v_order.status from public.payment_orders where id = v_order.id;
-  if v_order.status <> 'partially_refunded' then
+  select status into v_order_status from public.payment_orders where id = v_order.id;
+  if v_order_status <> 'partially_refunded' then
     raise exception 'Partial refund did not update payment order status';
   end if;
 
@@ -489,8 +490,8 @@ begin
     raise exception 'Final refund did not settle';
   end if;
 
-  select status into v_order.status from public.payment_orders where id = v_order.id;
-  if v_order.status <> 'refunded' then
+  select status into v_order_status from public.payment_orders where id = v_order.id;
+  if v_order_status <> 'refunded' then
     raise exception 'Fully refunded payment order was not closed';
   end if;
 
