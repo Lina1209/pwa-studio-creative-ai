@@ -432,6 +432,54 @@ const movieHistoryStyle = document.createElement("style");
     } catch (error) { $("#adminSupportFeedback").textContent = error.message; }
   });
 
+
+  const loadAdminPricingDrafts = async () => {
+    const status = $("#pricingDraftStatus");
+    if (!adminUiAuthorized) { if (status) status.textContent = "Нет доступа."; return; }
+    if (status) status.textContent = "Загружаем версии тарифов…";
+    try {
+      const data = await apiRequest("/api/admin/pricing/drafts");
+      const list = $("#pricingDraftList");
+      if (list) {
+        list.replaceChildren();
+        const active = document.createElement("p");
+        active.textContent = "Действующая версия: " + (data.live_catalog_version || "не настроена");
+        list.append(active);
+        (data.drafts || []).forEach(draft => {
+          const card = document.createElement("article");
+          card.className = "assistant-message";
+          const title = document.createElement("b");
+          title.textContent = "Черновик " + draft.version;
+          const detail = document.createElement("p");
+          detail.textContent = (draft.catalog_json?.rules?.length || 0) + " правил · создан " + new Date(draft.created_at).toLocaleString();
+          const note = document.createElement("p");
+          note.textContent = "Не активирован · не влияет на стоимость генерации.";
+          card.append(title, detail, note);
+          list.append(card);
+        });
+      }
+      if (status) status.textContent = "Черновики загружены. Публикация тарифов отключена до отдельной проверки и согласования.";
+    } catch (error) { if (status) status.textContent = error.message; }
+  };
+  $("#refreshPricingDrafts")?.addEventListener("click", loadAdminPricingDrafts);
+  $("#pricingDraftForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!adminUiAuthorized) return;
+    const status = $("#pricingDraftStatus");
+    const button = event.submitter; if (button) button.disabled = true;
+    try {
+      const rules = JSON.parse($("#pricingDraftRules").value);
+      if (!Array.isArray(rules)) throw new Error("Правила должны быть JSON-массивом.");
+      const version = $("#pricingDraftVersion").value.trim();
+      await apiRequest("/api/admin/pricing/drafts", {method:"POST",body:JSON.stringify({version,rules})});
+      $("#pricingDraftVersion").value = "";
+      $("#pricingDraftRules").value = "";
+      if (status) status.textContent = "Черновик сохранён. Действующие тарифы не изменены.";
+      await loadAdminPricingDrafts();
+    } catch (error) { if (status) status.textContent = error instanceof SyntaxError ? "Проверьте синтаксис JSON." : error.message; }
+    finally { if (button) button.disabled = false; }
+  });
+
   const loadFinanceAccess = async () => {
     const userId = authSession?.user?.id;
     const panel = $("#financePanel");
@@ -1141,7 +1189,7 @@ const movieHistoryStyle = document.createElement("style");
     $("#sidebar").classList.remove("open");
     window.location.hash = view === "home" ? "" : view;
     window.scrollTo({top:0,behavior:"smooth"});
-    if (view === "account" && authSession?.user) { loadMySupportTickets(); if (adminUiAuthorized) loadAdminSupportTickets(); }
+    if (view === "account" && authSession?.user) { loadMySupportTickets(); if (adminUiAuthorized) { loadAdminSupportTickets(); loadAdminPricingDrafts(); } }
   }
 
   $$(".nav-item[data-view]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.view)));
