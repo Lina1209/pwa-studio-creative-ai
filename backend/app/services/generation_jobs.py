@@ -162,6 +162,61 @@ def get_generation_job(
 
 
 @dataclass(frozen=True)
+class GenerationJobResultAsset:
+    status: str
+    result_storage_path: str | None
+    result_sha256: str | None
+
+
+def get_generation_job_result_asset(
+    settings: Settings, *, user_id: UUID, job_id: UUID
+) -> GenerationJobResultAsset | None:
+    """Read only the result locator for the authenticated owner of a job."""
+    if not settings.generation_jobs_enabled:
+        raise GenerationJobsNotConfiguredError(
+            "Generation jobs are not enabled on this server."
+        )
+    headers = _headers(settings)
+    url = f"{settings.supabase_url.rstrip('/')}/rest/v1/generation_jobs"
+    params = {
+        "id": f"eq.{job_id}",
+        "user_id": f"eq.{user_id}",
+        "select": "status,result_storage_path,result_sha256",
+        "limit": "1",
+    }
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            response = client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        raise GenerationJobsServiceError(
+            f"Could not read generation result (HTTP {status_code})."
+        ) from exc
+    if not isinstance(data, list):
+        raise GenerationJobsServiceError("The generation result service returned an invalid response.")
+    if not data:
+        return None
+    if len(data) != 1 or not isinstance(data[0], dict):
+        raise GenerationJobsServiceError("The generation result service returned an ambiguous response.")
+    row = data[0]
+    status = row.get("status")
+    path = row.get("result_storage_path")
+    digest = row.get("result_sha256")
+    if status not in {"queued", "running", "retry_wait", "cancel_requested", "succeeded", "failed", "cancelled", "expired"}:
+        raise GenerationJobsServiceError("The generation result service returned an invalid status.")
+    if path is not None and (not isinstance(path, str) or len(path) > 1024):
+        raise GenerationJobsServiceError("The generation result path is invalid.")
+    if digest is not None and (
+        not isinstance(digest, str) or len(digest) != 64
+        or any(char not in "0123456789abcdef" for char in digest)
+    ):
+        raise GenerationJobsServiceError("The generation result checksum is invalid.")
+    return GenerationJobResultAsset(status, path, digest)
+
+
+@dataclass(frozen=True)
 class GenerationJobCancellationResult:
     job_status: str
     cancellation_action: str
