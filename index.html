@@ -274,6 +274,21 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div id="notificationList" class="notification-list" aria-live="polite"><div class="admin-empty">Загрузка уведомлений…</div></div>
           <p id="notificationFeedback" class="notification-feedback" role="status"></p>
         </section>
+
+        <section class="community-panel panel" id="communityPanel" hidden>
+          <div class="notification-heading"><div><div class="eyebrow">CREATOR COMMUNITY · DISCOVER</div><h2>Сообщество авторов</h2><p>Находите участников PWA Studio и знакомьтесь с их творческими интересами. Почта и личные данные не публикуются.</p></div><button class="secondary-button" id="communityRefresh" type="button">↻ Обновить</button></div>
+          <form id="communityProfileForm" class="admin-form community-profile-form">
+            <h3>Моя публичная карточка</h3>
+            <label for="communityDisplayName">Отображаемое имя</label><input id="communityDisplayName" required minlength="2" maxlength="40">
+            <label for="communityUsername">Уникальный username</label><input id="communityUsername" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.]+" autocomplete="off" placeholder="например, creator_01">
+            <label for="communityBio">О себе и творческих интересах</label><textarea id="communityBio" maxlength="500" rows="3" placeholder="Расскажите, что создаёте…"></textarea>
+            <div class="community-privacy-row"><label><input id="communityPublic" type="checkbox"> Публичный профиль</label><label><input id="communityListed" type="checkbox"> Показывать в каталоге</label></div>
+            <button class="primary-button" type="submit">Сохранить карточку</button><p id="communityProfileFeedback" class="notification-feedback" role="status"></p>
+          </form>
+          <div class="community-search"><label for="communitySearchInput">Найти автора</label><div><input id="communitySearchInput" maxlength="40" placeholder="Имя или username (от 2 символов)"><button class="primary-button" id="communitySearchButton" type="button">Найти</button></div></div>
+          <div id="communityResults" class="community-results" aria-live="polite"><div class="admin-empty">Введите имя или username, чтобы найти авторов.</div></div>
+          <div id="communityPublicProfile" class="community-public-profile" hidden></div>
+        </section>
         <section class="messages-panel panel" id="messagesPanel" hidden>
           <div class="notification-heading">
             <div><div class="eyebrow">PRIVATE COMMUNITY · DIRECT MESSAGES</div><h2>Личные сообщения</h2>
