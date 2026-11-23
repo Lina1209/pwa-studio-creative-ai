@@ -4701,6 +4701,136 @@ begin
 end;
 $plan_replacement_failure_test$;
 
+-- Cancellation terminal accounting is ready at the database primitive level.
+-- This deliberately does not claim that a user-facing cancellation API exists.
+do $plan_replacement_cancel_settlement_test$
+declare
+  v_job record;
+  v_release record;
+  v_replay record;
+  v_quota_released integer;
+  v_successor_reservations integer;
+  v_release_count integer;
+  v_capture_count integer;
+  v_status text;
+begin
+  select * into v_job
+    from public.create_plan_credited_generation_job_with_outbox(
+      '22222222-2222-4222-8222-222222222222',
+      null,
+      'abababab-abab-4bab-8bab-abababababab',
+      'image_generation',
+      'quota-test-provider',
+      'quota-test-model',
+      'plan-replacement-cancel-job-001',
+      repeat('b', 64),
+      '{"prompt":"cancel after plan replacement","quantity":1}'::jsonb,
+      '{"amount":10,"quantity":1,"price_version":"test-v1"}'::jsonb,
+      10
+    );
+
+  if not v_job.created or v_job.replayed then
+    raise exception 'Expected a new job under the current assignment before cancellation';
+  end if;
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values (
+    '20202020-2020-4202-8202-202020202020',
+    '22222222-2222-4222-8222-222222222222',
+    'expired',
+    '11111111-1111-4111-8111-111111111111',
+    'expired:plan-replacement-cancel-job-001',
+    'End original assignment while cancellation is pending'
+  );
+
+  insert into public.user_plan_assignments(
+    id, user_id, approved_plan_version_id, assignment_source,
+    source_reference, idempotency_key, status, starts_at, ends_at, created_by
+  ) values (
+    '40404040-4040-4404-8404-404040404040',
+    '22222222-2222-4222-8222-222222222222',
+    '13131313-1313-4131-8131-131313131313',
+    'operator_grant', 'quota-replacement-cancel-successor',
+    'quota-replacement-cancel-successor-001',
+    'active', now() - interval '1 minute', now() + interval '30 days',
+    '11111111-1111-4111-8111-111111111111'
+  );
+
+  insert into public.user_plan_assignment_events(
+    assignment_id, user_id, event_type, actor_user_id, event_key, reason
+  ) values
+    ('40404040-4040-4404-8404-404040404040',
+     '22222222-2222-4222-8222-222222222222',
+     'created','11111111-1111-4111-8111-111111111111',
+     'created:quota-replacement-cancel-successor-001','Create cancellation successor assignment'),
+    ('40404040-4040-4404-8404-404040404040',
+     '22222222-2222-4222-8222-222222222222',
+     'activated','11111111-1111-4111-8111-111111111111',
+     'activated:quota-replacement-cancel-successor-001','Activate cancellation successor assignment');
+
+  -- Simulate the terminal state only to test the existing accounting primitives.
+  -- A future cancellation API must own and authorize this transition.
+  update public.generation_jobs
+     set status = 'cancelled',
+         last_error_code = 'user_cancelled',
+         lease_owner = null,
+         lease_expires_at = null,
+         heartbeat_at = null,
+         completed_at = now(),
+         updated_at = now()
+   where id = v_job.job_id;
+
+  select * into v_release
+    from public.release_job_credit_hold(
+      '22222222-2222-4222-8222-222222222222',
+      v_job.hold_id,
+      'user_cancelled'
+    );
+
+  if v_release.replayed then
+    raise exception 'First cancellation credit release was incorrectly marked as replay';
+  end if;
+
+  select count(*) into v_quota_released
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and assignment_id = '20202020-2020-4202-8202-202020202020'
+     and status = 'released';
+  select count(*) into v_successor_reservations
+    from public.plan_quota_reservations
+   where request_id = v_job.job_id
+     and assignment_id = '40404040-4040-4404-8404-404040404040';
+  select count(*) into v_release_count
+    from public.credit_ledger
+   where hold_id = v_job.hold_id and operation_type = 'release';
+  select count(*) into v_capture_count
+    from public.credit_ledger
+   where hold_id = v_job.hold_id and operation_type = 'capture';
+  select status into v_status
+    from public.generation_jobs where id = v_job.job_id;
+
+  if v_status <> 'cancelled'
+     or v_quota_released <> 5
+     or v_successor_reservations <> 0
+     or v_release_count <> 1
+     or v_capture_count <> 0 then
+    raise exception 'Cancellation did not release original plan quotas and held credits exactly once';
+  end if;
+
+  select * into v_replay
+    from public.release_job_credit_hold(
+      '22222222-2222-4222-8222-222222222222',
+      v_job.hold_id,
+      'user_cancelled'
+    );
+  if not v_replay.replayed or v_release_count <> 1 then
+    raise exception 'Repeated cancellation settlement was not idempotent';
+  end if;
+end;
+$plan_replacement_cancel_settlement_test$;
+
+
 
 
 -- A pending plan is not an entitlement, even when the account has credits.
