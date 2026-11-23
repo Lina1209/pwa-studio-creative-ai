@@ -125,3 +125,8 @@ verified UUID values. Audit reads validate and canonicalize optional
 `resource_id` and `correlation_id` fields before returning events. A malformed
 reference makes the audit page fail closed rather than passing untrusted
 identifiers into the administrator interface.
+
+
+### Audit resource-category allowlist alignment
+
+The backend audit service allowlist includes every resource category emitted by the current administrative routes, including credit-ledger reads and inactive pricing/plan catalog drafts. Unit tests exercise these route-specific categories so an audit event cannot be rejected after an otherwise valid administrative operation solely because its resource label was omitted from the service allowlist.
