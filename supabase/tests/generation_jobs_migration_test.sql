@@ -5305,6 +5305,7 @@ select 'generation cancellation RPC behavior checks passed' as result;
 do $generation_worker_cancellation_handshake_test$
 declare
   v_job record;
+  v_claim record;
   v_state text;
   v_ack boolean;
   v_status text;
@@ -5370,6 +5371,20 @@ begin
   if v_ack then
     raise exception 'Unknown provider operation was incorrectly acknowledged';
   end if;
+
+  -- An expired cancel_requested lease is reclaimable for reconciliation,
+  -- without changing the job status or consuming another generation attempt.
+  update public.generation_jobs
+     set lease_expires_at=now()-interval '1 second', updated_at=now()
+   where id=v_job.job_id;
+  select * into v_claim
+    from public.claim_next_generation_job_v2('cancel-recovery-worker', 180);
+  if v_claim.job_id <> v_job.job_id
+     or v_claim.job_status <> 'cancel_requested'
+     or v_claim.attempt_count <> v_job.attempt_count then
+    raise exception 'Expired cancellation lease was not reclaimed safely';
+  end if;
+
   select status into v_status from public.generation_jobs where id=v_job.job_id;
   select status into v_hold_status from public.credit_holds where id=v_job.hold_id;
   select count(*) into v_count from public.credit_ledger
@@ -5381,12 +5396,12 @@ begin
   -- A definitive provider result after the user request is journaled by the
   -- same lease owner, then the acknowledgement atomically settles the hold.
   if not public.mark_generation_provider_operation_result_received(
-    v_job.job_id, 'cancel-handshake-worker', 'provider-result-123'
+    v_job.job_id, 'cancel-recovery-worker', 'provider-result-123'
   ) then
     raise exception 'Could not journal the provider result after cancellation request';
   end if;
   v_ack := public.acknowledge_generation_job_cancellation(
-    v_job.job_id, 'cancel-handshake-worker'
+    v_job.job_id, 'cancel-recovery-worker'
   );
   select status into v_status from public.generation_jobs where id=v_job.job_id;
   select status into v_hold_status from public.credit_holds where id=v_job.hold_id;
