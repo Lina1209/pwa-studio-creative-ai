@@ -386,8 +386,20 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <section class="panel" id="supportUserPanel" aria-labelledby="supportUserHeading">
           <div class="panel-heading"><div><div class="eyebrow">HELP DESK</div><h2 id="supportUserHeading">Поддержка и обращения</h2><p>Задайте вопрос команде PWA Studio и следите за ответом здесь.</p></div><button class="secondary-button" id="refreshMySupportTickets" type="button">↻ Обновить</button></div>
           <form id="supportCreateForm" class="finance-queue-controls">
+            <label>Категория обращения
+              <select id="supportNewCategory">
+                <option value="general">Общий вопрос</option>
+                <option value="bug">Ошибка или техническая проблема</option>
+                <option value="account">Аккаунт и доступ</option>
+                <option value="billing">Тарифы, кредиты и оплата</option>
+                <option value="feature_request">Предложение новой функции</option>
+                <option value="feedback">Отзыв о PWA Studio</option>
+                <option value="safety_privacy">Безопасность и конфиденциальность</option>
+              </select>
+            </label>
             <label>Тема обращения<input id="supportNewSubject" minlength="3" maxlength="160" required placeholder="Например, проблема с сохранением проекта"></label>
-            <label>Сообщение<textarea id="supportNewMessage" minlength="1" maxlength="5000" rows="3" required placeholder="Опишите, что произошло…"></textarea></label>
+            <label>Сообщение<textarea id="supportNewMessage" minlength="1" maxlength="5000" rows="3" required placeholder="Опишите, что произошло или что можно улучшить…"></textarea></label>
+            <label class="support-context-optin"><input id="supportIncludeContext" type="checkbox"> Добавить технический контекст: открытый раздел сайта. Никакие файлы или тексты проектов не прикладываются.</label>
             <button class="primary-button" type="submit">Отправить обращение</button>
           </form>
           <p id="supportUserStatus" class="helper-text" role="status" aria-live="polite">Войдите в аккаунт, чтобы пользоваться поддержкой.</p>
