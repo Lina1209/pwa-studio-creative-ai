@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
@@ -24,7 +25,7 @@ def _request(settings: Settings, method: str, *, params=None, payload=None, pref
         response.raise_for_status()
         return response.json() if response.content else []
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 409:
+        if exc.response.status_code == 409 or (exc.response.status_code == 400 and "23505" in exc.response.text):
             raise HTTPException(status_code=409, detail="This username is already in use.") from exc
         raise HTTPException(status_code=502, detail="Profile storage rejected the request.") from exc
     except httpx.HTTPError as exc:
@@ -87,7 +88,7 @@ def update_own_profile(settings: Settings, user_id: str, changes: dict) -> dict:
         raise HTTPException(status_code=422, detail="Invalid profile visibility.")
     if "show_in_directory" in payload and not isinstance(payload["show_in_directory"], bool):
         raise HTTPException(status_code=422, detail="Directory visibility must be true or false.")
-    payload["updated_at"] = "now()"
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
     try:
         rows = _request(settings, "PATCH", params={
             "user_id": f"eq.{uid}",
