@@ -247,11 +247,26 @@ def resolve_user_entitlements(settings: Settings, *, user_id: UUID) -> dict[str,
             "configured": limit is not None,
         }
 
+    common_job_dimensions = (
+        "daily_generation_jobs", "monthly_generation_jobs", "max_parallel_jobs"
+    )
     capability_dimensions = {
-        "ai": ("ai", ("daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests")),
-        "image": ("image", ("daily_image_generations", "monthly_image_generations")),
-        "video": ("video", ("daily_video_generations", "monthly_video_generations")),
-        "audio": ("audio", ("daily_audio_generations", "monthly_audio_generations")),
+        "ai": ("ai", (
+            "daily_ai_requests", "monthly_ai_requests", "max_concurrent_ai_requests",
+            *common_job_dimensions,
+        )),
+        "image": ("image", (
+            "daily_image_generations", "monthly_image_generations",
+            *common_job_dimensions,
+        )),
+        "video": ("video", (
+            "daily_video_generations", "monthly_video_generations",
+            *common_job_dimensions,
+        )),
+        "audio": ("audio", (
+            "daily_audio_generations", "monthly_audio_generations",
+            *common_job_dimensions,
+        )),
     }
     capabilities = {}
     for capability, (feature_name, required_dimensions) in capability_dimensions.items():
