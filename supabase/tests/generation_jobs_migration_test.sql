@@ -3972,6 +3972,7 @@ insert into auth.users(id) values
   ('abababab-abab-4bab-8bab-abababababab'),
   ('cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd')
 on conflict (id) do nothing;
+grant usage on schema storage to authenticated;
 grant select, insert, update, delete on storage.objects to authenticated;
 set role authenticated;
 select set_config('request.jwt.claim.sub','abababab-abab-4bab-8bab-abababababab',false);
