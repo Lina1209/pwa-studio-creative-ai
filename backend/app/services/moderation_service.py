@@ -66,7 +66,7 @@ def list_user_reports(settings: Settings):
 
 def review_user_report(settings: Settings, report_id: str, moderator_id: str, payload):
     rows = _request(settings, "PATCH", "user_reports",
-        params={"id": f"eq.{report_id}", "select": "id,status,created_at"},
+        params={"id": f"eq.{report_id}", "select": "id,status,created_at,reporter_user_id"},
         payload={"status": payload.status, "moderator_note": payload.moderator_note,
                  "reviewed_by": moderator_id, "reviewed_at": datetime.now(timezone.utc).isoformat()})
     if not rows:
