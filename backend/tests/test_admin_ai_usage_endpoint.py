@@ -43,8 +43,6 @@ def test_admin_ai_usage_report_is_admin_only_and_private(monkeypatch):
         assert payload["daily_budget_status"] == [
             {"provider": "deepseek", "daily_budget_usd": None, "estimated_spend_usd": "0",
              "unknown_cost_events": 0, "utilization_percent": None, "status": "unconfigured"},
-            {"provider": "gemini", "daily_budget_usd": None, "estimated_spend_usd": "0",
-             "unknown_cost_events": 0, "utilization_percent": None, "status": "unconfigured"},
         ]
         assert "not a hard billing cap" in payload["budget_status_note"]
         assert response.headers["cache-control"] == "private, no-store"
@@ -107,6 +105,6 @@ def test_admin_ai_usage_report_warns_at_eighty_percent_of_configured_provider_bu
         statuses = {item["provider"]: item for item in response.json()["daily_budget_status"]}
         assert statuses["deepseek"]["status"] == "warning"
         assert statuses["deepseek"]["utilization_percent"] == 85.0
-        assert statuses["gemini"]["status"] == "unconfigured"
+        assert "gemini" not in statuses
     finally:
         app.dependency_overrides.clear()
