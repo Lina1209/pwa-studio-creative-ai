@@ -90,6 +90,7 @@ from app.services.generation_jobs import (
 
 from app.services.pricing_drafts import PricingDraftUnavailable, create_draft, list_drafts
 from app.services.plan_drafts import PlanDraftUnavailable, create_plan_draft, list_plan_drafts
+from app.services.plan_operations import PlanOperationsUnavailable, approve_plan_draft, create_pending_assignment
 from app.services.initial_entitlement import EntitlementGrantUnavailable, grant_initial_free_entitlement
 from app.services.support_inbox import SupportUnavailable, create_ticket, list_tickets, get_ticket, list_messages, add_message
 
@@ -1692,3 +1693,74 @@ def admin_create_plan_draft(payload: PlanCatalogDraftCreate,user: StudioUser = D
         return {"draft":row,"credits_granted":False,"checkout_enabled":False}
     except PlanDraftUnavailable:
         raise HTTPException(status_code=503,detail="Не удалось сохранить черновик тарифного плана.")
+
+
+class PlanDraftApprovalRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    reason: str = Field(min_length=8, max_length=500)
+
+
+class PlanAssignmentCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    user_id: UUID
+    approved_plan_version_id: UUID
+    assignment_source: str = Field(default="operator_grant", pattern="^operator_grant$")
+    source_reference: str = Field(min_length=8, max_length=240)
+    starts_at: datetime
+    ends_at: datetime
+    reason: str = Field(min_length=8, max_length=500)
+
+
+@app.post(f"{settings.api_prefix}/admin/plans/drafts/{{draft_id}}/approve")
+def admin_approve_plan_draft(
+    draft_id: UUID,
+    payload: PlanDraftApprovalRequest,
+    user: StudioUser = Depends(require_permission("admin.plans.approve")),
+):
+    """Approve one immutable plan draft; this does not activate or grant credits."""
+    try:
+        result = approve_plan_draft(
+            settings, draft_id=draft_id, actor_id=UUID(user.user_id), reason=payload.reason.strip()
+        )
+        return {
+            **result,
+            "activation_enabled": False,
+            "checkout_enabled": False,
+            "credits_granted": False,
+        }
+    except PlanOperationsUnavailable:
+        raise HTTPException(status_code=503, detail="Сервис утверждения тарифов временно недоступен.")
+
+
+@app.post(f"{settings.api_prefix}/admin/plans/assignments", status_code=201)
+def admin_create_pending_plan_assignment(
+    payload: PlanAssignmentCreate,
+    response: Response,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
+    user: StudioUser = Depends(require_permission("admin.plans.assign")),
+):
+    """Create an inert pending plan assignment after owner authorization."""
+    try:
+        result = create_pending_assignment(
+            settings,
+            user_id=payload.user_id,
+            approved_plan_version_id=payload.approved_plan_version_id,
+            assignment_source=payload.assignment_source,
+            source_reference=payload.source_reference.strip(),
+            idempotency_key=idempotency_key,
+            starts_at=payload.starts_at,
+            ends_at=payload.ends_at,
+            actor_id=UUID(user.user_id),
+            reason=payload.reason.strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Период назначения тарифа некорректен.") from exc
+    except PlanOperationsUnavailable:
+        raise HTTPException(status_code=503, detail="Сервис назначения тарифов временно недоступен.")
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        **result,
+        "activation_enabled": False,
+        "credits_granted": False,
+        "checkout_enabled": False,
+    }
