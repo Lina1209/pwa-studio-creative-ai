@@ -72,7 +72,9 @@ def test_reservation_calls_atomic_rpc_and_fails_closed_on_budget_rejection(monke
         messages=[{"role": "user", "content": "hello"}],
     )
     assert reservation.request_id == request_id
-    assert seen["name"] == "reserve_ai_provider_cost"
+    assert seen["name"] == "reserve_ai_provider_cost_v2"
+    assert seen["payload"]["p_request_modality"] == "text"
+    assert reservation.request_modality == "text"
     assert seen["payload"]["p_user_id"] == str(user_id)
     assert Decimal(seen["payload"]["p_reserved_cost_usd"]) > 0
 
@@ -105,7 +107,8 @@ def test_settlement_marks_unknown_when_usage_is_incomplete(monkeypatch):
         make_settings(), reservation, input_tokens=None, output_tokens=20,
     )
     assert estimate is None
-    assert seen["name"] == "settle_ai_provider_cost"
+    assert seen["name"] == "settle_ai_provider_cost_v2"
+    assert seen["payload"]["p_request_modality"] == "text"
     assert seen["payload"]["p_actual_estimated_cost_usd"] is None
     assert seen["payload"]["p_cost_source"] is None
 
@@ -157,3 +160,55 @@ def test_vision_text_input_obeys_existing_byte_limit():
             [{"role": "user", "content": "x" * 300}],
         )
     assert error.value.reason == "input_size_limit"
+
+
+def test_vision_reservation_uses_same_atomic_budget_rpc_with_vision_modality(monkeypatch):
+    seen = {}
+    def rpc(settings, name, payload):
+        seen.update(name=name, payload=payload)
+        return {"admitted": True, "request_modality": "vision"}
+
+    monkeypatch.setattr(cost, "_rpc", rpc)
+    user_id, request_id = uuid4(), uuid4()
+    reservation = cost.reserve_ai_provider_vision_cost(
+        make_settings(),
+        user_id=user_id,
+        request_id=request_id,
+        text_messages=[{"role": "user", "content": "Describe this reference."}],
+        image_count=1,
+    )
+    assert reservation.request_id == request_id
+    assert reservation.request_modality == "vision"
+    assert seen["name"] == "reserve_ai_provider_cost_v2"
+    assert seen["payload"]["p_request_modality"] == "vision"
+    assert seen["payload"]["p_user_id"] == str(user_id)
+    assert Decimal(seen["payload"]["p_reserved_cost_usd"]) > 0
+
+
+def test_vision_settlement_is_bound_to_vision_modality(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        cost, "_rpc",
+        lambda settings, name, payload: seen.update(name=name, payload=payload) or True,
+    )
+    reservation = cost.AIProviderCostReservation(
+        uuid4(), Decimal("0.01"), request_modality="vision",
+    )
+    result = cost.settle_ai_provider_cost(
+        make_settings(), reservation, input_tokens=1100, output_tokens=40,
+    )
+    assert result is not None
+    assert seen["name"] == "settle_ai_provider_cost_v2"
+    assert seen["payload"]["p_request_modality"] == "vision"
+
+
+def test_modality_mismatch_from_reservation_rpc_fails_closed(monkeypatch):
+    monkeypatch.setattr(
+        cost, "_rpc",
+        lambda *args, **kwargs: {"admitted": True, "request_modality": "text"},
+    )
+    with pytest.raises(cost.AIProviderBudgetUnavailable):
+        cost.reserve_ai_provider_vision_cost(
+            make_settings(), user_id=uuid4(), request_id=uuid4(),
+            text_messages=[{"role": "user", "content": "Describe this."}],
+        )
