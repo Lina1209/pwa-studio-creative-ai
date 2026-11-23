@@ -14,7 +14,8 @@ class AdminAuditUnavailable(RuntimeError):
 
 _ALLOWED_ACTIONS = {
     "admin.access", "admin.permission.denied", "admin.user.view",
-    "admin.support.view", "admin.tariff.change.requested",
+    "admin.support.view", "admin.support.reply", "admin.support.status.changed",
+    "admin.tariff.change.requested",
     "admin.tariff.change.approved", "admin.finance.operation.requested",
     "admin.finance.operation.approved", "admin.finance.operation.executed",
     "admin.security.settings.changed",
