@@ -492,7 +492,10 @@ def audit_finance_integrity(
                 continue
             if not isinstance(provider, str) or provider != order.get("provider_code"):
                 findings.append(_finding("payment_provider_event_identity_mismatch", "critical", payment_order_id=oid))
-            key = (str(provider), str(event_id))
+            if not isinstance(event_id, str) or not event_id:
+                findings.append(_finding("invalid_payment_provider_event", "critical", payment_order_id=oid))
+                continue
+            key = (provider, event_id)
             if key in provider_event_keys:
                 findings.append(_finding("duplicate_payment_provider_event", "critical", payment_order_id=oid))
             provider_event_keys.add(key)
@@ -619,8 +622,13 @@ def audit_finance_integrity(
                 continue
             if job is None or job.get("user_id") != owner:
                 findings.append(_finding("plan_quota_request_job_mismatch", "critical", reservation_id=rid))
-            if state not in {"reserved", "completed", "released"} or not isinstance(operation_key, str) or not operation_key:
+            if (state not in {"reserved", "completed", "released"}
+                or not isinstance(operation_key, str) or not operation_key
+                or not isinstance(feature, str) or not feature):
                 findings.append(_finding("invalid_plan_quota_reservation_state", "critical", reservation_id=rid))
+                continue
+            if not _integer(reservation.get("reserved_units")) or reservation["reserved_units"] <= 0:
+                findings.append(_finding("invalid_plan_quota_units", "critical", reservation_id=rid))
                 continue
             events = quota_event_map.get(rid, [])
             reserved_events = [e for e in events if e.get("event_type") == "reserved"]
@@ -655,10 +663,8 @@ def audit_finance_integrity(
                 continue
             included = state in {"reserved", "completed"} and (feature not in {"max_concurrent_ai_requests", "max_parallel_jobs"} or state == "reserved")
             if included:
-                usage[(owner, feature, period)] += reservation.get("reserved_units", 0)
-            if not _integer(reservation.get("reserved_units")) or reservation["reserved_units"] <= 0:
-                findings.append(_finding("invalid_plan_quota_units", "critical", reservation_id=rid))
-            elif included and usage[(owner, feature, period)] > limit:
+                usage[(owner, feature, period)] += reservation["reserved_units"]
+            if included and usage[(owner, feature, period)] > limit:
                 findings.append(_finding("plan_quota_limit_exceeded", "critical", reservation_id=rid))
         for rid, events in quota_event_map.items():
             if rid not in reservations_by_id:
