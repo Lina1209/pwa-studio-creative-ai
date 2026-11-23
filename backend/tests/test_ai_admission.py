@@ -67,6 +67,7 @@ def test_reserve_and_finish_use_service_role_and_server_limits(monkeypatch):
     assert reserve_body["p_max_global_concurrent"] == 16
     assert reserve_body["p_max_per_day"] == 100
     assert reserve_body["p_max_global_per_day"] == 2000
+    assert reserve_body["p_max_per_month"] == 1200
     assert headers["Authorization"].startswith("Bearer ")
     assert finish_url.endswith("/rpc/finish_ai_request")
     assert finish_body["p_request_id"] == str(reservation.request_id)
@@ -176,3 +177,18 @@ def test_movie_ai_endpoints_are_admitted_and_recorded(monkeypatch, endpoint):
     )
     assert reservation.request_id
     assert client.calls[0][1]["p_endpoint"] == endpoint
+
+
+def test_monthly_request_limit_is_rejected(monkeypatch):
+    client = FakeClient([
+        FakeResponse({"admitted": False, "reason": "monthly_user_limit", "retry_after_seconds": 300})
+    ])
+    monkeypatch.setattr(ai_admission.httpx, "Client", lambda timeout: client)
+
+    with pytest.raises(ai_admission.AIAdmissionRejected) as error:
+        ai_admission.reserve_ai_request(
+            make_settings(), user_id=uuid4(), endpoint="chat"
+        )
+
+    assert error.value.reason == "monthly_user_limit"
+    assert error.value.retry_after_seconds == 300
