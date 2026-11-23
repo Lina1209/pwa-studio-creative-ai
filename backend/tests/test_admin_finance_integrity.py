@@ -85,6 +85,8 @@ def test_service_marks_over_limit_snapshot_incomplete(monkeypatch):
     payload["ledger"] = [{
         "entry_id": index + 1,
         "user_id": str(USER_ID),
+        "operation_type": "grant",
+        "operation_key": f"ledger-op-{index + 1:05d}",
         "delta_available": 0,
         "delta_reserved": 0,
         "balance_available_after": 0,
