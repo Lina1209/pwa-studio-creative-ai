@@ -189,3 +189,54 @@ def test_block_list_uses_verified_owner(client, monkeypatch):
     monkeypatch.setattr(main, "list_blocked_users", list_for_owner)
     assert client.get("/api/blocks").status_code == 200
     assert calls == [USER_A]
+
+
+def test_report_submission_uses_verified_reporter_identity(client, monkeypatch):
+    calls = []
+
+    def create_report(settings, reporter_user_id, payload):
+        calls.append((reporter_user_id, payload.reported_user_id))
+        return {"id": "report-id", "status": "open", "created_at": "now"}
+
+    monkeypatch.setattr(main, "create_user_report", create_report)
+    response = client.post("/api/reports", json={
+        "reported_user_id": USER_B,
+        "category": "harassment",
+        "description": "Please review this content.",
+        "content_reference": {"kind": "profile"},
+        "reporter_user_id": USER_B,
+    })
+    assert response.status_code == 201
+    assert calls == [(USER_A, USER_B)]
+
+
+def test_creator_cannot_list_or_change_suspensions(client, monkeypatch):
+    called = []
+
+    monkeypatch.setattr(main, "list_suspensions", lambda settings: called.append("list") or [])
+    monkeypatch.setattr(
+        main, "revoke_suspension",
+        lambda settings, moderator_id, suspension_id: called.append("revoke"),
+    )
+    assert client.get("/api/admin/suspensions").status_code == 403
+    response = client.post("/api/admin/suspensions/revoke", json={
+        "suspension_id": "55555555-5555-4555-8555-555555555555",
+    })
+    assert response.status_code == 403
+    assert called == []
+
+
+def test_creator_cannot_create_suspension(client, monkeypatch):
+    called = []
+    monkeypatch.setattr(
+        main, "create_suspension",
+        lambda settings, moderator_id, payload: called.append(moderator_id),
+    )
+    response = client.post("/api/admin/suspensions", json={
+        "user_id": USER_B,
+        "reason": "abuse",
+        "scope": "community",
+        "expires_at": "2026-11-25T00:00:00+00:00",
+    })
+    assert response.status_code == 403
+    assert called == []
