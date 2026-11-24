@@ -360,6 +360,17 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="admin-toolbar"><span class="account-role">✓ Доступ владельца подтверждён сервером</span><button class="secondary-button" id="adminRefresh" type="button">↻ Обновить данные</button></div>
           <p class="admin-feedback" id="adminFeedback" role="status" aria-live="polite">Загрузка административных данных…</p>
           <section class="admin-section"><div class="admin-section-heading"><div><h3>Жалобы пользователей</h3><p>Проверяйте обращения и сохраняйте решение.</p></div><span class="admin-count" id="adminReportCount">—</span></div><div id="adminReportsList" class="admin-list"><div class="admin-empty">Загрузка жалоб…</div></div></section>
+          <section class="admin-section" id="adminAuditSection">
+            <div class="admin-section-heading"><div><h3>Журнал действий администратора</h3><p>История действий модерации. Доступна только владельцу через защищённый API.</p></div><span class="admin-count" id="adminAuditCount">—</span></div>
+            <form id="adminAuditFilters" class="admin-form">
+              <div class="admin-form-row"><div><label for="adminAuditActor">ID администратора</label><input id="adminAuditActor" maxlength="36" placeholder="UUID (необязательно)"></div><div><label for="adminAuditTarget">ID затронутого пользователя</label><input id="adminAuditTarget" maxlength="36" placeholder="UUID (необязательно)"></div></div>
+              <div class="admin-form-row"><div><label for="adminAuditAction">Действие</label><input id="adminAuditAction" maxlength="100" placeholder="Например: report.reviewed"></div><div><label for="adminAuditEntity">Тип объекта</label><input id="adminAuditEntity" maxlength="60" placeholder="Например: report"></div></div>
+              <div class="admin-item-actions"><button class="primary-button" type="submit">Применить фильтры</button><button class="secondary-button" id="adminAuditReset" type="button">Сбросить</button></div>
+            </form>
+            <p class="admin-feedback" id="adminAuditFeedback" role="status" aria-live="polite">Журнал ещё не загружен.</p>
+            <div id="adminAuditList" class="admin-list" aria-live="polite"><div class="admin-empty">Загрузка журнала…</div></div>
+            <div class="admin-toolbar"><button class="secondary-button" id="adminAuditPrev" type="button" disabled>← Назад</button><span class="admin-item-meta" id="adminAuditPage">Страница 1</span><button class="secondary-button" id="adminAuditNext" type="button" disabled>Дальше →</button></div>
+          </section>
           <section class="admin-section"><div class="admin-section-heading"><div><h3>Ограничения доступа</h3><p>Временные и постоянные ограничения по конкретным разделам.</p></div><span class="admin-count" id="adminSuspensionCount">—</span></div>
             <form id="adminSuspensionForm" class="admin-form">
               <label for="suspensionUserId">UUID пользователя</label><input id="suspensionUserId" required minlength="36" maxlength="36" autocomplete="off" placeholder="UUID из Supabase Auth">
