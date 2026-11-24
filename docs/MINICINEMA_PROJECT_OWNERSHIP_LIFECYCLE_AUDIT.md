@@ -98,3 +98,15 @@ Use harmless synthetic projects and never test adversarial access with the owner
 - No project rows were read, created, updated or deleted.
 - No SQL, migration, RLS policy or grant was changed.
 - No production deployment or PR merge occurred.
+
+
+## Follow-up regression coverage — 2026-11-24
+
+Added focused controller tests for two additional deletion invariants:
+
+- Tombstone deletion must carry all three filters: the captured project ID list, the captured `owner_id`, and `project_type = movie`.
+- If the cloud deletion returns an error, the operation must not proceed to upsert or emit a cloud-success message; the controller reports a sync error and does not clear the tombstone.
+
+These tests extend the mocked production-shared controller suite. They do not exercise hosted Supabase or prove live RLS behavior. GitHub Actions was triggered for both backend and frontend workflows on the new commit; results are pending at the time this note was added.
+
+The browser integration still has a known consistency limitation: deletion tombstones are held in account-partitioned localStorage until cloud sync succeeds. A browser storage clear or device loss before sync can lose the pending deletion. The UI should distinguish local removal from cloud-confirmed deletion before this workflow is presented as durable.
