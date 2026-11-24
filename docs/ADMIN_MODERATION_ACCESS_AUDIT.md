@@ -188,3 +188,30 @@ The endpoint depends on `require_admin`; the service does not accept a user iden
 This is an API foundation, not yet an admin dashboard. Page summaries must not be presented as all-time totals. A trustworthy all-time/date-range report needs database-side aggregation over a reconciled live schema, including explicit treatment of null costs and telemetry gaps. The current best-effort telemetry writer can fail without failing generation, so these records are not a complete financial ledger and must not be used alone for customer billing or provider invoice reconciliation.
 
 Two service tests were added for bounded pagination/filtering, current-page-only summaries, null-cost accounting, and missing storage configuration. CI has not yet returned a run for the latest feature-branch head at the time of this note. No live Supabase schema was queried or changed, no SQL was run, and no payment action occurred.
+
+
+## User and visitor analytics readiness review (2026-11-24)
+
+### Verified source-level data
+
+- `public.profiles` has a `created_at` timestamp and is populated by the `auth.users` insert trigger. This can support registration counts only after confirming the live migration and profile completeness.
+- `public.studio_projects` has owner ID and created/updated timestamps. It can support project activity counts, but it is not a reliable measure of human visits or unique active users.
+- `public.ai_usage` contains successful chat/prompt usage events, but the writer is best-effort. Missing telemetry is possible, and the data must not be treated as a complete activity or billing ledger.
+- The inspected API/frontend source contains no first-party visit/session event collector, no documented consent/retention policy for visitor analytics, and no deduplicated unique-visitor source.
+
+### What must not be shown as a fact yet
+
+Do not invent a live visitor count, unique visitor total, online-user count, retention curve, or all-time activity total. Profile/project timestamps are not substitutes for visits. A browser page load is not automatically a person, and IP/device fingerprinting is not an acceptable shortcut.
+
+### Safe implementation sequence
+
+1. Reconcile the live migration ledger, profile/project table definitions, RLS, grants, and retention before using them for admin aggregates.
+2. Define a minimal first-party event contract (for example, session-start and studio-open) with short-lived pseudonymous session IDs, coarse event names, server timestamps, strict payload allowlists, rate limits, and documented retention. Do not collect IP addresses, full user agents, page contents, prompts, or generated media for analytics.
+3. Decide and document consent/notice requirements and whether anonymous visitors are counted separately from authenticated accounts.
+4. Add a server-side ingestion path and database-side daily aggregation only after the schema and privacy design are approved. Deduplicate by session/event window; distinguish raw events, sessions, authenticated active accounts, and registered accounts.
+5. Expose an owner-only, bounded date-range report with explicit metric definitions and data-quality warnings. Mark periods with missing telemetry rather than filling gaps with estimates.
+6. Add integration tests for spoofed user IDs, duplicate event delivery, rate limits, invalid event names, retention deletion, and account/session separation.
+
+### Current status
+
+This stage is a source audit and implementation plan, not a deployed visitor analytics feature. No new visit-tracking endpoint or migration was added because the live database state and privacy/retention requirements have not been reconciled. Existing registrations and project counts may be candidates for later admin aggregates, but they are not reported as visitor metrics. No SQL was executed and no production data was queried or changed.
