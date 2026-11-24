@@ -1176,9 +1176,10 @@ const movieHistoryStyle = document.createElement("style");
           story: item.story || item.idea || "",
           completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
         };
-        if (!authSession?.user && !project.guestExpiresAt) {
-          project.guestExpiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
-          changed = true;
+        if (!authSession?.user) {
+          const expiry = window.PWAGuestProjectExpiry.normalizeGuestProjectExpiry(project, now);
+          if (expiry.changed) changed = true;
+          return expiry.project;
         }
         return project;
       });
