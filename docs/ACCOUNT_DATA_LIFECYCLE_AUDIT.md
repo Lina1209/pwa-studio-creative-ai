@@ -161,3 +161,8 @@ A regression test now simulates a quota failure during cloud load and asserts th
 ## Branch follow-up — UI writes blocked after unreadable local project state
 
 A source review of the ordinary Mini Cinema buttons found a separate hazard from cloud sync: the UI reader intentionally returns an empty list after a localStorage read/JSON error so it can display a friendly error. A create/edit/rename/delete action could then attempt to write that empty-derived list and overwrite projects that were merely unreadable. The UI now records a failed read and blocks subsequent project writes until a later read succeeds. Successful reads clear the guard; ordinary write failures continue to surface through the existing save-error message. This is a source-level safeguard and still requires execution of the frontend tests and browser fault-injection checks.
+
+
+## Branch follow-up — retry after a failed stage save
+
+Review of the Mini Cinema stage editor found that its optimistic concurrency timestamp was advanced before the localStorage write result was known. If a write failed (for example, quota exhaustion), the editor could then reject a retry as if another window had changed the project. The timestamp is now advanced only after `movieWrite` succeeds, so a failed save does not invalidate the editor's base revision. This change is source-reviewed; browser fault-injection and automated test execution remain pending.
