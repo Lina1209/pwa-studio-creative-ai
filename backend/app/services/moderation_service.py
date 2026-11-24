@@ -1,4 +1,5 @@
 import httpx
+from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import HTTPException
 
@@ -27,6 +28,13 @@ def _request(settings: Settings, method: str, table: str, *, params=None, payloa
         raise HTTPException(status_code=502, detail="Moderation storage rejected the request.") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Moderation storage is temporarily unavailable.") from exc
+
+
+def _validated_uuid(value: str, field_name: str) -> str:
+    try:
+        return str(UUID(value))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=422, detail=f"A valid {field_name} is required.") from exc
 
 
 def create_user_report(settings: Settings, reporter_user_id: str, payload):
@@ -61,6 +69,7 @@ def list_user_reports(settings: Settings):
     )
 
 def review_user_report(settings: Settings, report_id: str, moderator_id: str, payload):
+    report_id = _validated_uuid(report_id, "report ID")
     rows = _request(settings, "PATCH", "user_reports",
         params={"id": f"eq.{report_id}", "select": "id,status,created_at,reporter_user_id"},
         payload={"status": payload.status, "moderator_note": payload.moderator_note,
@@ -93,6 +102,7 @@ def list_suspensions(settings: Settings):
 
 
 def revoke_suspension(settings: Settings, moderator_id: str, suspension_id: str):
+    suspension_id = _validated_uuid(suspension_id, "suspension ID")
     rows = _request(settings, "PATCH", "user_suspensions",
         params={"id": f"eq.{suspension_id}", "revoked_at": "is.null",
                 "select": "id,user_id,scope"},
