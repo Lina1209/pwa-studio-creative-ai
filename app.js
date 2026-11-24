@@ -936,7 +936,7 @@ const movieHistoryStyle = document.createElement("style");
     {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
   ];
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
-  const movieCloudState = { syncingContext: null, pendingContext: null, loadingUser: null, timer: null };
+  const movieCloudState = { syncingContext: null, pendingContext: null, loadingContext: null, timer: null };
   const movieCloudContext = window.PWAMovieCloudContext;
   if (!movieCloudContext) console.error("Movie cloud context guard is unavailable; cloud sync is disabled.");
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
@@ -1030,8 +1030,10 @@ const movieHistoryStyle = document.createElement("style");
   const loadMovieProjectsFromCloud = async () => {
     const userId = authSession?.user?.id;
     const context = movieCloudContext?.capture(userId, authContextVersion);
-    if (!context || !supabaseClient || movieCloudState.loadingUser === userId) return;
-    movieCloudState.loadingUser = userId;
+    if (!context || !supabaseClient) return;
+    if (movieCloudState.loadingContext &&
+        movieCloudContext.isCurrent(movieCloudState.loadingContext, userId, authContextVersion)) return;
+    movieCloudState.loadingContext = context;
     try {
       const { data, error } = await supabaseClient
         .from("projects")
@@ -1072,7 +1074,7 @@ const movieHistoryStyle = document.createElement("style");
       const feedback = $("#movieFeedback");
       if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
     } finally {
-      if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
+      if (movieCloudState.loadingContext === context) movieCloudState.loadingContext = null;
     }
   };
   const movieRead = () => {
