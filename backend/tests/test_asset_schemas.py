@@ -31,12 +31,11 @@ def test_upload_init_rejects_path_like_or_empty_filename(filename):
 
 
 def test_upload_init_rejects_mismatched_media_kind_and_mime_type():
-    payload = AssetUploadInitRequest(
-        kind="image", filename="movie.mp4",
-        mime_type="video/mp4", size_bytes=100,
-    )
-    with pytest.raises(ValueError, match="does not match"):
-        payload.validate_kind_mime_pair()
+    with pytest.raises(ValidationError, match="does not match"):
+        AssetUploadInitRequest(
+            kind="image", filename="movie.mp4",
+            mime_type="video/mp4", size_bytes=100,
+        )
 
 
 def test_upload_init_rejects_mime_parameters_and_spaces():
