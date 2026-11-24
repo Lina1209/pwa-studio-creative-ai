@@ -1,12 +1,12 @@
 # Mini Cinema multi-device editing audit
 
-Status: source-level audit completed on PR #4 head `0467a320bf12db8eec70deb0d9042d1d9f422078`. This document records verified frontend behavior and the remaining server-side concurrency limitation. No production deployment, live Supabase query, schema change, or user-data mutation was performed.
+Status: source-level audit updated on PR #4 head `5d101b5e7385d6064de13bd241ed6d584c73bb74`. This document records verified frontend behavior, the cloud-delete/upsert race mitigation, and the remaining server-side concurrency limitation. No production deployment, live Supabase query, schema change, or user-data mutation was performed.
 
 ## Scope reviewed
 
 - `app.js`: project details editor, stage draft/completion, rename, copy, restore, local persistence, and cloud-sync scheduling.
 - `movie-version-history.js`: immutable snapshots, history cap, restore validation, and backup of the current project.
-- `movie-cloud-operations.js`: cloud load merge, timestamp conflict preflight, and upsert.
+- `movie-cloud-operations.js`: cloud load merge, timestamp conflict preflight, tombstone processing, and upsert.
 - `tests-frontend/movie-version-history.test.js` and `tests-frontend/movie-cloud-operations.test.js`.
 
 ## Verified protections
@@ -17,6 +17,7 @@ Status: source-level audit completed on PR #4 head `0467a320bf12db8eec70deb0d904
 4. **Restore validates the selected history entry against the latest local history.** It checks that the entry still exists, validates the snapshot's project ID and structure, preserves the current live project as the newest history backup, and only reports success after local persistence succeeds.
 5. **Cloud load merges rather than blindly replacing local drafts.** A strictly newer cloud timestamp replaces an older local copy; equal timestamps preserve local data; a valid cloud timestamp can replace a local copy with a missing/invalid timestamp; invalid cloud timestamps do not replace a valid local copy.
 6. **Cloud sync has a preflight read.** If the cloud copy is already strictly newer at the time of SELECT, that project is retained locally and excluded from the subsequent upsert.
+7. **A delete recorded while an upsert is pending is re-applied immediately after that upsert.** Sync re-reads the durable tombstone queue after the awaited upsert and issues an owner- and project-type-scoped cloud delete for any row that the just-finished upsert could have resurrected. The tombstone remains queued until a later sync confirms deletion and clears it.
 
 ## Important limits
 
@@ -40,6 +41,7 @@ Do not implement this by casually adding a column or applying a migration to the
 
 ## Test coverage and remaining verification
 
+- A deferred-promise regression test now records a tombstone while an upsert is pending and verifies that a scoped cloud delete follows the upsert while the tombstone remains queued.
 - Version-history unit tests cover deep-copy behavior, 20-entry history cap, restore backup/validation, stale stage completion baseline, rename stale-baseline guard, and restore persistence feedback.
 - Cloud-operation tests use deferred promises to exercise account switches, deletion queues, load merges, timestamp precedence, and stale-cloud preflight behavior.
 - These are deterministic Node tests against the production-shared frontend modules, not real-browser tests against two signed-in devices and the hosted Supabase project.
