@@ -1408,8 +1408,8 @@ const movieHistoryStyle = document.createElement("style");
       current.completedSteps=(Array.isArray(current.completedSteps)?current.completedSteps:[]).filter(key=>movieStages.findIndex(item=>item.key===key)<=stageIndex);
       if(!current.completedSteps.includes(stage.key))current.completedSteps.push(stage.key);
       current.workflowStep=Math.min(stageIndex+1,4); current.updatedAt=new Date().toISOString();
-      baseUpdatedAt=current.updatedAt;
       if(!movieWrite(latest))return;
+      baseUpdatedAt=current.updatedAt;
       renderMovieProjects(); $("#movieFeedback").textContent="✓ Этап «"+stage.title+"» сохранён в фильме «"+current.name+"».";
       if(stageIndex<3)openMovieStage(projectId,stageIndex+1);
       else {
