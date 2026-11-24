@@ -455,3 +455,20 @@ test("account switch during cloud conflict preflight aborts stale sync before lo
  assert.equal(h.calls.some(c=>c.type==="upsert"),false);
  assert.equal(h.calls.some(c=>c.type==="writeLocal"&&c.owner==="B"),false);
 });
+
+test("deletion recorded while an upsert is pending is immediately re-applied after the upsert",async()=>{
+ const h=harness(),gate=deferred(),id="123e4567-e89b-42d3-a456-426614174000";
+ h.local.A=[{id,name:"Film being deleted"}];
+ h.setUpsertGate(gate);
+ h.ops.schedule(h.capture());h.flush();
+ await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.some(c=>c.type==="upsert"),true);
+ h.setTombstones("A",[id]);
+ gate.resolve();
+ await new Promise(r=>setImmediate(r));
+ const upsertIndex=h.calls.findIndex(c=>c.type==="upsert");
+ const deleteIndex=h.calls.findIndex(c=>c.type==="delete");
+ assert.ok(deleteIndex>upsertIndex,"cloud delete must follow the in-flight upsert");
+ assert.deepEqual(h.calls[deleteIndex].filters,[["id",[id]],["owner_id","A"],["project_type","movie"]]);
+ assert.deepEqual(h.tombstones.A,[id],"the durable tombstone stays queued until a later sync confirms cleanup");
+});
