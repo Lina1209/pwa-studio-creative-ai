@@ -68,11 +68,11 @@ This source review does not inspect Render environment values, reveal secrets, o
 | Severity | Finding | Treatment |
 |---|---|---|
 | High release gate | Live Supabase migration ledger, project RLS, grants, nullability, and Storage policies are not verified by this source review | Run the existing read-only diagnostics in the correct project and compare with intended migration history before release |
-| Medium | If localStorage rejects writing the deletion tombstone (quota, browser policy, storage failure), the current delete handler can still remove the local project and continue without a durable cloud-delete request | Make tombstone persistence a hard precondition for deleting a cloud-backed local project, or retain a visible recoverable pending-delete state; add a regression test |
+| Addressed in branch | If localStorage rejects writing the deletion tombstone, the delete handler now leaves the project in place and shows an error. If the later queue cleanup write fails, sync reports failure rather than success and retains the retry marker | Regression test covers cleanup-write failure; manual browser quota/security testing remains outstanding |
 | Medium | Tombstones are browser-local until cloud deletion succeeds | Add a durable server-side deletion queue only after migration reconciliation; meanwhile clearly retain pending status and retry |
 | Medium | Client timestamps are used for merge/conflict hints and cloud `updated_at` | Do not promise conflict-free multi-device editing; consider server-controlled revision/version checks before collaboration |
 | Addressed in branch | Cloud project upserts now reject malformed row ownership/type/settings and cap each serialized project at 256 KiB and each sync batch at 2 MiB | Regression tests added for oversized and malformed payloads; limits are application-side safeguards, not a replacement for database constraints |
-| Low | Community profile initialization uses GET then POST and is vulnerable to a first-write race | Replace with a database upsert or handle unique conflict by re-reading the verified user's row |
+| Addressed in branch | Community profile initialization uses insert-only upsert and re-reads the verified user's row after a concurrent first-insert race | Keep the concurrency regression test in CI |
 | Release gate | Existing mocked tests do not prove live RLS or real two-account denial | Execute the disposable two-account test plan, including direct UUID read/update/delete denial and delayed account-switch requests |
 
 ## Test coverage already present in source
@@ -110,3 +110,16 @@ The Mini Cinema cloud sync adapter now validates each outgoing row before callin
 - serialization failures and limit violations stop the upsert and surface through the existing sync-error feedback path. The local draft remains available; no cloud write is attempted for the invalid batch.
 
 Regression test definitions cover an oversized settings payload and malformed settings. These tests have been added but are not yet confirmed passing; the latest commit's CI result must be checked before treating them as verified.
+
+
+## Branch follow-up — deletion queue durability and account switching
+
+The latest Mini Cinema changes tighten the local deletion-queue contract:
+- the browser adapter returns an explicit boolean from tombstone writes;
+- the project delete handler refuses to remove a cloud-backed local project when it cannot persist the tombstone;
+- if a cloud delete succeeds but clearing the local tombstone fails, sync reports an error instead of a false success, leaving the marker available for a safe retry;
+- load and sync re-read the tombstone queue after awaited cloud deletion so a newer local deletion is not lost or reintroduced;
+- stale account-A operations are checked after awaited requests and cannot render or write account-B state; account-B can start its own load while an obsolete A load is pending;
+- guest contexts do not create authenticated cloud-sync work; guest drafts remain in their separate browser-local key and are not silently imported into a signed-in account.
+
+Regression test definitions cover cleanup-write failure, account-switch races, same-user reauthentication, guest isolation, and tombstones created during in-flight operations. These tests are present in the branch, but the current head's CI result has not yet been confirmed. This remains source-level and mocked-test evidence, not proof of live RLS or browser-storage behavior.
