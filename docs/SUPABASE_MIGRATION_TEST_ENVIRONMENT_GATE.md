@@ -5,7 +5,7 @@ Status: read-only repository-source review; no live database access
 
 ## Repository migration inventory
 
-The GitHub Contents API returned the complete visible contents of `supabase/migrations/` on branch `fix/supabase-key-compat-2026-11-23` at the time of this review. It contains 15 SQL files:
+The GitHub Contents API returned the complete visible contents of `supabase/migrations/` on both `main` and `fix/supabase-key-compat-2026-11-23`. Both branches expose the same 15 migration filenames:
 
 1. `0001_initial_schema.sql`
 2. `0002_storage_and_moderation.sql`
@@ -23,14 +23,26 @@ The GitHub Contents API returned the complete visible contents of `supabase/migr
 14. `0013_unified_credit_wallet.sql`
 15. `0014_admin_analytics_summary.sql`
 
-### Confirmed migration-order blocker
+This is a repository-file inventory, not proof of the production project's migration ledger or actual deployed schema.
+
+## Confirmed migration-order blocker
 
 There are two distinct files with the same numeric version prefix, `0005`:
 
 - `0005_cloud_projects_and_storage.sql`
 - `0005_moderation_admin.sql`
 
-This is a confirmed filename-level collision, not merely a suspicion. A migration runner that expects unique version identifiers may reject the directory or apply one file before the other in an implementation-dependent way. Do not rename either file or run the migration sequence until the intended history and any already-applied versions in the target project have been reconciled. The repository directory inventory is complete for this branch, but it does not prove the contents of the production project's migration ledger or whether production was provisioned by another route.
+This is a confirmed filename-level collision on both branches. A migration runner that expects unique version identifiers may reject the directory or apply one file before the other in an implementation-dependent way. Do not rename either file or run the migration sequence until the intended history and any already-applied versions in the target project have been reconciled.
+
+## Confirmed Storage migration overlap
+
+The source of `0002_storage_and_moderation.sql` and `0005_cloud_projects_and_storage.sql` has overlapping, non-identical effects:
+
+- `0002` creates or updates two private buckets: `studio-media` (250 MiB) and `studio-exports` (1 GiB), and creates four authenticated-user Storage policies scoped to both bucket IDs.
+- `0005_cloud_projects_and_storage.sql` later upserts `studio-media` with a 100 MiB limit and a different MIME allowlist. It then drops and recreates the same four policy names, but the replacement policies are scoped only to `studio-media`.
+- Consequently, if both files are applied in that order, the later migration narrows the `studio-media` bucket configuration and removes the authenticated-user policy coverage for `studio-exports`. The export bucket remains private; the likely effect is loss of the intended authenticated access path, not public exposure.
+
+This is a source-level sequence consequence, not a live-project finding. Do not automatically restore export policies or alter bucket limits until the intended product behavior and live Storage configuration are confirmed. The filename `0002_storage_and_moderation.sql` is also broader in name than its current contents: the inspected file contains Storage setup, not the moderation tables found in `0005_moderation_admin.sql`.
 
 ## Moderation schema facts from source
 
@@ -41,7 +53,7 @@ This is a confirmed filename-level collision, not merely a suspicion. A migratio
 
 The migration grants authenticated users insert/select on their own reports via RLS, while suspension and audit tables are server-only. The audit table grants service_role SELECT and INSERT, and explicitly revokes UPDATE, DELETE, and TRUNCATE from service_role.
 
-`0006_notifications.sql` defines server-managed notifications. `0010_direct_message_notifications.sql` later replaces the notification type check to include `direct_message`. This is an example of why the complete ordered migration history matters.
+`0006_notifications.sql` defines server-managed notifications. `0010_direct_message_notifications.sql` later replaces the notification type check to include `direct_message`. This is another reason to preserve and verify the complete migration sequence.
 
 `0011_atomic_message_rate_limit.sql` creates a SECURITY DEFINER RPC with `search_path = public, pg_temp`, revokes execution from public/anon/authenticated, and grants it to service_role. A new moderation RPC should follow the stricter fixed/empty search_path and fully-qualified-object pattern described in the transactional design, not copy a weaker pattern without review.
 
@@ -57,13 +69,14 @@ Therefore:
 
 ## Exact gates before implementation
 
-1. Confirm the migration inventory on the intended deployment branch as well as this feature branch.
+1. Confirm whether the repository migration history matches the actual intended deployment history; the two branches currently expose the same filenames.
 2. Resolve the duplicate `0005` version prefix without rewriting history blindly. Determine whether either migration has already been applied in the target project and preserve the actual deployment history.
-3. Obtain a read-only export of the target project's migration ledger, relevant table definitions, indexes, triggers, constraints, RLS policies, grants, and function definitions. Do not include user content or secrets.
-4. Compare that live metadata with the complete intended migration sequence; document drift rather than automatically repairing it.
-5. Build a disposable PostgreSQL/Supabase-compatible test target. It must never use production credentials or a production host.
-6. Add a CI job that provisions the disposable database, applies the reconciled baseline and candidate migration, and runs real concurrent transaction tests.
-7. Only after tests pass, review the candidate migration and obtain separate explicit approval before applying anything to a shared Supabase environment.
+3. Decide the intended Storage contract for `studio-exports`, bucket size limits, and MIME types. Reconcile the overlapping `0002` and `0005` behavior before producing a corrected forward-only migration.
+4. Obtain a read-only export of the target project's migration ledger, relevant table definitions, indexes, triggers, constraints, RLS policies, grants, Storage buckets/policies, and function definitions. Do not include user content or secrets.
+5. Compare that live metadata with the complete intended migration sequence; document drift rather than automatically repairing it.
+6. Build a disposable PostgreSQL/Supabase-compatible test target. It must never use production credentials or a production host.
+7. Add a CI job that provisions the disposable database, applies the reconciled baseline and candidate migration, and runs real concurrent transaction tests.
+8. Only after tests pass, review the candidate migration and obtain separate explicit approval before applying anything to a shared Supabase environment.
 
 ## Safety boundary
 
