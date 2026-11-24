@@ -99,7 +99,7 @@ def test_invalid_account_id_is_rejected_before_storage_access(monkeypatch):
     monkeypatch.setattr(profile_service, "_request", should_not_query)
 
     with pytest.raises(HTTPException) as exc:
-        profile_service.get_public_profile("not-a-uuid", USER_A, USER_A)
+        profile_service.get_public_profile(object(), "not-a-uuid", USER_A)
 
     assert exc.value.status_code == 422
     assert called is False
@@ -139,4 +139,4 @@ def test_profile_update_is_scoped_to_verified_owner(monkeypatch):
     patch = next(call for call in calls if call[0] == "PATCH")
     assert patch[1]["user_id"] == f"eq.{USER_A}"
     assert patch[2]["display_name"] == "Updated"
-    assert patch[2]["user_id"] == USER_A
+    assert "user_id" not in patch[2]
