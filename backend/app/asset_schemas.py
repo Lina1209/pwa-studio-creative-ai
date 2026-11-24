@@ -25,7 +25,7 @@ class AssetUploadInitRequest(BaseModel):
     kind: str = Field(pattern=r"^(image|video|audio|voice|document)$")
     filename: str = Field(min_length=1, max_length=180)
     mime_type: str = Field(min_length=3, max_length=120)
-    size_bytes: int = Field(gt=0)
+    size_bytes: int = Field(gt=0, strict=True)
 
     @field_validator("filename")
     @classmethod
