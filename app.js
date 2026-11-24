@@ -1176,7 +1176,7 @@ const movieHistoryStyle = document.createElement("style");
     const context=movieCloudContext?.capture(authSession?.user?.id,authContextVersion);
     if(context) await movieCloudOperations?.load(context);
   };
-  const movieStorageGuard = window.PWAMovieStorageGuard.create();
+  const movieStorageGuard = window.PWAMovieStorageGuard.createMovieStorageGuard();
   const movieRead = (options = {}) => {
     const strict = options.strict === true;
     try {
