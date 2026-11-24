@@ -119,3 +119,25 @@ These are source-level observations, not a substitute for adversarial security t
 ## 7. Non-activation boundary
 
 This audit creates no production changes. It does not apply migrations, change Supabase schema/RLS/grants/buckets, activate wallet or pricing, connect payments, charge users, upload/publish user media, or deploy to production.
+
+
+## 8. Mini Cinema project cloud-sync source review
+
+Reviewed in `app.js` on 2026-11-24:
+
+- Signed-in project storage uses a user-specific localStorage key; guest drafts use a separate guest key.
+- The browser Supabase client uses the public publishable key. Project reads, upserts and deletes target `public.projects`; row ownership is populated from the current authenticated user ID.
+- The cloud query filters `project_type = 'movie'` and relies on the table's owner-scoped RLS for row isolation. Deletes additionally filter by `owner_id` and project type.
+- Project settings are serialized into the `settings` JSON field; the project ID is normalized to a UUID before upsert. The client merges local and cloud projects by ID and updated timestamp.
+- Guest projects are not automatically uploaded as an authenticated user's projects merely by viewing them; the storage key is account-scoped. A deliberate guest-to-account migration flow was not found.
+- The UI now has a real source-level cloud load/upsert/delete path, but this source review does not independently prove current production RLS, successful writes for two different accounts, conflict behavior across simultaneous devices, or backup/restore guarantees.
+- Deletion tombstones are stored locally per account. If browser storage is cleared before pending deletions sync, the cloud deletion intent may be lost. This should be addressed before describing deletion as durable across devices.
+- The sync timer and in-flight operations should be hardened against rapid account switching: async work must capture and re-check the initiating user/session before every write and before updating UI feedback. Current code includes account checks on load and the dashboard activity path, but the cloud sync path does not consistently bind all post-await actions to a captured auth-context version.
+
+### Verification still required
+
+1. Confirm the live `projects` schema and migration ledger without applying SQL.
+2. Verify RLS and grants with two disposable accounts, including attempted cross-account read/update/delete.
+3. Test save, reload, edit, delete, offline retry, account switch during an in-flight sync, and simultaneous edits from two devices.
+4. Decide whether deletion tombstones need a server-side durable queue.
+5. Keep the current wording precise: cloud project synchronization exists in the client code; end-to-end production isolation and reliability remain to be independently verified.
