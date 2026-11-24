@@ -148,3 +148,32 @@ The service validates actor and target UUIDs before any storage request. Query s
 The admin workspace now calls `GET /api/admin/audit-log` after loading moderation lists. It renders the selected page using DOM text nodes (including metadata via `textContent`, not HTML injection), exposes exact-match filters, and disables forward navigation when `has_more` is false. Responses are discarded when the signed-in account context changes while a request is in flight. The panel is hidden unless `/api/auth/me` confirms the admin role; the API guard remains the actual security boundary.
 
 Both required CI checks completed successfully for the frontend connection commit: backend test workflow and movie-cloud-context workflow. The API test commit's backend tests also completed successfully. These checks validate repository code only; they do not establish production Supabase schema/grants or live audit data availability.
+
+
+## Follow-up review — admin mutation context and operational dashboards (2026-11-24)
+
+### Account-switch race hardening
+
+The report-review, suspension-revoke, and suspension-create handlers now capture both the initiating auth-context version and actor user ID before sending a mutation. After each awaited request, they suppress feedback, form resets, workspace refreshes, and error-state updates if the active account context has changed. The submit button is re-enabled only for the same still-active account. This prevents an older administrator request from writing stale status into a newly signed-in account's interface; it does not cancel a request already accepted by the server.
+
+### Confirmed missing operational modules
+
+A fresh source scan of `index.html`, `app.js`, and the FastAPI route inventory confirms that the admin panel still has no visitor analytics, AI usage/cost dashboard, provider-spend report, revenue or subscription dashboard, tariff editor, wallet/reservation/ledger interface, or media/storage moderation console. The media library itself still states that real file uploads, previews and shared storage are under development. No such functionality should be represented as live.
+
+The API currently records AI usage telemetry from the chat and prompt handlers, but exposes no admin reporting route for those records. Telemetry is therefore a server-side data foundation, not an operational analytics dashboard. No visitor counter or reliable all-time unique visitor source was found in the reviewed frontend/API routes.
+
+### Financial safety gate
+
+The unified wallet migration remains source code only. It defines service-role RPCs and append-only ledger foundations, but this review did not verify that migration in the live database. Two source-level concerns remain release blockers before charging users:
+- the reservation release function permits release from both `reserved` and `reconciliation_required`; an ambiguous provider outcome must be reconciled before credits are returned;
+- the RPCs accept a user UUID argument, so the server caller must derive that UUID from the verified access token and never trust a client-supplied identity.
+
+No payment provider, billing activation, live wallet mutation, or financial charge was attempted.
+
+### Remaining moderation reliability gap
+
+The three frontend handlers now avoid stale account-context UI updates, but the backend report/suspension mutation and audit insert are still separate REST operations. A database transaction/RPC plus idempotency and failure-path integration tests remains necessary before treating the audit trail as guaranteed. Existing report/suspension list endpoints also remain capped at 100 and lack pagination.
+
+### Scope and non-actions
+
+This remains a source-only review of the feature branch. No production service, live Supabase table, storage bucket, visitor analytics account, billing provider, or secret configuration was accessed. No SQL was executed, no payment or wallet action was triggered, and PR #4 remains open and unmerged.
