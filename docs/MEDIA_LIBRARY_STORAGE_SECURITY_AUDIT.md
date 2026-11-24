@@ -142,3 +142,11 @@ The existing diagnostics are metadata-oriented; they do not prove actual two-acc
 ### Release gate reaffirmed
 
 Storage object access, actual MIME/size verification, quarantine, metadata persistence, reference-aware deletion, and two-account A/B integration tests remain unimplemented or unverified. Do not connect studio upload controls to the buckets until the live migration ledger, bucket settings, and policies are reconciled. No production SQL, Storage operation, upload, download, deletion, or deployment was performed during this follow-up.
+
+
+### Follow-up: strict declared byte-count typing (2026-11-24)
+
+- The future upload-intent schema now requires `size_bytes` to be a positive strict integer. Booleans, fractional values and numeric strings are rejected instead of being coerced into byte counts.
+- Added parameterized regression coverage for invalid/coercible values.
+- This is input-shape validation only. It does not establish an upload-size ceiling or verify actual object bytes. A maximum must be chosen only after reconciling the conflicting live bucket/API limits; actual uploaded size and content type must still be independently verified by the server.
+- No upload routes were added. No live Storage settings or objects were accessed or changed.
