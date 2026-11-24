@@ -47,7 +47,7 @@ function createMovieCloudOperations(deps) {
           .in("id", deletedIds).eq("owner_id", context.ownerId).eq("project_type", "movie");
         if (error) throw error;
         if (!current(context)) return;
-        deps.writeTombstones(context.ownerId, deps.readTombstones(context.ownerId).filter(id => !deletedIds.includes(id)));
+        if (deps.writeTombstones(context.ownerId, deps.readTombstones(context.ownerId).filter(id => !deletedIds.includes(id))) === false) throw new Error("Удаление выполнено в облаке, но очередь ещё не удалось очистить на устройстве. Повторная синхронизация безопасна.");
       }
       if (!current(context)) return;
       // A newer local deletion may have been recorded while the cloud delete
@@ -90,7 +90,7 @@ function createMovieCloudOperations(deps) {
           .in("id", deletedIds).eq("owner_id", context.ownerId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
         if (!current(context)) return;
-        deps.writeTombstones(context.ownerId, deps.readTombstones(context.ownerId).filter(id => !deletedIds.includes(id)));
+        if (deps.writeTombstones(context.ownerId, deps.readTombstones(context.ownerId).filter(id => !deletedIds.includes(id))) === false) throw new Error("Удаление выполнено в облаке, но очередь ещё не удалось очистить на устройстве. Повторная синхронизация безопасна.");
       }
       // Re-read after the awaited delete: newer tombstones may have been added
       // while the request was in flight and must not be reintroduced by this load.
