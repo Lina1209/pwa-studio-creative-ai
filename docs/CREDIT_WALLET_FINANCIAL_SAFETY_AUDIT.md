@@ -77,3 +77,51 @@ No DeepSeek rates, credit conversion factor, provider cost multiplier, plan allo
 - No payment provider, subscription, or billing flow was activated.
 - No SQL or migration was executed.
 - No production deployment or PR merge was performed.
+
+
+## Follow-up review — 2026-11-25
+
+Audited the current branch after adding migration 0015 and the disposable PostgreSQL gate. This remains a source-only review; no live Supabase or payment account was accessed.
+
+### Updated finding status
+
+| Finding | Current status | Evidence / remaining gate |
+|---|---|---|
+| C1 ambiguous provider result could be released | **Source-level mitigation added** | Forward-only migration 0015 makes ordinary settle/release reject ambiguous state and adds a service-role-only explicit provider-outcome resolver. Disposable PostgreSQL tests cover confirmed success/failure, replay, conflicting outcomes and direct-transition rejection. Still not live-applied; backend must only invoke resolver after authoritative provider evidence. |
+| C2 RPC caller supplies user UUID | **Backend boundary still required** | Wallet adapter is internal and current public API has no wallet mutation route. Any future route must derive user UUID from verified StudioUser, never request JSON. Add route isolation tests before connecting generation. |
+| C3 SQL grant source allowlist | **Open** | Python allowlist currently accepts plan_cycle, purchase, promo, admin_adjustment, refund, but migration 0013 only checks non-empty source text. Add forward migration with matching SQL allowlist and distinct authorization paths before admin/payment grants are exposed. |
+| C4 zero-token minimum capture | **Policy decision required** | min_credits applies even when measured token usage is zero. Distinguish fixed operation fee from token pricing; do not activate a rule until zero-usage behavior is approved and disclosed. |
+| C5 usage telemetry durability | **Open** | record_ai_usage remains best-effort. The current /api/chat and /api/prompts paths do not persist a durable outbox before returning. Provider cost/usage can be lost during a storage outage. |
+| C6 production pricing catalog | **Safely disabled** | AI_PRICING_CATALOG remains empty. No paid operation can obtain a quote through the production catalog. |
+
+### Grants, admin adjustments, refunds and duplicate payment protection
+
+- The SQL grant RPC is service-role-only and serializes on the user's wallet row. Its ledger unique index makes a repeated (user_id, source, source_reference) grant idempotent; reuse with a different amount is rejected.
+- The Python adapter restricts grant sources, but the SQL function itself currently accepts arbitrary non-empty source strings. A future migration should enforce the same allowlist in SQL.
+- No admin credit-grant API route, payment checkout, signed payment webhook, subscription lifecycle handler, or refund workflow was found in the reviewed backend routes. This is a useful fail-closed state, not a missing feature to activate prematurely.
+- refund is currently an allowed adapter source label, not evidence of a verified payment refund. Do not call it from a client or treat it as payment authorization.
+- A payment webhook must verify provider signature, event/account identity, currency and amount, then persist a unique provider event ID and map it to one grant reference. Duplicate, delayed, reordered, or replayed webhooks must not create extra credits.
+- Admin adjustments need a separate audited operation with authenticated admin identity, mandatory reason, bounded amount, immutable audit record, and a distinct idempotency reference. Do not reuse a generic public grant route.
+- A ledger grant is not itself proof of revenue. Revenue, refunds, provider fees, taxes, currency conversion and wallet credit issuance must be reported separately.
+
+### Provider cost and balance reconciliation
+
+- AI cost telemetry remains best-effort and records cost_source=litellm_response_cost when available. Treat this as LiteLLM-reported per-request cost, not invoice-confirmed settlement.
+- Missing cost is NULL/unknown, never zero. Token totals alone do not represent image, video, music, voice, storage, egress or worker costs.
+- There is no verified durable usage outbox, provider invoice import, global provider spend ceiling, or automated reconciliation dashboard in the current request path.
+- Do not use the current ai_usage table as a financial ledger. Keep provider costs separate from customer credits and payment revenue.
+
+### Release gates before any real money or credit activation
+
+1. Reconcile live Supabase migration history, wallet tables, function definitions, RLS, ACLs and storage schema read-only.
+2. Add SQL-side grant-source allowlist and a separate admin adjustment audit workflow in a forward-only migration; test it in disposable PostgreSQL.
+3. Implement durable provider usage outbox with unique request/event IDs, bounded retries and dead-letter visibility.
+4. Implement payment event inbox with signature verification, unique provider event IDs, replay/order handling and refund lifecycle before accepting checkout.
+5. Define and approve daily/monthly pools, expiry, consumption order, currency conversion, taxes/fees, refund rules and zero-token pricing behavior.
+6. Keep the production pricing catalog empty and wallet disconnected from generation until the above gates pass.
+7. Run A/B account isolation, duplicate webhook, concurrent grant, duplicate refund, timeout, provider retry and ledger/balance reconciliation tests.
+8. Only then present a separate release decision for live migration, billing activation and production deployment.
+
+### Explicit non-actions in this follow-up
+
+No live balance or ledger was changed. No credits were granted. No admin grant endpoint or payment webhook was added. No payment provider was connected. No pricing rule was enabled. No SQL was executed against Supabase, and no production deployment or PR merge was performed.
