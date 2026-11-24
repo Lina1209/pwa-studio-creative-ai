@@ -1192,12 +1192,8 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   const movieId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "movie-" + Date.now() + "-" + Math.random().toString(36).slice(2,9);
-  const movieSnapshot = project => { const copy={...project}; delete copy.versions; return copy; };
-  const addMovieVersion = project => {
-    const versions=Array.isArray(project.versions)?project.versions:[];
-    versions.unshift({savedAt:new Date().toISOString(),data:movieSnapshot(project)});
-    project.versions=versions.slice(0,20);
-  };
+  const movieSnapshot = project => MovieVersionHistory.snapshot(project);
+  const addMovieVersion = project => MovieVersionHistory.addVersion(project);
   const movieDate = value => {
     const date=new Date(value || Date.now());
     return Number.isNaN(date.getTime())?"Дата не указана":date.toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"});
@@ -1618,9 +1614,13 @@ const movieHistoryStyle = document.createElement("style");
               $("#movieFeedback").textContent="Выбранная версия больше недоступна в актуальной истории (возможно, история обновилась или старые записи были ограничены). Откройте историю заново и выберите существующую версию.";
               return;
             }
-            const restored=selectedVersion.data;
-            addMovieVersion(live); const keepVersions=live.versions;
-            latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
+            const restored=MovieVersionHistory.restore(live,selectedVersion,new Date().toISOString());
+            if(!restored){
+              overlay.remove();
+              $("#movieFeedback").textContent="Эта запись истории повреждена или относится к другому фильму. Текущий проект не изменён.";
+              return;
+            }
+            latest[latest.findIndex(item=>item.id===project.id)]=restored;
             if(movieWrite(latest)){overlay.remove();renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
           });
           restore.classList.add("movie-history-restore"); preview.append(restore);
