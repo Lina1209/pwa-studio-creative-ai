@@ -15,18 +15,6 @@ _ALLOWED_MIME_TYPES = {
     "document": {"text/plain", "text/markdown", "application/pdf", "application/rtf"},
 }
 
-_ALLOWED_ROLES = {
-    "cover",
-    "storyboard_reference",
-    "character_reference",
-    "background",
-    "soundtrack",
-    "voice_track",
-    "narration",
-    "script",
-    "export",
-    "other",
-}
 
 
 class AssetUploadInitRequest(BaseModel):
