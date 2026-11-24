@@ -99,3 +99,21 @@ test("rename re-reads the project after the prompt and aborts if its baseline ch
   assert.ok(prompt < reread && reread < guard && guard < snapshot);
   assert.match(handler, /Название не изменено/);
 });
+
+
+test("restore dialog closes and reports success only after local persistence succeeds", () => {
+  const fs = require("node:fs");
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const start = app.indexOf('const restore=makeAction("Восстановить эту версию"');
+  const end = app.indexOf('restore.classList.add("movie-history-restore")', start);
+  assert.notEqual(start, -1, "restore action should exist");
+  assert.ok(end > start, "restore action should end before its button is attached");
+  const handler = app.slice(start, end);
+  const persist = handler.indexOf("if(movieWrite(latest)){");
+  const close = handler.indexOf("overlay.remove();", persist);
+  const success = handler.indexOf("Предыдущая версия восстановлена", persist);
+  assert.ok(persist >= 0, "restore must check local persistence result");
+  assert.ok(close > persist, "dialog must close only inside successful persistence branch");
+  assert.ok(success > close, "success feedback must follow persistence and dialog close");
+  assert.equal(handler.includes("movieWrite(latest);overlay.remove();"), false);
+});
