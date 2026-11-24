@@ -1496,7 +1496,7 @@ const movieHistoryStyle = document.createElement("style");
         const latest=movieRead().filter(item=>item.id!==project.id);
         const deletedIds=readMovieTombstones();
         if(isUuid(project.id) && !deletedIds.includes(project.id)) writeMovieTombstones([...deletedIds,project.id]);
-        if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён. Удаление отправлено в облако.":"Проект удалён с этого устройства.";}
+        if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён с устройства. Удаление ожидает подтверждения облачной синхронизации.":"Проект удалён с этого устройства.";}
       });
       const allStagesDone=movieStages.every(stage=>(project.completedSteps||[]).includes(stage.key));
       const stageButton=makeAction((allStagesDone?"Открыть готовый проект":"Продолжить работу")+" · "+movieProgress(project), "primary-button",()=>{
