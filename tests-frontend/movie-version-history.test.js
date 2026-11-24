@@ -29,7 +29,10 @@ test("restore preserves current state as newest backup and does not mutate selec
   const live = project();
   live.name = "Текущий вариант";
   live.versions = [{ savedAt: "2026-01-01T00:00:00.000Z", data: { id: live.id, name: "Старый", completedSteps: [] } }];
-  const selected = { savedAt: "2026-01-01T00:00:00.000Z", data: { ...project(), name: "Предыдущая версия" } };
+  const selectedData = project();
+  delete selectedData.versions;
+  selectedData.name = "Предыдущая версия";
+  const selected = { savedAt: "2026-01-01T00:00:00.000Z", data: selectedData };
   const restored = restore(live, selected, "2026-02-01T00:00:00.000Z");
   assert.equal(restored.name, "Предыдущая версия");
   assert.equal(restored.id, live.id);
