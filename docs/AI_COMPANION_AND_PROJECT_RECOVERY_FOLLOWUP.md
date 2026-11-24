@@ -53,3 +53,40 @@ Scope: read-only source inspection of the PR branch. No live Supabase reads, SQL
 
 ## Explicit non-actions
 No live Supabase query or mutation, SQL migration, user-data access, upload/download, billing action, merge, or deployment was performed.
+
+
+## Follow-up audit — guest expiry, offline behavior, and shared creative assets (2026-11-25)
+
+### Guest project expiry — source review
+- Guest projects are stored under the separate localStorage key `pwa-studio-movie-projects:guest`; signed-in projects use the authenticated UUID namespace.
+- New guest projects receive a 24-hour `guestExpiresAt` deadline. Legacy guest records without a valid deadline are normalized to 24 hours from first subsequent read; a valid existing deadline is preserved and is not extended.
+- Expired guest records are filtered from the guest list and removed from the guest namespace only. The signed-in read path does not apply guest expiry filtering.
+- Guest export is available from the guest-space UI before expiry.
+- The expiry helper has focused unit tests for preserving deadlines, normalizing missing/malformed deadlines, and non-mutating behavior.
+- Limitation: these are source and unit-test findings, not a timed browser test. Expired drafts are removed from browser storage on read; there is no server-side recovery copy for guests. Users must export before expiry.
+
+### Offline / PWA behavior — source review
+- A service worker is registered and caches the application shell. Core shell assets use network-first with cached fallback; other same-origin GET requests use cache-first behavior.
+- Supabase REST/Auth traffic is cross-origin and is not covered by the same-origin cache strategy.
+- No durable offline write queue, background sync, or explicit online-event replay path for project mutations was found in the reviewed source. The Mini Cinema cloud sync is an authenticated online Supabase operation, not an offline-first sync engine.
+- Therefore: the app shell may open offline if previously cached, and local drafts can remain on-device, but cloud save/load, account auth, AI requests, and media upload are not available offline. Do not describe the product as having full offline synchronization.
+- Existing cloud sync uses debounced scheduling and account-context checks, with owner-scoped reads/upserts/deletes, tombstones, payload limits, and stale-cloud preflight. It is online synchronization only; timestamp-based conflict checks are not transactional compare-and-swap.
+
+### Shared characters, voices, audio, image and video
+- The current source contains Mini Cinema character/voice planning text fields and a partial Audio Studio UI for microphone capture and local audio-file preview.
+- The audio UI explicitly reports that selected files and microphone recordings remain on the device; it does not upload them or generate speech/music.
+- No connected image, video, music, TTS, voice-cloning, or transcription provider workflow was verified in the source inventory.
+- The existing `studio_characters`, `studio_scenes`, and `studio_media` migration tables are a database foundation only; there is no verified reusable asset CRUD/upload/signed-download API or cross-studio asset-link workflow.
+- The canonical shared asset registry remains a future architecture task. The intended design is one owner-scoped asset ID referenced by multiple projects/studios, rather than duplicating the same original for each studio. This is a design target, not an implemented feature.
+
+### CI and pull request status
+- GitHub Actions for commit `b5cfc292c29e2e9e76abd7b02fab5703e7ad764c` were rechecked: `test`, `movie-cloud-context`, and `rate-limit-rpc` all completed successfully.
+- PR #4 remains open and draft, with no merge. Its mergeability is currently reported as false by GitHub; this is not a CI failure and should be investigated before any merge review.
+- `main` remains unchanged by this audit.
+
+### Remaining verification boundaries
+- Guest expiry/export needs a browser-level test with a disposable guest profile and controlled clock.
+- Offline shell behavior and local draft persistence need a real browser/device test; cloud sync must be tested after reconnection with disposable accounts.
+- Two-account isolation, project save/reload/restore, tombstone recovery, AI Companion history integrity, and messaging/notification ownership still need disposable end-to-end tests.
+- Live Supabase migration history, effective grants/RLS, bucket settings, Render configuration and production user data have not been inspected in this pass.
+- No live Supabase changes, SQL execution, provider calls, billing actions, PR merge, or production deployment were performed.
