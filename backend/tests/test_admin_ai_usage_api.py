@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app import main
+from app.core.config import Settings
+from app.services import auth
 from app.services.auth import StudioUser, get_current_user
 
 
@@ -8,8 +10,9 @@ ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 CREATOR_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
 
-def test_ai_usage_route_rejects_unauthenticated_request():
+def test_ai_usage_route_rejects_unauthenticated_request(monkeypatch):
     main.app.dependency_overrides.clear()
+    monkeypatch.setattr(auth, "get_settings", lambda: Settings(supabase_url="https://example.supabase.co"))
     with TestClient(main.app) as client:
         response = client.get("/api/admin/ai-usage")
     main.app.dependency_overrides.clear()
