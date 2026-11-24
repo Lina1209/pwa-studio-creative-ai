@@ -130,3 +130,10 @@ The browser integration still has a known consistency limitation: deletion tombs
 - This remains a browser-side coordination safeguard. It does not provide cross-device transactionality or guarantee against concurrent cloud writes from another device/session.
 
 - Additional regression coverage verifies that a new account B load can start and complete while a stale account A load is still pending; the late A response is ignored and cannot populate B's local project list.
+
+
+## Follow-up: deletion queued during an in-flight upsert (2026-11-24)
+
+- Added a deterministic regression test for the boundary where a project upsert has already been sent and the user deletes that project before the upsert request completes.
+- The in-flight request cannot be recalled; the test documents that the already-submitted row may reach the cloud briefly. The scheduled follow-up sync then processes the new tombstone, deletes only that owner's movie row, and excludes the deleted project from its next upsert batch.
+- This is eventual cleanup, not atomic cancellation. The UI must continue to represent deletion as pending until the cloud delete succeeds. A failed follow-up delete must retain the tombstone for retry.
