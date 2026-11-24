@@ -126,3 +126,16 @@ A future database integration job is acceptable only when it:
 - never emits secrets or user content to logs.
 
 Until such a job exists and reports success for the exact PR head, label database behavior **not tested**, not passed.
+
+
+## Repository harness inventory (checked 2026-11-25)
+
+The branch was inspected before deciding whether a database job can be added safely:
+
+- `.github/workflows/backend-tests.yml` installs Python 3.12 and runs `pytest -q` from `backend/`; it does not start PostgreSQL or Supabase.
+- `backend/requirements.txt` contains the application HTTP/AI dependencies; it does not declare a PostgreSQL driver or database test framework.
+- `backend/tests/integration/` currently contains the transactional-moderation PostgreSQL test-plan document, not an executable database harness.
+- Repository searches found no `docker-compose`/Compose setup, `supabase/config.toml`, psycopg dependency, or pgTAP harness. The `supabase/` tree contains migration and diagnostic SQL directories.
+- The root does not expose a `package.json` at this branch path; frontend tests are separate Node scripts under `tests-frontend/` and do not supply a PostgreSQL runtime.
+
+**Decision:** do not add a workflow that blindly replays every migration. The duplicate `0005` versions, Supabase Auth/Storage dependencies, and unresolved live migration history mean the disposable bootstrap must first be deliberately assembled and validated. The RPC matrix remains a specification; no database service was provisioned and no SQL was executed during this inventory.
