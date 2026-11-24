@@ -979,103 +979,41 @@ const movieHistoryStyle = document.createElement("style");
       versions: Array.isArray(saved.versions) ? saved.versions : []
     };
   };
+  const movieCloudOperations = window.PWAMovieCloudOperations?.createMovieCloudOperations({
+    isCurrent: context => movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion),
+    setTimer: (fn, delay) => setTimeout(fn, delay),
+    clearTimer: id => clearTimeout(id),
+    supabase: () => supabaseClient,
+    readTombstones: ownerId => {
+      try { const value=JSON.parse(localStorage.getItem("pwa-studio-movie-deleted:"+ownerId)||"[]"); return Array.isArray(value)?value.filter(isUuid):[]; }
+      catch { return []; }
+    },
+    writeTombstones: (ownerId, ids) => {
+      try { localStorage.setItem("pwa-studio-movie-deleted:"+ownerId,JSON.stringify([...new Set(ids.filter(isUuid))])); }
+      catch(error) { console.error("Movie deletion queue failed:",error); }
+    },
+    readProjects: ownerId => ownerId === authSession?.user?.id ? movieRead() : [],
+    writeProjects: (ownerId, projects) => localStorage.setItem("pwa-studio-movie-projects:"+ownerId,JSON.stringify(projects)),
+    toCloudRow: movieToCloudRow,
+    fromCloudRow: movieFromCloudRow,
+    render: renderMovieProjects,
+    feedback: message => { const el=$("#movieFeedback"); if(el)el.textContent=message; },
+    syncError: error => {
+      console.error("Movie cloud sync failed:",error);
+      const el=$("#movieFeedback"); if(el)el.textContent="Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+    },
+    loadError: error => {
+      console.error("Movie cloud load failed:",error);
+      const el=$("#movieFeedback"); if(el)el.textContent="Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+    }
+  }) || null;
   const scheduleMovieCloudSync = () => {
-    if (!authSession?.user || !supabaseClient || !movieCloudContext) return;
-    const context = movieCloudContext.capture(authSession.user.id, authContextVersion);
-    if (!context) return;
-    clearTimeout(movieCloudState.timer);
-    movieCloudState.timer = setTimeout(async () => {
-      if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-      if (movieCloudState.syncingContext) {
-        movieCloudContext.setPendingContext(movieCloudState, context);
-        return;
-      }
-      movieCloudState.syncingContext = context;
-      try {
-        const deletedIds = readMovieTombstones();
-        if (deletedIds.length) {
-          const { error: deleteError } = await supabaseClient.from("projects").delete()
-            .in("id", deletedIds).eq("owner_id", context.ownerId).eq("project_type", "movie");
-          if (deleteError) throw deleteError;
-          if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-          writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
-        }
-        const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
-        const rows = localProjects.map(project => movieToCloudRow(project, context.ownerId));
-        // Persist any UUID normalization before sending rows to Supabase.
-        localStorage.setItem(movieStorageKey(), JSON.stringify(localProjects));
-        if (rows.length) {
-          const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
-          if (error) throw error;
-          if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-        }
-        if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = deletedIds.length
-          ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
-          : "✓ Изменения сохранены в облаке Supabase.";
-      } catch (error) {
-        console.error("Movie cloud sync failed:", error);
-        if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
-      } finally {
-        if (movieCloudState.syncingContext === context) movieCloudState.syncingContext = null;
-        const pendingContext = movieCloudContext.takePendingContext(movieCloudState,
-          pending => movieCloudContext.isCurrent(pending, authSession?.user?.id || null, authContextVersion));
-        if (pendingContext) scheduleMovieCloudSync();
-      }
-    }, 350);
+    const context=movieCloudContext?.capture(authSession?.user?.id,authContextVersion);
+    if(context) movieCloudOperations?.schedule(context);
   };
   const loadMovieProjectsFromCloud = async () => {
-    const userId = authSession?.user?.id;
-    const context = movieCloudContext?.capture(userId, authContextVersion);
-    if (!context || !supabaseClient) return;
-    if (movieCloudState.loadingContext &&
-        movieCloudContext.isCurrent(movieCloudState.loadingContext, userId, authContextVersion)) return;
-    movieCloudState.loadingContext = context;
-    try {
-      const { data, error } = await supabaseClient
-        .from("projects")
-        .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
-        .eq("project_type", "movie")
-        .order("updated_at", { ascending: false });
-      if (error) throw error;
-      if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-      const deletedIds = readMovieTombstones();
-      if (deletedIds.length) {
-        const { error: deleteError } = await supabaseClient.from("projects").delete()
-          .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
-        if (deleteError) throw deleteError;
-        if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-        writeMovieTombstones([]);
-      }
-      const deletedSet = new Set(deletedIds);
-      const local = movieRead().filter(project => !deletedSet.has(project.id));
-      const merged = new Map(local.map(project => [project.id, project]));
-      (data || []).filter(row => !deletedSet.has(row.id)).forEach(row => {
-        const cloudProject = movieFromCloudRow(row);
-        const localProject = merged.get(cloudProject.id);
-        if (!localProject || new Date(cloudProject.updatedAt || 0) >= new Date(localProject.updatedAt || 0)) {
-          merged.set(cloudProject.id, cloudProject);
-        }
-      });
-      const projects = [...merged.values()].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-      if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-      if (movieWrite(projects)) {
-        renderMovieProjects();
-        scheduleMovieCloudSync();
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "✓ Фильмы загружены из облака. Изменения синхронизируются автоматически.";
-      }
-    } catch (error) {
-      console.error("Movie cloud load failed:", error);
-      if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-      const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
-    } finally {
-      if (movieCloudState.loadingContext === context) movieCloudState.loadingContext = null;
-    }
+    const context=movieCloudContext?.capture(authSession?.user?.id,authContextVersion);
+    if(context) await movieCloudOperations?.load(context);
   };
   const movieRead = () => {
     try {
