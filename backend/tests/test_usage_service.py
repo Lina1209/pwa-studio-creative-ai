@@ -280,3 +280,64 @@ def test_durable_outbox_marks_provider_failure_as_unknown_not_free(monkeypatch):
     assert client.patch_calls[0][2]["status"] == "unknown"
     assert client.patch_calls[0][2]["error_type"] == "TimeoutError"
     assert "prompt" not in client.patch_calls[0][2]
+
+
+def test_admin_outbox_reconciliation_is_read_only_bounded_and_keeps_unknown_cost_null(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    import pytest
+    from fastapi import HTTPException
+
+    now = datetime.now(timezone.utc)
+    stale_time = (now - timedelta(minutes=30)).isoformat()
+    recent_time = (now - timedelta(minutes=2)).isoformat()
+    class OutboxResponse:
+        def raise_for_status(self): return None
+        def json(self):
+            return [
+                {"request_id": "a", "user_id": "u1", "status": "started",
+                 "started_at": stale_time, "cost_usd": None},
+                {"request_id": "b", "user_id": "u2", "status": "unknown",
+                 "started_at": recent_time, "cost_usd": "0.004"},
+                {"request_id": "c", "user_id": "u3", "status": "unknown",
+                 "started_at": recent_time, "cost_usd": None},
+            ]
+    class OutboxReadClient:
+        def __init__(self, *, timeout): self.timeout = timeout
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def get(self, url, *, params, headers):
+            self.url, self.params, self.headers = url, params, headers
+            return OutboxResponse()
+
+    client = OutboxReadClient(timeout=10.0)
+    monkeypatch.setattr(usage_service.httpx, "Client", lambda timeout: client)
+    result = usage_service.list_admin_ai_usage_reconciliation(
+        Settings(supabase_url="https://example.supabase.co",
+                 supabase_service_role_key="server-only"),
+        page=1, page_size=2, stale_after_minutes=15,
+    )
+    assert client.url.endswith("/rest/v1/ai_usage_outbox")
+    assert client.params["status"] == "in.(started,unknown)"
+    assert client.params["limit"] == "3"
+    assert result["has_more"] is True
+    assert result["summary_scope"] == "current_page"
+    assert result["summary"]["unresolved_requests"] == 2
+    assert result["summary"]["started_requests"] == 1
+    assert result["summary"]["unknown_requests"] == 1
+    assert result["summary"]["known_cost_usd"] == "0.004"
+    assert result["summary"]["unknown_cost_requests"] == 1
+    assert result["summary"]["stale_started_requests"] == 1
+    assert result["items"][0]["review_flag"] == "stale_started"
+    assert result["automated_reconciliation"] is False
+    assert "prompt" not in client.params["select"]
+    assert "response" not in client.params["select"]
+    assert not hasattr(client, "patch")
+    assert not hasattr(client, "post")
+
+
+def test_admin_outbox_reconciliation_requires_storage():
+    import pytest
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as error:
+        usage_service.list_admin_ai_usage_reconciliation(Settings())
+    assert error.value.status_code == 503
