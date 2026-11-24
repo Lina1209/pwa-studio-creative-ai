@@ -125,6 +125,9 @@ function createMovieCloudOperations(deps) {
         .eq("owner_id", context.ownerId).eq("project_type", "movie").order("updated_at", { ascending: false });
       if (error) throw error;
       if (!current(context)) return;
+      // Treat the SELECT response as untrusted input even though the query is owner-scoped
+      // and Supabase RLS is the primary boundary. Never merge a foreign/malformed row locally.
+      validateCloudRows(data || [], context.ownerId);
       const deletedIds = deps.readTombstones(context.ownerId);
       if (deletedIds.length) {
         const { error: deleteError } = await deps.supabase().from("projects").delete()
