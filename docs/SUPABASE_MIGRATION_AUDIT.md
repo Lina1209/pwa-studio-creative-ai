@@ -187,3 +187,17 @@ Additional source-level findings from `0005_cloud_projects_and_storage.sql`:
 - Do not patch this historical migration in place or apply it again to production. First inspect the live column nullability, foreign key, constraints, indexes, policies and existing rows. If correction is required, prepare a new uniquely versioned migration with an explicit orphan-row/backfill policy and test it against a disposable copy.
 
 These are conditional schema risks inferred from the migration source; they are not claims about the current live database.
+
+
+## Legacy and current project/profile tables
+
+The migration source contains parallel table families that must not be silently conflated:
+
+- `0001_initial_schema.sql` creates `public.studio_projects` with `user_id`, plus `studio_characters`, `studio_scenes`, and `studio_media`. These are owner-scoped by RLS in that migration.
+- `0005_cloud_projects_and_storage.sql` creates a separate `public.projects` table with `owner_id`; the current Mini Cinema browser sync reads and writes this newer table.
+- `0001_initial_schema.sql` also creates `public.profiles` for account profile basics.
+- `0009_user_profiles.sql` creates the separate `public.user_profiles` community-directory profile, with its own visibility and listing controls. The backend diagnostics label `profiles` currently checks `user_profiles`, not the older `profiles` table.
+
+This may reflect an intentional evolution, but it creates a migration and operations risk if future developers assume the two project tables or two profile tables are interchangeable. The live audit should inventory both families, row counts, constraints, RLS policies and application references before any consolidation or cleanup. Do not copy, move, drop, or rename either family based on source inspection alone.
+
+The existing read-only diagnostics endpoint checks whether selected REST tables are exposed/reachable; a successful `HEAD` check does not prove correct RLS behavior, owner isolation, storage policy correctness, or data consistency. Those require dedicated policy inspection and two-account integration tests.
