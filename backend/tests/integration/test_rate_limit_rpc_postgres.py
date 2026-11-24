@@ -378,6 +378,12 @@ def test_ambiguous_provider_reservation_requires_explicit_failure_resolution_bef
             "SELECT public.settle_user_credit_reservation(%s, %s, %s)",
             (user_id, reservation_id, 5),
         )
+    with pytest.raises(psycopg.Error):
+        _wallet_call(
+            dsn,
+            "SELECT public.resolve_credit_reservation_provider_outcome(%s, %s, %s, %s, %s)",
+            (user_id, reservation_id, None, "missing-outcome", None),
+        )
     resolved = _wallet_call(
         dsn,
         "SELECT public.resolve_credit_reservation_provider_outcome(%s, %s, %s, %s, %s)",
