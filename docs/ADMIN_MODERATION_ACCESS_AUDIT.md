@@ -69,3 +69,54 @@ Current tests cover key schema validation and admin route authorization, but the
 - No SQL or migration was executed.
 - No suspension, report, or audit event was created or changed.
 - No deployment or PR merge was performed.
+
+## Audit refresh — administrative cabinet UI and operational coverage (2026-11-24)
+
+### What is actually present in the frontend
+
+The current account page contains an owner-only moderation panel. It provides:
+- a refresh action;
+- a report list with reporter/target identifiers, description and content reference;
+- status and moderator-note editing;
+- a suspension form with target UUID, reason, scope and optional expiry;
+- a suspension list and revoke action.
+
+The panel is hidden on account changes and is revealed only after the backend `/api/auth/me` response reports the server-derived `admin` role. The role-load and initial admin-workspace load both check the auth-context version after asynchronous reads. This is a useful UI safeguard, not an authorization boundary; every backend route must continue to enforce `require_admin`.
+
+### What is not yet an administrative cabinet
+
+The reviewed frontend and route inventory do not provide:
+- a dedicated audit-history page or `GET /api/admin/audit-log` endpoint;
+- pagination/search/filtering for reports, suspensions or audit history (the service lists are capped at 100);
+- operational analytics for visitors, generation volume, AI token/cost telemetry, provider spend or revenue;
+- tariff/plan management, subscription lifecycle or payment administration;
+- wallet balance/reservation/ledger management UI;
+- asset/storage administration or media moderation queue;
+- a complete PУЛЬС publication, likes, comments or creator-follow moderation workflow.
+
+The wallet and pricing modules are source-level foundations only: the production catalog is intentionally empty and the current chat/prompt routes do not reserve or settle user credits. Do not present those modules as an active financial cabinet.
+
+### Additional UI concurrency observation
+
+The admin workspace list loader checks the initiating auth-context version after its parallel reads. The individual report-review and suspension-form/revoke handlers do not consistently capture and re-check that same version after their mutation requests before updating feedback or refreshing the panel. This is a stale-UI race during account switching, not evidence that one account can read another account's data. Before expanding the admin UI, capture the initiating user ID/context version for every mutation and suppress all post-await UI work when the context has changed.
+
+### Moderation audit event attribution
+
+The service now populates the migration's dedicated `target_user_id` for report review (when a reported account exists), suspension creation and suspension revocation. Tests assert actor and target are distinct and correctly attributed. This improves traceability but does not resolve the still-open M1 transaction gap: the state mutation and audit insert remain separate REST operations.
+
+### Current readiness summary
+
+| Area | Source-level status | Release assessment |
+|---|---|---|
+| Immutable owner UUID auth | Implemented with legacy email fallback | Verify production `OWNER_USER_ID` securely; do not disclose it |
+| Admin route guards | Implemented for diagnostics, reports and suspensions | Keep route-level tests and backend guards |
+| Report review | Implemented, no pagination/concurrency version | Needs atomic mutation + audit and optimistic concurrency |
+| Suspension create/revoke | Implemented, no pagination/idempotency | Needs atomic mutation + audit and duplicate-action protection |
+| Append-only audit storage | Migration source defines server-only insert/read | Live grants/policies not verified |
+| Audit history UI/API | Not implemented | Required before operational use at scale |
+| Analytics/finance/billing | Not connected or intentionally inactive | Do not activate pending cost and schema reconciliation |
+| Full admin control center | Partial moderation workspace only | Not complete |
+
+## Explicit boundaries reaffirmed
+
+This is a repository-source audit, not a live production certification. No live owner configuration, user rows, moderation data, billing settings or production secrets were read. No SQL was executed, no financial feature was activated, no deployment was made, and PR #4 remains unmerged.
