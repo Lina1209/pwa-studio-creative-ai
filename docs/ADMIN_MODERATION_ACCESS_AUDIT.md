@@ -120,3 +120,24 @@ The service now populates the migration's dedicated `target_user_id` for report 
 ## Explicit boundaries reaffirmed
 
 This is a repository-source audit, not a live production certification. No live owner configuration, user rows, moderation data, billing settings or production secrets were read. No SQL was executed, no financial feature was activated, no deployment was made, and PR #4 remains unmerged.
+
+## Admin audit-history API — implementation update (2026-11-24)
+
+A read-only endpoint has now been added on the feature branch:
+
+- `GET /api/admin/audit-log`
+- server-side `require_admin` dependency;
+- page-based pagination, default 50 and hard maximum 100 rows;
+- stable descending order by `created_at`, then `id`;
+- optional exact filters for actor UUID, target UUID, action and entity type;
+- bounded fetch of `page_size + 1` rows to compute `has_more`;
+- response returns only the selected audit columns; no write/update/delete route was added.
+
+The service validates actor and target UUIDs before any storage request. Query syntax and page bounds are validated by FastAPI. The existing migration source grants service-role SELECT/INSERT on the audit table and denies client roles; this API reads through the server-only service role after the admin guard. Tests cover unauthenticated and creator denial, admin access, filters, stable order, pagination bounds, and invalid input.
+
+### Remaining limitations
+
+- Pagination uses offset-based pages. Under concurrent inserts, a new event can shift page boundaries; consumers should refresh from page 1 and avoid treating page numbers as immutable cursors. A future cursor based on `(created_at, id)` is preferable for very large audit histories.
+- No frontend history screen has been added yet.
+- No live Supabase grants, RLS, migration ledger or table contents were inspected. The endpoint is source-level only until the production schema is reconciled and the migration's presence is confirmed.
+- The state-change/audit-write transaction gap in moderation mutations remains open; this read endpoint does not fix it.
