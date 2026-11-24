@@ -1118,8 +1118,13 @@ const movieHistoryStyle = document.createElement("style");
       catch { return []; }
     },
     writeTombstones: (ownerId, ids) => {
-      try { localStorage.setItem("pwa-studio-movie-deleted:"+ownerId,JSON.stringify([...new Set(ids.filter(isUuid))])); }
-      catch(error) { console.error("Movie deletion queue failed:",error); }
+      try {
+        localStorage.setItem("pwa-studio-movie-deleted:"+ownerId,JSON.stringify([...new Set(ids.filter(isUuid))]));
+        return true;
+      } catch(error) {
+        console.error("Movie deletion queue failed:",error);
+        return false;
+      }
     },
     readProjects: ownerId => ownerId === authSession?.user?.id ? movieRead() : [],
     writeProjects: (ownerId, projects) => localStorage.setItem("pwa-studio-movie-projects:"+ownerId,JSON.stringify(projects)),
