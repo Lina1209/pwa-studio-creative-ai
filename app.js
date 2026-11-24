@@ -1155,7 +1155,7 @@ const movieHistoryStyle = document.createElement("style");
   const movieRead = () => {
     try {
       const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
-      if (!Array.isArray(raw)) return [];
+      if (!Array.isArray(raw)) throw new Error("Локальное хранилище фильмов имеет неверный формат.");
       const now = Date.now();
       let changed = false;
       const projects = raw.filter(item => item && typeof item === "object" && item.id).map(item => {
