@@ -33,6 +33,7 @@ test("analytics UI bounds date ranges and rejects stale account responses", () =
   assert.match(app, /31\*24\*60\*60\*1000/);
   assert.match(app, /start>=end/);
   assert.match(app, /version!==authContextVersion \|\| authSession\?\.user\?\.id!==userId \|\| panel\.hidden/);
+  assert.match(app, /requestId===adminAnalyticsRequestId/);
   assert.match(app, /textContent=Number\.isSafeInteger/);
   assert.match(app, /Статистика пока не подключена к базе/);
 });
