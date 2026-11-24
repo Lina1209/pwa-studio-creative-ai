@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
+from uuid import UUID
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -21,6 +22,14 @@ class StudioUser:
 @lru_cache
 def _jwks_client(url: str) -> PyJWKClient:
     return PyJWKClient(f"{url.rstrip('/')}/auth/v1/.well-known/jwks.json")
+
+
+def _matches_owner_user_id(user_id: str, configured_owner_id: str) -> bool:
+    """Compare Supabase UUIDs canonically; malformed configuration fails closed."""
+    try:
+        return UUID(user_id) == UUID(configured_owner_id.strip())
+    except (ValueError, TypeError, AttributeError):
+        return False
 
 
 def get_current_user(
@@ -58,7 +67,7 @@ def get_current_user(
     owner_user_id = (settings.owner_user_id or "").strip()
     if owner_user_id:
         # A configured immutable Supabase UUID takes precedence over mutable email.
-        role = "admin" if user_id == owner_user_id else "creator"
+        role = "admin" if _matches_owner_user_id(user_id, owner_user_id) else "creator"
     else:
         # Backward compatibility only. Set OWNER_USER_ID in production to avoid
         # relying on an email claim for administrator identity.
