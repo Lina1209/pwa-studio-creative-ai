@@ -936,7 +936,7 @@ const movieHistoryStyle = document.createElement("style");
     {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
   ];
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
-  const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
+  const movieCloudState = { syncingContext: null, pendingContext: null, loadingUser: null, timer: null };
   const movieCloudContext = window.PWAMovieCloudContext;
   if (!movieCloudContext) console.error("Movie cloud context guard is unavailable; cloud sync is disabled.");
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
@@ -986,13 +986,16 @@ const movieHistoryStyle = document.createElement("style");
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
       if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
-      if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
-      movieCloudState.syncing = true;
+      if (movieCloudState.syncingContext) {
+        movieCloudContext.setPendingContext(movieCloudState, context);
+        return;
+      }
+      movieCloudState.syncingContext = context;
       try {
         const deletedIds = readMovieTombstones();
         if (deletedIds.length) {
           const { error: deleteError } = await supabaseClient.from("projects").delete()
-            .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
+            .in("id", deletedIds).eq("owner_id", context.ownerId).eq("project_type", "movie");
           if (deleteError) throw deleteError;
           if (!movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion)) return;
           writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
@@ -1017,11 +1020,10 @@ const movieHistoryStyle = document.createElement("style");
         const feedback = $("#movieFeedback");
         if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
       } finally {
-        movieCloudState.syncing = false;
-        if (movieCloudState.pending) {
-          movieCloudState.pending = false;
-          scheduleMovieCloudSync();
-        }
+        if (movieCloudState.syncingContext === context) movieCloudState.syncingContext = null;
+        const pendingContext = movieCloudContext.takePendingContext(movieCloudState,
+          pending => movieCloudContext.isCurrent(pending, authSession?.user?.id || null, authContextVersion));
+        if (pendingContext) scheduleMovieCloudSync();
       }
     }, 350);
   };
