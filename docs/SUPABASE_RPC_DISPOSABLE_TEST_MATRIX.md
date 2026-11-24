@@ -196,3 +196,6 @@ The disposable fixture now applies migrations 0011, 0012, 0013, 0014, 0015, and 
 Latest PostgreSQL run: [run 45473891705](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473891705). Backend tests: [run 45473891875](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473891875). Frontend account-context tests: [run 45473891643](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473891643).
 
 The fixture is still plain disposable PostgreSQL with minimal Supabase role/auth/table scaffolding. It is not a production schema check, full Supabase emulator, or proof that migrations 0013–0015 are applied in the live project. Do not deploy these migrations until the live migration ledger and schema have been reconciled, and ensure the backend has a provider-authoritative reconciliation path before enabling paid generation.
+
+
+Migration 0016 adds a SQL-side allowlist for credit grant provenance sources, matching the backend adapter's fixed values. A disposable test confirms arbitrary source labels are rejected while an allowed promo grant succeeds. The latest wallet/rate-limit/analytics PostgreSQL gate at commit b3a6131d6fbac96736f8d287288a79b06ff1cc87 reports **20 passed**. This remains source-only; no live migration was applied.
