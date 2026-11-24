@@ -1284,6 +1284,7 @@ const movieHistoryStyle = document.createElement("style");
     const project=movieRead().find(item=>item.id===projectId);
     const panel=ensureMovieWorkflowPanel();
     if(!project||!panel)return;
+    let baseUpdatedAt=project.updatedAt||project.createdAt||null;
     activeMovieId=projectId; editingMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards(); panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent="Этап 1 из 5 · Основные сведения о фильме";
@@ -1321,7 +1322,12 @@ const movieHistoryStyle = document.createElement("style");
       const name=inputs.movieName.value.trim();
       if(!name){status.textContent="Укажите название фильма.";inputs.movieName.focus();return false;}
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0){status.textContent="Фильм не найден.";return false;}
-      const current=latest[index]; addMovieVersion(current);
+      const current=latest[index];
+      if((current.updatedAt||current.createdAt||null)!==baseUpdatedAt){
+        status.textContent="Этот фильм изменился в другом окне или на другом устройстве. Сведения не перезаписаны — закройте этап и откройте его заново, чтобы загрузить актуальную версию.";
+        return false;
+      }
+      addMovieVersion(current);
       Object.assign(current,{
         name, seriesNumber:inputs.movieSeriesNumber.value?Number(inputs.movieSeriesNumber.value):null,
         versionLabel:inputs.movieVersionLabel.value.trim(), idea:inputs.movieIdea.value.trim(),
@@ -1329,6 +1335,7 @@ const movieHistoryStyle = document.createElement("style");
         updatedAt:new Date().toISOString()
       });
       if(!movieWrite(latest)){status.textContent="Не удалось сохранить изменения.";return false;}
+      baseUpdatedAt=current.updatedAt;
       renderMovieProjects(); status.textContent="✓ Основные сведения сохранены.";
       return true;
     };
