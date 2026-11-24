@@ -62,10 +62,12 @@ def disposable_schema(dsn: str):
             "0011_atomic_message_rate_limit.sql",
             "0012_atomic_ai_rate_limit.sql",
             "0013_unified_credit_wallet.sql",
+            "0015_credit_provider_outcome_resolution.sql",
         ):
             conn.execute((MIGRATIONS / filename).read_text(encoding="utf-8"))
     yield
     with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute("DROP FUNCTION IF EXISTS public.resolve_credit_reservation_provider_outcome(uuid, uuid, text, text, bigint)")
         conn.execute("DROP FUNCTION IF EXISTS public.mark_credit_reservation_reconciliation_required(uuid, uuid)")
         conn.execute("DROP FUNCTION IF EXISTS public.release_user_credit_reservation(uuid, uuid)")
         conn.execute("DROP FUNCTION IF EXISTS public.settle_user_credit_reservation(uuid, uuid, bigint)")
@@ -354,14 +356,7 @@ def test_full_release_returns_reservation_once(dsn):
         ).fetchone()[0] == 1
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Known source-level safety gap: migration 0013 currently permits release "
-        "from reconciliation_required without proof that the provider outcome is safe."
-    ),
-)
-def test_ambiguous_provider_reservation_cannot_be_released_without_reconciliation(dsn):
+def test_ambiguous_provider_reservation_requires_explicit_failure_resolution_before_release(dsn):
     user_id = _new_user(dsn)
     _grant(dsn, user_id, 25)
     reserved = _reserve(dsn, user_id, "ambiguous-provider-key", 10)
@@ -371,14 +366,64 @@ def test_ambiguous_provider_reservation_cannot_be_released_without_reconciliatio
         "SELECT public.mark_credit_reservation_reconciliation_required(%s, %s)",
         (user_id, reservation_id),
     )
-    # This assertion is the desired future invariant. It is expected to fail
-    # against the current migration, which accepts this release transition.
     with pytest.raises(psycopg.Error):
         _wallet_call(
             dsn,
             "SELECT public.release_user_credit_reservation(%s, %s)",
             (user_id, reservation_id),
         )
+    with pytest.raises(psycopg.Error):
+        _wallet_call(
+            dsn,
+            "SELECT public.settle_user_credit_reservation(%s, %s, %s)",
+            (user_id, reservation_id, 5),
+        )
+    resolved = _wallet_call(
+        dsn,
+        "SELECT public.resolve_credit_reservation_provider_outcome(%s, %s, %s, %s, %s)",
+        (user_id, reservation_id, "failed", "provider-confirmed-failure-001", None),
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["reservation_result"]["status"] == "released"
+    assert _wallet_row(dsn, user_id) == (25, 0)
+    replay = _wallet_call(
+        dsn,
+        "SELECT public.resolve_credit_reservation_provider_outcome(%s, %s, %s, %s, %s)",
+        (user_id, reservation_id, "failed", "provider-confirmed-failure-001", None),
+    )
+    assert replay["status"] == "already_resolved"
+    with pytest.raises(psycopg.Error):
+        _wallet_call(
+            dsn,
+            "SELECT public.resolve_credit_reservation_provider_outcome(%s, %s, %s, %s, %s)",
+            (user_id, reservation_id, "succeeded", "different-provider-result", 5),
+        )
+
+
+def test_ambiguous_provider_success_is_settled_only_through_resolution_rpc(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 40)
+    reserved = _reserve(dsn, user_id, "ambiguous-success-key", 20)
+    reservation_id = reserved["reservation_id"]
+    _wallet_call(
+        dsn,
+        "SELECT public.mark_credit_reservation_reconciliation_required(%s, %s)",
+        (user_id, reservation_id),
+    )
+    resolved = _wallet_call(
+        dsn,
+        "SELECT public.resolve_credit_reservation_provider_outcome(%s, %s, %s, %s, %s)",
+        (user_id, reservation_id, "succeeded", "provider-confirmed-success-002", 13),
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["reservation_result"]["status"] == "settled"
+    assert _wallet_row(dsn, user_id) == (27, 0)
+    with psycopg.connect(dsn) as conn:
+        row = conn.execute(
+            "SELECT status, provider_outcome, provider_resolution_reference FROM public.credit_reservations WHERE id = %s",
+            (reservation_id,),
+        ).fetchone()
+    assert row == ("settled", "succeeded", "provider-confirmed-success-002")
 
 
 def test_wallet_rpc_execution_is_service_role_only_and_ledger_is_read_only(dsn):
@@ -388,6 +433,7 @@ def test_wallet_rpc_execution_is_service_role_only_and_ledger_is_read_only(dsn):
         "public.settle_user_credit_reservation(uuid,uuid,bigint)",
         "public.release_user_credit_reservation(uuid,uuid)",
         "public.mark_credit_reservation_reconciliation_required(uuid,uuid)",
+        "public.resolve_credit_reservation_provider_outcome(uuid,uuid,text,text,bigint)",
     )
     with psycopg.connect(dsn) as conn:
         for role in ("anon", "authenticated"):
