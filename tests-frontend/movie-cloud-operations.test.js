@@ -193,3 +193,28 @@ test("a stale A cloud load does not block B from starting and applying its own l
  assert.equal(h.local.B.some(project=>project.id==="a-stale"),false);
  assert.equal(h.local.A.some(project=>project.id==="a-stale"),false);
 });
+
+
+test("a deletion queued during an in-flight upsert is processed by the follow-up sync",async()=>{
+ const h=harness(),gate=deferred(),deletedId="323e4567-e89b-42d3-a456-426614174000";
+ h.local.A.push({id:deletedId,name:"Deleted during upload"});
+ h.setUpsertGate(gate);
+ const context=h.capture();
+ h.ops.schedule(context);h.flush();
+ await new Promise(r=>setImmediate(r));
+ const firstUpsert=h.calls.find(c=>c.type==="upsert");
+ assert.equal(firstUpsert.rows.some(row=>row.id===deletedId),true);
+ h.setTombstones("A",[deletedId]);
+ h.ops.schedule(context);h.flush();
+ gate.resolve();
+ await new Promise(r=>setImmediate(r));
+ assert.equal([...h.timers.values()].length,1);
+ h.flush();
+ await new Promise(r=>setImmediate(r));
+ const deletions=h.calls.filter(c=>c.type==="delete");
+ assert.deepEqual(deletions[0].filters,[["id",[deletedId]],["owner_id","A"],["project_type","movie"]]);
+ const upserts=h.calls.filter(c=>c.type==="upsert");
+ assert.equal(upserts.length,2);
+ assert.equal(upserts[1].rows.some(row=>row.id===deletedId),false);
+ assert.deepEqual(h.tombstones.A,[]);
+});
