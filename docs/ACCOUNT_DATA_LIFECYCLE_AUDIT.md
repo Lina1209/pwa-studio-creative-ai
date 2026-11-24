@@ -186,3 +186,10 @@ The initial `getSession()` promise and the auth-state listener can resolve in ei
 ## Branch follow-up — guest draft expiry validation
 
 Guest drafts remain isolated under the guest localStorage key; authenticated project keys are not subjected to guest expiry. A source review found that a missing expiry was initialized, but a malformed non-empty expiry string parsed to `NaN` and therefore never expired. The reader now normalizes missing or malformed guest expiry values to a fresh 24-hour deadline without mutating the original object. Valid existing deadlines are preserved and are not extended by reads, so this does not silently turn the fixed 24-hour guest retention policy into a rolling inactivity timer. The normalization is applied only while reading the guest key; signed-in project records are left unchanged. Focused Node test definitions cover valid, missing, malformed, and non-mutating behavior. Execution and CI confirmation remain pending.
+
+
+## Branch follow-up — account switch and guest workspace isolation
+
+Reviewed sign-in, sign-out, initial session restoration, and Mini Cinema rendering. Guest projects use the `pwa-studio-movie-projects:guest` key; signed-in projects use a key containing the authenticated user's UUID. Cloud sync is scheduled only when an authenticated owner context can be captured, so guest drafts are not uploaded. Signing in does not silently merge guest drafts into the account; signing out returns to the separate guest key. The 24-hour expiry is evaluated when guest projects are read, including after a later return to guest mode.
+
+A UI-state issue was identified: changing accounts could leave the previous account's open Mini Cinema stage editor and unsaved top-level project form visible. Added an account-context reset that clears the active/editing project references, resets the new-film form, and hides/clears the stage editor whenever the user UUID changes. This does not delete either account's local projects and does not transfer guest projects. Source-reviewed only; no real sign-in/out session or browser storage was modified. Automated browser testing remains pending.
