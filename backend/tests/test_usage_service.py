@@ -140,3 +140,60 @@ def test_record_ai_usage_skips_without_server_credentials(monkeypatch):
         provider="deepseek",
         result=_result(),
     )
+
+
+
+def test_admin_ai_usage_is_bounded_and_summarizes_only_current_page(monkeypatch):
+    class UsageResponse:
+        content = b"[]"
+        def raise_for_status(self): return None
+        def json(self):
+            return [
+                {"request_id": "r1", "input_tokens": 10, "output_tokens": 5,
+                 "total_tokens": 15, "cost_usd": "0.001", "provider": "deepseek"},
+                {"request_id": "r2", "input_tokens": 20, "output_tokens": 7,
+                 "total_tokens": 27, "cost_usd": None, "provider": "deepseek"},
+                {"request_id": "r3", "input_tokens": 1, "output_tokens": 1,
+                 "total_tokens": 2, "cost_usd": "0.5", "provider": "deepseek"},
+            ]
+
+    class UsageClient:
+        def __init__(self, *, timeout): self.timeout = timeout
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def get(self, url, *, params, headers):
+            self.url, self.params, self.headers = url, params, headers
+            return UsageResponse()
+
+    client = UsageClient(timeout=10.0)
+    monkeypatch.setattr(usage_service.httpx, "Client", lambda timeout: client)
+    result = usage_service.list_admin_ai_usage(
+        Settings(supabase_url="https://example.supabase.co",
+                 supabase_service_role_key="server-only"),
+        page=2, page_size=2,
+        user_id="00000000-0000-0000-0000-000000000001",
+        provider="deepseek", endpoint="chat",
+    )
+
+    assert client.params["offset"] == "2"
+    assert client.params["limit"] == "3"
+    assert client.params["user_id"] == "eq.00000000-0000-0000-0000-000000000001"
+    assert client.params["provider"] == "eq.deepseek"
+    assert client.params["endpoint"] == "eq.chat"
+    assert result["has_more"] is True
+    assert result["summary_scope"] == "current_page"
+    assert result["summary"]["requests"] == 2
+    assert result["summary"]["total_tokens"] == 42
+    assert result["summary"]["known_cost_usd"] == "0.001"
+    assert result["summary"]["unknown_cost_requests"] == 1
+    assert "prompt" not in client.params["select"]
+    assert "response" not in client.params["select"]
+
+
+def test_admin_ai_usage_requires_server_storage_credentials():
+    from fastapi import HTTPException
+    import pytest
+
+    with pytest.raises(HTTPException) as error:
+        usage_service.list_admin_ai_usage(Settings(), page=1, page_size=10)
+    assert error.value.status_code == 503
