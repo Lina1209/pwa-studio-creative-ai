@@ -46,7 +46,7 @@ def test_report_review_is_scoped_to_exact_report_and_records_verified_moderator(
         calls.append((method, table, params, payload))
         if table == "user_reports":
             return [{"id": REPORT_ID, "status": "resolved", "created_at": "now",
-                     "reporter_user_id": USER_A}]
+                     "reporter_user_id": USER_A, "reported_user_id": USER_B}]
         return []
 
     monkeypatch.setattr(moderation_service, "_request", fake_request)
@@ -63,6 +63,7 @@ def test_report_review_is_scoped_to_exact_report_and_records_verified_moderator(
     assert body["status"] == "resolved"
     assert calls[1][1] == "admin_audit_log"
     assert calls[1][3]["actor_user_id"] == ADMIN_ID
+    assert calls[1][3]["target_user_id"] == USER_B
 
 
 def test_suspension_creation_uses_moderator_identity_and_target_only(monkeypatch):
@@ -87,6 +88,7 @@ def test_suspension_creation_uses_moderator_identity_and_target_only(monkeypatch
     assert "created_by" not in calls[0][2].get("select", "")
     assert calls[1][1] == "admin_audit_log"
     assert calls[1][3]["actor_user_id"] == ADMIN_ID
+    assert calls[1][3]["target_user_id"] == USER_B
 
 
 def test_suspension_revocation_only_targets_active_exact_record(monkeypatch):
@@ -107,6 +109,7 @@ def test_suspension_revocation_only_targets_active_exact_record(monkeypatch):
     assert params["revoked_at"] == "is.null"
     assert calls[0][3]["revoked_by"] == ADMIN_ID
     assert calls[1][1] == "admin_audit_log"
+    assert calls[1][3]["target_user_id"] == USER_B
 
 
 def test_suspension_check_rejects_active_platform_or_feature_restriction(monkeypatch):
