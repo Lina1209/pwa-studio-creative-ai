@@ -71,7 +71,7 @@ This source review does not inspect Render environment values, reveal secrets, o
 | Medium | If localStorage rejects writing the deletion tombstone (quota, browser policy, storage failure), the current delete handler can still remove the local project and continue without a durable cloud-delete request | Make tombstone persistence a hard precondition for deleting a cloud-backed local project, or retain a visible recoverable pending-delete state; add a regression test |
 | Medium | Tombstones are browser-local until cloud deletion succeeds | Add a durable server-side deletion queue only after migration reconciliation; meanwhile clearly retain pending status and retry |
 | Medium | Client timestamps are used for merge/conflict hints and cloud `updated_at` | Do not promise conflict-free multi-device editing; consider server-controlled revision/version checks before collaboration |
-| Medium | Project JSON is stored as a client-supplied JSONB payload without an observed application-level size/schema ceiling in the inspected cloud adapter | Define a bounded project schema/payload size and validate before upsert; avoid treating JSONB as a binary asset store |
+| Addressed in branch | Cloud project upserts now reject malformed row ownership/type/settings and cap each serialized project at 256 KiB and each sync batch at 2 MiB | Regression tests added for oversized and malformed payloads; limits are application-side safeguards, not a replacement for database constraints |
 | Low | Community profile initialization uses GET then POST and is vulnerable to a first-write race | Replace with a database upsert or handle unique conflict by re-reading the verified user's row |
 | Release gate | Existing mocked tests do not prove live RLS or real two-account denial | Execute the disposable two-account test plan, including direct UUID read/update/delete denial and delayed account-switch requests |
 
@@ -89,7 +89,7 @@ These are repository test definitions. This audit did not execute them and does 
 
 ## Next safe engineering tasks
 
-1. Add bounded project payload/schema validation before cloud upsert, with tests for oversized and malformed payloads.
+1. Run the new payload-limit regression tests in CI and review the user-facing error path for oversized drafts.
 2. Add an isolated PostgreSQL/Supabase-compatible CI environment and run migration plus transaction tests.
 3. Execute `docs/TWO_ACCOUNT_PROJECT_AND_STORAGE_ISOLATION_TEST_PLAN.md` with disposable accounts after the live migration and RLS metadata are reconciled.
 
@@ -100,3 +100,13 @@ These are repository test definitions. This audit did not execute them and does 
 - No project/profile/media records were read, created, updated, or deleted.
 - No SQL, migration, policy, grant, or Storage setting was changed.
 - No production deployment or PR merge occurred.
+
+## Branch follow-up — bounded cloud project payloads
+
+The Mini Cinema cloud sync adapter now validates each outgoing row before calling Supabase:
+- row must be an object scoped to the captured owner;
+- if present, `project_type` must be `movie` and `settings` must be a non-array object;
+- serialized row size is limited to 256 KiB per project and 2 MiB per sync batch;
+- serialization failures and limit violations stop the upsert and surface through the existing sync-error feedback path. The local draft remains available; no cloud write is attempted for the invalid batch.
+
+Regression test definitions cover an oversized settings payload and malformed settings. These tests have been added but are not yet confirmed passing; the latest commit's CI result must be checked before treating them as verified.
