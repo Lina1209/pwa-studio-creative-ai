@@ -51,7 +51,7 @@ This source review does not inspect Render environment values, reveal secrets, o
 - The public profile query requires both `visibility = public` and `show_in_directory = true`.
 - Public serialization is allowlisted and excludes email and private metadata.
 - The backend uses a service-role REST client, so the service layer must always constrain queries to the verified UUID. Current profile methods do so.
-- The first-profile initialization is a read-then-insert sequence. Two simultaneous first requests can race on the `user_id` primary key. The losing request may surface as a storage error instead of re-reading the row. This is an availability/reliability issue, not evidence of cross-account disclosure.
+- Profile initialization now uses a PostgREST insert-only upsert (`on_conflict=user_id`, `resolution=ignore-duplicates`) and re-reads the verified owner's row when another request wins the first-insert race. This avoids overwriting profile fields and makes concurrent first access idempotent.
 
 ### 5. Delete and restore
 
@@ -82,17 +82,16 @@ The repository contains focused tests for:
 - missing/invalid authentication and admin authorization;
 - profile owner scoping and public-field allowlisting;
 - routes using verified user IDs rather than body-supplied identities;
-- stale Mini Cinema contexts, owner-scoped project queries, account switching, guest isolation, tombstone races, and deletion failure behavior.
+- stale Mini Cinema contexts, owner-scoped project queries, account switching, guest isolation, tombstone races, and deletion failure behavior;
+- community profile initialization insert-only upsert and concurrent first-access race handling.
 
 These are repository test definitions. This audit did not execute them and does not claim they passed in this commit.
 
 ## Next safe engineering tasks
 
-1. Add a regression test proving that failure to persist a cloud deletion tombstone does not silently turn a cloud-backed delete into a local-only delete.
-2. Add bounded project payload/schema validation before cloud upsert, with tests for oversized and malformed payloads.
-3. Make community profile initialization idempotent under concurrent first access.
-4. Add an isolated PostgreSQL/Supabase-compatible CI environment and run migration plus transaction tests.
-5. Execute `docs/TWO_ACCOUNT_PROJECT_AND_STORAGE_ISOLATION_TEST_PLAN.md` with disposable accounts after the live migration and RLS metadata are reconciled.
+1. Add bounded project payload/schema validation before cloud upsert, with tests for oversized and malformed payloads.
+2. Add an isolated PostgreSQL/Supabase-compatible CI environment and run migration plus transaction tests.
+3. Execute `docs/TWO_ACCOUNT_PROJECT_AND_STORAGE_ISOLATION_TEST_PLAN.md` with disposable accounts after the live migration and RLS metadata are reconciled.
 
 ## Explicit non-actions
 
