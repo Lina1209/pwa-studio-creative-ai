@@ -140,3 +140,26 @@ Registered free users may later receive a defined free plan and allowance. Paid 
 ## 8. Current implementation boundary
 
 The repository has a source-only wallet/pricing foundation and best-effort `ai_usage` telemetry. The production pricing catalog is empty. There is no active subscription catalogue, payment provider, subscription webhook, approved plan allowance, or paid credit deduction. The design above is a blueprint, not a claim that these capabilities are already live.
+
+
+## 9. Separate daily and monthly allowance model (product requirement, not activated)
+
+The product should support two independently visible allowance windows where the selected plan defines both:
+
+- **Daily allowance:** a recurring grant that becomes available at a clearly disclosed reset time.
+- **Monthly allowance:** a separate grant tied to the subscription billing period or another explicitly defined calendar period.
+
+Do not model these as one unexplained number. The account usage view should show daily remaining, monthly remaining, purchased/promotional balance (if any), and the next refresh time for each applicable pool. The backend must calculate eligibility and balances; browser clocks and client-supplied plan data are not authoritative.
+
+Before implementation, the product owner must approve:
+- which operation types consume the daily pool, monthly pool, or another balance;
+- the deterministic consumption order when multiple pools can pay for one operation;
+- whether unused daily credits expire at the next daily reset;
+- whether unused monthly credits roll over, expire, or remain available after renewal/cancellation;
+- the exact reset time and time-zone policy;
+- how plan changes, failed payments, refunds, pauses and cancellation affect grants;
+- how duplicate payment webhooks and scheduled grant retries are made idempotent.
+
+The UI should warn before a limit is reached and explain which pool is exhausted. If the daily pool is empty but the monthly pool still has an eligible balance, the system should follow the published consumption rule rather than unexpectedly blocking or silently switching pools. Never promise a reset interval or carryover behavior until it is implemented and tested.
+
+This requirement extends the existing independent request-rate limits and credit wallet design. Rate limits remain abuse controls; daily/monthly allowances are product entitlements; credits are spendable units; provider-cost telemetry remains a separate cost ledger.
