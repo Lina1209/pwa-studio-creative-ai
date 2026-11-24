@@ -160,3 +160,18 @@ test("cloud load does not reintroduce a new tombstone created while cleanup is i
  assert.equal(h.local.A.some(project=>project.id===newId),false);
  assert.equal(h.calls.some(c=>c.type==="render"),true);
 });
+
+
+test("sync does not re-upload a new tombstone created while cloud deletion is in flight",async()=>{
+ const h=harness(),oldId="123e4567-e89b-42d3-a456-426614174000",newId="223e4567-e89b-42d3-a456-426614174000",gate=deferred();
+ h.local.A.push({id:newId,name:"Deleted during sync"});
+ h.setTombstones("A",[oldId]);h.setDeleteGate(gate);
+ h.ops.schedule(h.capture());h.flush();
+ await Promise.resolve();await Promise.resolve();
+ h.setTombstones("A",[oldId,newId]);
+ gate.resolve({error:null});
+ await new Promise(r=>setImmediate(r));
+ const upsert=h.calls.find(c=>c.type==="upsert");
+ assert.deepEqual(upsert.rows,[{id:"a1",owner_id:"A"}]);
+ assert.deepEqual(h.tombstones.A,[newId]);
+});
