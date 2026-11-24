@@ -158,3 +158,20 @@ A new unit-test module covers the payload contract, NULL cost semantics, omissio
 3. It has no currency/status/price-reference columns. Do not reinterpret NULL cost as zero, and do not aggregate LiteLLM-calculated cost as invoice-confirmed spend.
 4. The live table definition, RLS policies, grants, row counts, retention, and migration ledger have not been queried. The migration file is source evidence only.
 5. No new telemetry migration is proposed until the live schema and migration history are reconciled. No SQL was applied.
+
+
+## Reconciliation with earlier documented live checks (2026-11-21)
+
+A related repository document, `docs/IMPLEMENTATION_ROADMAP.md`, records earlier hands-on verification that `0004_assistant_chat_history.sql` and specifically `0005_cloud_projects_and_storage.sql` were manually applied to the connected Supabase project. It also records that `public.projects`, the private `studio-media` bucket, a test project row, and persistence after browser refresh were checked at that time.
+
+This is important historical evidence and supersedes any broad reading of the phrase “no live schema ... were queried” above: live checks did occur for those named objects on 2026-11-21. The present audit did not repeat those checks and does not establish the current state as of this branch review. It also does not establish that the other file named `0005_moderation_admin.sql` was applied, how the duplicate version was recorded in any migration ledger, or what happened to the `studio-exports` policies after the cloud-project migration replaced shared policy names.
+
+Accordingly:
+
+- Treat `0004_assistant_chat_history.sql` and `0005_cloud_projects_and_storage.sql` as historically reported applied and partially verified, not as migrations to replay.
+- Treat the live state of `0002_storage_and_moderation.sql`, `0005_moderation_admin.sql`, the `studio-exports` bucket/policies, and all later migrations as unconfirmed until inspected.
+- Preserve the historical migration files and names. Do not rename or replay either `0005` file to “fix” the collision.
+- Before any future migration, perform a read-only live inventory of the Supabase migration ledger (if available), tables, constraints, functions, grants, RLS policies, and both Storage buckets; then compare it with the dated evidence in the roadmap.
+- The earlier verification was limited to the objects and behaviors explicitly listed above. It was not a two-account isolation, cross-device, full Storage-policy, or complete migration-history audit.
+
+No live Supabase query or mutation was performed as part of this documentation reconciliation.
