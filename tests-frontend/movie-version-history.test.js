@@ -122,7 +122,7 @@ test("copy and restore refuse projects with a pending cloud deletion",()=>{
   const fs=require("node:fs");
   const app=fs.readFileSync(require.resolve("../app.js"),"utf8");
   const copyStart=app.indexOf('const copy=makeAction("⧉ Создать копию"');
-  const copyEnd=app.indexOf('const version=makeAction("↶ История версий"',copyStart);
+  const copyEnd=app.indexOf('const version=makeAction("↶ История версий (',copyStart);
   assert.ok(copyStart>=0&&copyEnd>copyStart);
   const copyHandler=app.slice(copyStart,copyEnd);
   const copyQueueCheck=copyHandler.indexOf("readMovieTombstones()");
