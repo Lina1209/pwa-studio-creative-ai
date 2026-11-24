@@ -139,3 +139,18 @@ The branch was inspected before deciding whether a database job can be added saf
 - The root does not expose a `package.json` at this branch path; frontend tests are separate Node scripts under `tests-frontend/` and do not supply a PostgreSQL runtime.
 
 **Decision:** do not add a workflow that blindly replays every migration. The duplicate `0005` versions, Supabase Auth/Storage dependencies, and unresolved live migration history mean the disposable bootstrap must first be deliberately assembled and validated. The RPC matrix remains a specification; no database service was provisioned and no SQL was executed during this inventory.
+
+
+## First executable PostgreSQL gate — 2026-11-25
+
+A narrow disposable integration harness is now present for migrations 0011 and 0012 only:
+
+- `backend/tests/integration/test_rate_limit_rpc_postgres.py` applies the exact two rate-limit migration files to a fresh PostgreSQL fixture with minimal Supabase Auth/role scaffolding.
+- `.github/workflows/disposable-postgres-rpc-tests.yml` provisions an ephemeral PostgreSQL 16.4 service for the test job. The test code refuses non-local database hosts and tears down its fixture schema after the run.
+- It checks exact limit behavior, per-endpoint AI counters, concurrent sessions at the limit, fixed-window reset, invalid message-limit input, and role/function/table privilege boundaries.
+- The workflow passed on branch HEAD `7f6dcaf7aae48e71cfa4ec45e7efe4c0bdf96e87`: [Disposable PostgreSQL RPC tests run #3](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45472616619).
+- The same HEAD also passed backend tests and frontend account-context tests: [Backend run #438](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45472616122), [Frontend run #437](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45472619640).
+
+**Scope limitation:** this is not a full Supabase emulator and does not test Auth internals, Storage, wallet migration 0013, analytics migration 0014, or production grants/schema. The wallet and analytics RPCs remain untested against PostgreSQL. The minimal `auth.users` table is only a disposable FK target. Do not interpret this result as approval to apply any migration to production.
+
+The initial harness commit exposed two CI integration issues: the backend unit workflow did not install the optional psycopg driver, and a pre-existing frontend source-boundary assertion did not account for the version-count text in the button label. Both were corrected; the latest exact branch HEAD passed all three workflows.
