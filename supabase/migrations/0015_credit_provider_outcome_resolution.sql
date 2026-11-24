@@ -126,6 +126,7 @@ declare
   v_result jsonb;
 begin
   if p_user_id is null or p_reservation_id is null
+     or p_provider_outcome is null
      or p_provider_outcome not in ('succeeded', 'failed')
      or p_provider_resolution_reference is null
      or length(p_provider_resolution_reference) not between 1 and 200
