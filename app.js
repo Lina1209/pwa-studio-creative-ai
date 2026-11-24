@@ -1476,7 +1476,15 @@ const movieHistoryStyle = document.createElement("style");
           const restore=makeAction("Восстановить эту версию","primary-button",()=>{
             if(!window.confirm("Восстановить версию от "+movieDate(entry.savedAt)+"? Текущая версия будет сохранена в истории перед заменой."))return;
             const latest=movieRead(); const live=latest.find(item=>item.id===project.id); if(!live)return;
-            const restored=versions[selectedIndex].data;
+            const selectedVersion=versions[selectedIndex];
+            const latestVersions=Array.isArray(live.versions)?live.versions:[];
+            const stillAvailable=latestVersions.some(entry=>entry.savedAt===selectedVersion.savedAt && JSON.stringify(entry.data)===JSON.stringify(selectedVersion.data));
+            if(!stillAvailable){
+              overlay.remove();
+              $("#movieFeedback").textContent="Выбранная версия больше недоступна в актуальной истории (возможно, история обновилась или старые записи были ограничены). Откройте историю заново и выберите существующую версию.";
+              return;
+            }
+            const restored=selectedVersion.data;
             addMovieVersion(live); const keepVersions=live.versions;
             latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
             if(movieWrite(latest)){overlay.remove();renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
