@@ -11,6 +11,7 @@
     : null;
   let authSession = null;
   let authContextVersion = 0;
+  let resetMovieWorkspaceForAuthChange = null;
   let activeAssistantConversationId = null;
   let assistantHistoryBusy = false;
   let assistantUserId = null;
@@ -51,6 +52,7 @@
       activeMessagePartnerId = null;
       assistantUserId = nextUserId;
       authContextVersion += 1;
+      resetMovieWorkspaceForAuthChange?.();
       activeAssistantConversationId = null;
       const history = $("#assistantHistoryList");
       const messages = $("#assistantMessages");
@@ -1064,6 +1066,16 @@ const movieHistoryStyle = document.createElement("style");
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
   let activeMovieId = null;
   let editingMovieId = null;
+  resetMovieWorkspaceForAuthChange = () => {
+    activeMovieId = null;
+    editingMovieId = null;
+    const form = $("#movieForm");
+    if (form) form.reset();
+    const panel = $("#movieWorkflowPanel");
+    if (panel) { panel.hidden = true; panel.replaceChildren(); }
+    const feedback = $("#movieFeedback");
+    if (feedback) feedback.textContent = "Контекст аккаунта изменился. Откройте нужный проект заново; черновик другого пространства не переносился.";
+  };
   const movieStages = [
     {key:"story",title:"Сценарий и раскадровка",fields:[["story","Сценарий","Напишите историю, действия и диалоги по сценам."],["storyboard","Раскадровка","Опишите кадры, планы камеры, движение и переходы."]]},
     {key:"characters",title:"Персонажи и аватары",fields:[["characters","Персонажи","Опишите героев: внешность, одежду, характер и особенности образа."]]},
