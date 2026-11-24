@@ -40,3 +40,15 @@ The current backend constructs these values from the verified sender identity an
 - No migration was run or applied.
 - No production data, message, notification, block, or account was modified.
 - No deployment, merge, or public messaging rollout was performed.
+
+## Additional concurrency boundary — block versus send
+
+The current send flow performs a block lookup, consumes the atomic per-user rate-limit counter, creates/loads the thread, and inserts the message as separate REST requests. The block lookup correctly checks both directions, but it is not transactionally coupled to the later insert.
+
+This leaves a narrow time-of-check/time-of-use race: a block can be created after the send request's block lookup succeeds but before the message insert completes. The message may then be inserted even though the block operation has already succeeded. This is a concurrency consistency gap, not evidence of an existing cross-account read leak.
+
+**Recommended correction before public messaging:** move the block-pair check and message insert into one narrowly scoped database RPC/transaction (or introduce an equivalent serialization/locking rule used by both block and send operations). The RPC must derive/validate the sender from trusted backend input, verify thread membership, enforce both-direction block state, and insert only if the pair remains unblocked. Keep the current atomic rate limiter as a separate abuse-control gate unless it is deliberately incorporated into the same transaction.
+
+**Required integration tests:** race a send against a block in both orderings; if the block transaction commits first, the send must fail; if the send transaction commits first, the block may succeed afterward but must not retroactively alter the already-sent message. Also verify simultaneous duplicate sends and normal A-to-B/B-to-A traffic.
+
+No RPC, trigger, migration, or live database change was created or applied as part of this audit.
