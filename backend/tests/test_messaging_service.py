@@ -182,3 +182,25 @@ def test_list_blocked_users_is_scoped_to_authenticated_blocker(monkeypatch):
     assert (method, table) == ("GET", "user_blocks")
     assert params["blocker_id"] == f"eq.{USER_ID}"
     assert params["select"] == "blocked_id,created_at"
+
+
+def test_delete_message_reports_race_when_guarded_update_changes_no_rows(monkeypatch):
+    calls = []
+
+    def fake_request(settings, method, table, *, params=None, payload=None, prefer="return=representation"):
+        calls.append((method, table, params, payload))
+        if method == "GET":
+            return [{"id": MESSAGE_ID, "sender_id": USER_ID, "recipient_id": OTHER_ID}]
+        return []
+
+    monkeypatch.setattr(messaging_service, "_request", fake_request)
+
+    try:
+        messaging_service.delete_message_for_self(Settings(), USER_ID, MESSAGE_ID)
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("Expected a concurrent disappearance to be reported.")
+
+    assert len(calls) == 2
+    assert calls[1][0] == "PATCH"
