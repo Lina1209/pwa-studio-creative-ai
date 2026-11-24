@@ -10,7 +10,7 @@ function harness(){
  let upsertGate=null,selectGate=null,deleteGate=null;
  const supabase={from(){
   return {
-   delete(){const q={in(){return q;},eq(){return q;},then(resolve,reject){return (deleteGate?deleteGate.promise:Promise.resolve()).then(()=>({error:null})).then(resolve,reject);}};return q;},
+   delete(){const filters=[],q={in(column,values){filters.push([column,values]);return q;},eq(key,value){filters.push([key,value]);return q;},then(resolve,reject){calls.push({type:"delete",filters});return (deleteGate?deleteGate.promise:Promise.resolve()).then(result=>result||({error:null})).then(resolve,reject);}};return q;},
    upsert(rows){calls.push({type:"upsert",rows});return (upsertGate?upsertGate.promise:Promise.resolve()).then(()=>({error:null}));},
    select(){const filters=[];const q={eq(key,value){filters.push([key,value]);return q;},order(){calls.push({type:"select",filters});return selectGate?selectGate.promise:Promise.resolve({data:[],error:null});}};return q;}
   };
@@ -87,4 +87,24 @@ test("A delete finishing after account switch cannot continue into B local state
  assert.equal(h.calls.some(c=>c.type==="upsert"),false);
  assert.equal(h.calls.some(c=>c.type==="writeLocal"&&c.owner==="B"),false);
  assert.equal(h.local.B[0].id,"b1");
+});
+
+
+test("tombstone deletion is scoped to captured owner and movie type",async()=>{
+ const h=harness(),id="123e4567-e89b-42d3-a456-426614174000";
+ h.setTombstones("A",[id]);
+ const a=h.capture();h.ops.schedule(a);h.flush();await new Promise(r=>setImmediate(r));
+ const deletion=h.calls.find(c=>c.type==="delete");
+ assert.deepEqual(deletion.filters,[["id",[id]],["owner_id","A"],["project_type","movie"]]);
+});
+
+test("failed cloud deletion preserves tombstone and never reports success",async()=>{
+ const h=harness(),id="123e4567-e89b-42d3-a456-426614174000",gate=deferred();
+ h.setDeleteGate(gate);h.setTombstones("A",[id]);
+ const a=h.capture();h.ops.schedule(a);h.flush();await Promise.resolve();
+ gate.resolve({error:new Error("delete denied")});
+ await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.some(c=>c.type==="upsert"),false);
+ assert.equal(h.calls.some(c=>c.type==="feedback"),false);
+ assert.equal(h.calls.some(c=>c.type==="syncError"),true);
 });
