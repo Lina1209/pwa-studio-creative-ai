@@ -430,6 +430,7 @@ test("sync does not overwrite a newer cloud project with a stale local draft",as
  assert.equal(h.calls.some(c=>c.type==="upsert"),false);
  assert.equal(h.local.A[0].name,"Cloud newer");
  assert.equal(h.local.A[0].versions.length,1);
+ assert.equal(h.calls.some(c=>c.type==="render"),true);
 });
 test("account switch during cloud conflict preflight aborts stale sync before local write or upsert",async()=>{
  const h=harness(),gate=deferred();
