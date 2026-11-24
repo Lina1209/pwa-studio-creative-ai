@@ -48,6 +48,27 @@ def disposable_schema(dsn: str):
                 id uuid PRIMARY KEY
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS public.profiles (
+                id uuid PRIMARY KEY,
+                created_at timestamptz NOT NULL DEFAULT now()
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS public.projects (
+                id uuid PRIMARY KEY,
+                owner_id uuid NOT NULL,
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                project_type text NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS public.ai_usage (
+                request_id uuid PRIMARY KEY,
+                user_id uuid NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now()
+            )
+        """)
         for role in ("anon", "authenticated", "service_role"):
             conn.execute(
                 sql.SQL("DO $$ BEGIN CREATE ROLE {} NOLOGIN; "
@@ -63,10 +84,15 @@ def disposable_schema(dsn: str):
             "0012_atomic_ai_rate_limit.sql",
             "0013_unified_credit_wallet.sql",
             "0015_credit_provider_outcome_resolution.sql",
+            "0014_admin_analytics_summary.sql",
         ):
             conn.execute((MIGRATIONS / filename).read_text(encoding="utf-8"))
     yield
     with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute("DROP FUNCTION IF EXISTS public.admin_analytics_summary(timestamptz, timestamptz)")
+        conn.execute("DROP TABLE IF EXISTS public.ai_usage")
+        conn.execute("DROP TABLE IF EXISTS public.projects")
+        conn.execute("DROP TABLE IF EXISTS public.profiles")
         conn.execute("DROP FUNCTION IF EXISTS public.resolve_credit_reservation_provider_outcome(uuid, uuid, text, text, bigint)")
         conn.execute("DROP FUNCTION IF EXISTS public.mark_credit_reservation_reconciliation_required(uuid, uuid)")
         conn.execute("DROP FUNCTION IF EXISTS public.release_user_credit_reservation(uuid, uuid)")
@@ -460,4 +486,56 @@ def test_wallet_rpc_execution_is_service_role_only_and_ledger_is_read_only(dsn):
             ).fetchone()[0] is False
         assert conn.execute(
             "SELECT has_table_privilege('service_role', 'public.credit_ledger', 'SELECT')"
+        ).fetchone()[0] is True
+
+
+def test_admin_analytics_returns_only_expected_aggregate_counts(dsn):
+    registered_user, project_user, ai_user = _new_user(dsn), _new_user(dsn), _new_user(dsn)
+    with psycopg.connect(dsn) as conn:
+        conn.execute(
+            "INSERT INTO public.profiles(id, created_at) VALUES (%s, now() - interval '1 day'), (%s, now() - interval '40 days')",
+            (registered_user, project_user),
+        )
+        conn.execute(
+            "INSERT INTO public.projects(id, owner_id, updated_at, project_type) VALUES (%s, %s, now() - interval '1 day', 'movie'), (%s, %s, now() - interval '1 day', 'movie'), (%s, %s, now() - interval '1 day', 'other')",
+            (uuid4(), project_user, uuid4(), project_user, uuid4(), ai_user),
+        )
+        conn.execute(
+            "INSERT INTO public.ai_usage(request_id, user_id, created_at) VALUES (%s, %s, now() - interval '1 day'), (%s, %s, now() - interval '1 day')",
+            (uuid4(), ai_user, uuid4(), ai_user),
+        )
+    with psycopg.connect(dsn) as conn:
+        conn.execute("SET ROLE service_role")
+        result = conn.execute(
+            "SELECT public.admin_analytics_summary(now() - interval '7 days', now())"
+        ).fetchone()[0]
+    assert result == {
+        "registered_accounts": 1,
+        "accounts_with_project_updates": 1,
+        "accounts_with_successful_ai_usage": 1,
+    }
+
+
+def test_admin_analytics_rejects_invalid_or_overlong_ranges(dsn):
+    with psycopg.connect(dsn) as conn:
+        conn.execute("SET ROLE service_role")
+        for start, end in (
+            (None, None),
+            ("2026-01-02T00:00:00Z", "2026-01-01T00:00:00Z"),
+            ("2026-01-01T00:00:00Z", "2026-03-01T00:00:00Z"),
+            ("2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z"),
+        ):
+            with pytest.raises(psycopg.Error):
+                conn.execute("SELECT public.admin_analytics_summary(%s, %s)", (start, end))
+
+
+def test_admin_analytics_rpc_is_service_role_only(dsn):
+    signature = "public.admin_analytics_summary(timestamp with time zone,timestamp with time zone)"
+    with psycopg.connect(dsn) as conn:
+        for role in ("anon", "authenticated"):
+            assert conn.execute(
+                "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, signature)
+            ).fetchone()[0] is False
+        assert conn.execute(
+            "SELECT has_function_privilege('service_role', %s, 'EXECUTE')", (signature,)
         ).fetchone()[0] is True
