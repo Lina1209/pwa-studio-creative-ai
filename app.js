@@ -1215,7 +1215,7 @@ const movieHistoryStyle = document.createElement("style");
       return false;
     }
   };
-  const movieId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "movie-" + Date.now() + "-" + Math.random().toString(36).slice(2,9);
+  const movieId = () => window.PWAMovieId.create(window.crypto);
   const movieSnapshot = project => MovieVersionHistory.snapshot(project);
   const addMovieVersion = project => MovieVersionHistory.addVersion(project);
   const movieDate = value => {
