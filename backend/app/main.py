@@ -1,7 +1,7 @@
-from uuid import uuid4
+from uuid import uuid4, UUID
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -11,7 +11,7 @@ from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
 from app.services.ai_rate_limit_service import consume_ai_request
-from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
+from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended, list_admin_audit_log
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
@@ -76,6 +76,29 @@ def admin_supabase_diagnostics(user: StudioUser = Depends(require_admin)):
     """Read-only storage connectivity check; never returns secrets or user data."""
     return inspect_supabase(settings)
 
+
+
+
+
+@app.get(f"{settings.api_prefix}/admin/audit-log")
+def admin_audit_log(
+    page: int = Query(default=1, ge=1, le=1000000),
+    page_size: int = Query(default=50, ge=1, le=100),
+    actor_user_id: UUID | None = None,
+    target_user_id: UUID | None = None,
+    action: str | None = Query(default=None, min_length=3, max_length=100, pattern=r"^[a-z][a-z0-9_.-]*$"),
+    entity_type: str | None = Query(default=None, min_length=2, max_length=60, pattern=r"^[a-z][a-z0-9_-]*$"),
+    user: StudioUser = Depends(require_admin),
+):
+    return list_admin_audit_log(
+        settings,
+        page=page,
+        page_size=page_size,
+        actor_user_id=str(actor_user_id) if actor_user_id else None,
+        target_user_id=str(target_user_id) if target_user_id else None,
+        action=action,
+        entity_type=entity_type,
+    )
 
 
 @app.post(f"{settings.api_prefix}/reports", response_model=ReportResponse, status_code=201)
