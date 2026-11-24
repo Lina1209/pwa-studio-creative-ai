@@ -146,3 +146,13 @@ The reader now uses the same normalization path with an explicit strict mode: th
 ## Branch follow-up — deletion-queue reads fail closed
 
 The cloud adapter previously converted any tombstone (owner-scoped deleted-project key) read/JSON error into an empty deletion list. That could allow a pending local deletion to be omitted from the cloud delete step and potentially re-uploaded or reintroduced. The cloud adapter now throws on inaccessible or malformed tombstone storage instead of treating it as empty. UI-only tombstone reading remains separate. Added regression scenarios require sync to stop before upsert/local rewrite and cloud load to stop before local overwrite/render when the deletion queue cannot be read. These are authored tests; execution and CI status remain unverified.
+
+
+## Branch follow-up — local project write failures fail closed
+
+The cloud-operation adapter already relies on synchronous storage writes throwing through to its operation-level error handlers:
+- during sync, a failed owner-keyed local write stops the operation before the cloud upsert and before success feedback;
+- during cloud load, a failed local write is caught before rendering, scheduling a follow-up sync, or showing success feedback. The pre-existing local project list is not replaced by a partial in-memory merge.
+- the browser adapter does not swallow localStorage.setItem exceptions for project lists, so quota/security failures remain visible to the cloud-operation error path.
+
+A regression test now simulates a quota failure during cloud load and asserts that render, follow-up scheduling, and success feedback do not occur, while the load-error handler receives the storage error. This test is authored but has not yet been executed; CI/browser fault-injection status remains unverified.
