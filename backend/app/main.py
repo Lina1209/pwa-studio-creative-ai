@@ -9,7 +9,7 @@ from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptRespons
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
-from app.services.usage_service import record_ai_usage
+from app.services.usage_service import record_ai_usage, list_admin_ai_usage
 from app.services.ai_rate_limit_service import consume_ai_request
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended, list_admin_audit_log
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
@@ -78,6 +78,25 @@ def admin_supabase_diagnostics(user: StudioUser = Depends(require_admin)):
 
 
 
+
+
+@app.get(f"{settings.api_prefix}/admin/ai-usage")
+def admin_ai_usage(
+    page: int = Query(default=1, ge=1, le=1000000),
+    page_size: int = Query(default=50, ge=1, le=100),
+    user_id: UUID | None = None,
+    provider: str | None = Query(default=None, min_length=2, max_length=60, pattern=r"^[a-zA-Z0-9_.-]+$"),
+    endpoint: str | None = Query(default=None, pattern=r"^(chat|prompts)$"),
+    user: StudioUser = Depends(require_admin),
+):
+    return list_admin_ai_usage(
+        settings,
+        page=page,
+        page_size=page_size,
+        user_id=str(user_id) if user_id else None,
+        provider=provider,
+        endpoint=endpoint,
+    )
 
 
 @app.get(f"{settings.api_prefix}/admin/audit-log")
