@@ -7,12 +7,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-_ALLOWED_MIME_PREFIXES = {
-    "image": ("image/",),
-    "video": ("video/",),
-    "audio": ("audio/",),
-    "voice": ("audio/",),
-    "document": ("text/", "application/pdf", "application/rtf"),
+_ALLOWED_MIME_TYPES = {
+    "image": {"image/jpeg", "image/png", "image/webp", "image/gif"},
+    "video": {"video/mp4", "video/webm", "video/quicktime"},
+    "audio": {"audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg", "audio/webm", "audio/flac"},
+    "voice": {"audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg", "audio/webm", "audio/flac"},
+    "document": {"text/plain", "text/markdown", "application/pdf", "application/rtf"},
 }
 
 _ALLOWED_ROLES = {
@@ -63,11 +63,8 @@ class AssetUploadInitRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_kind_mime_pair(self) -> "AssetUploadInitRequest":
-        allowed = _ALLOWED_MIME_PREFIXES[self.kind]
-        if not any(
-            self.mime_type.startswith(prefix) if prefix.endswith("/") else self.mime_type == prefix
-            for prefix in allowed
-        ):
+        allowed = _ALLOWED_MIME_TYPES[self.kind]
+        if self.mime_type not in allowed:
             raise ValueError("mime_type does not match the selected media kind")
         return self
 
