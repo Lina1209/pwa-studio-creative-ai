@@ -87,11 +87,13 @@ def disposable_schema(dsn: str):
             "0015_credit_provider_outcome_resolution.sql",
             "0016_credit_grant_source_allowlist.sql",
             "0017_preserve_credit_history_on_user_delete.sql",
+            "0018_durable_ai_usage_outbox.sql",
         ):
             conn.execute((MIGRATIONS / filename).read_text(encoding="utf-8"))
     yield
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute("DROP FUNCTION IF EXISTS public.admin_analytics_summary(timestamptz, timestamptz)")
+        conn.execute("DROP TABLE IF EXISTS public.ai_usage_outbox")
         conn.execute("DROP TABLE IF EXISTS public.ai_usage")
         conn.execute("DROP TABLE IF EXISTS public.projects")
         conn.execute("DROP TABLE IF EXISTS public.profiles")
@@ -581,3 +583,51 @@ def test_auth_user_deletion_preserves_wallet_reservation_and_ledger_history(dsn)
     assert reservation_count == 1
     assert ledger_count == 2
     assert reservation["status"] == "reserved"
+
+
+def test_ai_usage_outbox_accepts_only_metadata_and_tracks_request_state(dsn):
+    user_id = _new_user(dsn)
+    request_id = uuid4()
+    with psycopg.connect(dsn) as conn:
+        conn.execute(
+            """INSERT INTO public.ai_usage_outbox
+               (request_id, user_id, endpoint, provider, model, status)
+               VALUES (%s, %s, 'chat', 'deepseek', 'deepseek-flash', 'started')""",
+            (request_id, user_id),
+        )
+        conn.execute(
+            """UPDATE public.ai_usage_outbox
+               SET status = 'succeeded', input_tokens = 12, output_tokens = 8,
+                   total_tokens = 20, cost_usd = 0.00001,
+                   cost_source = 'litellm_response_cost', completed_at = now()
+               WHERE request_id = %s""",
+            (request_id,),
+        )
+        row = conn.execute(
+            """SELECT status, input_tokens, output_tokens, total_tokens,
+                      cost_usd, cost_source
+               FROM public.ai_usage_outbox WHERE request_id = %s""",
+            (request_id,),
+        ).fetchone()
+        assert row == ("succeeded", 12, 8, 20, 0.00001, "litellm_response_cost")
+        with pytest.raises(psycopg.Error):
+            conn.execute(
+                """UPDATE public.ai_usage_outbox
+                   SET status = 'succeeded', input_tokens = -1 WHERE request_id = %s""",
+                (request_id,),
+            )
+
+
+def test_ai_usage_outbox_is_not_accessible_to_client_roles(dsn):
+    with psycopg.connect(dsn) as conn:
+        for role in ("anon", "authenticated"):
+            for operation in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                assert conn.execute(
+                    "SELECT has_table_privilege(%s, 'public.ai_usage_outbox', %s)",
+                    (role, operation),
+                ).fetchone()[0] is False
+        for operation in ("SELECT", "INSERT", "UPDATE"):
+            assert conn.execute(
+                "SELECT has_table_privilege('service_role', 'public.ai_usage_outbox', %s)",
+                (operation,),
+            ).fetchone()[0] is True
