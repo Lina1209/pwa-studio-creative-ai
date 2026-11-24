@@ -36,10 +36,19 @@ def test_diagnostics_report_table_availability_without_reading_rows(monkeypatch)
     assert len(calls) == len(diagnostics_service.TABLE_CHECKS)
     assert all(method == "HEAD" for method, _, _ in calls)
     assert all(kwargs["params"]["limit"] == "0" for _, _, kwargs in calls)
+    assert "assistant_conversations" in result["tables"]
+    assert "credit_wallets" in result["tables"]
+    assert "legacy_projects" in result["tables"]
 
 
 def test_diagnostics_classify_missing_and_inaccessible_tables(monkeypatch):
-    statuses = iter([200, 200, 404, 403, "network_error", 200, 200, 200])
+    statuses = {
+        "user_profiles": 200,
+        "projects": 200,
+        "user_notifications": 404,
+        "conversation_threads": 403,
+        "direct_messages": "network_error",
+    }
 
     monkeypatch.setattr(
         diagnostics_service.httpx,
@@ -47,8 +56,9 @@ def test_diagnostics_classify_missing_and_inaccessible_tables(monkeypatch):
         lambda *args, **kwargs: Mock(status_code=200),
     )
 
-    def fake_request(*args, **kwargs):
-        status = next(statuses)
+    def fake_request(method, url, **kwargs):
+        table = url.rsplit("/", 1)[-1]
+        status = statuses.get(table, 200)
         if status == "network_error":
             raise httpx.ConnectError("simulated network failure")
         return Mock(status_code=status)
