@@ -31,7 +31,7 @@ function harness(){
   syncError:error=>calls.push({type:"syncError",error}),
   loadError:error=>calls.push({type:"loadError",error})
  });
- return {ops,timers,calls,local,setUser(id,v){userId=id;version=v;},capture(){return capture(userId,version);},
+ return {ops,timers,calls,local,tombstones,setUser(id,v){userId=id;version=v;},capture(){return capture(userId,version);},
   setUpsertGate(g){upsertGate=g;},setSelectGate(g){selectGate=g;},setDeleteGate(g){deleteGate=g;},setTombstones(owner,ids){tombstones[owner]=[...ids];},
   flush(){const batch=[...timers.values()];timers.clear();batch.forEach(fn=>fn());}};
 }
@@ -120,7 +120,7 @@ test("failed tombstone cleanup during cloud load keeps tombstone and local proje
  assert.deepEqual(h.calls.filter(c=>c.type==="delete")[0].filters,[["id",[id]],["owner_id","A"],["project_type","movie"]]);
  assert.equal(h.calls.some(c=>c.type==="writeLocal"),false);
  assert.deepEqual(h.local.A,[{id:"a1",name:"A film"}]);
- assert.equal(h.tombstones?.A,undefined);
+ assert.deepEqual(h.tombstones.A,[id]);
  assert.equal(h.calls.some(c=>c.type==="loadError"),true);
 });
 
@@ -130,4 +130,5 @@ test("successful tombstone cleanup during cloud load clears only captured owner'
  await h.ops.load(h.capture());
  assert.equal(h.calls.some(c=>c.type==="delete"),true);
  assert.equal(h.calls.some(c=>c.type==="render"),true);
+ assert.deepEqual(h.tombstones.A,[]);
 });
