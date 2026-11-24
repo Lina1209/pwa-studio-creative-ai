@@ -166,3 +166,12 @@ These are naming proposals only. Do not expose endpoints until schemas, authoriz
 - No upload or provider call is triggered.
 - No credit deduction, subscription, billing, or paid storage quota is activated.
 - Do not populate the asset shelf with mock assets or claim cloud synchronization until end-to-end behavior is verified.
+
+
+## 2.1 Historical cloud-project verification and current diagnostic coverage
+
+The working roadmap records a manual live verification on 2026-11-21: `0005_cloud_projects_and_storage.sql` was applied to the connected Supabase project; `public.projects`, its owner policies, the private `studio-media` bucket, and a test project row were checked, and the test project remained visible after browser refresh. This is historical evidence for the project table and basic same-session persistence only. It does not establish current cross-device behavior, two-account isolation, complete migration history, or the current state of the export bucket and its policies.
+
+The admin Supabase diagnostics endpoint performs read-only REST HEAD checks with a zero-row limit. The source review found that it checked profile, notification, messaging, and moderation tables but did not include the already-used `public.projects` table. The diagnostics table map now includes `projects` so an administrator can see whether the cloud-project REST resource is exposed without reading project rows. This is a connectivity/availability signal only: it does not inspect RLS correctness, bucket configuration, object policies, or project contents.
+
+The asset rollout must therefore preserve the verified `projects` foundation and avoid re-running its historical migration. The remaining read-only live audit should focus on the exact project-table definition/policies, the private `studio-media` bucket, the uncertain `studio-exports` bucket/policies, and the migration ledger before any asset schema or upload API is introduced.
