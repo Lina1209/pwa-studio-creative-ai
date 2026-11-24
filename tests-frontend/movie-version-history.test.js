@@ -60,3 +60,23 @@ test("restore rejects malformed, foreign, or structurally unsafe snapshots", () 
   assert.equal(live.name, "Тайна моря");
   assert.equal(live.versions.length, 0);
 });
+
+
+test("stage completion advances its stale-edit baseline only after local persistence succeeds", () => {
+  const fs = require("node:fs");
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const expected = [
+    "current.workflowStep=Math.min(stageIndex+1,4); current.updatedAt=new Date().toISOString();",
+    "if(!movieWrite(latest))return;",
+    "baseUpdatedAt=current.updatedAt;"
+  ];
+  const start = app.indexOf(expected[0]);
+  assert.notEqual(start, -1, "stage completion block should exist");
+  let previous = start;
+  for (const fragment of expected.slice(1)) {
+    const next = app.indexOf(fragment, previous + 1);
+    assert.notEqual(next, -1, "expected persistence-before-baseline ordering");
+    assert.ok(next > previous);
+    previous = next;
+  }
+});
