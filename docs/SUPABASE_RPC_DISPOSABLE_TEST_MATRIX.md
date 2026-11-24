@@ -199,3 +199,8 @@ The fixture is still plain disposable PostgreSQL with minimal Supabase role/auth
 
 
 Migration 0016 adds a SQL-side allowlist for credit grant provenance sources, matching the backend adapter's fixed values. A disposable test confirms arbitrary source labels are rejected while an allowed promo grant succeeds. The latest wallet/rate-limit/analytics PostgreSQL gate at commit b3a6131d6fbac96736f8d287288a79b06ff1cc87 reports **20 passed**. This remains source-only; no live migration was applied.
+
+
+## Migration 0017 — financial history retention
+
+The disposable fixture now applies `0017_preserve_credit_history_on_user_delete.sql` after migration 0016. A new test deletes an Auth user after a credit grant and reservation, then verifies the wallet balance, reservation, and ledger entries remain. This validates the SQL behavior only in the isolated disposable PostgreSQL service; it is not evidence of live Supabase deployment or approval of a legal retention period.
