@@ -25,7 +25,7 @@ function harness(){
   readProjects:owner=>[...local[owner]],
   writeProjects:(owner,projects)=>{local[owner]=projects;calls.push({type:"writeLocal",owner});},
   toCloudRow:(p,owner)=>({id:p.id,owner_id:owner}),
-  fromCloudRow:r=>({id:r.id,name:r.title,updatedAt:r.updated_at}),
+  fromCloudRow:r=>({...r.settings,id:r.id,name:r.title,updatedAt:r.updated_at}),
   render:()=>calls.push({type:"render",userId}),
   feedback:message=>calls.push({type:"feedback",message,userId}),
   syncError:error=>calls.push({type:"syncError",error}),
