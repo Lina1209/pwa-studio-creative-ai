@@ -1159,6 +1159,7 @@ const movieHistoryStyle = document.createElement("style");
     const context=movieCloudContext?.capture(authSession?.user?.id,authContextVersion);
     if(context) await movieCloudOperations?.load(context);
   };
+  const movieStorageGuard = window.PWAMovieStorageGuard.create();
   const movieRead = (options = {}) => {
     const strict = options.strict === true;
     try {
@@ -1187,8 +1188,10 @@ const movieHistoryStyle = document.createElement("style");
         if (!authSession?.user && active.length !== projects.length) sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
         localStorage.setItem(movieStorageKey(), JSON.stringify(active));
       }
+      movieStorageGuard.readSucceeded();
       return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
     } catch (error) {
+      movieStorageGuard.readFailed();
       console.error("Movie project storage read failed:", error);
       const feedback = $("#movieFeedback");
       if (feedback) feedback.textContent = "Не удалось прочитать локальные фильмы. Чтобы не показать пустой список и не перезаписать облачные проекты, синхронизация остановлена до восстановления доступа к памяти браузера.";
@@ -1199,6 +1202,11 @@ const movieHistoryStyle = document.createElement("style");
   // Cloud reads use the same single read/normalization pass, but propagate failures.
   const readMovieProjectsForCloud = () => movieRead({ strict: true });
   const movieWrite = projects => {
+    if (!movieStorageGuard.canWrite()) {
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Сохранение остановлено: перед этим не удалось прочитать текущие фильмы. Повторите чтение после восстановления доступа к памяти, чтобы не затереть существующие проекты.";
+      return false;
+    }
     try {
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
       scheduleMovieCloudSync();
