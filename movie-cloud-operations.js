@@ -49,7 +49,7 @@ function createMovieCloudOperations(deps) {
     try {
       const { data, error } = await deps.supabase().from("projects")
         .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
-        .eq("project_type", "movie").order("updated_at", { ascending: false });
+        .eq("owner_id", context.ownerId).eq("project_type", "movie").order("updated_at", { ascending: false });
       if (error) throw error;
       if (!current(context)) return;
       const deletedIds = deps.readTombstones(context.ownerId);
