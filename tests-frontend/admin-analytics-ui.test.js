@@ -25,7 +25,7 @@ test("admin analytics panel exposes only the three documented aggregate metrics"
 test("analytics fetch remains behind the server-confirmed owner panel", () => {
   assert.match(app, /apiRequest\("\/api\/auth\/me"\)/);
   assert.match(app, /panel\.hidden = data\.role !== "admin"/);
-  assert.match(app, /if\\s*\\(!authSession\\?\\.user \\|\\| !panel \\|\\| panel\\.hidden \\|\\| !section\\) return/);
+  assert.match(app, /if\s*\(!authSession\?\.user \|\| !panel \|\| panel\.hidden \|\| !section\) return/);
   assert.match(app, /apiRequest\("\/api\/admin\/analytics\?"\s*\+\s*query\.toString\(\)\)/);
 });
 
