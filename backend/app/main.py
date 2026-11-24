@@ -10,7 +10,7 @@ from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptRespons
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
-from app.services.usage_service import (record_ai_usage, list_admin_ai_usage, begin_ai_usage_request, complete_ai_usage_request, mark_ai_usage_unknown)
+from app.services.usage_service import (record_ai_usage, list_admin_ai_usage, list_admin_ai_usage_reconciliation, begin_ai_usage_request, complete_ai_usage_request, mark_ai_usage_unknown)
 from app.services.admin_analytics_service import get_admin_analytics_summary
 from app.services.ai_rate_limit_service import consume_ai_request
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended, list_admin_audit_log
@@ -98,6 +98,21 @@ def admin_ai_usage(
         user_id=str(user_id) if user_id else None,
         provider=provider,
         endpoint=endpoint,
+    )
+
+
+@app.get(f"{settings.api_prefix}/admin/ai-usage/reconciliation")
+def admin_ai_usage_reconciliation(
+    page: int = Query(default=1, ge=1, le=1000000),
+    page_size: int = Query(default=50, ge=1, le=100),
+    status: str | None = Query(default=None, pattern=r"^(started|unknown)$"),
+    stale_after_minutes: int = Query(default=15, ge=1, le=1440),
+    user: StudioUser = Depends(require_admin),
+):
+    """Read-only view of unresolved AI provider requests; never retries or settles them."""
+    return list_admin_ai_usage_reconciliation(
+        settings, page=page, page_size=page_size,
+        status=status, stale_after_minutes=stale_after_minutes,
     )
 
 
