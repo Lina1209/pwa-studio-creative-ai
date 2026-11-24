@@ -1170,7 +1170,9 @@ const movieHistoryStyle = document.createElement("style");
     const done=Array.isArray(project.completedSteps)?project.completedSteps:[];
     if(stageIndex>0&&!done.includes(movieStages[stageIndex-1].key)){const feedback=$("#movieFeedback");if(feedback)feedback.textContent="Сначала завершите предыдущий этап.";return;}
     activeMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards();
-    const stage=movieStages[stageIndex]; panel.replaceChildren();
+    const stage=movieStages[stageIndex];
+    let baseUpdatedAt=project.updatedAt||project.createdAt||null;
+    panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent="Этап "+(stageIndex+1)+" из 4 · "+stage.title;
     const edition=movieEditionLabel(project);
@@ -1194,10 +1196,13 @@ const movieHistoryStyle = document.createElement("style");
       try{
         const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId);
         if(index<0){draftStatus.textContent="Не удалось найти этот фильм. Вернитесь к проекту и откройте этап снова.";return;}
-        const current=latest[index]; addMovieVersion(current);
+        const current=latest[index];
+        if((current.updatedAt||current.createdAt||null)!==baseUpdatedAt){draftStatus.textContent="Этот фильм изменился в другом окне или устройстве. Черновик не перезаписан — закройте этап и откройте его заново, чтобы загрузить актуальную версию.";return;}
+        addMovieVersion(current);
         stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
         if(stage.key==="story" && current.story) current.idea=current.story;
         current.updatedAt=new Date().toISOString();
+        baseUpdatedAt=current.updatedAt;
         if(!movieWrite(latest)){draftStatus.textContent="Сохранение не удалось. Проверьте сообщение вверху страницы.";return;}
         draftStatus.textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап не отмечен завершённым.";
         const savedMessage=draftStatus.textContent;
@@ -1214,11 +1219,14 @@ const movieHistoryStyle = document.createElement("style");
       const emptyField=stage.fields.find(([key])=>!inputs[key].value.trim());
       if(emptyField){$("#movieFeedback").textContent="Заполните поле «"+emptyField[1]+"», прежде чем завершить этап.";inputs[emptyField[0]].focus();return;}
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
-      const current=latest[index]; addMovieVersion(current);
+      const current=latest[index];
+      if((current.updatedAt||current.createdAt||null)!==baseUpdatedAt){$("#movieFeedback").textContent="Этот фильм изменился в другом окне или устройстве. Этап не перезаписан — откройте его заново, чтобы загрузить актуальную версию.";return;}
+      addMovieVersion(current);
       stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
       current.completedSteps=(Array.isArray(current.completedSteps)?current.completedSteps:[]).filter(key=>movieStages.findIndex(item=>item.key===key)<=stageIndex);
       if(!current.completedSteps.includes(stage.key))current.completedSteps.push(stage.key);
       current.workflowStep=Math.min(stageIndex+1,4); current.updatedAt=new Date().toISOString();
+      baseUpdatedAt=current.updatedAt;
       if(!movieWrite(latest))return;
       renderMovieProjects(); $("#movieFeedback").textContent="✓ Этап «"+stage.title+"» сохранён в фильме «"+current.name+"».";
       if(stageIndex<3)openMovieStage(projectId,stageIndex+1);
