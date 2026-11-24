@@ -133,3 +133,47 @@ def test_suspension_check_rejects_active_platform_or_feature_restriction(monkeyp
 def test_suspension_check_allows_user_when_no_active_restriction(monkeypatch):
     monkeypatch.setattr(moderation_service, "_request", lambda *args, **kwargs: [])
     assert moderation_service.ensure_user_not_suspended(Settings(), USER_A, "assistant") is None
+
+
+
+def test_invalid_report_id_is_rejected_before_storage_access(monkeypatch):
+    called = False
+
+    def should_not_request(*args, **kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(moderation_service, "_request", should_not_request)
+
+    try:
+        moderation_service.review_user_report(
+            Settings(), "not-a-uuid", ADMIN_ID,
+            SimpleNamespace(status="resolved", moderator_note=None),
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 422
+    else:
+        raise AssertionError("Expected invalid report ID to be rejected.")
+
+    assert called is False
+
+
+def test_invalid_suspension_id_is_rejected_before_storage_access(monkeypatch):
+    called = False
+
+    def should_not_request(*args, **kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(moderation_service, "_request", should_not_request)
+
+    try:
+        moderation_service.revoke_suspension(Settings(), ADMIN_ID, "not-a-uuid")
+    except HTTPException as exc:
+        assert exc.status_code == 422
+    else:
+        raise AssertionError("Expected invalid suspension ID to be rejected.")
+
+    assert called is False
