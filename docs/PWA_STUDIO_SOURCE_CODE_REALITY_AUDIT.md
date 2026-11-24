@@ -141,3 +141,17 @@ Reviewed in `app.js` on 2026-11-24:
 3. Test save, reload, edit, delete, offline retry, account switch during an in-flight sync, and simultaneous edits from two devices.
 4. Decide whether deletion tombstones need a server-side durable queue.
 5. Keep the current wording precise: cloud project synchronization exists in the client code; end-to-end production isolation and reliability remain to be independently verified.
+
+
+### Additional Mini Cinema account-switch race review
+
+The current frontend has an `authContextVersion` counter and account-scoped localStorage keys, and the cloud-load path captures the initiating user ID and checks the active user after its initial select. These are useful protections.
+
+A narrower asynchronous write-path hardening opportunity remains in `scheduleMovieCloudSync()`:
+
+- The delayed callback reads the active `authSession.user.id` at execution time rather than capturing the initiating account when the save was scheduled.
+- `movieToCloudRow()` also derives `owner_id` from the mutable global session.
+- After awaited delete/upsert operations, tombstone updates and UI feedback are not consistently guarded by the initiating account/context version.
+- If an account changes while a delayed sync is pending or an operation is awaiting the network, the callback can switch context mid-flight. The source does not prove that another user's data is exposed or overwritten; the server-side RLS should reject mismatched ownership. Nevertheless, the client should not rely on RLS as its only race guard.
+
+Recommended hardening before expanding cloud persistence: capture `ownerId` and `authContextVersion` when scheduling/starting a sync; build every row with that captured owner; use that owner for delete filters and account-specific local keys; after every await, abort all local state/tombstone/UI updates if the active user or context version changed. Ensure the in-flight operation cannot be re-queued into the newly active account's context. Add deterministic tests with mocked delayed Supabase promises and account switching before changing this path. No frontend test harness was verified in this audit, so this is recorded as a targeted engineering task rather than an untested code change.
