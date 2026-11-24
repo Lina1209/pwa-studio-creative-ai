@@ -134,3 +134,10 @@ Regression test definitions cover cleanup-write failure, account-switch races, s
 - The cloud adapter performs a strict owner-keyed local-storage read. If storage is inaccessible, invalid JSON, or not an array, cloud sync/load aborts before upsert or before writing merged cloud data over device state. This prevents a storage read failure from being mistaken for an empty local project list.
 - Regression test definitions were added for deep-copy behavior, 20-entry retention, safe restore, malformed/foreign snapshots, and local read failures during sync and cloud load. They are present in the branch; this audit does not claim they passed CI or browser testing.
 - No live storage was accessed and no Supabase data was modified.
+
+
+## Branch follow-up — strict local read uses one storage pass
+
+A final adapter review found that the cloud-specific reader first parsed localStorage, then called the regular UI reader, which read the key a second time and swallowed any later read/normalization-write exception by returning an empty array. A storage failure between those two reads could therefore still be mistaken for an empty collection.
+
+The reader now uses the same normalization path with an explicit strict mode: the UI path can continue displaying its existing error state, while cloud sync/load re-throws the original storage or normalization error and stops before an upsert or merged local write. The redundant preliminary read has been removed. This is a source-level fix; it still needs browser-level storage fault injection and CI confirmation.
