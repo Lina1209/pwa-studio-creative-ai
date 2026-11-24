@@ -623,6 +623,53 @@ const movieHistoryStyle = document.createElement("style");
   const adminFeedback = message => { const el = $("#adminFeedback"); if (el) el.textContent = message; };
   const adminNode = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
   const formatAdminDate = value => { if (!value) return "Без срока"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU"); };
+  const analyticsLocalInputValue = date => {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  };
+  const setAdminAnalyticsDefaultRange = () => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const startInput = $("#adminAnalyticsStart"), endInput = $("#adminAnalyticsEnd");
+    if (startInput && !startInput.value) startInput.value = analyticsLocalInputValue(start);
+    if (endInput && !endInput.value) endInput.value = analyticsLocalInputValue(end);
+  };
+  const renderAdminAnalyticsUnavailable = message => {
+    ["adminAnalyticsRegistrations","adminAnalyticsProjects","adminAnalyticsAI"].forEach(id => { const el=$("#"+id); if(el)el.textContent="—"; });
+    const feedback=$("#adminAnalyticsFeedback"); if(feedback)feedback.textContent=message;
+  };
+  const loadAdminAnalytics = async () => {
+    const panel=$("#adminPanel"), section=$("#adminAnalyticsSection");
+    if(!authSession?.user || !panel || panel.hidden || !section)return;
+    const version=authContextVersion, userId=authSession.user.id;
+    const startValue=$("#adminAnalyticsStart")?.value, endValue=$("#adminAnalyticsEnd")?.value;
+    if(!startValue || !endValue){renderAdminAnalyticsUnavailable("Выберите начало и конец периода.");return;}
+    const start=new Date(startValue), end=new Date(endValue);
+    if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start>=end){renderAdminAnalyticsUnavailable("Проверьте период: дата окончания должна быть позже начала.");return;}
+    if(end-start>31*24*60*60*1000){renderAdminAnalyticsUnavailable("Можно выбрать период не длиннее 31 дня.");return;}
+    const button=$("#adminAnalyticsLoad"); if(button)button.disabled=true;
+    const feedback=$("#adminAnalyticsFeedback"); if(feedback)feedback.textContent="Загружаем агрегированную статистику…";
+    try{
+      const query=new URLSearchParams({start_at:start.toISOString(),end_at:end.toISOString()});
+      const result=await apiRequest("/api/admin/analytics?"+query.toString());
+      if(version!==authContextVersion || authSession?.user?.id!==userId || panel.hidden)return;
+      const metrics=result.metrics||{};
+      $("#adminAnalyticsRegistrations").textContent=Number.isSafeInteger(metrics.registered_accounts)?metrics.registered_accounts.toLocaleString("ru-RU"):"—";
+      $("#adminAnalyticsProjects").textContent=Number.isSafeInteger(metrics.accounts_with_project_updates)?metrics.accounts_with_project_updates.toLocaleString("ru-RU"):"—";
+      $("#adminAnalyticsAI").textContent=Number.isSafeInteger(metrics.accounts_with_successful_ai_usage)?metrics.accounts_with_successful_ai_usage.toLocaleString("ru-RU"):"—";
+      if(feedback)feedback.textContent="Период: "+formatAdminDate(result.period?.start_at)+" — "+formatAdminDate(result.period?.end_at)+". Получены только сводные числа.";
+      const note=$("#adminAnalyticsNote");
+      if(note && result.data_quality?.note)note.textContent=result.data_quality.note;
+    }catch(error){
+      if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+      renderAdminAnalyticsUnavailable(error.message.includes("not installed") || error.message.includes("not available") ? "Статистика пока не подключена к базе: миграция аналитики ещё не установлена. Остальные разделы кабинета работают отдельно." : "Статистика временно недоступна: "+error.message);
+    }finally{
+      if(version===authContextVersion && authSession?.user?.id===userId && button)button.disabled=false;
+    }
+  };
+  setAdminAnalyticsDefaultRange();
+  $("#adminAnalyticsFilters")?.addEventListener("submit",event=>{event.preventDefault();loadAdminAnalytics();});
+  $("#adminAnalyticsWeek")?.addEventListener("click",()=>{const start=$("#adminAnalyticsStart"),end=$("#adminAnalyticsEnd");if(start)start.value="";if(end)end.value="";setAdminAnalyticsDefaultRange();loadAdminAnalytics();});
   let adminAuditPage = 1;
   const loadAdminWorkspace = async () => {
     const reportsList = $("#adminReportsList"), suspensionsList = $("#adminSuspensionsList");
@@ -640,6 +687,7 @@ const movieHistoryStyle = document.createElement("style");
       renderAdminReports(Array.isArray(reports) ? reports : []);
       renderAdminSuspensions(Array.isArray(suspensions) ? suspensions : []);
       await loadAdminAuditLog();
+      await loadAdminAnalytics();
       adminFeedback("Данные обновлены. Действия модерации записываются в журнал.");
     } catch (error) {
       if (version !== authContextVersion) return;
