@@ -110,3 +110,13 @@ Added focused controller tests for two additional deletion invariants:
 These tests extend the mocked production-shared controller suite. They do not exercise hosted Supabase or prove live RLS behavior. GitHub Actions was triggered for both backend and frontend workflows on the new commit; results are pending at the time this note was added.
 
 The browser integration still has a known consistency limitation: deletion tombstones are held in account-partitioned localStorage until cloud sync succeeds. A browser storage clear or device loss before sync can lose the pending deletion. The UI should distinguish local removal from cloud-confirmed deletion before this workflow is presented as durable.
+
+## Follow-up: concurrent editing and version-history review (2026-11-24)
+
+- Mini Cinema stage forms now capture the project's `updatedAt` (falling back to `createdAt`) when opened. Draft-save and stage-completion handlers re-read the latest local project and refuse to write if that version marker changed while the form was open. This prevents a stale form in another tab/device from silently overwriting newer locally visible edits; the user is asked to reopen the stage.
+- The baseline marker is advanced after a successful save, so repeated saves in the same open stage remain possible.
+- This is a client-side optimistic guard, not a database transaction or a multi-device conflict-resolution system. It relies on client timestamps; same-timestamp collisions, clock skew, cloud upsert races, and simultaneous edits that are not yet visible in local storage remain possible.
+- Version history is capped at 20 snapshots. Snapshots are created before edits to project details, stage drafts/completion, renames, and restores. Restoring a version first snapshots the then-current project and retains the history array.
+- The history dialog currently captures its `versions` array when opened. If another tab changes the project while that dialog remains open, the preview can become stale; restore re-reads the live project but uses the dialog's captured selected snapshot. A future improvement should re-resolve the selected immutable version against the latest history before restore and warn if it is no longer present.
+- The snapshot helper is shallow (`{...project}`) and removes only `versions`. Current project fields are predominantly strings and primitive arrays; if nested mutable objects are introduced, snapshotting should switch to a structured deep clone with schema validation.
+- No hosted Supabase reads/writes, SQL, migration, merge, or deployment were performed during this review.
