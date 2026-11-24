@@ -100,3 +100,17 @@ Recommendation: conduct a read-only live audit of migration history, table RLS/p
 - No SQL, migration, RPC, RLS, grants, or database records were changed.
 - No credits were charged, reserved, or granted.
 - No PR merge or production deployment was performed.
+
+
+## Follow-up verification — 2026-11-24
+
+### GEN-7 implementation
+The ChatRequest and PromptRequest Pydantic schemas now explicitly use `ConfigDict(extra="forbid")`. Added `backend/tests/test_generation_request_schemas.py` to verify that client-supplied provider, model, user_id, credits, and price fields are rejected while supported fields remain accepted. This is an application-contract hardening change only; it does not alter provider configuration or production infrastructure.
+
+### Request lifecycle and duplicate-generation status
+The current generation routes still invoke the provider before writing the `ai_usage` row. The request UUID is generated for the telemetry insert after the provider returns, so it is not a durable pre-provider request identity. There is no persisted `accepted/provider_started/succeeded/failed_definitive/outcome_unknown` lifecycle record, no generation idempotency key accepted by the API, and no server-side in-flight generation lock. The existing per-user/per-endpoint rate limit is not a substitute for idempotency or concurrency control.
+
+A provider timeout or process crash can leave the provider-side outcome ambiguous. The route currently maps general provider errors to 502; it must not be interpreted as proof that no provider work or cost occurred. Do not automatically release a future credit reservation on this basis.
+
+### Safe implementation boundary
+The next implementation step requires a reconciled, deployed database schema and an explicitly approved rollout design for a request ledger/outbox and atomic claim/complete operations. Do not implement a fake in-memory idempotency layer as a financial guarantee: it would not survive restarts or coordinate multiple backend instances. Do not alter live migrations, wallet state, pricing, or payment behavior until the actual Supabase migration ledger and schema have been inspected read-only and reconciled.
