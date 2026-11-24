@@ -24,7 +24,18 @@
 .assistant-message.user-message{align-self:flex-end;background:rgba(112,103,210,.18);color:var(--text)}
 .assistant-message.ai-message{align-self:flex-start;background:rgba(145,125,190,.12);color:var(--text)}
 body.light .assistant-history-open,body.light .assistant-history-rename{color:#373149}
-</style></head>
+</style><style id="creative-dashboard-styles">
+.dashboard-control{margin:34px 0 30px}.dashboard-heading{align-items:flex-end}.dashboard-heading .muted{margin:7px 0 0;font-size:12px}.dashboard-count{white-space:nowrap;color:#c8b4ff;border:1px solid var(--line);border-radius:20px;padding:7px 11px;font-size:11px}.dashboard-projects-panel{padding:18px;margin-bottom:14px}.dashboard-activity-panel{padding:18px;margin-bottom:14px}.dashboard-assets-panel{padding:18px;margin-bottom:14px}.dashboard-asset-types{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}.dashboard-asset-types span{font-size:10px;color:var(--muted);padding:7px 10px;border:1px solid var(--line);border-radius:18px;background:rgba(150,130,220,.035)}.dashboard-assets-empty{padding:22px 14px}.dashboard-assets-empty .secondary-button{margin-top:5px}@media(max-width:440px){.dashboard-assets-panel{padding:13px}}.dashboard-activity-live{font-size:10px;color:var(--muted);white-space:nowrap}.dashboard-activity-list{display:grid;gap:8px}.dashboard-activity-item{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:rgba(150,130,220,.035);text-align:left;color:var(--text);width:100%}.dashboard-activity-icon{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:10px;background:rgba(157,121,235,.14);color:#c8aaff;font-size:16px}.dashboard-activity-copy{min-width:0;flex:1}.dashboard-activity-copy b,.dashboard-activity-copy small{display:block}.dashboard-activity-copy b{font-size:12px;overflow-wrap:anywhere}.dashboard-activity-copy small{font-size:10px;color:var(--muted);margin-top:4px}.dashboard-activity-arrow{color:#c8aaff;font-size:17px}.dashboard-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.dashboard-panel-heading b,.dashboard-panel-heading small{display:block}.dashboard-panel-heading b{font-size:14px}.dashboard-panel-heading small{font-size:11px;color:var(--muted);margin-top:4px}.text-action{border:0;background:transparent;color:#c7adff;font-size:12px;padding:8px}.dashboard-project-list{display:grid;gap:9px}.dashboard-project{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(150,130,220,.045)}.dashboard-project-main{min-width:0}.dashboard-project-main b,.dashboard-project-main small{display:block}.dashboard-project-main b{font-size:13px;overflow-wrap:anywhere}.dashboard-project-main small{color:var(--muted);font-size:10px;line-height:1.5;margin-top:5px}.dashboard-save-state{font-size:10px;color:var(--muted)}.dashboard-project .secondary-button{white-space:nowrap;padding:8px 10px;font-size:11px}.dashboard-empty{padding:18px 12px;text-align:center;border:1px dashed var(--line);border-radius:12px}.dashboard-empty b{font-size:13px}.dashboard-empty p{font-size:11px;color:var(--muted);margin:7px 0 12px}.dashboard-branches{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.dashboard-branch{display:grid;justify-items:start;gap:7px;min-width:0;text-align:left;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--text)}.dashboard-branch>span{font-size:22px;color:#c4a6ff}.dashboard-branch b{font-size:12px}.dashboard-branch small{font-size:10px;line-height:1.5;color:var(--muted)}.dashboard-branch em{font-size:9px;font-style:normal;color:#c3a7ff}.dashboard-truth-note{font-size:10px;line-height:1.6;color:var(--muted);margin-top:12px}@media(max-width:760px){.dashboard-branches{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-project{grid-template-columns:minmax(0,1fr) auto}.dashboard-save-state{grid-column:1;grid-row:2}.dashboard-project .secondary-button{grid-column:2;grid-row:1/3}}@media(max-width:440px){.dashboard-projects-panel,.dashboard-activity-panel{padding:13px}.dashboard-project{gap:7px;padding:10px}.dashboard-project-main small{font-size:9px}.dashboard-save-state{font-size:9px}.dashboard-project .secondary-button{font-size:10px;padding:7px}.dashboard-branch{padding:12px}}
+</style>
+<style id="admin-analytics-styles">
+.admin-analytics-filters{margin:12px 0}.admin-analytics-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
+.admin-analytics-card{display:grid;gap:7px;padding:16px;border:1px solid var(--line);border-radius:12px;background:rgba(150,130,220,.045);min-width:0}
+.admin-analytics-card small,.admin-analytics-card span{font-size:11px;color:var(--muted);line-height:1.45}
+.admin-analytics-card b{font-size:28px;color:#c8b4ff;font-weight:750}
+.admin-analytics-note{font-size:11px;color:var(--muted);line-height:1.6;margin:10px 0}
+@media(max-width:640px){.admin-analytics-grid{grid-template-columns:1fr}.admin-analytics-card{grid-template-columns:minmax(0,1fr) auto;align-items:center}.admin-analytics-card span{grid-column:1/-1}.admin-analytics-card b{grid-column:2;grid-row:1/3}}
+</style>
+</head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
   <div class="app-shell">
@@ -35,6 +46,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
       <div class="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
       <nav class="main-nav" aria-label="Основная навигация">
         <button class="nav-item active" data-view="home"><span>⌂</span> Главная</button>
+        <button class="nav-item" data-view="control"><span>✦</span> Центр управления</button>
         <button class="nav-item" data-view="create"><span>✧</span> Создать видео</button>
         <button class="nav-item movie-nav" data-view="movie"><span>🎬</span> Миникиностудия <i>STUDIO</i></button>
         <button class="nav-item" data-view="editor"><span>▤</span> Видеоредактор</button>
@@ -82,6 +94,18 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <button class="quick-card" data-go="library"><span class="quick-icon pink">▧</span><b>Из материалов</b><small>Используйте свои фото, видео и звук</small><span class="card-arrow">↗</span></button>
           <button class="quick-card" data-go="prompts"><span class="quick-icon gold">⌘</span><b>Создать промт</b><small>Сформулируйте запрос вместе с AI</small><span class="card-arrow">↗</span></button>
         </div>
+        <section class="dashboard-control" aria-labelledby="dashboardControlTitle">
+          <div class="section-heading dashboard-heading"><div><div class="eyebrow">CREATIVE CONTROL CENTER</div><h2 id="dashboardControlTitle">Ваше творческое пространство</h2><p class="muted">Проекты, мастерские и следующий шаг — в одном месте.</p></div><span class="dashboard-count" id="dashboardProjectCount">0 из 0</span></div>
+          <div class="dashboard-projects-panel panel"><div class="dashboard-panel-heading"><div><b>Мои проекты</b><small id="dashboardRecentLabel">Недавно изменённые проекты</small></div><button class="text-action" type="button" data-go="movie">Все проекты →</button></div><div id="dashboardProjectList" class="dashboard-project-list" aria-live="polite"><div class="dashboard-empty">Загружаем ваши проекты…</div></div></div>
+          <div class="dashboard-activity-panel panel"><div class="dashboard-panel-heading"><div><b>Недавняя активность</b><small>Ваши проекты и разговоры с AI Companion</small></div><span class="dashboard-activity-live">Личная история</span></div><div id="dashboardActivityList" class="dashboard-activity-list" aria-live="polite"><div class="dashboard-empty">Собираем недавнюю активность…</div></div></div>
+          <div class="dashboard-assets-panel panel" aria-labelledby="dashboardAssetsTitle">
+            <div class="dashboard-panel-heading"><div><b id="dashboardAssetsTitle">Полка творческих работ</b><small>Материалы, к которым можно будет вернуться из любой мастерской</small></div><button class="text-action" type="button" data-go="library">Открыть медиатеку →</button></div>
+            <div class="dashboard-asset-types" aria-label="Типы материалов"><span>▧ Изображения</span><span>▶ Видео</span><span>♫ Аудио и музыка</span><span>▤ Проекты</span></div>
+            <div class="dashboard-empty dashboard-assets-empty"><b>Ваша полка пока свободна</b><p>Здесь появятся реальные сохранённые материалы. Загрузка файлов, превью и общая система хранения ещё разрабатываются — мы не показываем вымышленные работы.</p><button class="secondary-button" type="button" data-go="library">Перейти в медиатеку →</button></div>
+          </div>
+          <div class="dashboard-branches"><button class="dashboard-branch" type="button" data-go="movie"><span>🎬</span><b>Кино и видео</b><small>Проекты, сценарии и сцены</small><em>Рабочая мастерская</em></button><button class="dashboard-branch" type="button" data-go="prompts"><span>⌘</span><b>Интеллект и промты</b><small>AI Companion и Prompt Studio</small><em>Подключённый AI-контур</em></button><button class="dashboard-branch" type="button" data-go="voice"><span>♫</span><b>Голос и музыка</b><small>Прослушивание и работа со звуком</small><em>Локальный предпросмотр</em></button><button class="dashboard-branch" type="button" data-go="library"><span>▧</span><b>Медиатека</b><small>Будущий общий архив материалов</small><em>Загрузка файлов в разработке</em></button></div>
+          <p class="dashboard-truth-note">Генерация изображений, видео, музыки и голосов, а также общий центр фоновых задач будут подключаться поэтапно. Мы показываем только подтверждённые проекты и состояния.</p>
+        </section>
         <div class="section-heading lower-heading"><div><div class="eyebrow">ВАШ ИНТЕЛЛЕКТУАЛЬНЫЙ НАПАРНИК</div><h2>Studio AI Companion</h2></div></div>
         <div class="companion-card"><div class="companion-orb">✦</div><div class="companion-copy"><b>Идея есть, а с чего начать?</b><p>Обсудите задумку, создайте выразительный промт или попросите помочь со сценарием.</p></div><button class="secondary-button" data-go="assistant">Открыть помощника <span>→</span></button></div>
         <p class="prototype-note">Studio AI Companion уже подключён. Генерация видео и интеграции с видеосервисами будут добавляться отдельными этапами.</p>
@@ -344,6 +368,31 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="admin-toolbar"><span class="account-role">✓ Доступ владельца подтверждён сервером</span><button class="secondary-button" id="adminRefresh" type="button">↻ Обновить данные</button></div>
           <p class="admin-feedback" id="adminFeedback" role="status" aria-live="polite">Загрузка административных данных…</p>
           <section class="admin-section"><div class="admin-section-heading"><div><h3>Жалобы пользователей</h3><p>Проверяйте обращения и сохраняйте решение.</p></div><span class="admin-count" id="adminReportCount">—</span></div><div id="adminReportsList" class="admin-list"><div class="admin-empty">Загрузка жалоб…</div></div></section>
+          <section class="admin-section" id="adminAnalyticsSection">
+            <div class="admin-section-heading"><div><h3>Статистика платформы</h3><p>Агрегированные показатели без списка пользователей и личных данных.</p></div><span class="admin-count">Только владелец</span></div>
+            <form id="adminAnalyticsFilters" class="admin-form admin-analytics-filters">
+              <div class="admin-form-row"><div><label for="adminAnalyticsStart">Начало периода</label><input id="adminAnalyticsStart" type="datetime-local" required></div><div><label for="adminAnalyticsEnd">Конец периода</label><input id="adminAnalyticsEnd" type="datetime-local" required></div></div>
+              <div class="admin-item-actions"><button class="primary-button" id="adminAnalyticsLoad" type="submit">Показать статистику</button><button class="secondary-button" id="adminAnalyticsWeek" type="button">Последние 7 дней</button></div>
+            </form>
+            <p class="admin-feedback" id="adminAnalyticsFeedback" role="status" aria-live="polite">Статистика ещё не загружалась.</p>
+            <div class="admin-analytics-grid" id="adminAnalyticsMetrics" aria-live="polite">
+              <article class="admin-analytics-card"><small>Регистрации</small><b id="adminAnalyticsRegistrations">—</b><span>Профили, созданные в периоде</span></article>
+              <article class="admin-analytics-card"><small>Проектная активность</small><b id="adminAnalyticsProjects">—</b><span>Уникальные владельцы обновлённых фильмов</span></article>
+              <article class="admin-analytics-card"><small>Успешные AI-запросы</small><b id="adminAnalyticsAI">—</b><span>Аккаунты с записанной AI-телеметрией</span></article>
+            </div>
+            <p class="admin-analytics-note" id="adminAnalyticsNote">Это не счётчик посетителей и не полный показатель активности. Телеметрия AI может быть неполной; полнота регистраций и live-схема ещё требуют проверки.</p>
+          </section>
+          <section class="admin-section" id="adminAuditSection">
+            <div class="admin-section-heading"><div><h3>Журнал действий администратора</h3><p>История действий модерации. Доступна только владельцу через защищённый API.</p></div><span class="admin-count" id="adminAuditCount">—</span></div>
+            <form id="adminAuditFilters" class="admin-form">
+              <div class="admin-form-row"><div><label for="adminAuditActor">ID администратора</label><input id="adminAuditActor" maxlength="36" placeholder="UUID (необязательно)"></div><div><label for="adminAuditTarget">ID затронутого пользователя</label><input id="adminAuditTarget" maxlength="36" placeholder="UUID (необязательно)"></div></div>
+              <div class="admin-form-row"><div><label for="adminAuditAction">Действие</label><input id="adminAuditAction" maxlength="100" placeholder="Например: report.reviewed"></div><div><label for="adminAuditEntity">Тип объекта</label><input id="adminAuditEntity" maxlength="60" placeholder="Например: report"></div></div>
+              <div class="admin-item-actions"><button class="primary-button" type="submit">Применить фильтры</button><button class="secondary-button" id="adminAuditReset" type="button">Сбросить</button></div>
+            </form>
+            <p class="admin-feedback" id="adminAuditFeedback" role="status" aria-live="polite">Журнал ещё не загружен.</p>
+            <div id="adminAuditList" class="admin-list" aria-live="polite"><div class="admin-empty">Загрузка журнала…</div></div>
+            <div class="admin-toolbar"><button class="secondary-button" id="adminAuditPrev" type="button" disabled>← Назад</button><span class="admin-item-meta" id="adminAuditPage">Страница 1</span><button class="secondary-button" id="adminAuditNext" type="button" disabled>Дальше →</button></div>
+          </section>
           <section class="admin-section"><div class="admin-section-heading"><div><h3>Ограничения доступа</h3><p>Временные и постоянные ограничения по конкретным разделам.</p></div><span class="admin-count" id="adminSuspensionCount">—</span></div>
             <form id="adminSuspensionForm" class="admin-form">
               <label for="suspensionUserId">UUID пользователя</label><input id="suspensionUserId" required minlength="36" maxlength="36" autocomplete="off" placeholder="UUID из Supabase Auth">
@@ -442,7 +491,14 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./supabase-config.js"></script>
-  <script src="./app.js?v=20261123-7" defer></script>
+  <script src="./movie-cloud-context.js?v=20261124-1" defer></script>
+  <script src="./movie-cloud-operations.js?v=20261124-2" defer></script>
+  <script src="./movie-version-history.js?v=20261124-1" defer></script>
+  <script src="./movie-storage-guard.js?v=20261124-1" defer></script>
+  <script src="./movie-guest-expiry.js?v=20261124-1" defer></script>
+  <script src="./movie-tombstone-storage.js?v=20261124-1" defer></script>
+  <script src="./movie-id.js?v=20261124-1" defer></script>
+  <script src="./app.js?v=20261124-2" defer></script>
   <script src="./audio-lab.js?v=20261121-1" defer></script>
 </body>
 </html>

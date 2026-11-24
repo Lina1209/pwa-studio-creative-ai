@@ -11,6 +11,7 @@
     : null;
   let authSession = null;
   let authContextVersion = 0;
+  let resetMovieWorkspaceForAuthChange = null;
   let activeAssistantConversationId = null;
   let assistantHistoryBusy = false;
   let assistantUserId = null;
@@ -51,6 +52,7 @@
       activeMessagePartnerId = null;
       assistantUserId = nextUserId;
       authContextVersion += 1;
+      resetMovieWorkspaceForAuthChange?.();
       activeAssistantConversationId = null;
       const history = $("#assistantHistoryList");
       const messages = $("#assistantMessages");
@@ -103,12 +105,18 @@
     authGate.hidden = false;
     setAuthMessage("Не найдена конфигурация Supabase. Проверьте файл supabase-config.js.", true);
   } else {
+    // A session event may arrive before getSession() resolves. Do not let a
+    // late bootstrap response overwrite the newer auth state from the listener.
+    const bootstrapAuthVersion = authContextVersion;
     supabaseClient.auth.getSession().then(({data,error}) => {
+      if (bootstrapAuthVersion !== authContextVersion) return;
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
       setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof loadCommunityProfile === "function") loadCommunityProfile(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
+    }).catch(error => {
+      if (bootstrapAuthVersion === authContextVersion) setAuthMessage(error.message || "Не удалось восстановить сессию.", true);
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => { authContextVersion += 1; refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -623,6 +631,56 @@ const movieHistoryStyle = document.createElement("style");
   const adminFeedback = message => { const el = $("#adminFeedback"); if (el) el.textContent = message; };
   const adminNode = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
   const formatAdminDate = value => { if (!value) return "Без срока"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU"); };
+  const analyticsLocalInputValue = date => {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  };
+  const setAdminAnalyticsDefaultRange = () => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const startInput = $("#adminAnalyticsStart"), endInput = $("#adminAnalyticsEnd");
+    if (startInput && !startInput.value) startInput.value = analyticsLocalInputValue(start);
+    if (endInput && !endInput.value) endInput.value = analyticsLocalInputValue(end);
+  };
+  const renderAdminAnalyticsUnavailable = message => {
+    ["adminAnalyticsRegistrations","adminAnalyticsProjects","adminAnalyticsAI"].forEach(id => { const el=$("#"+id); if(el)el.textContent="—"; });
+    const feedback=$("#adminAnalyticsFeedback"); if(feedback)feedback.textContent=message;
+  };
+  let adminAnalyticsRequestId = 0;
+  const loadAdminAnalytics = async () => {
+    const panel=$("#adminPanel"), section=$("#adminAnalyticsSection");
+    if(!authSession?.user || !panel || panel.hidden || !section)return;
+    const version=authContextVersion, userId=authSession.user.id;
+    const startValue=$("#adminAnalyticsStart")?.value, endValue=$("#adminAnalyticsEnd")?.value;
+    if(!startValue || !endValue){renderAdminAnalyticsUnavailable("Выберите начало и конец периода.");return;}
+    const start=new Date(startValue), end=new Date(endValue);
+    if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start>=end){renderAdminAnalyticsUnavailable("Проверьте период: дата окончания должна быть позже начала.");return;}
+    if(end-start>31*24*60*60*1000){renderAdminAnalyticsUnavailable("Можно выбрать период не длиннее 31 дня.");return;}
+    const requestId=++adminAnalyticsRequestId;
+    const button=$("#adminAnalyticsLoad"); if(button)button.disabled=true;
+    const feedback=$("#adminAnalyticsFeedback"); if(feedback)feedback.textContent="Загружаем агрегированную статистику…";
+    try{
+      const query=new URLSearchParams({start_at:start.toISOString(),end_at:end.toISOString()});
+      const result=await apiRequest("/api/admin/analytics?"+query.toString());
+      if(version!==authContextVersion || authSession?.user?.id!==userId || panel.hidden)return;
+      const metrics=result.metrics||{};
+      $("#adminAnalyticsRegistrations").textContent=Number.isSafeInteger(metrics.registered_accounts)?metrics.registered_accounts.toLocaleString("ru-RU"):"—";
+      $("#adminAnalyticsProjects").textContent=Number.isSafeInteger(metrics.accounts_with_project_updates)?metrics.accounts_with_project_updates.toLocaleString("ru-RU"):"—";
+      $("#adminAnalyticsAI").textContent=Number.isSafeInteger(metrics.accounts_with_successful_ai_usage)?metrics.accounts_with_successful_ai_usage.toLocaleString("ru-RU"):"—";
+      if(feedback)feedback.textContent="Период: "+formatAdminDate(result.period?.start_at)+" — "+formatAdminDate(result.period?.end_at)+". Получены только сводные числа.";
+      const note=$("#adminAnalyticsNote");
+      if(note && result.data_quality?.note)note.textContent=result.data_quality.note;
+    }catch(error){
+      if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+      renderAdminAnalyticsUnavailable(error.message.includes("not installed") || error.message.includes("not available") ? "Статистика пока не подключена к базе: миграция аналитики ещё не установлена. Остальные разделы кабинета работают отдельно." : "Статистика временно недоступна: "+error.message);
+    }finally{
+      if(requestId===adminAnalyticsRequestId && button)button.disabled=false;
+    }
+  };
+  setAdminAnalyticsDefaultRange();
+  $("#adminAnalyticsFilters")?.addEventListener("submit",event=>{event.preventDefault();loadAdminAnalytics();});
+  $("#adminAnalyticsWeek")?.addEventListener("click",()=>{const start=$("#adminAnalyticsStart"),end=$("#adminAnalyticsEnd");if(start)start.value="";if(end)end.value="";setAdminAnalyticsDefaultRange();loadAdminAnalytics();});
+  let adminAuditPage = 1;
   const loadAdminWorkspace = async () => {
     const reportsList = $("#adminReportsList"), suspensionsList = $("#adminSuspensionsList");
     if (!authSession?.user || !$("#adminPanel") || $("#adminPanel").hidden) return;
@@ -638,6 +696,8 @@ const movieHistoryStyle = document.createElement("style");
       if (version !== authContextVersion || !authSession?.user) return;
       renderAdminReports(Array.isArray(reports) ? reports : []);
       renderAdminSuspensions(Array.isArray(suspensions) ? suspensions : []);
+      await loadAdminAuditLog();
+      await loadAdminAnalytics();
       adminFeedback("Данные обновлены. Действия модерации записываются в журнал.");
     } catch (error) {
       if (version !== authContextVersion) return;
@@ -667,9 +727,17 @@ const movieHistoryStyle = document.createElement("style");
       status.value=["reviewing","resolved","rejected"].includes(report.status)?report.status:"reviewing";
       const save=adminNode("button","secondary-button","Сохранить решение");save.type="button";
       save.addEventListener("click",async()=>{
+        const version=authContextVersion, userId=authSession?.user?.id;
+        if(!userId)return;
         save.disabled=true;
-        try { await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})}); adminFeedback("Решение по жалобе сохранено."); await loadAdminWorkspace(); }
-        catch(error){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}
+        try {
+          await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})});
+          if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+          adminFeedback("Решение по жалобе сохранено.");
+          await loadAdminWorkspace();
+        } catch(error){
+          if(version===authContextVersion && authSession?.user?.id===userId){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}
+        }
       });
       actions.append(status,save); card.append(note,actions); list.append(card);
     });
@@ -687,12 +755,71 @@ const movieHistoryStyle = document.createElement("style");
       card.append(head,adminNode("p","admin-item-meta","Пользователь: "+item.user_id),adminNode("p","admin-item-text",item.reason||"Причина не указана"),adminNode("p","admin-item-meta","Создано: "+formatAdminDate(item.created_at)+" · До: "+formatAdminDate(item.expires_at)));
       if(!item.revoked_at && (!item.expires_at || new Date(item.expires_at)>new Date())){
         const revoke=adminNode("button","secondary-button","Отменить ограничение");revoke.type="button";
-        revoke.addEventListener("click",async()=>{if(!confirm("Отменить это ограничение доступа?"))return;revoke.disabled=true;try{await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});adminFeedback("Ограничение отменено.");await loadAdminWorkspace();}catch(error){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}});
+        revoke.addEventListener("click",async()=>{
+          if(!confirm("Отменить это ограничение доступа?"))return;
+          const version=authContextVersion, userId=authSession?.user?.id;
+          if(!userId)return;
+          revoke.disabled=true;
+          try{
+            await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});
+            if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+            adminFeedback("Ограничение отменено.");
+            await loadAdminWorkspace();
+          }catch(error){
+            if(version===authContextVersion && authSession?.user?.id===userId){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}
+          }
+        });
         card.append(revoke);
       }
       list.append(card);
     });
   };
+  const auditFeedback = message => { const el=$("#adminAuditFeedback"); if(el)el.textContent=message; };
+  const loadAdminAuditLog = async () => {
+    const list=$("#adminAuditList");
+    if(!list || !authSession?.user || $("#adminPanel")?.hidden)return;
+    const version=authContextVersion, userId=authSession.user.id;
+    const params=new URLSearchParams({page:String(adminAuditPage),page_size:"25"});
+    const values={actor_user_id:$("#adminAuditActor")?.value.trim(),target_user_id:$("#adminAuditTarget")?.value.trim(),action:$("#adminAuditAction")?.value.trim(),entity_type:$("#adminAuditEntity")?.value.trim()};
+    Object.entries(values).forEach(([key,value])=>{if(value)params.set(key,value);});
+    list.replaceChildren(adminNode("div","admin-empty","Загружаем журнал действий…"));
+    auditFeedback("Получаем записи журнала…");
+    try{
+      const data=await apiRequest("/api/admin/audit-log?"+params.toString());
+      if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+      const items=Array.isArray(data.items)?data.items:[];
+      $("#adminAuditCount").textContent=String(items.length);
+      $("#adminAuditPage").textContent="Страница "+data.page;
+      $("#adminAuditPrev").disabled=data.page<=1;
+      $("#adminAuditNext").disabled=!data.has_more;
+      list.replaceChildren();
+      if(!items.length)list.append(adminNode("div","admin-empty","По выбранным условиям записей нет."));
+      items.forEach(item=>{
+        const card=adminNode("article","admin-item"), head=adminNode("div","admin-item-head");
+        head.append(adminNode("b","",item.action||"Действие"),adminNode("span","admin-status",item.entity_type||"событие"));
+        card.append(head,adminNode("p","admin-item-meta","Дата: "+formatAdminDate(item.created_at)),adminNode("p","admin-item-meta","Администратор: "+(item.actor_user_id||"не указан")));
+        if(item.target_user_id)card.append(adminNode("p","admin-item-meta","Затронутый пользователь: "+item.target_user_id));
+        if(item.entity_id)card.append(adminNode("p","admin-item-meta","ID объекта: "+item.entity_id));
+        if(item.metadata && typeof item.metadata==="object"){
+          const details=adminNode("details","admin-audit-details"), pre=adminNode("pre","admin-item-meta");
+          details.append(adminNode("summary","","Подробности записи"));
+          try{pre.textContent=JSON.stringify(item.metadata,null,2);}catch{pre.textContent="Подробности недоступны";}
+          details.append(pre);card.append(details);
+        }
+        list.append(card);
+      });
+      auditFeedback("Журнал загружен. Показано записей: "+items.length+".");
+    }catch(error){
+      if(version!==authContextVersion)return;
+      list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить журнал."));
+      auditFeedback("Ошибка загрузки журнала: "+error.message);
+      $("#adminAuditPrev").disabled=adminAuditPage<=1;$("#adminAuditNext").disabled=true;
+    }
+  };
+  $("#adminAuditFilters")?.addEventListener("submit",event=>{event.preventDefault();adminAuditPage=1;loadAdminAuditLog();});
+  $("#adminAuditReset")?.addEventListener("click",()=>{$("#adminAuditFilters")?.reset();adminAuditPage=1;loadAdminAuditLog();});
+  $("#adminAuditPrev")?.addEventListener("click",()=>{if(adminAuditPage>1){adminAuditPage--;loadAdminAuditLog();}});
+  $("#adminAuditNext")?.addEventListener("click",()=>{adminAuditPage++;loadAdminAuditLog();});
   $("#adminRefresh")?.addEventListener("click",loadAdminWorkspace);
   $("#adminSuspensionForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
@@ -701,21 +828,32 @@ const movieHistoryStyle = document.createElement("style");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)){adminFeedback("Проверьте UUID пользователя — нужен полный идентификатор Supabase Auth.");return;}
     if(authSession?.user?.id===userId){adminFeedback("Нельзя ограничить собственный аккаунт.");return;}
     const payload={user_id:userId,reason,scope:$("#suspensionScope").value,expires_at:expiry?new Date(expiry).toISOString():null};
+    const version=authContextVersion, actorUserId=authSession?.user?.id;
+    if(!actorUserId)return;
     button.disabled=true;
-    try{await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});$("#adminSuspensionForm").reset();adminFeedback("Ограничение создано и записано в журнал.");await loadAdminWorkspace();}
-    catch(error){adminFeedback("Не удалось создать ограничение: "+error.message);}
-    finally{button.disabled=false;}
+    try{
+      await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});
+      if(version!==authContextVersion || authSession?.user?.id!==actorUserId)return;
+      $("#adminSuspensionForm").reset();
+      adminFeedback("Ограничение создано и записано в журнал.");
+      await loadAdminWorkspace();
+    }catch(error){
+      if(version===authContextVersion && authSession?.user?.id===actorUserId)adminFeedback("Не удалось создать ограничение: "+error.message);
+    }finally{
+      if(version===authContextVersion && authSession?.user?.id===actorUserId)button.disabled=false;
+    }
   });
   if (authSession?.user) setTimeout(loadAccountRole, 0);
-  const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
+  const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",control:"Центр управления",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
 
   function navigate(view) {
     if (!labels[view]) return;
-    $$(".view").forEach(el => el.classList.toggle("active", el.id === "view-" + view));
-    $$(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
+    const targetView = view === "control" ? "home" : view;
+    $(".view").forEach(el => el.classList.toggle("active", el.id === "view-" + targetView));
+    $(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
     $("#crumbCurrent").textContent = labels[view];
     $("#sidebar").classList.remove("open");
-    window.location.hash = view === "home" ? "" : view;
+    window.location.hash = targetView === "home" && view === "home" ? "" : view;
     window.scrollTo({top:0,behavior:"smooth"});
   }
 
@@ -928,6 +1066,18 @@ const movieHistoryStyle = document.createElement("style");
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
   let activeMovieId = null;
   let editingMovieId = null;
+  let editingMovieBaseUpdatedAt = null;
+  resetMovieWorkspaceForAuthChange = () => {
+    activeMovieId = null;
+    editingMovieId = null;
+    editingMovieBaseUpdatedAt = null;
+    const form = $("#movieForm");
+    if (form) form.reset();
+    const panel = $("#movieWorkflowPanel");
+    if (panel) { panel.hidden = true; panel.replaceChildren(); }
+    const feedback = $("#movieFeedback");
+    if (feedback) feedback.textContent = "Контекст аккаунта изменился. Откройте нужный проект заново; черновик другого пространства не переносился.";
+  };
   const movieStages = [
     {key:"story",title:"Сценарий и раскадровка",fields:[["story","Сценарий","Напишите историю, действия и диалоги по сценам."],["storyboard","Раскадровка","Опишите кадры, планы камеры, движение и переходы."]]},
     {key:"characters",title:"Персонажи и аватары",fields:[["characters","Персонажи","Опишите героев: внешность, одежду, характер и особенности образа."]]},
@@ -935,23 +1085,22 @@ const movieHistoryStyle = document.createElement("style");
     {key:"edit",title:"Монтаж и экспорт",fields:[["edit","План монтажа","Опишите порядок сцен, длительность, переходы, музыку, титры и параметры будущего экспорта. Реальный видеорендер пока не подключён."]]}
   ];
   // Cloud persistence for movie projects. Supabase RLS scopes every query to the signed-in owner.
-  const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
+  const movieCloudState = { syncingContext: null, pendingContext: null, loadingContext: null, timer: null };
+  const movieCloudContext = window.PWAMovieCloudContext;
+  if (!movieCloudContext) console.error("Movie cloud context guard is unavailable; cloud sync is disabled.");
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
-  const readMovieTombstones = () => {
-    try { const value = JSON.parse(localStorage.getItem(movieDeletedKey()) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
-    catch { return []; }
-  };
+  const readMovieTombstones = () => window.PWAMovieTombstones.read(localStorage, movieDeletedKey(), isUuid);
   const writeMovieTombstones = ids => {
     try { localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
     catch (error) { console.error("Movie deletion queue failed:", error); return false; }
   };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
-  const movieToCloudRow = project => {
+  const movieToCloudRow = (project, ownerId) => {
     if (!isUuid(project.id)) project.id = movieId();
     const snapshot = { ...project, cloudSchemaVersion: 1 };
     return {
       id: project.id,
-      owner_id: authSession.user.id,
+      owner_id: ownerId,
       title: project.name || "Без названия",
       description: project.idea || "",
       project_type: "movie",
@@ -976,94 +1125,63 @@ const movieHistoryStyle = document.createElement("style");
       versions: Array.isArray(saved.versions) ? saved.versions : []
     };
   };
-  const scheduleMovieCloudSync = () => {
-    if (!authSession?.user || !supabaseClient) return;
-    clearTimeout(movieCloudState.timer);
-    movieCloudState.timer = setTimeout(async () => {
-      if (!authSession?.user) return;
-      if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
-      movieCloudState.syncing = true;
+  const movieCloudOperations = window.PWAMovieCloudOperations?.createMovieCloudOperations({
+    isCurrent: context => movieCloudContext.isCurrent(context, authSession?.user?.id || null, authContextVersion),
+    setTimer: (fn, delay) => setTimeout(fn, delay),
+    clearTimer: id => clearTimeout(id),
+    supabase: () => supabaseClient,
+    readTombstones: ownerId => {
+      let value;
       try {
-        const deletedIds = readMovieTombstones();
-        if (deletedIds.length) {
-          const { error: deleteError } = await supabaseClient.from("projects").delete()
-            .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
-          if (deleteError) throw deleteError;
-          writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
-        }
-        const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
-        const rows = localProjects.map(movieToCloudRow);
-        // Persist any UUID normalization before sending rows to Supabase.
-        localStorage.setItem(movieStorageKey(), JSON.stringify(localProjects));
-        if (rows.length) {
-          const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
-          if (error) throw error;
-        }
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = deletedIds.length
-          ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
-          : "✓ Изменения сохранены в облаке Supabase.";
-      } catch (error) {
-        console.error("Movie cloud sync failed:", error);
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
-      } finally {
-        movieCloudState.syncing = false;
-        if (movieCloudState.pending) {
-          movieCloudState.pending = false;
-          scheduleMovieCloudSync();
-        }
+        const stored=localStorage.getItem("pwa-studio-movie-deleted:"+ownerId);
+        value=stored ? JSON.parse(stored) : [];
+      } catch(error) {
+        throw new Error("Не удалось прочитать очередь удалённых фильмов; облачная операция остановлена: " + (error.message || "ошибка хранилища"));
       }
-    }, 350);
+      if (!Array.isArray(value)) throw new Error("Очередь удалённых фильмов повреждена; облачная операция остановлена.");
+      return value.filter(isUuid);
+    },
+    writeTombstones: (ownerId, ids) => {
+      try {
+        localStorage.setItem("pwa-studio-movie-deleted:"+ownerId,JSON.stringify([...new Set(ids.filter(isUuid))]));
+        return true;
+      } catch(error) {
+        console.error("Movie deletion queue failed:",error);
+        return false;
+      }
+    },
+    readProjects: ownerId => {
+      if (ownerId !== authSession?.user?.id) throw new Error("Контекст аккаунта изменился; локальные фильмы не прочитаны.");
+      return readMovieProjectsForCloud();
+    },
+    writeProjects: (ownerId, projects) => localStorage.setItem("pwa-studio-movie-projects:"+ownerId,JSON.stringify(projects)),
+    toCloudRow: movieToCloudRow,
+    fromCloudRow: movieFromCloudRow,
+    render: () => renderMovieProjects(),
+    feedback: message => { const el=$("#movieFeedback"); if(el)el.textContent=message; },
+    syncError: error => {
+      console.error("Movie cloud sync failed:",error);
+      const el=$("#movieFeedback"); if(el)el.textContent="Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+    },
+    loadError: error => {
+      console.error("Movie cloud load failed:",error);
+      const el=$("#movieFeedback"); if(el)el.textContent="Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+    }
+  }) || null;
+  const scheduleMovieCloudSync = () => {
+    const context=movieCloudContext?.capture(authSession?.user?.id,authContextVersion);
+    if(context) movieCloudOperations?.schedule(context);
   };
   const loadMovieProjectsFromCloud = async () => {
-    const userId = authSession?.user?.id;
-    if (!userId || !supabaseClient || movieCloudState.loadingUser === userId) return;
-    movieCloudState.loadingUser = userId;
-    try {
-      const { data, error } = await supabaseClient
-        .from("projects")
-        .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
-        .eq("project_type", "movie")
-        .order("updated_at", { ascending: false });
-      if (error) throw error;
-      if (authSession?.user?.id !== userId) return;
-      const deletedIds = readMovieTombstones();
-      if (deletedIds.length) {
-        const { error: deleteError } = await supabaseClient.from("projects").delete()
-          .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
-        if (deleteError) throw deleteError;
-        writeMovieTombstones([]);
-      }
-      const deletedSet = new Set(deletedIds);
-      const local = movieRead().filter(project => !deletedSet.has(project.id));
-      const merged = new Map(local.map(project => [project.id, project]));
-      (data || []).filter(row => !deletedSet.has(row.id)).forEach(row => {
-        const cloudProject = movieFromCloudRow(row);
-        const localProject = merged.get(cloudProject.id);
-        if (!localProject || new Date(cloudProject.updatedAt || 0) >= new Date(localProject.updatedAt || 0)) {
-          merged.set(cloudProject.id, cloudProject);
-        }
-      });
-      const projects = [...merged.values()].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-      if (movieWrite(projects)) {
-        renderMovieProjects();
-        scheduleMovieCloudSync();
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "✓ Фильмы загружены из облака. Изменения синхронизируются автоматически.";
-      }
-    } catch (error) {
-      console.error("Movie cloud load failed:", error);
-      const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
-    } finally {
-      if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
-    }
+    const context=movieCloudContext?.capture(authSession?.user?.id,authContextVersion);
+    if(context) await movieCloudOperations?.load(context);
   };
-  const movieRead = () => {
+  const movieStorageGuard = window.PWAMovieStorageGuard.createMovieStorageGuard();
+  const movieRead = (options = {}) => {
+    const strict = options.strict === true;
     try {
       const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
-      if (!Array.isArray(raw)) return [];
+      if (!Array.isArray(raw)) throw new Error("Локальное хранилище фильмов имеет неверный формат.");
       const now = Date.now();
       let changed = false;
       const projects = raw.filter(item => item && typeof item === "object" && item.id).map(item => {
@@ -1072,9 +1190,10 @@ const movieHistoryStyle = document.createElement("style");
           story: item.story || item.idea || "",
           completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
         };
-        if (!authSession?.user && !project.guestExpiresAt) {
-          project.guestExpiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
-          changed = true;
+        if (!authSession?.user) {
+          const expiry = window.PWAGuestProjectExpiry.normalizeGuestProjectExpiry(project, now);
+          if (expiry.changed) changed = true;
+          return expiry.project;
         }
         return project;
       });
@@ -1087,10 +1206,25 @@ const movieHistoryStyle = document.createElement("style");
         if (!authSession?.user && active.length !== projects.length) sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
         localStorage.setItem(movieStorageKey(), JSON.stringify(active));
       }
+      movieStorageGuard.readSucceeded();
       return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-    } catch { return []; }
+    } catch (error) {
+      movieStorageGuard.readFailed();
+      console.error("Movie project storage read failed:", error);
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Не удалось прочитать локальные фильмы. Чтобы не показать пустой список и не перезаписать облачные проекты, синхронизация остановлена до восстановления доступа к памяти браузера.";
+      if (strict) throw error;
+      return [];
+    }
   };
+  // Cloud reads use the same single read/normalization pass, but propagate failures.
+  const readMovieProjectsForCloud = () => movieRead({ strict: true });
   const movieWrite = projects => {
+    if (!movieStorageGuard.canWrite()) {
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Сохранение остановлено: перед этим не удалось прочитать текущие фильмы. Повторите чтение после восстановления доступа к памяти, чтобы не затереть существующие проекты.";
+      return false;
+    }
     try {
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
       scheduleMovieCloudSync();
@@ -1102,13 +1236,9 @@ const movieHistoryStyle = document.createElement("style");
       return false;
     }
   };
-  const movieId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "movie-" + Date.now() + "-" + Math.random().toString(36).slice(2,9);
-  const movieSnapshot = project => { const copy={...project}; delete copy.versions; return copy; };
-  const addMovieVersion = project => {
-    const versions=Array.isArray(project.versions)?project.versions:[];
-    versions.unshift({savedAt:new Date().toISOString(),data:movieSnapshot(project)});
-    project.versions=versions.slice(0,20);
-  };
+  const movieId = () => window.PWAMovieId.create(window.crypto);
+  const movieSnapshot = project => MovieVersionHistory.snapshot(project);
+  const addMovieVersion = project => MovieVersionHistory.addVersion(project);
   const movieDate = value => {
     const date=new Date(value || Date.now());
     return Number.isNaN(date.getTime())?"Дата не указана":date.toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"});
@@ -1156,6 +1286,7 @@ const movieHistoryStyle = document.createElement("style");
     const project=movieRead().find(item=>item.id===projectId);
     const panel=ensureMovieWorkflowPanel();
     if(!project||!panel)return;
+    let baseUpdatedAt=project.updatedAt||project.createdAt||null;
     activeMovieId=projectId; editingMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards(); panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent="Этап 1 из 5 · Основные сведения о фильме";
@@ -1193,7 +1324,12 @@ const movieHistoryStyle = document.createElement("style");
       const name=inputs.movieName.value.trim();
       if(!name){status.textContent="Укажите название фильма.";inputs.movieName.focus();return false;}
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0){status.textContent="Фильм не найден.";return false;}
-      const current=latest[index]; addMovieVersion(current);
+      const current=latest[index];
+      if((current.updatedAt||current.createdAt||null)!==baseUpdatedAt){
+        status.textContent="Этот фильм изменился в другом окне или на другом устройстве. Сведения не перезаписаны — закройте этап и откройте его заново, чтобы загрузить актуальную версию.";
+        return false;
+      }
+      addMovieVersion(current);
       Object.assign(current,{
         name, seriesNumber:inputs.movieSeriesNumber.value?Number(inputs.movieSeriesNumber.value):null,
         versionLabel:inputs.movieVersionLabel.value.trim(), idea:inputs.movieIdea.value.trim(),
@@ -1201,6 +1337,7 @@ const movieHistoryStyle = document.createElement("style");
         updatedAt:new Date().toISOString()
       });
       if(!movieWrite(latest)){status.textContent="Не удалось сохранить изменения.";return false;}
+      baseUpdatedAt=current.updatedAt;
       renderMovieProjects(); status.textContent="✓ Основные сведения сохранены.";
       return true;
     };
@@ -1215,7 +1352,9 @@ const movieHistoryStyle = document.createElement("style");
     const done=Array.isArray(project.completedSteps)?project.completedSteps:[];
     if(stageIndex>0&&!done.includes(movieStages[stageIndex-1].key)){const feedback=$("#movieFeedback");if(feedback)feedback.textContent="Сначала завершите предыдущий этап.";return;}
     activeMovieId=projectId; setMovieCreationFormVisible(false); updateMovieStageCards();
-    const stage=movieStages[stageIndex]; panel.replaceChildren();
+    const stage=movieStages[stageIndex];
+    let baseUpdatedAt=project.updatedAt||project.createdAt||null;
+    panel.replaceChildren();
     const head=document.createElement("div"); head.className="movie-workflow-head";
     const title=document.createElement("h2"); title.textContent="Этап "+(stageIndex+1)+" из 4 · "+stage.title;
     const edition=movieEditionLabel(project);
@@ -1239,11 +1378,14 @@ const movieHistoryStyle = document.createElement("style");
       try{
         const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId);
         if(index<0){draftStatus.textContent="Не удалось найти этот фильм. Вернитесь к проекту и откройте этап снова.";return;}
-        const current=latest[index]; addMovieVersion(current);
+        const current=latest[index];
+        if((current.updatedAt||current.createdAt||null)!==baseUpdatedAt){draftStatus.textContent="Этот фильм изменился в другом окне или устройстве. Черновик не перезаписан — закройте этап и откройте его заново, чтобы загрузить актуальную версию.";return;}
+        addMovieVersion(current);
         stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
         if(stage.key==="story" && current.story) current.idea=current.story;
         current.updatedAt=new Date().toISOString();
         if(!movieWrite(latest)){draftStatus.textContent="Сохранение не удалось. Проверьте сообщение вверху страницы.";return;}
+        baseUpdatedAt=current.updatedAt;
         draftStatus.textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап не отмечен завершённым.";
         const savedMessage=draftStatus.textContent;
         draftStatusTimer=setTimeout(()=>{if(draftStatus.textContent===savedMessage)draftStatus.textContent="";},4000);
@@ -1259,12 +1401,15 @@ const movieHistoryStyle = document.createElement("style");
       const emptyField=stage.fields.find(([key])=>!inputs[key].value.trim());
       if(emptyField){$("#movieFeedback").textContent="Заполните поле «"+emptyField[1]+"», прежде чем завершить этап.";inputs[emptyField[0]].focus();return;}
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
-      const current=latest[index]; addMovieVersion(current);
+      const current=latest[index];
+      if((current.updatedAt||current.createdAt||null)!==baseUpdatedAt){$("#movieFeedback").textContent="Этот фильм изменился в другом окне или устройстве. Этап не перезаписан — откройте его заново, чтобы загрузить актуальную версию.";return;}
+      addMovieVersion(current);
       stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
       current.completedSteps=(Array.isArray(current.completedSteps)?current.completedSteps:[]).filter(key=>movieStages.findIndex(item=>item.key===key)<=stageIndex);
       if(!current.completedSteps.includes(stage.key))current.completedSteps.push(stage.key);
       current.workflowStep=Math.min(stageIndex+1,4); current.updatedAt=new Date().toISOString();
       if(!movieWrite(latest))return;
+      baseUpdatedAt=current.updatedAt;
       renderMovieProjects(); $("#movieFeedback").textContent="✓ Этап «"+stage.title+"» сохранён в фильме «"+current.name+"».";
       if(stageIndex<3)openMovieStage(projectId,stageIndex+1);
       else {
@@ -1305,13 +1450,133 @@ const movieHistoryStyle = document.createElement("style");
     panel.append(head,list,note,back); panel.hidden=false; panel.removeAttribute("data-active-stage");
     requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
+  let dashboardActivityBusy = false;
+  let dashboardActivityPending = false;
+  const renderDashboardActivity = async () => {
+    const list = $("#dashboardActivityList");
+    if (!list) return;
+    if (dashboardActivityBusy) { dashboardActivityPending = true; return; }
+    dashboardActivityBusy = true;
+    const requestUserId = authSession?.user?.id || null;
+    const requestVersion = authContextVersion;
+    try {
+      const items = movieRead().slice(0, 5).map(project => ({
+        kind: "movie", id: project.id, title: project.name || "Без названия",
+        detail: "Проект фильма · " + movieProgress(project),
+        updatedAt: project.updatedAt || project.createdAt || null
+      }));
+      let conversationHistoryUnavailable = false;
+      if (requestUserId && supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient.from("assistant_conversations")
+            .select("id,title,updated_at").eq("user_id", requestUserId)
+            .order("updated_at", { ascending: false }).limit(5);
+          if (error) throw error;
+          if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+          (data || []).forEach(conversation => items.push({
+            kind: "assistant", id: conversation.id,
+            title: conversation.title || "Новый диалог",
+            detail: "Разговор с AI Companion",
+            updatedAt: conversation.updated_at || null
+          }));
+        } catch (historyError) {
+          if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+          conversationHistoryUnavailable = true;
+          console.warn("Dashboard conversation history is unavailable:", historyError);
+        }
+      }
+      if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+      items.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+      list.replaceChildren();
+      if (!items.length) {
+        const empty = document.createElement("div"); empty.className = "dashboard-empty";
+        empty.textContent = requestUserId
+          ? (conversationHistoryUnavailable
+            ? "История AI Companion пока недоступна. Создайте проект — он появится здесь."
+            : "Здесь появятся ваши новые проекты и разговоры с AI Companion.")
+          : "Создайте проект — и здесь появится ваша недавняя активность.";
+        list.append(empty); return;
+      }
+      items.slice(0, 6).forEach(item => {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "dashboard-activity-item";
+        const icon = document.createElement("span"); icon.className = "dashboard-activity-icon";
+        icon.textContent = item.kind === "movie" ? "🎬" : "✦";
+        const copy = document.createElement("span"); copy.className = "dashboard-activity-copy";
+        const title = document.createElement("b"); title.textContent = item.title;
+        const detail = document.createElement("small");
+        detail.textContent = item.detail + (item.updatedAt ? " · " + movieDate(item.updatedAt) : "");
+        copy.append(title, detail);
+        const arrow = document.createElement("span"); arrow.className = "dashboard-activity-arrow"; arrow.textContent = "↗";
+        button.append(icon, copy, arrow);
+        button.addEventListener("click", async () => {
+          if (item.kind === "movie") {
+            activeMovieId = item.id; navigate("movie");
+            setTimeout(() => openMovieOverview(item.id), 80);
+          } else {
+            navigate("assistant");
+            try { await loadAssistantMessages(item.id); await renderAssistantHistory(); }
+            catch (error) { setAssistantStatus("Не удалось открыть диалог: " + error.message); }
+          }
+        });
+        list.append(button);
+      });
+      if (conversationHistoryUnavailable) {
+        const note = document.createElement("div"); note.className = "dashboard-empty";
+        note.textContent = "История AI Companion временно недоступна; ваши проекты показаны выше.";
+        list.append(note);
+      }
+    } catch (error) {
+      if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+      list.replaceChildren();
+      const note = document.createElement("div"); note.className = "dashboard-empty";
+      note.textContent = "Не удалось обновить недавнюю активность. Попробуйте открыть Центр управления позже.";
+      list.append(note);
+      console.warn("Dashboard activity could not be rendered:", error);
+    } finally {
+      dashboardActivityBusy = false;
+      if (dashboardActivityPending) { dashboardActivityPending = false; renderDashboardActivity(); }
+    }
+  };
+  const renderCreativeDashboard = () => {
+    const list=$("#dashboardProjectList");
+    if(!list)return;
+    const projects=movieRead().slice(0,4);
+    const count=$("#dashboardProjectCount");
+    if(count)count.textContent=projects.length+" из "+movieRead().length;
+    list.replaceChildren();
+    if(!projects.length){
+      const empty=document.createElement("div"); empty.className="dashboard-empty";
+      const title=document.createElement("b"); title.textContent="Ваша первая история начнётся здесь";
+      const note=document.createElement("p"); note.textContent="Создайте проект в Миникиностудии — он появится в этом пространстве.";
+      const action=document.createElement("button"); action.type="button"; action.className="secondary-button"; action.textContent="Создать первый фильм →";
+      action.addEventListener("click",()=>navigate("movie"));
+      empty.append(title,note,action); list.append(empty);
+    }else{
+      projects.forEach(project=>{
+        const card=document.createElement("article"); card.className="dashboard-project";
+        const main=document.createElement("div"); main.className="dashboard-project-main";
+        const title=document.createElement("b"); title.textContent=project.name||"Без названия";
+        const meta=document.createElement("small"); meta.textContent=[project.genre||"Жанр не указан",movieProgress(project),"Изменён "+movieDate(project.updatedAt||project.createdAt)].join(" · ");
+        main.append(title,meta);
+        const state=document.createElement("span"); state.className="dashboard-save-state";
+        state.textContent=authSession?.user?"Статус облака — в мастерской":"Сохранено на этом устройстве";
+        const open=document.createElement("button"); open.type="button"; open.className="secondary-button"; open.textContent="Продолжить →";
+        open.addEventListener("click",()=>{activeMovieId=project.id;navigate("movie");setTimeout(()=>openMovieOverview(project.id),80);});
+        card.append(main,state,open); list.append(card);
+      });
+    }
+    const recent=$("#dashboardRecentLabel");
+    if(recent)recent.textContent=projects.length?"Недавно изменённые проекты":"Пока нет недавних проектов";
+    renderDashboardActivity();
+  };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
     const projects=movieRead(); const count=$("#movieCount");
     if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
     if(!projects.length){
       list.innerHTML='<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
-      activeMovieId=null; updateMovieStageCards(); return;
+      activeMovieId=null; updateMovieStageCards(); renderCreativeDashboard(); return;
     }
     if(!projects.some(item=>item.id===activeMovieId))activeMovieId=projects[0].id;
     list.replaceChildren();
@@ -1334,12 +1599,18 @@ const movieHistoryStyle = document.createElement("style");
       });
       const editDetails=makeAction("Изменить сведения","secondary-button",()=>openMovieDetailsStage(project.id));
       const rename=makeAction("✎ Переименовать фильм","secondary-button",()=>{
-        const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
-        const entered=window.prompt("Введите новое название фильма:",original.name||"");
+        const initial=movieRead().find(item=>item.id===project.id); if(!initial)return;
+        const baseUpdatedAt=initial.updatedAt||initial.createdAt||null;
+        const entered=window.prompt("Введите новое название фильма:",initial.name||"");
         if(entered===null)return;
         const nextName=entered.trim();
         if(!nextName){window.alert("Название фильма не может быть пустым.");return;}
-        if(nextName===(original.name||""))return;
+        if(nextName===(initial.name||""))return;
+        const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
+        if((original.updatedAt||original.createdAt||null)!==baseUpdatedAt){
+          $("#movieFeedback").textContent="Этот фильм изменился в другом окне или на другом устройстве. Название не изменено — откройте проект заново и повторите попытку.";
+          return;
+        }
         addMovieVersion(original);
         original.name=nextName; original.updatedAt=new Date().toISOString();
         if(!movieWrite(latest))return;
@@ -1348,6 +1619,10 @@ const movieHistoryStyle = document.createElement("style");
       });
       const copy=makeAction("⧉ Создать копию","secondary-button",()=>{
         const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
+        let pendingDeletes;
+        try { pendingDeletes=readMovieTombstones(); }
+        catch(error) { $("#movieFeedback").textContent="Не удалось проверить очередь удалений. Копирование остановлено, чтобы не создать копию фильма с неподтверждённым удалением."; console.error("Movie copy tombstone check failed:",error); return; }
+        if(pendingDeletes.includes(original.id)) { $("#movieFeedback").textContent="Для этого фильма уже ожидается облачное удаление. Копирование остановлено, чтобы не создать копию из проекта, помеченного на удаление."; return; }
         const clone={...movieSnapshot(original),id:movieId(),name:(original.name||"Фильм")+" — копия",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),versions:[]};
         latest.unshift(clone); if(movieWrite(latest)){activeMovieId=clone.id;renderMovieProjects();$("#movieFeedback").textContent="Копия создана. Оригинальный фильм не изменён.";}
       });
@@ -1393,9 +1668,25 @@ const movieHistoryStyle = document.createElement("style");
           const restore=makeAction("Восстановить эту версию","primary-button",()=>{
             if(!window.confirm("Восстановить версию от "+movieDate(entry.savedAt)+"? Текущая версия будет сохранена в истории перед заменой."))return;
             const latest=movieRead(); const live=latest.find(item=>item.id===project.id); if(!live)return;
-            const restored=versions[selectedIndex].data;
-            addMovieVersion(live); const keepVersions=live.versions;
-            latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
+            let pendingDeletes;
+            try { pendingDeletes=readMovieTombstones(); }
+            catch(error) { $("#movieFeedback").textContent="Не удалось проверить очередь удалений. Восстановление остановлено, чтобы не перезаписать состояние фильма с неподтверждённым удалением."; console.error("Movie restore tombstone check failed:",error); return; }
+            if(pendingDeletes.includes(live.id)) { $("#movieFeedback").textContent="Для этого фильма уже ожидается облачное удаление. Восстановление остановлено; сначала необходимо разобраться с очередью удаления."; return; }
+            const selectedVersion=versions[selectedIndex];
+            const latestVersions=Array.isArray(live.versions)?live.versions:[];
+            const stillAvailable=latestVersions.some(entry=>entry.savedAt===selectedVersion.savedAt && JSON.stringify(entry.data)===JSON.stringify(selectedVersion.data));
+            if(!stillAvailable){
+              overlay.remove();
+              $("#movieFeedback").textContent="Выбранная версия больше недоступна в актуальной истории (возможно, история обновилась или старые записи были ограничены). Откройте историю заново и выберите существующую версию.";
+              return;
+            }
+            const restored=MovieVersionHistory.restore(live,selectedVersion,new Date().toISOString());
+            if(!restored){
+              overlay.remove();
+              $("#movieFeedback").textContent="Эта запись истории повреждена или относится к другому фильму. Текущий проект не изменён.";
+              return;
+            }
+            latest[latest.findIndex(item=>item.id===project.id)]=restored;
             if(movieWrite(latest)){overlay.remove();renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
           });
           restore.classList.add("movie-history-restore"); preview.append(restore);
@@ -1418,10 +1709,29 @@ const movieHistoryStyle = document.createElement("style");
       });
       const remove=makeAction("🗑 Удалить","danger-button",()=>{
         if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
-        const latest=movieRead().filter(item=>item.id!==project.id);
-        const deletedIds=readMovieTombstones();
-        if(isUuid(project.id) && !deletedIds.includes(project.id)) writeMovieTombstones([...deletedIds,project.id]);
-        if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён. Удаление отправлено в облако.":"Проект удалён с этого устройства.";}
+        const currentProjects=movieRead();
+        const latest=currentProjects.filter(item=>item.id!==project.id);
+        let deletedIds;
+        try { deletedIds=readMovieTombstones(); }
+        catch(error) { $("#movieFeedback").textContent="Не удалось прочитать очередь удалений. Фильм не удалён и облачная синхронизация не запускалась. Проверьте память браузера и повторите попытку."; console.error("Movie deletion queue read failed:",error); return; }
+        const needsTombstone=!!authSession?.user && isUuid(project.id) && !deletedIds.includes(project.id);
+        if(needsTombstone && !writeMovieTombstones([...deletedIds,project.id])){
+          $("#movieFeedback").textContent="Не удалось надёжно поставить облачное удаление в очередь. Фильм оставлен на месте — освободите память браузера и повторите попытку.";
+          return;
+        }
+        if(movieWrite(latest)){
+          if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;
+          renderMovieProjects();
+          const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;
+          $("#movieFeedback").textContent=authSession?.user?"Проект удалён с устройства. Удаление ожидает подтверждения облачной синхронизации.":"Проект удалён с этого устройства.";
+        } else if(needsTombstone) {
+          // Roll back the newly queued cloud delete when possible. If storage also
+          // blocks rollback, explain that the cloud deletion remains queued.
+          if(!writeMovieTombstones(deletedIds)) {
+            console.error("Could not roll back the tombstone after local project write failed.");
+            $("#movieFeedback").textContent="Не удалось удалить фильм из памяти устройства. При этом очередь облачного удаления не удалось отменить: облачная копия может быть удалена при следующей синхронизации. Освободите память браузера и проверьте проект перед продолжением.";
+          }
+        }
       });
       const allStagesDone=movieStages.every(stage=>(project.completedSteps||[]).includes(stage.key));
       const stageButton=makeAction((allStagesDone?"Открыть готовый проект":"Продолжить работу")+" · "+movieProgress(project), "primary-button",()=>{
@@ -1438,9 +1748,10 @@ const movieHistoryStyle = document.createElement("style");
       card.append(toggle,panel); list.append(card);
     });
     updateMovieStageCards();
+    renderCreativeDashboard();
   };
   $("#movieStart").addEventListener("click",()=>{
-    editingMovieId=null; $("#movieForm").reset();
+    editingMovieId=null; editingMovieBaseUpdatedAt=null; $("#movieForm").reset();
     const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
     $("#movieFeedback").textContent="Задайте основу нового фильма. Уже существующие проекты останутся без изменений.";
     $("#movieName").focus(); $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
@@ -1451,7 +1762,12 @@ const movieHistoryStyle = document.createElement("style");
     const projects=movieRead(); const existingIndex=editingMovieId?projects.findIndex(item=>item.id===editingMovieId):-1; const now=new Date().toISOString();
     let savedProject;
     if(existingIndex>=0){
-      savedProject=projects[existingIndex]; addMovieVersion(savedProject);
+      savedProject=projects[existingIndex];
+      if(editingMovieBaseUpdatedAt && (savedProject.updatedAt||savedProject.createdAt||null)!==editingMovieBaseUpdatedAt){
+        $("#movieFeedback").textContent="Этот фильм изменился в другом окне или на другом устройстве. Изменения не сохранены — откройте проект заново, чтобы загрузить актуальную версию.";
+        return;
+      }
+      addMovieVersion(savedProject);
       const ideaChanged=(savedProject.idea||"")!==$("#movieIdea").value.trim();
       Object.assign(savedProject,{name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,seriesNumber:$("#movieSeriesNumber").value?Number($("#movieSeriesNumber").value):null,versionLabel:$("#movieVersionLabel").value.trim(),duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,updatedAt:now});
       if(ideaChanged){savedProject.completedSteps=[];savedProject.workflowStep=0;}
@@ -1461,7 +1777,7 @@ const movieHistoryStyle = document.createElement("style");
       projects.unshift(savedProject);
     }
     if(!movieWrite(projects))return;
-    activeMovieId=savedProject.id; editingMovieId=savedProject.id;
+    activeMovieId=savedProject.id; editingMovieId=savedProject.id; editingMovieBaseUpdatedAt=savedProject.updatedAt||savedProject.createdAt||null;
     const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
     renderMovieProjects();
     $("#movieFeedback").textContent=existingIndex>=0?"✓ Изменения сохранены в проекте «"+name+"».":(!authSession?.user?"✓ Гостевой фильм создан. Он будет храниться в этом браузере 24 часа. Откройте «Гостевое пространство», чтобы скачать копию.":"✓ Фильм «"+name+"» создан. Форма теперь редактирует этот проект; для нового фильма нажмите «Новый фильм». Этап 1 — сценарий и раскадровка — уже доступен.");

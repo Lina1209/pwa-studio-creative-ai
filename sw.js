@@ -1,11 +1,18 @@
-const CACHE_NAME = "pwa-studio-shell-v14";
+const CACHE_NAME = "pwa-studio-shell-v16";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
-  "./app.js",
-  "./audio-lab.js",
   "./supabase-config.js",
+  "./movie-cloud-context.js?v=20261124-1",
+  "./movie-cloud-operations.js?v=20261124-2",
+  "./movie-version-history.js?v=20261124-1",
+  "./movie-storage-guard.js?v=20261124-1",
+  "./movie-guest-expiry.js?v=20261124-1",
+  "./movie-tombstone-storage.js?v=20261124-1",
+  "./movie-id.js?v=20261124-1",
+  "./app.js?v=20261124-2",
+  "./audio-lab.js?v=20261121-1",
   "./manifest.webmanifest",
   "./assets/icon.svg"
 ];
@@ -37,7 +44,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   const isShellAsset = request.mode === "navigate" ||
-    ["/index.html", "/app.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
+    ["/index.html", "/app.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/movie-cloud-context.js", "/movie-cloud-operations.js", "/movie-version-history.js", "/movie-storage-guard.js", "/movie-guest-expiry.js", "/movie-tombstone-storage.js", "/movie-id.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
 
   if (isShellAsset) {
     event.respondWith(
@@ -45,7 +52,11 @@ self.addEventListener("fetch", event => {
         .then(response => {
           if (response && response.ok && response.type === "basic") {
             const copy = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+            event.waitUntil(
+              caches.open(CACHE_NAME)
+                .then(cache => cache.put(request, copy))
+                .catch(() => {})
+            );
           }
           return response;
         })
@@ -63,7 +74,11 @@ self.addEventListener("fetch", event => {
       return fetch(request).then(response => {
         if (response && response.ok && response.type === "basic") {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+          event.waitUntil(
+            caches.open(CACHE_NAME)
+              .then(cache => cache.put(request, copy))
+              .catch(() => {})
+          );
         }
         return response;
       });

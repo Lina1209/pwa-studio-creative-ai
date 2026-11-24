@@ -1,20 +1,16 @@
 import httpx
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import HTTPException
 
 from app.core.config import Settings
+from app.services.supabase_rest import supabase_headers
 
 
 def _request(settings: Settings, method: str, table: str, *, params=None, payload=None, prefer="return=representation"):
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Messaging storage is not configured.")
-    headers = {
-        "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-        "Content-Type": "application/json",
-        "Prefer": prefer,
-    }
+    headers = supabase_headers(settings, prefer=prefer)
     try:
         response = httpx.request(
             method, f"{settings.supabase_url.rstrip('/')}/rest/v1/{table}",
@@ -74,12 +70,16 @@ def send_message(settings: Settings, sender_id: str, recipient_id: str, body: st
     })
     if blocked:
         raise HTTPException(status_code=403, detail="Messaging is unavailable for this user pair.")
-    recent = _request(settings, "GET", "direct_messages", params={
-        "select": "id", "sender_id": f"eq.{sender_id}",
-        "created_at": f"gte.{(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()}",
-        "limit": "21",
-    })
-    if len(recent) >= 20:
+    # The database RPC increments a per-user counter atomically. Unlike a
+    # read-then-count check, concurrent requests cannot all pass the same limit.
+    allowed = _request(
+        settings,
+        "POST",
+        "rpc/consume_message_rate_limit",
+        payload={"p_user_id": sender_id, "p_limit": 20, "p_window_seconds": 60},
+        prefer="return=representation",
+    )
+    if allowed is not True:
         raise HTTPException(status_code=429, detail="Please wait before sending more messages.")
     thread = _get_or_create_thread(settings, sender_id, recipient_id)
     rows = _request(settings, "POST", "direct_messages",
@@ -185,8 +185,12 @@ def delete_message_for_self(settings: Settings, user_id: str, message_id: str):
     if not rows:
         raise HTTPException(status_code=404, detail="Message not found.")
     column = "deleted_for_sender_at" if rows[0]["sender_id"] == user_id else "deleted_for_recipient_at"
+    # Repeat the participant check in the write itself. This prevents a stale
+    # ownership read from authorizing an update if the row changes in between.
     _request(settings, "PATCH", "direct_messages", params={
-        "id": f"eq.{message_uuid}", "select": "id",
+        "id": f"eq.{message_uuid}",
+        "or": f"(sender_id.eq.{user_id},recipient_id.eq.{user_id})",
+        "select": "id",
     }, payload={column: datetime.now(timezone.utc).isoformat()})
     return {"deleted_for_you": True}
 
