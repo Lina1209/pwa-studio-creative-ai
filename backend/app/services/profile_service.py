@@ -55,9 +55,23 @@ def get_own_profile(settings: Settings, user_id: str) -> dict:
     if rows:
         return rows[0]
     username = "user_" + uid.replace("-", "")[:12]
-    rows = _request(settings, "POST", payload={
-        "user_id": uid, "username": username, "display_name": "Новый участник",
-        "bio": "", "visibility": "public", "show_in_directory": True,
+    # Insert-only upsert makes concurrent first access idempotent without
+    # overwriting a profile that another request (or the user) just created.
+    rows = _request(
+        settings, "POST",
+        params={"on_conflict": "user_id"},
+        payload={
+            "user_id": uid, "username": username, "display_name": "Новый участник",
+            "bio": "", "visibility": "public", "show_in_directory": True,
+        },
+        prefer="resolution=ignore-duplicates,return=representation",
+    )
+    if rows:
+        return rows[0]
+    # Another request may have won the insert race; fetch that verified owner's row.
+    rows = _request(settings, "GET", params={
+        "select": "user_id,username,display_name,bio,visibility,show_in_directory,avatar_path,updated_at",
+        "user_id": f"eq.{uid}", "limit": "1",
     })
     if rows:
         return rows[0]
