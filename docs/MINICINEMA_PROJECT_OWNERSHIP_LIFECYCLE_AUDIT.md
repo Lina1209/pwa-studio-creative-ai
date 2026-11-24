@@ -146,3 +146,14 @@ A further review found that the load path merged by timestamp, but the sync path
 The sync controller now performs an owner- and movie-type-scoped SELECT for the project IDs in the outgoing batch. If a valid cloud copy is strictly newer than the local copy, the controller retains the cloud payload (including its version history) in local storage and omits that ID from the upsert batch. A stale account context after the preflight SELECT aborts before local writes or upsert. Equal timestamps continue to prefer the local copy, and invalid remote timestamps do not block the local write.
 
 This is a best-effort preflight, not full multi-device conflict resolution: another device can still write after the SELECT and before this device's upsert. The remaining race requires a server-side revision counter or atomic compare-and-swap RPC, which must wait for live migration/schema reconciliation and a disposable PostgreSQL/Supabase integration environment. The new regression tests are authored but have not been executed; no live Supabase records or schema were accessed or changed.
+
+
+## Follow-up — stale edits in project details (2026-11-24)
+
+A targeted UI source review found that the four production-stage forms had an optimistic version marker, but the separate “Основные сведения о фильме” form did not. It re-read the latest project before saving, yet then applied values from an older open form, which could overwrite a newer edit from another tab.
+
+The details form now captures the project's `updatedAt` (falling back to `createdAt`) when opened, compares that marker with the latest local project before creating a history snapshot or changing fields, and refuses the stale save with instructions to reopen the form. The marker advances only after a successful local save, so multiple saves in the same form remain possible.
+
+When cloud sync preflight discovers a newer remote project and retains it locally, the Mini Cinema list is now re-rendered so the visible project details reflect the reconciled cloud copy. A controller regression assertion covers this refresh behavior.
+
+This is still a client-side timestamp guard. It cannot detect a remote edit that has not yet reached local storage, and it does not close the SELECT-to-upsert race described above. No tests have been run for these latest commits; no live database, migration, deployment, or PR merge was performed.
