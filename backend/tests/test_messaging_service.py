@@ -100,3 +100,85 @@ def test_send_message_rejects_when_atomic_rate_limit_is_exhausted(monkeypatch):
         raise AssertionError("Expected exhausted message rate limit to be rejected.")
 
     assert ("POST", "direct_messages") not in calls
+
+
+
+def test_send_message_rejects_blocks_in_either_direction_before_rate_limit(monkeypatch):
+    calls = []
+
+    def fake_request(settings, method, table, *, params=None, payload=None, prefer="return=representation"):
+        calls.append((method, table, params, payload))
+        if table == "user_blocks":
+            return [{"id": "blocked"}]
+        return []
+
+    monkeypatch.setattr(messaging_service, "_request", fake_request)
+
+    try:
+        messaging_service.send_message(Settings(), USER_ID, OTHER_ID, "Hello")
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("Expected blocked pair to be rejected.")
+
+    assert len(calls) == 1
+    method, table, params, _ = calls[0]
+    assert (method, table) == ("GET", "user_blocks")
+    assert params["or"] == (
+        f"(and(blocker_id.eq.{USER_ID},blocked_id.eq.{OTHER_ID}),"
+        f"and(blocker_id.eq.{OTHER_ID},blocked_id.eq.{USER_ID}))"
+    )
+
+
+def test_block_user_uses_verified_blocker_and_target_pair(monkeypatch):
+    calls = []
+
+    def fake_request(settings, method, table, *, params=None, payload=None, prefer="return=representation"):
+        calls.append((method, table, params, payload, prefer))
+        return [{"id": "block-row"}]
+
+    monkeypatch.setattr(messaging_service, "_request", fake_request)
+    result = messaging_service.block_user(Settings(), USER_ID, OTHER_ID)
+
+    assert result == {"blocked": True, "created": True}
+    method, table, params, payload, prefer = calls[0]
+    assert (method, table) == ("POST", "user_blocks")
+    assert params == {"on_conflict": "blocker_id,blocked_id"}
+    assert payload == {"blocker_id": USER_ID, "blocked_id": OTHER_ID}
+    assert prefer == "resolution=ignore-duplicates,return=representation"
+
+
+def test_unblock_user_deletes_only_callers_own_block(monkeypatch):
+    calls = []
+
+    def fake_request(settings, method, table, *, params=None, payload=None, prefer="return=representation"):
+        calls.append((method, table, params, payload, prefer))
+        return []
+
+    monkeypatch.setattr(messaging_service, "_request", fake_request)
+    result = messaging_service.unblock_user(Settings(), USER_ID, OTHER_ID)
+
+    assert result == {"blocked": False}
+    method, table, params, _, prefer = calls[0]
+    assert (method, table) == ("DELETE", "user_blocks")
+    assert params == {
+        "blocker_id": f"eq.{USER_ID}",
+        "blocked_id": f"eq.{OTHER_ID}",
+    }
+    assert prefer == "return=minimal"
+
+
+def test_list_blocked_users_is_scoped_to_authenticated_blocker(monkeypatch):
+    calls = []
+
+    def fake_request(settings, method, table, *, params=None, payload=None, prefer="return=representation"):
+        calls.append((method, table, params))
+        return []
+
+    monkeypatch.setattr(messaging_service, "_request", fake_request)
+    assert messaging_service.list_blocked_users(Settings(), USER_ID) == []
+
+    method, table, params = calls[0]
+    assert (method, table) == ("GET", "user_blocks")
+    assert params["blocker_id"] == f"eq.{USER_ID}"
+    assert params["select"] == "blocked_id,created_at"
