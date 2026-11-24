@@ -12,7 +12,7 @@ function harness(){
   return {
    delete(){const filters=[],q={in(column,values){filters.push([column,values]);return q;},eq(key,value){filters.push([key,value]);return q;},then(resolve,reject){calls.push({type:"delete",filters});return (deleteGate?deleteGate.promise:Promise.resolve()).then(result=>result||({error:null})).then(resolve,reject);}};return q;},
    upsert(rows){calls.push({type:"upsert",rows});return (upsertGate?upsertGate.promise:Promise.resolve()).then(()=>({error:null}));},
-   select(){const filters=[];const q={eq(key,value){filters.push([key,value]);return q;},order(){calls.push({type:"select",filters});return selectGate?selectGate.promise:Promise.resolve({data:[],error:null});}};return q;}
+   select(){const filters=[];let recorded=false;const record=()=>{if(!recorded){calls.push({type:"select",filters:[...filters]});recorded=true;}};const result=()=>{record();return selectGate?selectGate.promise:Promise.resolve({data:[],error:null});};const q={eq(key,value){filters.push([key,value]);return q;},in(key,values){filters.push([key,values]);return q;},order(){return result();},then(resolve,reject){return result().then(resolve,reject);}};return q;}
   };
  }};
  const ops=createMovieCloudOperations({
@@ -418,4 +418,27 @@ test("equal timestamps preserve local draft to avoid losing unsynced edits",asyn
  const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{id:"same",title:"Cloud tie",updated_at:"2026-11-20T12:00:00Z"}],error:null});
  await h.ops.load(h.capture());
  assert.equal(h.local.A[0].name,"Local tie");
+});
+
+test("sync does not overwrite a newer cloud project with a stale local draft",async()=>{
+ const h=harness();
+ h.local.A=[{id:"same",name:"Local stale",updatedAt:"2026-11-19T12:00:00Z"}];
+ const gate=deferred();h.setSelectGate(gate);
+ h.ops.schedule(h.capture());h.flush();await Promise.resolve();
+ gate.resolve({data:[{id:"same",title:"Cloud newer",updated_at:"2026-11-20T12:00:00Z",settings:{versions:[{savedAt:"2026-11-20T11:00:00Z"}]}}],error:null});
+ await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.some(c=>c.type==="upsert"),false);
+ assert.equal(h.local.A[0].name,"Cloud newer");
+ assert.equal(h.local.A[0].versions.length,1);
+});
+test("account switch during cloud conflict preflight aborts stale sync before local write or upsert",async()=>{
+ const h=harness(),gate=deferred();
+ h.local.A=[{id:"same",name:"A draft",updatedAt:"2026-11-19T12:00:00Z"}];
+ h.setSelectGate(gate);
+ h.ops.schedule(h.capture());h.flush();await Promise.resolve();
+ h.setUser("B",2);
+ gate.resolve({data:[],error:null});
+ await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.some(c=>c.type==="upsert"),false);
+ assert.equal(h.calls.some(c=>c.type==="writeLocal"&&c.owner==="B"),false);
 });
