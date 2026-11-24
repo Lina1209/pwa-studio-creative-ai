@@ -103,10 +103,16 @@
     authGate.hidden = false;
     setAuthMessage("Не найдена конфигурация Supabase. Проверьте файл supabase-config.js.", true);
   } else {
+    // A session event may arrive before getSession() resolves. Do not let a
+    // late bootstrap response overwrite the newer auth state from the listener.
+    const bootstrapAuthVersion = authContextVersion;
     supabaseClient.auth.getSession().then(({data,error}) => {
+      if (bootstrapAuthVersion !== authContextVersion) return;
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
       setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof loadCommunityProfile === "function") loadCommunityProfile(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
+    }).catch(error => {
+      if (bootstrapAuthVersion === authContextVersion) setAuthMessage(error.message || "Не удалось восстановить сессию.", true);
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => { authContextVersion += 1; refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
   }
