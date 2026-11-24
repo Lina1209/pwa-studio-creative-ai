@@ -141,3 +141,8 @@ Regression test definitions cover cleanup-write failure, account-switch races, s
 A final adapter review found that the cloud-specific reader first parsed localStorage, then called the regular UI reader, which read the key a second time and swallowed any later read/normalization-write exception by returning an empty array. A storage failure between those two reads could therefore still be mistaken for an empty collection.
 
 The reader now uses the same normalization path with an explicit strict mode: the UI path can continue displaying its existing error state, while cloud sync/load re-throws the original storage or normalization error and stops before an upsert or merged local write. The redundant preliminary read has been removed. This is a source-level fix; it still needs browser-level storage fault injection and CI confirmation.
+
+
+## Branch follow-up — deletion-queue reads fail closed
+
+The cloud adapter previously converted any tombstone (owner-scoped deleted-project key) read/JSON error into an empty deletion list. That could allow a pending local deletion to be omitted from the cloud delete step and potentially re-uploaded or reintroduced. The cloud adapter now throws on inaccessible or malformed tombstone storage instead of treating it as empty. UI-only tombstone reading remains separate. Added regression scenarios require sync to stop before upsert/local rewrite and cloud load to stop before local overwrite/render when the deletion queue cannot be read. These are authored tests; execution and CI status remain unverified.
