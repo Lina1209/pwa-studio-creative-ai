@@ -67,9 +67,35 @@ function createMovieCloudOperations(deps) {
       // A newer local deletion may have been recorded while the cloud delete
       // request was pending. Never include those projects in this sync batch.
       const currentTombstones = new Set(deps.readTombstones(context.ownerId));
-      const localProjects = deps.readProjects(context.ownerId).filter(project =>
+      let localProjects = deps.readProjects(context.ownerId).filter(project =>
         !deletedIds.includes(project.id) && !currentTombstones.has(project.id));
-      const rows = validateCloudRows(localProjects.map(project => deps.toCloudRow(project, context.ownerId)), context.ownerId);
+      let rows = validateCloudRows(localProjects.map(project => deps.toCloudRow(project, context.ownerId)), context.ownerId);
+      if (rows.length) {
+        // Preflight conflict check: do not blindly overwrite a cloud copy that
+        // is already newer than this device's local draft. This narrows the
+        // stale-device window, but is not a transaction/CAS against a write
+        // arriving after this SELECT.
+        const { data: cloudRows, error: readError } = await deps.supabase().from("projects")
+          .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
+          .in("id", rows.map(row => row.id)).eq("owner_id", context.ownerId).eq("project_type", "movie");
+        if (readError) throw readError;
+        if (!current(context)) return;
+        const cloudById = new Map((cloudRows || []).map(row => [row.id, deps.fromCloudRow(row)]));
+        const retained = new Map(localProjects.map(project => [project.id, project]));
+        const blockedIds = new Set();
+        for (const local of localProjects) {
+          const cloud = cloudById.get(local.id);
+          if (cloud && cloudIsNewer(cloud, local)) {
+            retained.set(local.id, cloud);
+            blockedIds.add(local.id);
+          }
+        }
+        if (blockedIds.size) {
+          localProjects = [...retained.values()];
+          rows = validateCloudRows(rows.filter(row => !blockedIds.has(row.id)), context.ownerId);
+        }
+      }
+      if (!current(context)) return;
       deps.writeProjects(context.ownerId, localProjects);
       if (rows.length) {
         const { error } = await deps.supabase().from("projects").upsert(rows, { onConflict: "id" });
