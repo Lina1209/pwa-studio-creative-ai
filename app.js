@@ -1066,9 +1066,11 @@ const movieHistoryStyle = document.createElement("style");
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
   let activeMovieId = null;
   let editingMovieId = null;
+  let editingMovieBaseUpdatedAt = null;
   resetMovieWorkspaceForAuthChange = () => {
     activeMovieId = null;
     editingMovieId = null;
+    editingMovieBaseUpdatedAt = null;
     const form = $("#movieForm");
     if (form) form.reset();
     const panel = $("#movieWorkflowPanel");
@@ -1735,7 +1737,7 @@ const movieHistoryStyle = document.createElement("style");
     renderCreativeDashboard();
   };
   $("#movieStart").addEventListener("click",()=>{
-    editingMovieId=null; $("#movieForm").reset();
+    editingMovieId=null; editingMovieBaseUpdatedAt=null; $("#movieForm").reset();
     const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Сохранить изменения <span>→</span>";
     $("#movieFeedback").textContent="Задайте основу нового фильма. Уже существующие проекты останутся без изменений.";
     $("#movieName").focus(); $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
@@ -1746,7 +1748,12 @@ const movieHistoryStyle = document.createElement("style");
     const projects=movieRead(); const existingIndex=editingMovieId?projects.findIndex(item=>item.id===editingMovieId):-1; const now=new Date().toISOString();
     let savedProject;
     if(existingIndex>=0){
-      savedProject=projects[existingIndex]; addMovieVersion(savedProject);
+      savedProject=projects[existingIndex];
+      if(editingMovieBaseUpdatedAt && (savedProject.updatedAt||savedProject.createdAt||null)!==editingMovieBaseUpdatedAt){
+        $("#movieFeedback").textContent="Этот фильм изменился в другом окне или на другом устройстве. Изменения не сохранены — откройте проект заново, чтобы загрузить актуальную версию.";
+        return;
+      }
+      addMovieVersion(savedProject);
       const ideaChanged=(savedProject.idea||"")!==$("#movieIdea").value.trim();
       Object.assign(savedProject,{name,idea:$("#movieIdea").value.trim(),genre:$("#movieGenre").value,seriesNumber:$("#movieSeriesNumber").value?Number($("#movieSeriesNumber").value):null,versionLabel:$("#movieVersionLabel").value.trim(),duration:Number($("#movieDuration").value),frame:$("#movieFrame").value,updatedAt:now});
       if(ideaChanged){savedProject.completedSteps=[];savedProject.workflowStep=0;}
@@ -1756,7 +1763,7 @@ const movieHistoryStyle = document.createElement("style");
       projects.unshift(savedProject);
     }
     if(!movieWrite(projects))return;
-    activeMovieId=savedProject.id; editingMovieId=savedProject.id;
+    activeMovieId=savedProject.id; editingMovieId=savedProject.id; editingMovieBaseUpdatedAt=savedProject.updatedAt||savedProject.createdAt||null;
     const submit=$("#movieForm button[type='submit']"); if(submit)submit.innerHTML="Создать проект фильма <span>→</span>";
     renderMovieProjects();
     $("#movieFeedback").textContent=existingIndex>=0?"✓ Изменения сохранены в проекте «"+name+"».":(!authSession?.user?"✓ Гостевой фильм создан. Он будет храниться в этом браузере 24 часа. Откройте «Гостевое пространство», чтобы скачать копию.":"✓ Фильм «"+name+"» создан. Форма теперь редактирует этот проект; для нового фильма нажмите «Новый фильм». Этап 1 — сценарий и раскадровка — уже доступен.");
