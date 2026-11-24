@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.assets import (
+from app.asset_schemas import (
     AssetListQuery,
     AssetSafeResponse,
     AssetUploadInitRequest,
