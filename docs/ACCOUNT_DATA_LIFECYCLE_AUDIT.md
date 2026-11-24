@@ -171,3 +171,8 @@ Review of the Mini Cinema stage editor found that its optimistic concurrency tim
 ## Branch follow-up — deletion queue read integrity
 
 The Mini Cinema UI previously treated local deletion-queue read/JSON errors as an empty queue. That could allow a delete action to proceed without accounting for pending cloud deletions. The UI now uses a strict reader: absent key means an empty queue, but inaccessible storage, malformed JSON, and non-array values stop the delete action with a visible message. If local project removal fails and rollback of a newly added tombstone also fails, the UI now explains that the cloud deletion remains queued instead of silently implying the project is safely retained everywhere. Added focused tests for missing, valid, inaccessible, corrupt, and wrong-shaped queues. Tests have not yet been executed.
+
+
+## Branch follow-up — UUID-compatible local project IDs
+
+The browser fallback for project IDs previously emitted a non-UUID string when `crypto.randomUUID` was unavailable. Cloud serialization normalizes such IDs to UUIDs, so a delete racing the first cloud sync could fail to create a UUID tombstone for the local ID while the normalized cloud row was being uploaded. Project ID generation now falls back to a UUID v4-shaped identifier (using `getRandomValues` where available and a compatibility fallback otherwise), keeping deletion markers compatible with cloud IDs. Focused tests cover native, secure-random, and compatibility paths. Tests have not yet been executed.
