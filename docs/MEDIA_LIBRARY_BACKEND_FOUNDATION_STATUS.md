@@ -2,8 +2,8 @@
 
 This change adds the first backend code foundation for the future Media Library:
 
-- `backend/app/schemas/assets.py` defines strict Pydantic request/query/response contracts.
-- `backend/tests/test_asset_schemas.py` covers filename path rejection, media-kind/MIME mismatch, MIME parameters, UUID validation, allow-listed attachment roles, pagination bounds, extra-field rejection and safe response shape.
+- `backend/app/asset_schemas.py` defines strict Pydantic request/query/response contracts.
+- `backend/tests/test_asset_schemas.py` covers filename path rejection, media-kind/MIME mismatch, MIME parameters, UUID validation, allow-listed attachment roles, pagination bounds, extra-field rejection and safe response shape. `backend/app/services/asset_access.py` adds fail-closed helpers that derive owner filters from the verified auth identity; `backend/tests/test_asset_access.py` covers UUID normalization, owner-scope override rejection and invalid identity handling.
 - The upload-init model accepts only a conservative MIME allow-list. This is a validation of client-declared metadata, not proof of the actual uploaded file type.
 
 ## What is implemented
@@ -27,4 +27,9 @@ Before adding routes, inspect the live schema and policy state using the existin
 
 ## Test execution status
 
-The tests have been added to the repository but have not yet been executed in this environment. CI must run against the latest branch head before treating them as passing. No production service, live database, Storage bucket, migration, or deployment was changed by this foundation.
+The schema suite passed in GitHub Actions on commit `aed776af558b7217f966427870aebba9494948a1` (Backend tests, run 177). The owner-scope helper and its tests were added afterward; their CI run is pending and must pass before treating them as verified. No production service, live database, Storage bucket, migration, or deployment was changed by this foundation.
+
+
+## Owner-scope helper boundary
+
+`backend/app/services/asset_access.py` is a pure helper and is not wired into API routes. It canonicalizes the UUID from the verified `StudioUser.user_id`, creates a PostgREST `owner_id=eq.<uuid>` filter, and rejects an extra parameter map that already contains `owner_id`. This is defense-in-depth only: every future route must still verify ownership of both the asset and the project, and the helper must be called only with the authenticated principal, never a client-supplied identifier. The helper does not establish live RLS, database schema, Storage policy, or upload-content validation.
