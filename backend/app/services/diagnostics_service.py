@@ -6,6 +6,7 @@ from app.services.supabase_rest import supabase_headers
 
 TABLE_CHECKS = {
     "profiles": ("user_profiles", "user_id"),
+    "projects": ("projects", "id"),
     "notifications": ("user_notifications", "id"),
     "conversations": ("conversation_threads", "id"),
     "messages": ("direct_messages", "id"),
