@@ -39,7 +39,7 @@ def test_diagnostics_report_table_availability_without_reading_rows(monkeypatch)
 
 
 def test_diagnostics_classify_missing_and_inaccessible_tables(monkeypatch):
-    statuses = iter([200, 404, 403, "network_error", 200, 200, 200, 200])
+    statuses = iter([200, 200, 404, 403, "network_error", 200, 200, 200])
 
     monkeypatch.setattr(
         diagnostics_service.httpx,
