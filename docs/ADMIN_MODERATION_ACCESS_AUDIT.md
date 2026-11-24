@@ -177,3 +177,14 @@ The three frontend handlers now avoid stale account-context UI updates, but the 
 ### Scope and non-actions
 
 This remains a source-only review of the feature branch. No production service, live Supabase table, storage bucket, visitor analytics account, billing provider, or secret configuration was accessed. No SQL was executed, no payment or wallet action was triggered, and PR #4 remains open and unmerged.
+
+
+## Admin AI usage reporting API foundation (2026-11-24)
+
+Added owner-only `GET /api/admin/ai-usage` backed by server-side service-role access. It supports bounded pagination (1–100 rows), optional user/provider/endpoint filters, and selects only operational metadata from `ai_usage`—never prompts, generated text, credentials, or message content. The response includes token totals, known USD cost, and count of unknown-cost events **for the current page only**, explicitly marked `summary_scope=current_page`. It fetches one extra row to determine `has_more`.
+
+The endpoint depends on `require_admin`; the service does not accept a user identity from an untrusted request body. The optional user filter is a validated UUID query parameter. The service returns 503 if server-side storage credentials are absent and sanitizes upstream errors.
+
+This is an API foundation, not yet an admin dashboard. Page summaries must not be presented as all-time totals. A trustworthy all-time/date-range report needs database-side aggregation over a reconciled live schema, including explicit treatment of null costs and telemetry gaps. The current best-effort telemetry writer can fail without failing generation, so these records are not a complete financial ledger and must not be used alone for customer billing or provider invoice reconciliation.
+
+Two service tests were added for bounded pagination/filtering, current-page-only summaries, null-cost accounting, and missing storage configuration. CI has not yet returned a run for the latest feature-branch head at the time of this note. No live Supabase schema was queried or changed, no SQL was run, and no payment action occurred.
