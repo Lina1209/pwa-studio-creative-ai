@@ -176,3 +176,8 @@ The Mini Cinema UI previously treated local deletion-queue read/JSON errors as a
 ## Branch follow-up — UUID-compatible local project IDs
 
 The browser fallback for project IDs previously emitted a non-UUID string when `crypto.randomUUID` was unavailable. Cloud serialization normalizes such IDs to UUIDs, so a delete racing the first cloud sync could fail to create a UUID tombstone for the local ID while the normalized cloud row was being uploaded. Project ID generation now falls back to a UUID v4-shaped identifier (using `getRandomValues` where available and a compatibility fallback otherwise), keeping deletion markers compatible with cloud IDs. Focused tests cover native, secure-random, and compatibility paths. Tests have not yet been executed.
+
+
+## Branch follow-up — auth bootstrap race
+
+The initial `getSession()` promise and the auth-state listener can resolve in either order. Previously, a late initial-session result could overwrite a newer sign-in/sign-out/account-switch event. The bootstrap now captures the current auth-context generation and applies its result only if no auth event has advanced that generation. A rejected bootstrap promise is also handled without changing a newer session. This protects the owner context used by Mini Cinema local keys and cloud operations. Source-reviewed; no live auth session was altered.
