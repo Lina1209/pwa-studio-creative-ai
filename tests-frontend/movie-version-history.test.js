@@ -117,3 +117,25 @@ test("restore dialog closes and reports success only after local persistence suc
   assert.ok(success > close, "success feedback must follow persistence and dialog close");
   assert.equal(handler.includes("movieWrite(latest);overlay.remove();"), false);
 });
+
+test("copy and restore refuse projects with a pending cloud deletion",()=>{
+  const fs=require("node:fs");
+  const app=fs.readFileSync(require.resolve("../app.js"),"utf8");
+  const copyStart=app.indexOf('const copy=makeAction("⧉ Создать копию"');
+  const copyEnd=app.indexOf('const version=makeAction("↶ История версий"',copyStart);
+  assert.ok(copyStart>=0&&copyEnd>copyStart);
+  const copyHandler=app.slice(copyStart,copyEnd);
+  const copyQueueCheck=copyHandler.indexOf("readMovieTombstones()");
+  const copyGuard=copyHandler.indexOf("pendingDeletes.includes(original.id)");
+  const clone=copyHandler.indexOf("const clone=");
+  assert.ok(copyQueueCheck>=0&&copyGuard>copyQueueCheck&&clone>copyGuard);
+
+  const restoreStart=app.indexOf('const restore=makeAction("Восстановить эту версию"');
+  const restoreEnd=app.indexOf('restore.classList.add("movie-history-restore")',restoreStart);
+  assert.ok(restoreStart>=0&&restoreEnd>restoreStart);
+  const restoreHandler=app.slice(restoreStart,restoreEnd);
+  const restoreQueueCheck=restoreHandler.indexOf("readMovieTombstones()");
+  const restoreGuard=restoreHandler.indexOf("pendingDeletes.includes(live.id)");
+  const restoreMutation=restoreHandler.indexOf("MovieVersionHistory.restore(");
+  assert.ok(restoreQueueCheck>=0&&restoreGuard>restoreQueueCheck&&restoreMutation>restoreGuard);
+});
