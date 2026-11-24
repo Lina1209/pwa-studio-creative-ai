@@ -229,3 +229,48 @@ def test_priced_settlement_captures_server_calculated_amount(monkeypatch):
     assert settlement.captured_credits == 1
     assert seen["capture_amount"] == 1
     assert result["status"] == "settled"
+
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "input_tokens", "output_tokens", "error_match"),
+    [
+        ("other-provider", "deepseek/deepseek-chat", 100, 100, "differs"),
+        ("deepseek", "deepseek/other-model", 100, 100, "differs"),
+        ("deepseek", "deepseek/deepseek-chat", 10_001, 100, "exceeds"),
+        ("deepseek", "deepseek/deepseek-chat", 100, None, "incomplete"),
+    ],
+)
+def test_priced_settlement_never_releases_or_captures_unverifiable_usage(
+    monkeypatch, provider, model, input_tokens, output_tokens, error_match
+):
+    catalog, key = _pricing_catalog()
+    quote = credit_service.quote_ai_operation(
+        operation_code=key[0], provider=key[1], model=key[2], catalog=catalog
+    )
+    calls = []
+
+    monkeypatch.setattr(
+        credit_service, "mark_reconciliation_required",
+        lambda settings, **kwargs: calls.append(("reconcile", kwargs)) or {
+            "status": "reconciliation_required"
+        },
+    )
+    monkeypatch.setattr(
+        credit_service, "settle_reservation",
+        lambda *args, **kwargs: calls.append(("settle", kwargs)),
+    )
+    monkeypatch.setattr(
+        credit_service, "release_reservation",
+        lambda *args, **kwargs: calls.append(("release", kwargs)),
+    )
+
+    with pytest.raises(PricingError, match=error_match):
+        credit_service.settle_priced_ai_operation(
+            _settings(), user_id=USER_ID, reservation_id=RESERVATION_ID,
+            quote=quote, provider=provider, model=model,
+            input_tokens=input_tokens, output_tokens=output_tokens, catalog=catalog,
+        )
+
+    assert [call[0] for call in calls] == ["reconcile"]
+    assert calls[0][1] == {"user_id": USER_ID, "reservation_id": RESERVATION_ID}
