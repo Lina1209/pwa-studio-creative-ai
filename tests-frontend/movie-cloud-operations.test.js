@@ -286,3 +286,41 @@ test("a deletion queued during an in-flight upsert is processed by the follow-up
  assert.equal(upserts[1].rows.some(row=>row.id===deletedId),false);
  assert.deepEqual(h.tombstones.A,[]);
 });
+
+test("local project read failure aborts cloud upsert and reports sync error",async()=>{
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
+  readTombstones:()=>[],writeTombstones:()=>true,
+  readProjects:()=>{throw new Error("localStorage access denied");},
+  writeProjects:()=>{calls.push({type:"writeLocal"});},
+  toCloudRow:(p,owner)=>({id:p.id,owner_id:owner,project_type:"movie",settings:p}),
+  fromCloudRow:r=>r,render:()=>{},feedback:()=>calls.push({type:"feedback"}),
+  syncError:e=>calls.push({type:"syncError",message:e.message}),loadError:()=>{}
+ });
+ ops.schedule(capture("A",1));calls.find(x=>x.type==="timer").fn();await new Promise(r=>setImmediate(r));
+ assert.equal(calls.some(x=>x.type==="upsert"),false);
+ assert.equal(calls.some(x=>x.type==="writeLocal"),false);
+ assert.equal(calls.some(x=>x.type==="feedback"),false);
+ assert.match(calls.find(x=>x.type==="syncError").message,/localStorage access denied/);
+});
+
+test("local project read failure prevents cloud load from overwriting device state",async()=>{
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){calls.push({type:"select"});return Promise.resolve({data:[{id:"cloud-a",title:"Cloud",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
+  readTombstones:()=>[],writeTombstones:()=>true,
+  readProjects:()=>{throw new Error("local JSON is corrupt");},
+  writeProjects:()=>calls.push({type:"writeLocal"}),toCloudRow:(p,owner)=>({id:p.id,owner_id:owner}),
+  fromCloudRow:r=>({id:r.id,name:r.title,updatedAt:r.updated_at}),
+  render:()=>calls.push({type:"render"}),feedback:()=>calls.push({type:"feedback"}),
+  syncError:()=>{},loadError:e=>calls.push({type:"loadError",message:e.message})
+ });
+ await ops.load(capture("A",1));
+ assert.equal(calls.some(x=>x.type==="writeLocal"),false);
+ assert.equal(calls.some(x=>x.type==="render"),false);
+ assert.equal(calls.some(x=>x.type==="feedback"),false);
+ assert.match(calls.find(x=>x.type==="loadError").message,/local JSON is corrupt/);
+});
