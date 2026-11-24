@@ -12,8 +12,9 @@ from threading import Barrier
 from urllib.parse import urlparse
 from uuid import uuid4
 
-import psycopg
 import pytest
+
+psycopg = pytest.importorskip("psycopg", reason="PostgreSQL integration dependency is installed only in the disposable DB workflow")
 from psycopg import sql
 
 ROOT = Path(__file__).resolve().parents[3]
