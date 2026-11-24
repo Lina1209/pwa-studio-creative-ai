@@ -83,8 +83,8 @@ def disposable_schema(dsn: str):
             "0011_atomic_message_rate_limit.sql",
             "0012_atomic_ai_rate_limit.sql",
             "0013_unified_credit_wallet.sql",
-            "0015_credit_provider_outcome_resolution.sql",
             "0014_admin_analytics_summary.sql",
+            "0015_credit_provider_outcome_resolution.sql",
         ):
             conn.execute((MIGRATIONS / filename).read_text(encoding="utf-8"))
     yield
