@@ -1,0 +1,103 @@
+# Account and User Data Lifecycle — Source Audit
+
+Date: 2026-11-24  
+Scope: repository source review of authentication, guest drafts, Mini Cinema project records, community profile storage, and deletion/restore behavior.  
+Status: read-only audit; no live account or database operations.
+
+## Executive summary
+
+The repository has a meaningful account-isolation foundation:
+- browser authentication uses the Supabase publishable key, not a service-role key;
+- backend identity is derived from a verified Supabase JWT and stable subject UUID;
+- browser account-context generations invalidate stale asynchronous UI operations;
+- Mini Cinema local data is partitioned by authenticated user ID, and cloud project queries include owner and project-type filters;
+- the `projects` migration source defines owner-based RLS for reads and writes;
+- community profile APIs derive the acting user from the verified backend principal and return an allowlisted public profile.
+
+However, this is not yet proof of live account isolation. The live RLS/grants/migration ledger have not been inspected, and the two-account test plan has not been executed against a disposable Supabase environment.
+
+## Data lifecycle map
+
+### 1. Guest session
+
+- Guest Mini Cinema drafts are stored under the browser key `pwa-studio-movie-projects:guest`.
+- Guest drafts receive a 24-hour expiry marker when first normalized by the local reader.
+- Guest contexts do not create cloud-sync contexts, so guest drafts are not automatically uploaded to a newly authenticated account.
+- Guest data is browser-local. Clearing site data, changing browser/device, or expiry can remove access to it; it is not a cloud backup.
+
+### 2. Registration and sign-in
+
+- The browser initializes Supabase Auth with `PWA_SUPABASE_CONFIG.publishableKey`.
+- Sign-in and sign-up are performed through Supabase Auth.
+- Backend protected routes verify JWT signature through the Supabase JWKS endpoint and require `exp`, `sub`, `iss`, and `aud`; expected issuer and `authenticated` audience are checked.
+- Backend role assignment uses `OWNER_USER_ID` when configured, with email as a backward-compatibility fallback only when the UUID is absent.
+- No request-body user ID is used as the authenticated actor for the reviewed profile, messaging, report, notification, or moderation routes; tests explicitly check several of these boundaries.
+
+This source review does not inspect Render environment values, reveal secrets, or establish which owner setting is currently active in production.
+
+### 3. Authenticated Mini Cinema project records
+
+- Local project lists use `pwa-studio-movie-projects:<user UUID>`.
+- Local deletion queues use `pwa-studio-movie-deleted:<user UUID>`.
+- Cloud reads, deletes, and upserts are scoped to the captured owner UUID and `project_type = movie`.
+- The immutable cloud context carries both owner ID and auth-context generation; stale requests are checked before and after asynchronous operations.
+- The current project table is `public.projects(owner_id)`, separate from the legacy `studio_projects(user_id)` table in migration `0001`.
+- The cloud row stores project payload in `settings` JSONB. It is not a media-binary upload mechanism.
+- Local edits and cloud sync use client-generated timestamps and a latest-timestamp merge. This is not a transactional multi-device conflict protocol.
+
+### 4. Community profile
+
+- `/api/community/profile` uses the verified `StudioUser.user_id` for reads and updates.
+- The public profile query requires both `visibility = public` and `show_in_directory = true`.
+- Public serialization is allowlisted and excludes email and private metadata.
+- The backend uses a service-role REST client, so the service layer must always constrain queries to the verified UUID. Current profile methods do so.
+- The first-profile initialization is a read-then-insert sequence. Two simultaneous first requests can race on the `user_id` primary key. The losing request may surface as a storage error instead of re-reading the row. This is an availability/reliability issue, not evidence of cross-account disclosure.
+
+### 5. Delete and restore
+
+- Mini Cinema delete removes the project from the current local list and adds its UUID to an owner-partitioned localStorage tombstone queue.
+- A later sync sends the cloud delete scoped by IDs, owner UUID, and movie type.
+- If the cloud delete fails, the sync path reports failure and retains the tombstone.
+- The UI distinguishes local removal from pending cloud confirmation.
+- Tombstones are not durable server-side jobs. Browser storage loss before successful sync can lose the pending delete; the cloud row may remain and reappear on another device.
+- Version restore re-resolves the selected snapshot against the latest local history before applying it. Version history is capped at 20 entries.
+- Project deletion and version restore do not represent a media-object deletion workflow because an end-to-end asset pipeline is not implemented.
+
+## Findings and recommended treatment
+
+| Severity | Finding | Treatment |
+|---|---|---|
+| High release gate | Live Supabase migration ledger, project RLS, grants, nullability, and Storage policies are not verified by this source review | Run the existing read-only diagnostics in the correct project and compare with intended migration history before release |
+| Medium | If localStorage rejects writing the deletion tombstone (quota, browser policy, storage failure), the current delete handler can still remove the local project and continue without a durable cloud-delete request | Make tombstone persistence a hard precondition for deleting a cloud-backed local project, or retain a visible recoverable pending-delete state; add a regression test |
+| Medium | Tombstones are browser-local until cloud deletion succeeds | Add a durable server-side deletion queue only after migration reconciliation; meanwhile clearly retain pending status and retry |
+| Medium | Client timestamps are used for merge/conflict hints and cloud `updated_at` | Do not promise conflict-free multi-device editing; consider server-controlled revision/version checks before collaboration |
+| Medium | Project JSON is stored as a client-supplied JSONB payload without an observed application-level size/schema ceiling in the inspected cloud adapter | Define a bounded project schema/payload size and validate before upsert; avoid treating JSONB as a binary asset store |
+| Low | Community profile initialization uses GET then POST and is vulnerable to a first-write race | Replace with a database upsert or handle unique conflict by re-reading the verified user's row |
+| Release gate | Existing mocked tests do not prove live RLS or real two-account denial | Execute the disposable two-account test plan, including direct UUID read/update/delete denial and delayed account-switch requests |
+
+## Test coverage already present in source
+
+The repository contains focused tests for:
+- JWT owner UUID precedence and fail-closed malformed owner configuration;
+- missing/invalid authentication and admin authorization;
+- profile owner scoping and public-field allowlisting;
+- routes using verified user IDs rather than body-supplied identities;
+- stale Mini Cinema contexts, owner-scoped project queries, account switching, guest isolation, tombstone races, and deletion failure behavior.
+
+These are repository test definitions. This audit did not execute them and does not claim they passed in this commit.
+
+## Next safe engineering tasks
+
+1. Add a regression test proving that failure to persist a cloud deletion tombstone does not silently turn a cloud-backed delete into a local-only delete.
+2. Add bounded project payload/schema validation before cloud upsert, with tests for oversized and malformed payloads.
+3. Make community profile initialization idempotent under concurrent first access.
+4. Add an isolated PostgreSQL/Supabase-compatible CI environment and run migration plus transaction tests.
+5. Execute `docs/TWO_ACCOUNT_PROJECT_AND_STORAGE_ISOLATION_TEST_PLAN.md` with disposable accounts after the live migration and RLS metadata are reconciled.
+
+## Explicit non-actions
+
+- No Supabase connection was made and no live schema or user data was queried.
+- No user accounts were created or accessed.
+- No project/profile/media records were read, created, updated, or deleted.
+- No SQL, migration, policy, grant, or Storage setting was changed.
+- No production deployment or PR merge occurred.
