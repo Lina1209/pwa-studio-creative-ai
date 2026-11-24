@@ -181,3 +181,8 @@ The browser fallback for project IDs previously emitted a non-UUID string when `
 ## Branch follow-up — auth bootstrap race
 
 The initial `getSession()` promise and the auth-state listener can resolve in either order. Previously, a late initial-session result could overwrite a newer sign-in/sign-out/account-switch event. The bootstrap now captures the current auth-context generation and applies its result only if no auth event has advanced that generation. A rejected bootstrap promise is also handled without changing a newer session. This protects the owner context used by Mini Cinema local keys and cloud operations. Source-reviewed; no live auth session was altered.
+
+
+## Branch follow-up — guest draft expiry validation
+
+Guest drafts remain isolated under the guest localStorage key; authenticated project keys are not subjected to guest expiry. A source review found that a missing expiry was initialized, but a malformed non-empty expiry string parsed to `NaN` and therefore never expired. The reader now normalizes missing or malformed guest expiry values to a fresh 24-hour deadline without mutating the original object. Valid existing deadlines are preserved and are not extended by reads, so this does not silently turn the fixed 24-hour guest retention policy into a rolling inactivity timer. The normalization is applied only while reading the guest key; signed-in project records are left unchanged. Focused Node test definitions cover valid, missing, malformed, and non-mutating behavior. Execution and CI confirmation remain pending.
