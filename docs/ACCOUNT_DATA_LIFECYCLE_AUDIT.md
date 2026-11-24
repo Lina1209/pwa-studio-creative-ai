@@ -193,3 +193,15 @@ Guest drafts remain isolated under the guest localStorage key; authenticated pro
 Reviewed sign-in, sign-out, initial session restoration, and Mini Cinema rendering. Guest projects use the `pwa-studio-movie-projects:guest` key; signed-in projects use a key containing the authenticated user's UUID. Cloud sync is scheduled only when an authenticated owner context can be captured, so guest drafts are not uploaded. Signing in does not silently merge guest drafts into the account; signing out returns to the separate guest key. The 24-hour expiry is evaluated when guest projects are read, including after a later return to guest mode.
 
 A UI-state issue was identified: changing accounts could leave the previous account's open Mini Cinema stage editor and unsaved top-level project form visible. Added an account-context reset that clears the active/editing project references, resets the new-film form, and hides/clears the stage editor whenever the user UUID changes. This does not delete either account's local projects and does not transfer guest projects. Source-reviewed only; no real sign-in/out session or browser storage was modified. Automated browser testing remains pending.
+
+
+## Branch follow-up — cloud/local project timestamp conflict handling
+
+The cloud-load merge previously compared timestamps by constructing JavaScript Date objects inline. An invalid non-empty timestamp produces an Invalid Date, and comparisons involving it are always false; the result was implicit and the final sort could also become non-deterministic. The merge now parses timestamps explicitly:
+- a valid cloud timestamp replaces local data only when it is strictly newer;
+- a valid cloud timestamp replaces a local copy whose update timestamp is missing or invalid;
+- a missing or invalid cloud timestamp never replaces a local copy;
+- equal timestamps preserve the local copy to avoid discarding a possible unsynced edit;
+- project sorting treats invalid/missing timestamps as older and falls back to creation time.
+
+Added mocked regression-test definitions for older/newer local and cloud copies, preservation of the complete version-history payload, malformed/missing timestamps, and equal timestamps. These tests have not yet been executed. No live Supabase records were read or changed; no browser multi-device conflict test was performed. This remains a timestamp-based last-writer hint, not transactional conflict resolution.
