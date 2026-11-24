@@ -1114,8 +1114,15 @@ const movieHistoryStyle = document.createElement("style");
     clearTimer: id => clearTimeout(id),
     supabase: () => supabaseClient,
     readTombstones: ownerId => {
-      try { const value=JSON.parse(localStorage.getItem("pwa-studio-movie-deleted:"+ownerId)||"[]"); return Array.isArray(value)?value.filter(isUuid):[]; }
-      catch { return []; }
+      let value;
+      try {
+        const stored=localStorage.getItem("pwa-studio-movie-deleted:"+ownerId);
+        value=stored ? JSON.parse(stored) : [];
+      } catch(error) {
+        throw new Error("Не удалось прочитать очередь удалённых фильмов; облачная операция остановлена: " + (error.message || "ошибка хранилища"));
+      }
+      if (!Array.isArray(value)) throw new Error("Очередь удалённых фильмов повреждена; облачная операция остановлена.");
+      return value.filter(isUuid);
     },
     writeTombstones: (ownerId, ids) => {
       try {
