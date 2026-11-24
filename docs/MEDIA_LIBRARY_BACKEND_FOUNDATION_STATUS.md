@@ -27,7 +27,7 @@ Before adding routes, inspect the live schema and policy state using the existin
 
 ## Test execution status
 
-The schema suite passed in GitHub Actions on commit `aed776af558b7217f966427870aebba9494948a1` (Backend tests, run 177). The owner-scope helper and its tests were added afterward; their CI run is pending and must pass before treating them as verified. No production service, live database, Storage bucket, migration, or deployment was changed by this foundation.
+The schema suite passed in GitHub Actions on commit `aed776af558b7217f966427870aebba9494948a1` (Backend tests, run 177). The owner-scope helper and its tests also passed in GitHub Actions on commit `beb2faf952769610563c215b164722470bdffd1f` (Backend tests, run 180). The subsequent documentation-only update on commit `3b63dd924239ff0876ff9c2c0771cd40a1cc4e0d` also passed (Backend tests, run 182). No production service, live database, Storage bucket, migration, or deployment was changed by this foundation.
 
 
 ## Owner-scope helper boundary
