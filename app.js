@@ -1359,8 +1359,8 @@ const movieHistoryStyle = document.createElement("style");
         stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
         if(stage.key==="story" && current.story) current.idea=current.story;
         current.updatedAt=new Date().toISOString();
-        baseUpdatedAt=current.updatedAt;
         if(!movieWrite(latest)){draftStatus.textContent="Сохранение не удалось. Проверьте сообщение вверху страницы.";return;}
+        baseUpdatedAt=current.updatedAt;
         draftStatus.textContent="✓ Черновик этапа «"+stage.title+"» сохранён. Этап не отмечен завершённым.";
         const savedMessage=draftStatus.textContent;
         draftStatusTimer=setTimeout(()=>{if(draftStatus.textContent===savedMessage)draftStatus.textContent="";},4000);
