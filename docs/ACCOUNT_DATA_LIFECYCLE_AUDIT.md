@@ -156,3 +156,8 @@ The cloud-operation adapter already relies on synchronous storage writes throwin
 - the browser adapter does not swallow localStorage.setItem exceptions for project lists, so quota/security failures remain visible to the cloud-operation error path.
 
 A regression test now simulates a quota failure during cloud load and asserts that render, follow-up scheduling, and success feedback do not occur, while the load-error handler receives the storage error. This test is authored but has not yet been executed; CI/browser fault-injection status remains unverified.
+
+
+## Branch follow-up — UI writes blocked after unreadable local project state
+
+A source review of the ordinary Mini Cinema buttons found a separate hazard from cloud sync: the UI reader intentionally returns an empty list after a localStorage read/JSON error so it can display a friendly error. A create/edit/rename/delete action could then attempt to write that empty-derived list and overwrite projects that were merely unreadable. The UI now records a failed read and blocks subsequent project writes until a later read succeeds. Successful reads clear the guard; ordinary write failures continue to surface through the existing save-error message. This is a source-level safeguard and still requires execution of the frontend tests and browser fault-injection checks.
