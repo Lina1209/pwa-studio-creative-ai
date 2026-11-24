@@ -22,7 +22,11 @@ function createMovieCloudOperations(deps) {
         deps.writeTombstones(context.ownerId, deps.readTombstones(context.ownerId).filter(id => !deletedIds.includes(id)));
       }
       if (!current(context)) return;
-      const localProjects = deps.readProjects(context.ownerId).filter(project => !deletedIds.includes(project.id));
+      // A newer local deletion may have been recorded while the cloud delete
+      // request was pending. Never include those projects in this sync batch.
+      const currentTombstones = new Set(deps.readTombstones(context.ownerId));
+      const localProjects = deps.readProjects(context.ownerId).filter(project =>
+        !deletedIds.includes(project.id) && !currentTombstones.has(project.id));
       const rows = localProjects.map(project => deps.toCloudRow(project, context.ownerId));
       deps.writeProjects(context.ownerId, localProjects);
       if (rows.length) {
