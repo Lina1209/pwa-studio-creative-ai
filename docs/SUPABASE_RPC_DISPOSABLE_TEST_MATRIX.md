@@ -154,3 +154,23 @@ A narrow disposable integration harness is now present for migrations 0011 and 0
 **Scope limitation:** this is not a full Supabase emulator and does not test Auth internals, Storage, wallet migration 0013, analytics migration 0014, or production grants/schema. The wallet and analytics RPCs remain untested against PostgreSQL. The minimal `auth.users` table is only a disposable FK target. Do not interpret this result as approval to apply any migration to production.
 
 The initial harness commit exposed two CI integration issues: the backend unit workflow did not install the optional psycopg driver, and a pre-existing frontend source-boundary assertion did not account for the version-count text in the button label. Both were corrected; the latest exact branch HEAD passed all three workflows.
+
+
+## Unified wallet RPC gate — 2026-11-25
+
+Migration `0013_unified_credit_wallet.sql` is now included in the same disposable PostgreSQL 16.4 fixture after migrations 0011/0012. The CI run completed with **14 passed, 1 xfailed**:
+
+- Grant idempotency: duplicate source/reference does not duplicate credits; changed amount is rejected.
+- Concurrent duplicate grants: exactly one grant ledger event is created.
+- Concurrent reservations: 16 competing reservations against 100 credits at 10 credits each produce exactly 10 reservations and 6 insufficient-credit responses; the wallet never overdraws.
+- Concurrent retry with one reservation idempotency key: one reservation/ledger event, all other calls replay the same reservation.
+- Changed reservation parameters under the same key are rejected.
+- Partial settlement refunds unused credits; same-amount settlement replay is idempotent; changed capture amount is rejected.
+- Full release returns reserved credits once; duplicate release does not append a second release event.
+- RPC execution grants and service-role ledger read-only permissions are checked.
+
+**Known failing safety invariant (recorded as expected-failure / xfail):** after `mark_credit_reservation_reconciliation_required`, the current migration still permits `release_user_credit_reservation`. That can return credits while a provider outcome is ambiguous. The test encodes the desired future rule (release must be rejected until an explicit reconciliation decision) and is marked xfail so the present branch stays green while visibly retaining this known gap. Do not blindly release a reservation after a provider timeout. A forward migration with an explicit resolution model is needed; do not rewrite migration 0013 if it may already have been deployed.
+
+Latest tested branch commit at this gate: `34fe534a3136fd420a7b41595ea411c22a744477`. Disposable PostgreSQL workflow: [run](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473190008). Backend and frontend workflows also passed on the same commit.
+
+This is source-migration testing in an isolated plain PostgreSQL service with minimal `auth.users` and role scaffolding, not a full Supabase emulator or production schema validation. Migration 0014 and live grants/RLS remain outside this test scope.
