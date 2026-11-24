@@ -357,3 +357,25 @@ test("deletion queue read failure prevents cloud load from overwriting local pro
  assert.equal(calls.some(x=>x.type==="writeLocal"||x.type==="render"||x.type==="feedback"),false);
  assert.match(calls.find(x=>x.type==="loadError").message,/deletion queue unavailable/);
 });
+
+
+test("local project storage write failure during cloud load prevents render and success feedback",async()=>{
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),
+  setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){return Promise.resolve({data:[{id:"cloud-a",title:"Cloud draft",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
+  readTombstones:()=>[],writeTombstones:()=>true,
+  readProjects:()=>[{id:"local-a",name:"Local draft"}],
+  writeProjects:()=>{calls.push({type:"writeAttempt"});throw new Error("QuotaExceededError: storage full");},
+  toCloudRow:(p,owner)=>({id:p.id,owner_id:owner,project_type:"movie",settings:p}),
+  fromCloudRow:r=>({id:r.id,name:r.title,updatedAt:r.updated_at}),
+  render:()=>calls.push({type:"render"}),
+  feedback:()=>calls.push({type:"feedback"}),
+  syncError:()=>{},loadError:e=>calls.push({type:"loadError",message:e.message})
+ });
+ await ops.load(capture("A",1));
+ assert.equal(calls.some(x=>x.type==="writeAttempt"),true);
+ assert.equal(calls.some(x=>x.type==="render"||x.type==="feedback"||x.type==="timer"),false);
+ assert.match(calls.find(x=>x.type==="loadError").message,/QuotaExceededError/);
+});
