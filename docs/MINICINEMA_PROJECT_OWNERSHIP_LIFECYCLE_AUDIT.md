@@ -128,3 +128,5 @@ The browser integration still has a known consistency limitation: deletion tombs
 - Sync now re-reads the owner's tombstone list after any awaited cloud deletion and excludes newly deleted project IDs from the subsequent upsert batch. This closes a client-side race where a deletion created while cleanup was in flight could otherwise be re-uploaded by the same sync cycle.
 - A regression test covers a new tombstone added during the pending delete request and verifies that the project is not included in the upsert batch and that the new tombstone remains queued.
 - This remains a browser-side coordination safeguard. It does not provide cross-device transactionality or guarantee against concurrent cloud writes from another device/session.
+
+- Additional regression coverage verifies that a new account B load can start and complete while a stale account A load is still pending; the late A response is ignored and cannot populate B's local project list.
