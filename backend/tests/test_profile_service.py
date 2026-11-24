@@ -140,3 +140,49 @@ def test_profile_update_is_scoped_to_verified_owner(monkeypatch):
     assert patch[1]["user_id"] == f"eq.{USER_A}"
     assert patch[2]["display_name"] == "Updated"
     assert "user_id" not in patch[2]
+
+
+def test_profile_initialization_uses_insert_only_upsert_and_reads_winner_of_race(monkeypatch):
+    calls = []
+    created = _row(user_id=USER_A)
+
+    def request(settings, method, *, params=None, payload=None, prefer="return=representation"):
+        calls.append((method, params, payload, prefer))
+        if method == "GET" and len([call for call in calls if call[0] == "GET"]) == 1:
+            return []
+        if method == "POST":
+            # PostgREST ignore-duplicates returns no representation when another
+            # concurrent request has already inserted this user's primary key.
+            return []
+        if method == "GET":
+            return [created]
+        raise AssertionError(f"Unexpected storage method: {method}")
+
+    monkeypatch.setattr(profile_service, "_request", request)
+    result = profile_service.get_own_profile(object(), USER_A)
+
+    assert result["user_id"] == USER_A
+    assert [call[0] for call in calls] == ["GET", "POST", "GET"]
+    insert = calls[1]
+    assert insert[1] == {"on_conflict": "user_id"}
+    assert insert[2]["user_id"] == USER_A
+    assert insert[3] == "resolution=ignore-duplicates,return=representation"
+    assert calls[2][1]["user_id"] == f"eq.{USER_A}"
+
+
+def test_profile_initialization_does_not_overwrite_existing_profile_on_conflict(monkeypatch):
+    calls = []
+
+    def request(settings, method, *, params=None, payload=None, prefer="return=representation"):
+        calls.append((method, params, payload, prefer))
+        if method == "GET" and len(calls) == 1:
+            return []
+        if method == "POST":
+            return []
+        return [_row(user_id=USER_A) | {"display_name": "My existing name"}]
+
+    monkeypatch.setattr(profile_service, "_request", request)
+    result = profile_service.get_own_profile(object(), USER_A)
+
+    assert result["display_name"] == "My existing name"
+    assert calls[1][3].startswith("resolution=ignore-duplicates")
