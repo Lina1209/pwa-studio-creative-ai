@@ -58,7 +58,7 @@ function createMovieCloudOperations(deps) {
           .in("id", deletedIds).eq("owner_id", context.ownerId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
         if (!current(context)) return;
-        deps.writeTombstones(context.ownerId, []);
+        deps.writeTombstones(context.ownerId, deps.readTombstones(context.ownerId).filter(id => !deletedIds.includes(id)));
       }
       const deleted = new Set(deletedIds);
       const merged = new Map(deps.readProjects(context.ownerId).filter(p => !deleted.has(p.id)).map(p => [p.id, p]));
