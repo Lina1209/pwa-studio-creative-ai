@@ -2,7 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.core.config import get_settings
 from app.services.auth import StudioUser, get_current_user
+from app.services import auth
 
 
 OWNER_ID = "11111111-1111-4111-8111-111111111111"
@@ -26,6 +28,11 @@ def _as_user(user_id: str, role: str):
 
 
 def test_admin_diagnostics_requires_authentication(client, monkeypatch):
+    # Authentication must be configured so the missing Bearer token is
+    # correctly rejected with 401 rather than the configuration error 503.
+    settings = get_settings().model_copy(update={"supabase_url": "https://example.supabase.co"})
+    monkeypatch.setattr(auth, "get_settings", lambda: settings)
+
     def unexpected_inspection(_settings):
         raise AssertionError("Diagnostics must not run before admin authorization.")
 
