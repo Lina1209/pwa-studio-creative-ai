@@ -175,3 +175,21 @@ test("sync does not re-upload a new tombstone created while cloud deletion is in
  assert.deepEqual(upsert.rows,[{id:"a1",owner_id:"A"}]);
  assert.deepEqual(h.tombstones.A,[newId]);
 });
+
+
+test("a stale A cloud load does not block B from starting and applying its own load",async()=>{
+ const h=harness(),gateA=deferred(),gateB=deferred();
+ h.setSelectGate(gateA);
+ const loadingA=h.ops.load(h.capture());
+ await Promise.resolve();
+ h.setUser("B",2);h.setSelectGate(gateB);
+ const loadingB=h.ops.load(h.capture());
+ await Promise.resolve();
+ gateB.resolve({data:[{id:"b-cloud",title:"B cloud",updated_at:"2026-02-01"}],error:null});
+ await loadingB;
+ assert.equal(h.local.B.some(project=>project.id==="b-cloud"),true);
+ gateA.resolve({data:[{id:"a-stale",title:"A stale",updated_at:"2026-03-01"}],error:null});
+ await loadingA;
+ assert.equal(h.local.B.some(project=>project.id==="a-stale"),false);
+ assert.equal(h.local.A.some(project=>project.id==="a-stale"),false);
+});
