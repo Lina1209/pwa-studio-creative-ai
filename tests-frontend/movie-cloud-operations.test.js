@@ -108,3 +108,26 @@ test("failed cloud deletion preserves tombstone and never reports success",async
  assert.equal(h.calls.some(c=>c.type==="feedback"),false);
  assert.equal(h.calls.some(c=>c.type==="syncError"),true);
 });
+
+
+test("failed tombstone cleanup during cloud load keeps tombstone and local project state",async()=>{
+ const h=harness(),id="123e4567-e89b-42d3-a456-426614174000",gate=deferred();
+ h.setTombstones("A",[id]);h.setDeleteGate(gate);
+ const loading=h.ops.load(h.capture());
+ await Promise.resolve();await Promise.resolve();
+ gate.resolve({error:new Error("cleanup denied")});
+ await loading;
+ assert.deepEqual(h.calls.filter(c=>c.type==="delete")[0].filters,[["id",[id]],["owner_id","A"],["project_type","movie"]]);
+ assert.equal(h.calls.some(c=>c.type==="writeLocal"),false);
+ assert.deepEqual(h.local.A,[{id:"a1",name:"A film"}]);
+ assert.equal(h.tombstones?.A,undefined);
+ assert.equal(h.calls.some(c=>c.type==="loadError"),true);
+});
+
+test("successful tombstone cleanup during cloud load clears only captured owner's tombstone",async()=>{
+ const h=harness(),id="123e4567-e89b-42d3-a456-426614174000";
+ h.setTombstones("A",[id]);
+ await h.ops.load(h.capture());
+ assert.equal(h.calls.some(c=>c.type==="delete"),true);
+ assert.equal(h.calls.some(c=>c.type==="render"),true);
+});
