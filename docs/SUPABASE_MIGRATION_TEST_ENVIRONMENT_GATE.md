@@ -1,4 +1,4 @@
-# Supabase migration and test-environment reconciliation gate
+# Supabase migration, Storage, and test-environment reconciliation
 
 Date: 2026-11-24  
 Status: read-only repository-source review; no live database access
@@ -44,18 +44,41 @@ The source of `0002_storage_and_moderation.sql` and `0005_cloud_projects_and_sto
 
 This is a source-level sequence consequence, not a live-project finding. Do not automatically restore export policies or alter bucket limits until the intended product behavior and live Storage configuration are confirmed. The filename `0002_storage_and_moderation.sql` is also broader in name than its current contents: the inspected file contains Storage setup, not the moderation tables found in `0005_moderation_admin.sql`.
 
-## Moderation schema facts from source
+## Current application integration: what exists and what does not
 
-`0005_moderation_admin.sql` defines:
-- `user_reports` with report status values `pending`, `reviewing`, `resolved`, `rejected`;
-- `user_suspensions` with scopes `platform`, `assistant`, `community`, and a partial active-user index on rows where `revoked_at IS NULL`;
-- `admin_audit_log` with identity bigint key and actor/action/target/entity/metadata/timestamp fields.
+### Mini Cinema cloud projects
 
-The migration grants authenticated users insert/select on their own reports via RLS, while suspension and audit tables are server-only. The audit table grants service_role SELECT and INSERT, and explicitly revokes UPDATE, DELETE, and TRUNCATE from service_role.
+The browser application uses the Supabase client directly for the `public.projects` table:
+- reads select the project fields and filter by the authenticated `owner_id` and `project_type = movie`;
+- deletes filter by project IDs, authenticated owner ID, and movie project type;
+- upserts send rows generated with the captured owner ID and use `id` as the conflict key;
+- the context helper captures the authenticated user ID and auth-context version, and operations check that context before/after awaited requests;
+- local deletion tombstones are re-read around asynchronous operations to avoid reintroducing deleted projects.
 
-`0006_notifications.sql` defines server-managed notifications. `0010_direct_message_notifications.sql` later replaces the notification type check to include `direct_message`. This is another reason to preserve and verify the complete migration sequence.
+The table migration enables RLS and defines an owner policy using `auth.uid() = owner_id`. The explicit client-side owner filters are useful defense-in-depth, but RLS remains the database security boundary. The app code does not prove that the target project's live RLS policy matches this source.
 
-`0011_atomic_message_rate_limit.sql` creates a SECURITY DEFINER RPC with `search_path = public, pg_temp`, revokes execution from public/anon/authenticated, and grants it to service_role. A new moderation RPC should follow the stricter fixed/empty search_path and fully-qualified-object pattern described in the transactional design, not copy a weaker pattern without review.
+The legacy `studio_projects` table from `0001` is distinct from the current `projects` table introduced in `0005_cloud_projects_and_storage.sql`. Do not assume the two schemas are interchangeable.
+
+### Media and export Storage
+
+A read of the root browser `app.js` found no calls to `storage.from(...)`, `upload(...)`, `createSignedUrl(...)`, `getPublicUrl(...)`, or Storage download APIs. The current Mini Cinema cloud modules likewise operate on the `projects` table and local project data, not Storage objects.
+
+The backend has an `asset_access.py` owner-scope helper, but its module documentation says it is deliberately not wired to routes until live schema/RLS is reconciled. The inspected `main.py` exposes no media upload/download route. No `storage_service.py` or `media_service.py` file exists at the inspected paths.
+
+Therefore the repository source currently establishes private bucket configuration and owner-path policies, but does not establish a completed application upload/download/export pipeline. The bucket policy discrepancy is still important before that feature is connected.
+
+## Recommended target Storage contract (proposal, not applied)
+
+Before implementing media routes or repairing policies, choose and document:
+1. Which bucket stores original user media and which stores rendered exports.
+2. Whether each bucket is user-readable through authenticated Storage APIs, backend-only, or both.
+3. Maximum upload sizes and MIME types for each bucket, matching actual product needs.
+4. A canonical object key layout, such as `<verified-user-uuid>/<project-uuid>/<asset-uuid>.<extension>`.
+5. Whether browser clients upload directly using authenticated Supabase sessions or obtain short-lived signed upload/download URLs from the backend.
+6. How the backend verifies ownership, file size, MIME type, and project association; client-supplied owner IDs must never define authorization.
+7. How delete, replace, and export retention behave, including cleanup of orphaned objects.
+
+Prefer private buckets, verified identity-derived object paths, short-lived signed URLs when appropriate, and explicit ownership checks. Never use public URLs for private user media.
 
 ## CI environment finding
 
@@ -71,13 +94,13 @@ Therefore:
 
 1. Confirm whether the repository migration history matches the actual intended deployment history; the two branches currently expose the same filenames.
 2. Resolve the duplicate `0005` version prefix without rewriting history blindly. Determine whether either migration has already been applied in the target project and preserve the actual deployment history.
-3. Decide the intended Storage contract for `studio-exports`, bucket size limits, and MIME types. Reconcile the overlapping `0002` and `0005` behavior before producing a corrected forward-only migration.
+3. Decide the intended Storage contract for `studio-media` and `studio-exports`, bucket size limits, MIME types, and direct-vs-backend upload flow.
 4. Obtain a read-only export of the target project's migration ledger, relevant table definitions, indexes, triggers, constraints, RLS policies, grants, Storage buckets/policies, and function definitions. Do not include user content or secrets.
 5. Compare that live metadata with the complete intended migration sequence; document drift rather than automatically repairing it.
 6. Build a disposable PostgreSQL/Supabase-compatible test target. It must never use production credentials or a production host.
 7. Add a CI job that provisions the disposable database, applies the reconciled baseline and candidate migration, and runs real concurrent transaction tests.
-8. Only after tests pass, review the candidate migration and obtain separate explicit approval before applying anything to a shared Supabase environment.
+8. Only after tests pass, review candidate migrations and obtain separate explicit approval before applying anything to a shared Supabase environment.
 
 ## Safety boundary
 
-No connection was made to Supabase. No SQL was run. No schema, migration ledger, policy, grant, function, storage object, report, suspension, or audit row was read or changed in a live database. No migration was created or applied as part of this reconciliation note.
+No connection was made to Supabase. No SQL was run. No schema, migration ledger, policy, grant, function, storage object, report, suspension, or audit row was read or changed in a live database. No migration was created or applied as part of this review.
