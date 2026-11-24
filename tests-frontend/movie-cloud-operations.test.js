@@ -44,7 +44,7 @@ test("oversized cloud project is rejected before upsert",async()=>{
  const calls=[];
  const ops=createMovieCloudOperations({
   isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
-  supabase:()=>({from:()=>({upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
+  supabase:()=>({from:()=>({select(){const q={in(){return q;},eq(){return q;},then(resolve){return Promise.resolve({data:[],error:null}).then(resolve);}};return q;},upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
   readTombstones:()=>[],writeTombstones:()=>{},readProjects:()=>h.local.A,
   writeProjects:()=>{},toCloudRow:(p,owner)=>({id:p.id,owner_id:owner,project_type:"movie",settings:p}),
   fromCloudRow:r=>r,render:()=>{},feedback:()=>{},syncError:e=>calls.push({type:"error",message:e.message}),loadError:()=>{}
