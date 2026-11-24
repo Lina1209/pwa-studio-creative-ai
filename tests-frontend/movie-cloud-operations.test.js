@@ -379,3 +379,43 @@ test("local project storage write failure during cloud load prevents render and 
  assert.equal(calls.some(x=>x.type==="render"||x.type==="feedback"||x.type==="timer"),false);
  assert.match(calls.find(x=>x.type==="loadError").message,/QuotaExceededError/);
 });
+
+test("valid newer local project is preserved when cloud copy is older",async()=>{
+ const h=harness();
+ h.local.A=[{id:"same",name:"Local newer",updatedAt:"2026-11-20T12:00:00Z",versions:[{savedAt:"2026-11-20T11:00:00Z"}]}];
+ h.setSelectGate(Promise.resolve({data:[{id:"same",title:"Cloud older",updated_at:"2026-11-19T12:00:00Z"}],error:null}));
+ await h.ops.load(h.capture());
+ assert.equal(h.local.A[0].name,"Local newer");
+ assert.equal(h.local.A[0].versions.length,1);
+});
+test("valid newer cloud project replaces older local copy with full cloud payload",async()=>{
+ const h=harness();
+ h.local.A=[{id:"same",name:"Local older",updatedAt:"2026-11-19T12:00:00Z"}];
+ h.setSelectGate(Promise.resolve({data:[{id:"same",title:"Cloud newer",updated_at:"2026-11-20T12:00:00Z",settings:{versions:[{savedAt:"2026-11-20T11:00:00Z"}]}}],error:null}));
+ await h.ops.load(h.capture());
+ assert.equal(h.local.A[0].name,"Cloud newer");
+ assert.equal(h.local.A[0].versions.length,1);
+});
+test("invalid cloud timestamp never overwrites a valid local project",async()=>{
+ const h=harness();
+ h.local.A=[{id:"same",name:"Local valid",updatedAt:"2026-11-20T12:00:00Z"}];
+ h.setSelectGate(Promise.resolve({data:[{id:"same",title:"Cloud malformed",updated_at:"not-a-date"}],error:null}));
+ await h.ops.load(h.capture());
+ assert.equal(h.local.A[0].name,"Local valid");
+});
+test("valid cloud timestamp replaces local project with missing or invalid timestamp",async()=>{
+ for (const updatedAt of [undefined,"not-a-date"]) {
+  const h=harness();
+  h.local.A=[{id:"same",name:"Local undated",updatedAt}];
+  h.setSelectGate(Promise.resolve({data:[{id:"same",title:"Cloud dated",updated_at:"2026-11-20T12:00:00Z"}],error:null}));
+  await h.ops.load(h.capture());
+  assert.equal(h.local.A[0].name,"Cloud dated");
+ }
+});
+test("equal timestamps preserve local draft to avoid losing unsynced edits",async()=>{
+ const h=harness();
+ h.local.A=[{id:"same",name:"Local tie",updatedAt:"2026-11-20T12:00:00Z"}];
+ h.setSelectGate(Promise.resolve({data:[{id:"same",title:"Cloud tie",updated_at:"2026-11-20T12:00:00Z"}],error:null}));
+ await h.ops.load(h.capture());
+ assert.equal(h.local.A[0].name,"Local tie");
+});
