@@ -996,7 +996,7 @@ const movieHistoryStyle = document.createElement("style");
     writeProjects: (ownerId, projects) => localStorage.setItem("pwa-studio-movie-projects:"+ownerId,JSON.stringify(projects)),
     toCloudRow: movieToCloudRow,
     fromCloudRow: movieFromCloudRow,
-    render: renderMovieProjects,
+    render: () => renderMovieProjects(),
     feedback: message => { const el=$("#movieFeedback"); if(el)el.textContent=message; },
     syncError: error => {
       console.error("Movie cloud sync failed:",error);
