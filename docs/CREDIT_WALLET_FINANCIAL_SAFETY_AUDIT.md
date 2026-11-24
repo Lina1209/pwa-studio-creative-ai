@@ -193,3 +193,12 @@ This section records a source audit of the current backend and migrations. It is
 ### Non-actions
 
 No payment provider was selected or connected. No admin credit route was added. No credits, balances or refunds were changed. No live Supabase schema was read or written. No SQL migration was applied. No deployment or PR merge was performed.
+
+
+## Financial-history retention mitigation — 2026-11-25
+
+Added source-only forward migration `0017_preserve_credit_history_on_user_delete.sql`. It removes the three default foreign-key cascades from `credit_wallets.user_id`, `credit_reservations.user_id`, and `credit_ledger.user_id` to `auth.users(id)`. Financial rows retain the former account UUID as a pseudonymous reference instead of being automatically deleted when an Auth account is removed.
+
+A disposable PostgreSQL integration test now grants credits, creates a reservation, deletes the corresponding Auth user, and asserts that the wallet balance, reservation and ledger events remain. The test fixture applies migrations 0011–0017 in sequence.
+
+**Important limitations:** this is a preservation safeguard, not a complete retention/privacy policy. The retained UUID may remain personal data when linkable. Before live rollout, approve a retention period, legal basis, anonymization/pseudonymization process, support-access controls, and treatment of pending reservations. Account deletion must not silently destroy financial evidence, but it also must not become indefinite retention by default. Migration 0017 is source-only and has not been applied to live Supabase.
