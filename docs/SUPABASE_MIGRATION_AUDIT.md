@@ -175,3 +175,15 @@ Accordingly:
 - The earlier verification was limited to the objects and behaviors explicitly listed above. It was not a two-account isolation, cross-device, full Storage-policy, or complete migration-history audit.
 
 No live Supabase query or mutation was performed as part of this documentation reconciliation.
+
+## Cloud project migration source review
+
+Additional source-level findings from `0005_cloud_projects_and_storage.sql`:
+
+- On a brand-new database, `public.projects.owner_id` is declared `NOT NULL` and references `auth.users(id)`.
+- The compatibility statement later uses `ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES auth.users(id) ON DELETE CASCADE` without `NOT NULL`, a backfill, or a validation step. If an older `projects` table already existed without this column, the resulting column can remain nullable. The owner RLS predicate denies rows whose owner is NULL, but those rows may become inaccessible/orphaned and the intended invariant is not enforced.
+- The migration does not install a trigger to maintain `updated_at`; the client currently supplies timestamps. Any future server-side writer must update this field consistently or add a reviewed database trigger.
+- The browser upsert uses `ON CONFLICT (id)`; its safety depends on the owner RLS policy and the row's `owner_id`. Cross-account conflict attempts must be tested rather than assumed safe from the client filter.
+- Do not patch this historical migration in place or apply it again to production. First inspect the live column nullability, foreign key, constraints, indexes, policies and existing rows. If correction is required, prepare a new uniquely versioned migration with an explicit orphan-row/backfill policy and test it against a disposable copy.
+
+These are conditional schema risks inferred from the migration source; they are not claims about the current live database.
