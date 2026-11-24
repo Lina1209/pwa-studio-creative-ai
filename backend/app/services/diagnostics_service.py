@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import httpx
 
 from app.core.config import Settings
@@ -5,14 +7,31 @@ from app.services.supabase_rest import supabase_headers
 
 
 TABLE_CHECKS = {
+    # Current community and Mini Cinema models.
     "profiles": ("user_profiles", "user_id"),
     "projects": ("projects", "id"),
     "notifications": ("user_notifications", "id"),
     "conversations": ("conversation_threads", "id"),
     "messages": ("direct_messages", "id"),
+    "blocks": ("user_blocks", "id"),
     "reports": ("user_reports", "id"),
     "suspensions": ("user_suspensions", "id"),
     "moderation_audit": ("admin_audit_log", "id"),
+    # AI Companion and usage accounting.
+    "assistant_conversations": ("assistant_conversations", "id"),
+    "assistant_messages": ("assistant_messages", "id"),
+    "ai_usage": ("ai_usage", "id"),
+    "ai_rate_limits": ("ai_rate_limits", "user_id"),
+    # Wallet foundation; presence does not mean billing is enabled.
+    "credit_wallets": ("credit_wallets", "user_id"),
+    "credit_reservations": ("credit_reservations", "id"),
+    "credit_ledger": ("credit_ledger", "id"),
+    # Legacy studio data is separate from the current Mini Cinema project model.
+    "legacy_profiles": ("profiles", "id"),
+    "legacy_projects": ("studio_projects", "id"),
+    "legacy_characters": ("studio_characters", "id"),
+    "legacy_scenes": ("studio_scenes", "id"),
+    "legacy_media": ("studio_media", "id"),
 }
 
 
@@ -45,21 +64,31 @@ def inspect_supabase(settings: Settings) -> dict:
     except httpx.HTTPError:
         return result
 
-    for label, (table, column) in TABLE_CHECKS.items():
+    def check_table(label: str, table: str, column: str) -> tuple[str, str]:
         try:
             response = httpx.request(
                 "HEAD",
                 f"{base}/rest/v1/{table}",
                 headers=headers,
                 params={"select": column, "limit": "0"},
-                timeout=5.0,
+                timeout=3.0,
             )
             if response.status_code < 400:
-                result["tables"][label] = "available"
-            elif response.status_code == 404:
-                result["tables"][label] = "missing_or_not_exposed"
-            else:
-                result["tables"][label] = "not_accessible"
+                return label, "available"
+            if response.status_code == 404:
+                return label, "missing_or_not_exposed"
+            return label, "not_accessible"
         except httpx.HTTPError:
-            result["tables"][label] = "unreachable"
+            return label, "unreachable"
+
+    # Bounded parallel HEAD requests keep the read-only check responsive.
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [
+            pool.submit(check_table, label, table, column)
+            for label, (table, column) in TABLE_CHECKS.items()
+        ]
+        for future in as_completed(futures):
+            label, status = future.result()
+            result["tables"][label] = status
+
     return result
