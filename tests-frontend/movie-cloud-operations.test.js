@@ -56,7 +56,12 @@ test("A completion cannot clear or replace B's pending queue context",async()=>{
  assert.equal(h.ops.state.pendingContext,null);
  assert.equal([...h.timers.values()].length,1);
 });
-test("cloud project listing is explicitly scoped to the captured owner",async()=>{\n const h=harness(),a=h.capture();await h.ops.load(a);\n const query=h.calls.find(c=>c.type==="select");\n assert.deepEqual(query.filters,[["owner_id","A"],["project_type","movie"]]);\n});\ntest("stale cloud load response after account switch is ignored",async()=>{
+test("cloud project listing is explicitly scoped to the captured owner",async()=>{
+ const h=harness(),a=h.capture();await h.ops.load(a);
+ const query=h.calls.find(c=>c.type==="select");
+ assert.deepEqual(query.filters,[["owner_id","A"],["project_type","movie"]]);
+});
+test("stale cloud load response after account switch is ignored",async()=>{
  const h=harness(),gate=deferred();h.setSelectGate(gate);const a=h.capture();
  const loading=h.ops.load(a);await Promise.resolve();h.setUser("B",2);
  gate.resolve({data:[{id:"from-a",title:"A cloud",updated_at:"2026-01-01"}],error:null});
