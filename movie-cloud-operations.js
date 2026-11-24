@@ -3,6 +3,20 @@
 function createMovieCloudOperations(deps) {
   const state = { timer: null, syncingContext: null, pendingContext: null, loadingContext: null };
   const current = context => deps.isCurrent(context);
+  const timestamp = value => {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const cloudIsNewer = (cloud, local) => {
+    const cloudTime = timestamp(cloud.updatedAt);
+    const localTime = timestamp(local.updatedAt);
+    if (cloudTime === null) return false;
+    if (localTime === null) return true;
+    // Keep the device copy on ties: it may contain an unsynced edit whose
+    // client timestamp has the same precision as the cloud row.
+    return cloudTime > localTime;
+  };
+  const projectTime = project => timestamp(project.updatedAt) ?? timestamp(project.createdAt) ?? -Infinity;
   const MAX_PROJECT_PAYLOAD_BYTES = 256 * 1024;
   const MAX_SYNC_BATCH_BYTES = 2 * 1024 * 1024;
   function validateCloudRows(rows, ownerId) {
@@ -99,10 +113,9 @@ function createMovieCloudOperations(deps) {
       (data || []).filter(row => !deleted.has(row.id)).forEach(row => {
         const cloud = deps.fromCloudRow(row);
         const local = merged.get(cloud.id);
-        if (!local || new Date(cloud.updatedAt || 0) >= new Date(local.updatedAt || 0)) merged.set(cloud.id, cloud);
+        if (!local || cloudIsNewer(cloud, local)) merged.set(cloud.id, cloud);
       });
-      const projects = [...merged.values()].sort((a,b) =>
-        new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      const projects = [...merged.values()].sort((a,b) => projectTime(b) - projectTime(a));
       if (!current(context)) return;
       deps.writeProjects(context.ownerId, projects);
       deps.render();
