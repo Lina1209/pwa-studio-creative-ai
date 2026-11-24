@@ -157,3 +157,35 @@ def test_admin_moderation_list_rejects_creator(client, monkeypatch):
     response = client.get("/api/admin/reports")
     assert response.status_code == 403
     assert called is False
+
+
+def test_block_and_unblock_routes_use_verified_blocker_identity(client, monkeypatch):
+    calls = []
+
+    def block(settings, blocker_id, blocked_id):
+        calls.append(("block", blocker_id, blocked_id))
+        return {"blocked": True, "created": True}
+
+    def unblock(settings, blocker_id, blocked_id):
+        calls.append(("unblock", blocker_id, blocked_id))
+        return {"blocked": False}
+
+    monkeypatch.setattr(main, "block_user", block)
+    monkeypatch.setattr(main, "unblock_user", unblock)
+
+    payload = {"user_id": USER_B, "blocker_id": USER_B}
+    assert client.post("/api/blocks", json=payload).status_code == 201
+    assert client.request("DELETE", "/api/blocks", json=payload).status_code == 200
+    assert calls == [("block", USER_A, USER_B), ("unblock", USER_A, USER_B)]
+
+
+def test_block_list_uses_verified_owner(client, monkeypatch):
+    calls = []
+
+    def list_for_owner(settings, blocker_id):
+        calls.append(blocker_id)
+        return []
+
+    monkeypatch.setattr(main, "list_blocked_users", list_for_owner)
+    assert client.get("/api/blocks").status_code == 200
+    assert calls == [USER_A]
