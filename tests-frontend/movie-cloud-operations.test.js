@@ -72,7 +72,7 @@ test("local project storage failure aborts cloud upsert and reports sync error",
  const ops=createMovieCloudOperations({
   isCurrent:c=>isCurrent(c,"A",1),
   setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
-  supabase:()=>({from:()=>({upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
+  supabase:()=>({from:()=>({select(){const q={in(){return q;},eq(){return q;},then(resolve){return Promise.resolve({data:[],error:null}).then(resolve);}};return q;},upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
   readTombstones:()=>[],writeTombstones:()=>true,
   readProjects:()=>[{id:"local-a",name:"Draft"}],
   writeProjects:()=>{throw new Error("QuotaExceededError");},
