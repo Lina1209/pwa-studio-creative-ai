@@ -245,3 +245,19 @@ All reports should be owner-only, date-bounded, aggregated server-side, and retu
 ### Current status and boundary
 
 This is a source-level readiness review only. No API route, frontend dashboard, database migration, SQL execution, live Supabase query, or production configuration change was made. The production migration ledger, RLS, grants, profile completeness, and actual project-table write path remain unverified. The existing visitor analytics design remains a separate prerequisite for counting visits or sessions.
+
+
+## Aggregate admin analytics API foundation (2026-11-24)
+
+Added owner-only `GET /api/admin/analytics?start_at=...&end_at=...` and source migration `0014_admin_analytics_summary.sql`.
+
+The database function returns only three aggregate counts for a maximum 31-day UTC window:
+- registrations from `public.profiles.created_at`;
+- distinct owners of movie rows updated in `public.projects`;
+- distinct users with recorded rows in `public.ai_usage`.
+
+The browser/API caller cannot supply a user identity. The endpoint is guarded by `require_admin`; the server calls a SECURITY DEFINER RPC using server-only Supabase credentials. The RPC validates the range, uses a fixed empty search path and is executable only by `service_role`. No account IDs, email addresses, project titles, prompts, messages, or media paths are returned.
+
+The response deliberately labels the data limitations: profile-trigger completeness is not verified; AI telemetry is best-effort; project updates are not all account activity; visitor/session counts are not included. It must not be called an online-user count or unique visitor counter.
+
+The frontend dashboard has not yet been connected. Migration 0014 is source-only and must not be applied until the live migration ledger, the presence/definitions of `profiles`, `projects`, and `ai_usage`, RLS/grants, and service-role RPC permissions are reconciled. If the RPC is absent, the API returns a safe 503 rather than inventing counts. No live Supabase query, SQL execution, or production change occurred.
