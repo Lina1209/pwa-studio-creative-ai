@@ -138,6 +138,13 @@ The service validates actor and target UUIDs before any storage request. Query s
 ### Remaining limitations
 
 - Pagination uses offset-based pages. Under concurrent inserts, a new event can shift page boundaries; consumers should refresh from page 1 and avoid treating page numbers as immutable cursors. A future cursor based on `(created_at, id)` is preferable for very large audit histories.
-- No frontend history screen has been added yet.
+- The owner workspace now includes a dedicated audit-history section with actor/target/action/entity filters, 25-row page navigation, refresh through the moderation workspace, and expandable metadata details. It is only rendered inside the server-role-gated admin panel; the API independently enforces `require_admin`.
 - No live Supabase grants, RLS, migration ledger or table contents were inspected. The endpoint is source-level only until the production schema is reconciled and the migration's presence is confirmed.
 - The state-change/audit-write transaction gap in moderation mutations remains open; this read endpoint does not fix it.
+
+
+### Frontend connection and CI update (2026-11-24)
+
+The admin workspace now calls `GET /api/admin/audit-log` after loading moderation lists. It renders the selected page using DOM text nodes (including metadata via `textContent`, not HTML injection), exposes exact-match filters, and disables forward navigation when `has_more` is false. Responses are discarded when the signed-in account context changes while a request is in flight. The panel is hidden unless `/api/auth/me` confirms the admin role; the API guard remains the actual security boundary.
+
+Both required CI checks completed successfully for the frontend connection commit: backend test workflow and movie-cloud-context workflow. The API test commit's backend tests also completed successfully. These checks validate repository code only; they do not establish production Supabase schema/grants or live audit data availability.
