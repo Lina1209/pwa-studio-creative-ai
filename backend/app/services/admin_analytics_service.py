@@ -17,8 +17,6 @@ def get_admin_analytics_summary(
     end_at: datetime,
 ) -> dict:
     """Return aggregate-only operational counts from the trusted database RPC."""
-    if not settings.supabase_url or not settings.supabase_service_role_key:
-        raise HTTPException(status_code=503, detail="Admin analytics storage is not configured.")
     if start_at.tzinfo is None or end_at.tzinfo is None:
         raise HTTPException(status_code=422, detail="Analytics dates must include a timezone.")
     start_utc = start_at.astimezone(timezone.utc)
@@ -28,6 +26,8 @@ def get_admin_analytics_summary(
         raise HTTPException(status_code=422, detail="The analytics date range is invalid.")
     if end_utc - start_utc > MAX_ANALYTICS_WINDOW:
         raise HTTPException(status_code=422, detail="The analytics date range cannot exceed 31 days.")
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(status_code=503, detail="Admin analytics storage is not configured.")
 
     url = f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/admin_analytics_summary"
     payload = {
