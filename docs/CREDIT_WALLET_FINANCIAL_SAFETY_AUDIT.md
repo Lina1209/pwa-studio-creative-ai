@@ -125,3 +125,71 @@ Audited the current branch after adding migration 0015 and the disposable Postgr
 ### Explicit non-actions in this follow-up
 
 No live balance or ledger was changed. No credits were granted. No admin grant endpoint or payment webhook was added. No payment provider was connected. No pricing rule was enabled. No SQL was executed against Supabase, and no production deployment or PR merge was performed.
+
+
+## Full server-side financial logic audit — 2026-11-25
+
+This section records a source audit of the current backend and migrations. It is not a live Supabase audit and does not establish what has already been deployed.
+
+### 1. Administrator credit grants
+
+- `backend/app/services/credit_service.py` contains an internal `grant_credits` adapter. It validates UUID, positive bounded amount, a fixed source allowlist and reference length, then calls the service-role RPC.
+- The adapter is not imported or called by `backend/app/main.py`. There is no `/admin/credits/grant` route, no request schema for an adjustment, and no end-to-end administrator grant workflow.
+- `require_admin` is based on verified Supabase JWT identity and prefers configured immutable `OWNER_USER_ID`; it falls back to the email claim if no owner UUID is configured. Any future grant route must use this dependency and take actor identity from the verified `StudioUser`, not the request body.
+- The adapter accepts `admin_adjustment` and `refund`, but that only describes accepted provenance labels. It does not authorize an admin or prove a refund happened.
+- Existing moderation audit writes are separate REST requests from the primary moderation mutation. Reusing that pattern for money would allow a credit mutation to succeed while its audit write fails. A financial admin adjustment should be a single database transaction that writes both ledger event and immutable actor/reason audit evidence.
+
+**Status: no admin grant endpoint exists; safe-by-absence. Do not expose the internal adapter directly.**
+
+### 2. Ledger integrity and balance model
+
+- `0013_unified_credit_wallet.sql` defines wallet balances, reservations and a credit ledger. Mutations are performed by SECURITY DEFINER RPCs; direct table privileges are revoked from anon/authenticated/service_role and service_role receives SELECT only. RPC execution is service-role-only.
+- The ledger has a unique key for a grant `(user_id, source, source_reference)` and the grant RPC locks the wallet row, making same-user duplicate grants idempotent and rejecting a replay with a different amount. Migration 0016 adds a SQL-side source allowlist.
+- Reservation idempotency is scoped by `(user_id, idempotency_key)`. Wallet-row locking serializes grants/reservations for one account. The disposable PostgreSQL suite covers concurrency and replay behavior.
+- No database trigger currently enforces append-only semantics against privileged table owners. Application roles are denied direct writes by the migration ACLs, but a database owner/superuser can still alter history. This is an operational trust boundary, not cryptographic tamper evidence.
+- Both wallet/reservation/ledger records reference `auth.users` with `ON DELETE CASCADE`. Deleting an auth user can therefore remove their wallet, reservations and financial ledger history. Before real-money launch, replace cascade deletion for financial records with retention-safe anonymization/soft deletion or a non-cascading account reference, subject to retention policy and a forward migration.
+- The ledger is a credit accounting ledger, not a double-entry cash ledger. It does not represent revenue, payment fees, taxes, foreign exchange or cash refunds.
+
+**Status: useful transactional wallet foundation; not yet production financial accounting.**
+
+### 3. Duplicate payment protection and payment events
+
+- No payment checkout route, provider webhook route, signature-verification code, subscription lifecycle handler, payment-event inbox, or provider transaction table was found in `backend/app/main.py`, backend services, or current migration inventory.
+- Current grant idempotency prevents the same `(user_id, source, source_reference)` from being granted twice. It does not replace provider event deduplication, signature validation, event ordering, merchant/account validation, amount/currency verification, or a unique provider event ID.
+- The current unique key is user-scoped. A provider event inbox should have a globally unique `(provider, provider_event_id)` constraint and persist the verified payload hash/status before granting credits. The inbox, grant, and event finalization should be transactional or safely recoverable.
+- No payment provider has been selected in this code. Do not add provider-specific webhook behavior until the provider is chosen and its authoritative signature/event semantics are documented.
+
+**Status: payment processing is absent and should remain disabled.**
+
+### 4. Refund lifecycle
+
+- There is no payment refund API, provider refund call, signed refund event handler, refund-request state machine, or reconciliation report.
+- The wallet supports a source label `refund`, but no code verifies a payment refund or links a refund to an original payment/grant. A generic positive credit grant labelled `refund` is not a money refund and must not be used as one.
+- A proper refund flow must preserve original payment/grant linkage, distinguish cash refunds from credit reversals, prevent refund amounts exceeding captured amounts, deduplicate provider refund events, and record partial/full refund states. Credit reversal after consumed credits needs an explicit debt/negative-balance policy rather than silently deleting historical credits.
+
+**Status: no refund workflow exists.**
+
+### 5. DeepSeek cost and usage reconciliation
+
+- `ask_ai` captures provider/model, token counts and LiteLLM `_hidden_params.response_cost` when available. The cost source is explicitly labelled `litellm_response_cost`; it is not provider-invoice-confirmed spend.
+- `/api/chat` and `/api/prompts` generate a new UUID only after the provider returns, then call `record_ai_usage`. The write is best-effort and catches failures. There is no durable outbox, pre-call request record, retry queue, dead-letter queue, or reconciliation job. Successful provider spend can therefore be absent from `ai_usage` after a database/network failure.
+- `ai_usage.request_id` is unique, but because it is generated after provider completion it is not a durable pre-call idempotency key and cannot reconcile timeouts/retries by itself.
+- `/admin/ai-usage` summary is explicitly current-page only. It is not a full-period cost total. `cost_usd IS NULL` is counted as unknown, not zero; preserve that distinction.
+- The configured provider is DeepSeek by default in this deployment configuration, but code supports multiple providers. No DeepSeek invoice/billing import, account balance snapshot, top-up/refund reconciliation, provider request-ID join, or spend ceiling is implemented.
+- No cost coverage exists for future image/video/music/voice generation, storage, egress or worker compute. Token-based chat telemetry must not be treated as total platform cost.
+
+**Status: useful per-request estimated cost telemetry; not durable or invoice-reconciled provider accounting.**
+
+### 6. Prioritized work before enabling real credits or payments
+
+1. Decide retention/deletion rules and remove cascading deletion of financial ledger history.
+2. Add a durable AI request/outbox lifecycle: create request ID before provider call; record pending/started/succeeded/failed/unknown; persist provider response IDs, token/cost data and retry state; reconcile unknown outcomes without double charging.
+3. Add admin adjustments only as a dedicated transactional RPC + `require_admin` route, with actor UUID from verified auth, mandatory reason, bounded amount, idempotency key, and a single atomic audit/ledger write.
+4. Select a payment provider, then implement a unique provider-event inbox, signature verification, amount/currency/account checks, duplicate/reorder/replay handling and transactional grants.
+5. Design refund state machine and distinguish cash refunds from credit reversals.
+6. Add provider invoice/balance import and daily reconciliation against LiteLLM request costs; report known cost, unknown cost, provider invoice spend, top-ups, refunds and variance separately.
+7. Keep wallet disconnected from generation and production pricing catalog empty until all release gates are tested against reconciled live schema.
+
+### Non-actions
+
+No payment provider was selected or connected. No admin credit route was added. No credits, balances or refunds were changed. No live Supabase schema was read or written. No SQL migration was applied. No deployment or PR merge was performed.
