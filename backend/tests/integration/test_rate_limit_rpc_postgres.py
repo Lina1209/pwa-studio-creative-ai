@@ -86,6 +86,7 @@ def disposable_schema(dsn: str):
             "0014_admin_analytics_summary.sql",
             "0015_credit_provider_outcome_resolution.sql",
             "0016_credit_grant_source_allowlist.sql",
+            "0017_preserve_credit_history_on_user_delete.sql",
         ):
             conn.execute((MIGRATIONS / filename).read_text(encoding="utf-8"))
     yield
@@ -554,3 +555,29 @@ def test_credit_grant_sql_enforces_known_provenance_sources(dsn):
     result = _grant(dsn, user_id, 10, "allowed-promo-source")
     assert result["status"] == "granted"
     assert _wallet_row(dsn, user_id) == (10, 0)
+
+
+def test_auth_user_deletion_preserves_wallet_reservation_and_ledger_history(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 60, "retention-test-grant")
+    reservation = _reserve(dsn, user_id, "retention-reservation", 20)
+
+    with psycopg.connect(dsn) as conn:
+        conn.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
+        wallet = conn.execute(
+            "SELECT available_credits, reserved_credits FROM public.credit_wallets WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()
+        reservation_count = conn.execute(
+            "SELECT count(*) FROM public.credit_reservations WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()[0]
+        ledger_count = conn.execute(
+            "SELECT count(*) FROM public.credit_ledger WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()[0]
+
+    assert wallet == (40, 20)
+    assert reservation_count == 1
+    assert ledger_count == 2
+    assert reservation["status"] == "reserved"
