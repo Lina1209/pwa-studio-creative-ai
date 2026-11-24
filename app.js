@@ -1619,6 +1619,10 @@ const movieHistoryStyle = document.createElement("style");
       });
       const copy=makeAction("⧉ Создать копию","secondary-button",()=>{
         const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
+        let pendingDeletes;
+        try { pendingDeletes=readMovieTombstones(); }
+        catch(error) { $("#movieFeedback").textContent="Не удалось проверить очередь удалений. Копирование остановлено, чтобы не создать копию фильма с неподтверждённым удалением."; console.error("Movie copy tombstone check failed:",error); return; }
+        if(pendingDeletes.includes(original.id)) { $("#movieFeedback").textContent="Для этого фильма уже ожидается облачное удаление. Копирование остановлено, чтобы не создать копию из проекта, помеченного на удаление."; return; }
         const clone={...movieSnapshot(original),id:movieId(),name:(original.name||"Фильм")+" — копия",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),versions:[]};
         latest.unshift(clone); if(movieWrite(latest)){activeMovieId=clone.id;renderMovieProjects();$("#movieFeedback").textContent="Копия создана. Оригинальный фильм не изменён.";}
       });
@@ -1664,6 +1668,10 @@ const movieHistoryStyle = document.createElement("style");
           const restore=makeAction("Восстановить эту версию","primary-button",()=>{
             if(!window.confirm("Восстановить версию от "+movieDate(entry.savedAt)+"? Текущая версия будет сохранена в истории перед заменой."))return;
             const latest=movieRead(); const live=latest.find(item=>item.id===project.id); if(!live)return;
+            let pendingDeletes;
+            try { pendingDeletes=readMovieTombstones(); }
+            catch(error) { $("#movieFeedback").textContent="Не удалось проверить очередь удалений. Восстановление остановлено, чтобы не перезаписать состояние фильма с неподтверждённым удалением."; console.error("Movie restore tombstone check failed:",error); return; }
+            if(pendingDeletes.includes(live.id)) { $("#movieFeedback").textContent="Для этого фильма уже ожидается облачное удаление. Восстановление остановлено; сначала необходимо разобраться с очередью удаления."; return; }
             const selectedVersion=versions[selectedIndex];
             const latestVersions=Array.isArray(live.versions)?live.versions:[];
             const stillAvailable=latestVersions.some(entry=>entry.savedAt===selectedVersion.savedAt && JSON.stringify(entry.data)===JSON.stringify(selectedVersion.data));
