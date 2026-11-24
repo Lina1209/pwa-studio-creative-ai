@@ -623,6 +623,7 @@ const movieHistoryStyle = document.createElement("style");
   const adminFeedback = message => { const el = $("#adminFeedback"); if (el) el.textContent = message; };
   const adminNode = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
   const formatAdminDate = value => { if (!value) return "Без срока"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU"); };
+  let adminAuditPage = 1;
   const loadAdminWorkspace = async () => {
     const reportsList = $("#adminReportsList"), suspensionsList = $("#adminSuspensionsList");
     if (!authSession?.user || !$("#adminPanel") || $("#adminPanel").hidden) return;
@@ -638,6 +639,7 @@ const movieHistoryStyle = document.createElement("style");
       if (version !== authContextVersion || !authSession?.user) return;
       renderAdminReports(Array.isArray(reports) ? reports : []);
       renderAdminSuspensions(Array.isArray(suspensions) ? suspensions : []);
+      await loadAdminAuditLog();
       adminFeedback("Данные обновлены. Действия модерации записываются в журнал.");
     } catch (error) {
       if (version !== authContextVersion) return;
@@ -693,6 +695,52 @@ const movieHistoryStyle = document.createElement("style");
       list.append(card);
     });
   };
+  const auditFeedback = message => { const el=$("#adminAuditFeedback"); if(el)el.textContent=message; };
+  const loadAdminAuditLog = async () => {
+    const list=$("#adminAuditList");
+    if(!list || !authSession?.user || $("#adminPanel")?.hidden)return;
+    const version=authContextVersion, userId=authSession.user.id;
+    const params=new URLSearchParams({page:String(adminAuditPage),page_size:"25"});
+    const values={actor_user_id:$("#adminAuditActor")?.value.trim(),target_user_id:$("#adminAuditTarget")?.value.trim(),action:$("#adminAuditAction")?.value.trim(),entity_type:$("#adminAuditEntity")?.value.trim()};
+    Object.entries(values).forEach(([key,value])=>{if(value)params.set(key,value);});
+    list.replaceChildren(adminNode("div","admin-empty","Загружаем журнал действий…"));
+    auditFeedback("Получаем записи журнала…");
+    try{
+      const data=await apiRequest("/api/admin/audit-log?"+params.toString());
+      if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+      const items=Array.isArray(data.items)?data.items:[];
+      $("#adminAuditCount").textContent=String(items.length);
+      $("#adminAuditPage").textContent="Страница "+data.page;
+      $("#adminAuditPrev").disabled=data.page<=1;
+      $("#adminAuditNext").disabled=!data.has_more;
+      list.replaceChildren();
+      if(!items.length)list.append(adminNode("div","admin-empty","По выбранным условиям записей нет."));
+      items.forEach(item=>{
+        const card=adminNode("article","admin-item"), head=adminNode("div","admin-item-head");
+        head.append(adminNode("b","",item.action||"Действие"),adminNode("span","admin-status",item.entity_type||"событие"));
+        card.append(head,adminNode("p","admin-item-meta","Дата: "+formatAdminDate(item.created_at)),adminNode("p","admin-item-meta","Администратор: "+(item.actor_user_id||"не указан")));
+        if(item.target_user_id)card.append(adminNode("p","admin-item-meta","Затронутый пользователь: "+item.target_user_id));
+        if(item.entity_id)card.append(adminNode("p","admin-item-meta","ID объекта: "+item.entity_id));
+        if(item.metadata && typeof item.metadata==="object"){
+          const details=adminNode("details","admin-audit-details"), pre=adminNode("pre","admin-item-meta");
+          details.append(adminNode("summary","","Подробности записи"));
+          try{pre.textContent=JSON.stringify(item.metadata,null,2);}catch{pre.textContent="Подробности недоступны";}
+          details.append(pre);card.append(details);
+        }
+        list.append(card);
+      });
+      auditFeedback("Журнал загружен. Показано записей: "+items.length+".");
+    }catch(error){
+      if(version!==authContextVersion)return;
+      list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить журнал."));
+      auditFeedback("Ошибка загрузки журнала: "+error.message);
+      $("#adminAuditPrev").disabled=adminAuditPage<=1;$("#adminAuditNext").disabled=true;
+    }
+  };
+  $("#adminAuditFilters")?.addEventListener("submit",event=>{event.preventDefault();adminAuditPage=1;loadAdminAuditLog();});
+  $("#adminAuditReset")?.addEventListener("click",()=>{$("#adminAuditFilters")?.reset();adminAuditPage=1;loadAdminAuditLog();});
+  $("#adminAuditPrev")?.addEventListener("click",()=>{if(adminAuditPage>1){adminAuditPage--;loadAdminAuditLog();}});
+  $("#adminAuditNext")?.addEventListener("click",()=>{adminAuditPage++;loadAdminAuditLog();});
   $("#adminRefresh")?.addEventListener("click",loadAdminWorkspace);
   $("#adminSuspensionForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
