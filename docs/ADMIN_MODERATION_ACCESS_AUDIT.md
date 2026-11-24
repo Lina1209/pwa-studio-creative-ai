@@ -215,3 +215,33 @@ Do not invent a live visitor count, unique visitor total, online-user count, ret
 ### Current status
 
 This stage is a source audit and implementation plan, not a deployed visitor analytics feature. No new visit-tracking endpoint or migration was added because the live database state and privacy/retention requirements have not been reconciled. Existing registrations and project counts may be candidates for later admin aggregates, but they are not reported as visitor metrics. No SQL was executed and no production data was queried or changed.
+
+
+
+## Registration and active-account analytics source review (2026-11-24)
+
+### Registration sources
+
+- The initial schema defines `public.profiles(id, created_at, updated_at)` and an `auth.users` AFTER INSERT trigger that creates the matching profile row. This is a plausible registration-count source **only if** migration 0001 and its trigger are present in production and profile creation has remained complete. The source audit cannot prove either live condition.
+- The separate `public.user_profiles` table from migration 0009 is a community-facing profile. The current service lazily creates it when a signed-in user first opens their community profile; it is not a dependable registration table and must not be used to count registrations.
+- The JWT auth dependency verifies account identity but does not persist sign-in events or a last-seen timestamp.
+
+### Activity sources and limits
+
+- The initial schema contains `public.studio_projects`; the cloud-project migration separately defines `public.projects`. Both include owner and timestamps, but their presence and completeness in the live database are unverified. Project create/update activity can be reported as project activity only after determining which table the active application writes to and reconciling its migration state.
+- `public.ai_usage` can evidence successful AI chat/prompt usage, but writes are best-effort. It misses other studio activity and may contain gaps, so it is not a complete active-account metric.
+- No reliable server-side last-seen event, authenticated activity event stream, or online-presence source was found. A project update or AI call should not be silently relabeled as a general active user.
+
+### Safe reporting contract
+
+A future admin report may expose separately named metrics only after live schema verification:
+1. **Registered accounts:** count of distinct `profiles.id` by `profiles.created_at`, with a visible completeness caveat until trigger/profile reconciliation is proven.
+2. **Accounts with project activity:** distinct project owners with a qualifying project create/update in the selected window, after identifying the authoritative project table. This is not a count of all active accounts.
+3. **Accounts with AI activity:** distinct `ai_usage.user_id` values in the window, clearly labeled as observed successful AI usage and subject to telemetry gaps.
+4. **Active accounts:** defer this broader label until a defined, reliable server-side activity event is implemented.
+
+All reports should be owner-only, date-bounded, aggregated server-side, and return no emails, usernames, project titles, prompts, or individual account activity rows. Never return fabricated totals for periods without verified coverage.
+
+### Current status and boundary
+
+This is a source-level readiness review only. No API route, frontend dashboard, database migration, SQL execution, live Supabase query, or production configuration change was made. The production migration ledger, RLS, grants, profile completeness, and actual project-table write path remain unverified. The existing visitor analytics design remains a separate prerequisite for counting visits or sessions.
