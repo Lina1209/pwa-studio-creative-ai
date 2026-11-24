@@ -1599,12 +1599,18 @@ const movieHistoryStyle = document.createElement("style");
       });
       const editDetails=makeAction("Изменить сведения","secondary-button",()=>openMovieDetailsStage(project.id));
       const rename=makeAction("✎ Переименовать фильм","secondary-button",()=>{
-        const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
-        const entered=window.prompt("Введите новое название фильма:",original.name||"");
+        const initial=movieRead().find(item=>item.id===project.id); if(!initial)return;
+        const baseUpdatedAt=initial.updatedAt||initial.createdAt||null;
+        const entered=window.prompt("Введите новое название фильма:",initial.name||"");
         if(entered===null)return;
         const nextName=entered.trim();
         if(!nextName){window.alert("Название фильма не может быть пустым.");return;}
-        if(nextName===(original.name||""))return;
+        if(nextName===(initial.name||""))return;
+        const latest=movieRead(); const original=latest.find(item=>item.id===project.id); if(!original)return;
+        if((original.updatedAt||original.createdAt||null)!==baseUpdatedAt){
+          $("#movieFeedback").textContent="Этот фильм изменился в другом окне или на другом устройстве. Название не изменено — откройте проект заново и повторите попытку.";
+          return;
+        }
         addMovieVersion(original);
         original.name=nextName; original.updatedAt=new Date().toISOString();
         if(!movieWrite(latest))return;
