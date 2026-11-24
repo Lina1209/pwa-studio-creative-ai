@@ -24,3 +24,18 @@ test("runtime modules use the network-first shell update path", () => {
     assert.ok(worker.includes(`"/${asset}"`), `${asset} must be network-first`);
   }
 });
+
+test("service worker keeps cache writes alive until they finish", () => {
+  const worker = fs.readFileSync(path.join(__dirname, "../sw.js"), "utf8");
+  const cacheWrites = [...worker.matchAll(/cache\.put\(request, copy\)/g)];
+  assert.equal(cacheWrites.length, 2, "both shell and runtime responses should be cached");
+  assert.equal((worker.match(/event\.waitUntil\(/g) || []).length >= 4, true,
+    "install, activate, and both response cache writes must be tied to event lifetime");
+  assert.match(worker, /event\.waitUntil\([\s\S]*?cache\.put\(request, copy\)/);
+});
+
+test("service worker uses a new cache namespace after shell asset changes", () => {
+  const worker = fs.readFileSync(path.join(__dirname, "../sw.js"), "utf8");
+  assert.match(worker, /const CACHE_NAME = "pwa-studio-shell-v16"/);
+  assert.match(worker, /key !== CACHE_NAME/);
+});
