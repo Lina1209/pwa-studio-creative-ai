@@ -67,6 +67,23 @@ test("malformed cloud project settings are rejected before upsert",async()=>{
  assert.equal(calls.some(c=>c.type==="upsert"),false);
  assert.match(calls.find(c=>c.type==="error").message,/структура/i);
 });
+test("tombstone cleanup storage failure never reports sync success",async()=>{
+ const h=harness(),id="123e4567-e89b-42d3-a456-426614174000";
+ h.setTombstones("A",[id]);
+ // Simulate localStorage quota/security failure after the cloud delete succeeds.
+ const originalWrite=h.tombstones;
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{h.timers.set(99,fn);return 99;},clearTimer:id=>h.timers.delete(id),
+  supabase:()=>({from:()=>({delete(){const q={in(){return q;},eq(){return q;},then(resolve){return Promise.resolve({error:null}).then(resolve);}};return q;}})}),
+  readTombstones:()=>[...originalWrite.A],writeTombstones:()=>false,readProjects:()=>originalWrite.A.map(id=>({id})),
+  writeProjects:()=>{},toCloudRow:(p,owner)=>({id:p.id,owner_id:owner,project_type:"movie",settings:p}),
+  fromCloudRow:r=>r,render:()=>{},feedback:()=>h.calls.push({type:"feedback"}),syncError:e=>h.calls.push({type:"syncError",message:e.message}),loadError:()=>{}
+ });
+ ops.schedule(capture("A",1));h.timers.get(99)();await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.some(c=>c.type==="feedback"),false);
+ assert.equal(h.calls.some(c=>c.type==="syncError"),true);
+ assert.deepEqual(originalWrite.A,[id]);
+});
 test("scheduled A sync is discarded after switching to B before debounce",async()=>{
  const h=harness(),a=h.capture();h.ops.schedule(a);h.setUser("B",2);h.flush();await new Promise(r=>setImmediate(r));
  assert.equal(h.calls.some(c=>c.type==="upsert"),false);
