@@ -60,7 +60,9 @@ function createMovieCloudOperations(deps) {
         if (!current(context)) return;
         deps.writeTombstones(context.ownerId, deps.readTombstones(context.ownerId).filter(id => !deletedIds.includes(id)));
       }
-      const deleted = new Set(deletedIds);
+      // Re-read after the awaited delete: newer tombstones may have been added
+      // while the request was in flight and must not be reintroduced by this load.
+      const deleted = new Set([...deletedIds, ...deps.readTombstones(context.ownerId)]);
       const merged = new Map(deps.readProjects(context.ownerId).filter(p => !deleted.has(p.id)).map(p => [p.id, p]));
       (data || []).filter(row => !deleted.has(row.id)).forEach(row => {
         const cloud = deps.fromCloudRow(row);
