@@ -61,10 +61,19 @@ def disposable_schema(dsn: str):
         for filename in (
             "0011_atomic_message_rate_limit.sql",
             "0012_atomic_ai_rate_limit.sql",
+            "0013_unified_credit_wallet.sql",
         ):
             conn.execute((MIGRATIONS / filename).read_text(encoding="utf-8"))
     yield
     with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute("DROP FUNCTION IF EXISTS public.mark_credit_reservation_reconciliation_required(uuid, uuid)")
+        conn.execute("DROP FUNCTION IF EXISTS public.release_user_credit_reservation(uuid, uuid)")
+        conn.execute("DROP FUNCTION IF EXISTS public.settle_user_credit_reservation(uuid, uuid, bigint)")
+        conn.execute("DROP FUNCTION IF EXISTS public.reserve_user_credits(uuid, text, text, integer, bigint)")
+        conn.execute("DROP FUNCTION IF EXISTS public.grant_user_credits(uuid, bigint, text, text)")
+        conn.execute("DROP TABLE IF EXISTS public.credit_ledger")
+        conn.execute("DROP TABLE IF EXISTS public.credit_reservations")
+        conn.execute("DROP TABLE IF EXISTS public.credit_wallets")
         conn.execute("DROP FUNCTION IF EXISTS public.consume_ai_rate_limit(uuid, text, integer, integer)")
         conn.execute("DROP FUNCTION IF EXISTS public.consume_message_rate_limit(uuid, integer, integer)")
         conn.execute("DROP TABLE IF EXISTS public.ai_rate_limits")
@@ -187,4 +196,216 @@ def test_client_roles_cannot_execute_or_access_rate_limit_tables(dsn):
         assert conn.execute(
             "SELECT has_function_privilege('service_role', "
             "'public.consume_ai_rate_limit(uuid,text,integer,integer)', 'EXECUTE')"
+        ).fetchone()[0] is True
+
+
+
+def _wallet_call(dsn: str, statement: str, params: tuple):
+    with psycopg.connect(dsn) as conn:
+        conn.execute("SET ROLE service_role")
+        return conn.execute(statement, params).fetchone()[0]
+
+
+def _grant(dsn: str, user_id, amount: int, reference: str = "seed-credits"):
+    return _wallet_call(
+        dsn,
+        "SELECT public.grant_user_credits(%s, %s, %s, %s)",
+        (user_id, amount, "test", reference),
+    )
+
+
+def _reserve(dsn: str, user_id, key: str, amount: int):
+    return _wallet_call(
+        dsn,
+        "SELECT public.reserve_user_credits(%s, %s, %s, %s, %s)",
+        (user_id, key, "image.generate", 1, amount),
+    )
+
+
+def _wallet_row(dsn: str, user_id):
+    with psycopg.connect(dsn) as conn:
+        return conn.execute(
+            "SELECT available_credits, reserved_credits FROM public.credit_wallets WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()
+
+
+def test_credit_grant_is_idempotent_and_rejects_reused_reference_with_different_amount(dsn):
+    user_id = _new_user(dsn)
+    first = _grant(dsn, user_id, 100)
+    replay = _grant(dsn, user_id, 100)
+    assert first["status"] == "granted"
+    assert replay["status"] == "already_granted"
+    assert _wallet_row(dsn, user_id) == (100, 0)
+    with pytest.raises(psycopg.Error):
+        _grant(dsn, user_id, 101)
+    assert _wallet_row(dsn, user_id) == (100, 0)
+
+
+def test_concurrent_duplicate_grants_create_one_credit_event(dsn):
+    user_id = _new_user(dsn)
+    workers = 12
+    barrier = Barrier(workers)
+
+    def invoke(_):
+        barrier.wait(timeout=10)
+        return _grant(dsn, user_id, 40, "same-external-reference")
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(invoke, range(workers)))
+    assert sum(result["status"] == "granted" for result in results) == 1
+    assert sum(result["status"] == "already_granted" for result in results) == workers - 1
+    assert _wallet_row(dsn, user_id) == (40, 0)
+    with psycopg.connect(dsn) as conn:
+        assert conn.execute(
+            """SELECT count(*) FROM public.credit_ledger
+               WHERE user_id = %s AND event_type = 'grant'
+                 AND source_reference = 'same-external-reference'""",
+            (user_id,),
+        ).fetchone()[0] == 1
+
+
+def test_concurrent_reservations_never_overdraw_available_credits(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 100)
+    workers = 16
+    barrier = Barrier(workers)
+
+    def invoke(index):
+        barrier.wait(timeout=10)
+        return _reserve(dsn, user_id, f"reserve-key-{index:02d}", 10)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(invoke, range(workers)))
+    assert sum(result["status"] == "reserved" for result in results) == 10
+    assert sum(result["status"] == "insufficient_credits" for result in results) == 6
+    assert _wallet_row(dsn, user_id) == (0, 100)
+    with psycopg.connect(dsn) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM public.credit_reservations WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()[0] == 10
+
+
+def test_concurrent_same_reservation_key_reserves_once(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 50)
+    workers = 10
+    barrier = Barrier(workers)
+
+    def invoke(_):
+        barrier.wait(timeout=10)
+        return _reserve(dsn, user_id, "same-reservation-key", 25)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(invoke, range(workers)))
+    assert sum(result["idempotent_replay"] is False for result in results) == 1
+    assert sum(result["idempotent_replay"] is True for result in results) == workers - 1
+    assert len({str(result["reservation_id"]) for result in results}) == 1
+    assert _wallet_row(dsn, user_id) == (25, 25)
+    with psycopg.connect(dsn) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM public.credit_ledger WHERE user_id = %s AND event_type = 'reserve'",
+            (user_id,),
+        ).fetchone()[0] == 1
+
+
+def test_reservation_idempotency_key_rejects_changed_parameters(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 60)
+    _reserve(dsn, user_id, "stable-reservation-key", 20)
+    with pytest.raises(psycopg.Error):
+        _reserve(dsn, user_id, "stable-reservation-key", 21)
+    assert _wallet_row(dsn, user_id) == (40, 20)
+
+
+def test_partial_settlement_refunds_unused_reservation_and_is_idempotent(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 80)
+    reserved = _reserve(dsn, user_id, "partial-settle-key", 30)
+    reservation_id = reserved["reservation_id"]
+    stmt = "SELECT public.settle_user_credit_reservation(%s, %s, %s)"
+    settled = _wallet_call(dsn, stmt, (user_id, reservation_id, 12))
+    replay = _wallet_call(dsn, stmt, (user_id, reservation_id, 12))
+    assert settled["status"] == "settled"
+    assert settled["captured_credits"] == 12
+    assert settled["refunded_credits"] == 18
+    assert replay["status"] == "already_settled"
+    assert _wallet_row(dsn, user_id) == (68, 0)
+    with pytest.raises(psycopg.Error):
+        _wallet_call(dsn, stmt, (user_id, reservation_id, 11))
+
+
+def test_full_release_returns_reservation_once(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 35)
+    reserved = _reserve(dsn, user_id, "release-once-key", 15)
+    reservation_id = reserved["reservation_id"]
+    stmt = "SELECT public.release_user_credit_reservation(%s, %s)"
+    released = _wallet_call(dsn, stmt, (user_id, reservation_id))
+    replay = _wallet_call(dsn, stmt, (user_id, reservation_id))
+    assert released["status"] == "released"
+    assert replay["status"] == "already_released"
+    assert _wallet_row(dsn, user_id) == (35, 0)
+    with psycopg.connect(dsn) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM public.credit_ledger WHERE reservation_id = %s AND event_type = 'release'",
+            (reservation_id,),
+        ).fetchone()[0] == 1
+
+
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "Known source-level safety gap: migration 0013 currently permits release "
+        "from reconciliation_required without proof that the provider outcome is safe."
+    ),
+)
+def test_ambiguous_provider_reservation_cannot_be_released_without_reconciliation(dsn):
+    user_id = _new_user(dsn)
+    _grant(dsn, user_id, 25)
+    reserved = _reserve(dsn, user_id, "ambiguous-provider-key", 10)
+    reservation_id = reserved["reservation_id"]
+    _wallet_call(
+        dsn,
+        "SELECT public.mark_credit_reservation_reconciliation_required(%s, %s)",
+        (user_id, reservation_id),
+    )
+    # This assertion is the desired future invariant. It is expected to fail
+    # against the current migration, which accepts this release transition.
+    with pytest.raises(psycopg.Error):
+        _wallet_call(
+            dsn,
+            "SELECT public.release_user_credit_reservation(%s, %s)",
+            (user_id, reservation_id),
+        )
+
+
+def test_wallet_rpc_execution_is_service_role_only_and_ledger_is_read_only(dsn):
+    signatures = (
+        "public.grant_user_credits(uuid,bigint,text,text)",
+        "public.reserve_user_credits(uuid,text,text,integer,bigint)",
+        "public.settle_user_credit_reservation(uuid,uuid,bigint)",
+        "public.release_user_credit_reservation(uuid,uuid)",
+        "public.mark_credit_reservation_reconciliation_required(uuid,uuid)",
+    )
+    with psycopg.connect(dsn) as conn:
+        for role in ("anon", "authenticated"):
+            for signature in signatures:
+                assert conn.execute(
+                    "SELECT has_function_privilege(%s, %s, 'EXECUTE')",
+                    (role, signature),
+                ).fetchone()[0] is False
+        for signature in signatures:
+            assert conn.execute(
+                "SELECT has_function_privilege('service_role', %s, 'EXECUTE')",
+                (signature,),
+            ).fetchone()[0] is True
+        for operation in ("INSERT", "UPDATE", "DELETE"):
+            assert conn.execute(
+                "SELECT has_table_privilege('service_role', 'public.credit_ledger', %s)",
+                (operation,),
+            ).fetchone()[0] is False
+        assert conn.execute(
+            "SELECT has_table_privilege('service_role', 'public.credit_ledger', 'SELECT')"
         ).fetchone()[0] is True
