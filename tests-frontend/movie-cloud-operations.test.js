@@ -7,10 +7,10 @@ function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve
 function harness(){
  let userId="A",version=1,nextTimer=0;
  const timers=new Map(),calls=[],local={A:[{id:"a1",name:"A film"}],B:[{id:"b1",name:"B film"}]},tombstones={A:[],B:[]};
- let upsertGate=null,selectGate=null;
+ let upsertGate=null,selectGate=null,deleteGate=null;
  const supabase={from(){
   return {
-   delete(){const q={in(){return q;},eq(){return q;},then(resolve,reject){return Promise.resolve({error:null}).then(resolve,reject);}};return q;},
+   delete(){const q={in(){return q;},eq(){return q;},then(resolve,reject){return (deleteGate?deleteGate.promise:Promise.resolve()).then(()=>({error:null})).then(resolve,reject);}};return q;},
    upsert(rows){calls.push({type:"upsert",rows});return (upsertGate?upsertGate.promise:Promise.resolve()).then(()=>({error:null}));},
    select(){const q={eq(){return q;},order(){return selectGate?selectGate.promise:Promise.resolve({data:[],error:null});}};return q;}
   };
@@ -32,7 +32,7 @@ function harness(){
   loadError:error=>calls.push({type:"loadError",error})
  });
  return {ops,timers,calls,local,setUser(id,v){userId=id;version=v;},capture(){return capture(userId,version);},
-  setUpsertGate(g){upsertGate=g;},setSelectGate(g){selectGate=g;},
+  setUpsertGate(g){upsertGate=g;},setSelectGate(g){selectGate=g;},setDeleteGate(g){deleteGate=g;},setTombstones(owner,ids){tombstones[owner]=[...ids];},
   flush(){const batch=[...timers.values()];timers.clear();batch.forEach(fn=>fn());}};
 }
 test("scheduled A sync is discarded after switching to B before debounce",async()=>{
@@ -73,4 +73,13 @@ test("same-user reauthentication invalidates an older load generation",async()=>
 test("guest drafts have no cloud context and cannot be uploaded",async()=>{
  const h=harness();assert.equal(capture(null,3),null);assert.equal(h.ops.schedule(null),undefined);
  h.flush();assert.equal(h.calls.some(c=>c.type==="upsert"),false);
+});
+
+test("A delete finishing after account switch cannot continue into B local state",async()=>{
+ const h=harness(),gate=deferred();h.setDeleteGate(gate);h.setTombstones("A",["123e4567-e89b-42d3-a456-426614174000"]);
+ const a=h.capture();h.ops.schedule(a);h.flush();await Promise.resolve();
+ h.setUser("B",2);gate.resolve();await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.some(c=>c.type==="upsert"),false);
+ assert.equal(h.calls.some(c=>c.type==="writeLocal"&&c.owner==="B"),false);
+ assert.equal(h.local.B[0].id,"b1");
 });
