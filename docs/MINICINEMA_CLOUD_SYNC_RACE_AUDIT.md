@@ -1,6 +1,6 @@
 # Mini Cinema cloud-sync race audit
 
-Status: source-code audit and remediation specification only. No application code, user data, Supabase schema, Storage policy, or production deployment was changed by this audit.
+Status: initial frontend remediation is implemented on PR #4 and has focused Node regression tests. Latest CI for the current head is not yet available/confirmed. No user data, Supabase schema, Storage policy, or production deployment was changed.
 
 ## Scope
 
@@ -73,3 +73,21 @@ Use a mocked Supabase client with deferred promises and fake timers.
 The current repository has no demonstrated browser-level test harness for these account-switch scenarios. Do not patch the live Mini Cinema synchronization logic until a deterministic test harness is added and the above tests pass. The backend asset-owner helper does not fix this frontend race.
 
 No live Supabase query, SQL migration, RLS change, Storage operation, or production deployment was performed for this audit.
+
+## Remediation progress (2026-11-24)
+
+Implemented on the PR branch (not merged to `main`):
+
+- Added `movie-cloud-context.js` with immutable `{ ownerId, authContextVersion }` capture and current-context checks.
+- Loaded the guard before `app.js` in `index.html`.
+- Changed `movieToCloudRow(project, ownerId)` to serialize the captured owner explicitly.
+- Added context checks before and after awaited sync/load operations, before local merge/UI feedback, and before tombstone updates.
+- Bound deletion filters to the captured `context.ownerId`.
+- Replaced global boolean sync flags with `syncingContext` and a latest-only `pendingContext`; stale pending work is discarded rather than replayed under another account.
+- Bound cloud-load cleanup to the exact captured context object, so an older A load cannot clear the loading marker for a newer A login generation.
+- Added Node built-in test coverage for immutable context capture, A→B invalidation, same-user new generation, latest pending-context selection, and stale pending-context rejection.
+
+Current focused test file: `tests-frontend/movie-cloud-context.test.js`.
+CI workflow: `.github/workflows/frontend-context-tests.yml`.
+
+Important limitation: these are unit tests for the context guard and pending-context state helpers, not a full browser integration harness with mocked Supabase deferred promises/fake timers. The broader end-to-end scenarios listed above remain required before treating the account-switch race as fully closed. The PR head is still draft/open and unmerged; no production deployment has occurred.
