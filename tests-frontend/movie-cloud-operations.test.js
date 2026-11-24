@@ -67,6 +67,25 @@ test("malformed cloud project settings are rejected before upsert",async()=>{
  assert.equal(calls.some(c=>c.type==="upsert"),false);
  assert.match(calls.find(c=>c.type==="error").message,/структура/i);
 });
+test("local project storage failure aborts cloud upsert and reports sync error",async()=>{
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),
+  setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
+  readTombstones:()=>[],writeTombstones:()=>true,
+  readProjects:()=>[{id:"local-a",name:"Draft"}],
+  writeProjects:()=>{throw new Error("QuotaExceededError");},
+  toCloudRow:(p,owner)=>({id:p.id,owner_id:owner,project_type:"movie",settings:p}),
+  fromCloudRow:r=>r,render:()=>{},feedback:()=>calls.push({type:"feedback"}),
+  syncError:e=>calls.push({type:"syncError",message:e.message}),loadError:()=>{}
+ });
+ ops.schedule(capture("A",1));calls.find(x=>x.type==="timer").fn();
+ await new Promise(r=>setImmediate(r));
+ assert.equal(calls.some(x=>x.type==="upsert"),false);
+ assert.equal(calls.some(x=>x.type==="feedback"),false);
+ assert.match(calls.find(x=>x.type==="syncError").message,/QuotaExceededError/);
+});
 test("tombstone cleanup storage failure never reports sync success",async()=>{
  const h=harness(),id="123e4567-e89b-42d3-a456-426614174000";
  h.setTombstones("A",[id]);
