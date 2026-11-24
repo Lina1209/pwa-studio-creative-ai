@@ -97,6 +97,7 @@ function createMovieCloudOperations(deps) {
       }
       if (!current(context)) return;
       deps.writeProjects(context.ownerId, localProjects);
+      if (rows.length !== localProjects.length && current(context)) deps.render();
       if (rows.length) {
         const { error } = await deps.supabase().from("projects").upsert(rows, { onConflict: "id" });
         if (error) throw error;
