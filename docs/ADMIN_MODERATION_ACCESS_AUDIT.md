@@ -16,6 +16,14 @@ Scope: source and migration review only. No live environment variables, database
 - The moderation migration enables RLS and revokes direct client access to suspension and audit tables. The audit table is granted server-side SELECT/INSERT only and explicitly has UPDATE/DELETE/TRUNCATE revoked from `service_role`.
 - Notification list and read operations filter by the authenticated user's ID.
 
+## Admin surface review — working branch
+
+The current admin API surface was rechecked: `/admin/me`, diagnostics, AI usage, aggregate analytics, audit log, report listing/review, and suspension listing/create/revoke all use `require_admin`. The frontend keeps the admin panel hidden until `/api/auth/me` confirms the role, hides it on sign-out/account change, and guards asynchronous analytics results against stale account context. Existing route tests cover creator denial for moderation, suspensions, audit log, AI usage, diagnostics, and analytics; analytics UI contract tests now run in the frontend workflow.
+
+A small UI race was also closed: an older analytics request can no longer re-enable the submit button while a newer request is still running. The loading state is now tied to the latest request sequence.
+
+**Remaining verification boundary:** this is source/test evidence only. The production `OWNER_USER_ID` setting, live Supabase policies and grants, migration ledger, and actual admin account role have not been inspected. The email fallback finding A1 below remains open until the immutable owner UUID is confirmed in Render configuration. No live service, database, or deployment was changed.
+
 ## Findings and recommendations
 
 ### A1 — Immutable owner ID must be confirmed in production (high priority)
