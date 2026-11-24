@@ -79,3 +79,12 @@ def test_asset_safe_response_has_no_storage_path_field():
     )
     assert not hasattr(payload, "storage_path")
     assert not hasattr(payload, "signed_url")
+
+
+@pytest.mark.parametrize("size_bytes", [True, False, 1.5, "1024", 0, -1])
+def test_upload_init_requires_a_positive_strict_integer_byte_count(size_bytes):
+    with pytest.raises(ValidationError):
+        AssetUploadInitRequest(
+            kind="image", filename="storyboard.webp",
+            mime_type="image/webp", size_bytes=size_bytes,
+        )
