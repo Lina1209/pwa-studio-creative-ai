@@ -123,3 +123,14 @@ The latest Mini Cinema changes tighten the local deletion-queue contract:
 - guest contexts do not create authenticated cloud-sync work; guest drafts remain in their separate browser-local key and are not silently imported into a signed-in account.
 
 Regression test definitions cover cleanup-write failure, account-switch races, same-user reauthentication, guest isolation, and tombstones created during in-flight operations. These tests are present in the branch, but the current head's CI result has not yet been confirmed. This remains source-level and mocked-test evidence, not proof of live RLS or browser-storage behavior.
+
+
+## Branch follow-up — version-history integrity and unreadable local storage
+
+- Movie version snapshots now use JSON deep copies and exclude nested version history. History remains capped at 20 entries, newest first.
+- Restore validates the timestamp, project identity, and basic snapshot shape before changing the live project. A malformed or foreign-project snapshot is rejected without replacing the current draft.
+- A successful restore first records the current live draft as the newest history entry, then applies an independent copy of the selected snapshot and preserves the original project ID/creation time.
+- Local movie reads now report storage/format failures instead of silently presenting the failure as a normal empty collection.
+- The cloud adapter performs a strict owner-keyed local-storage read. If storage is inaccessible, invalid JSON, or not an array, cloud sync/load aborts before upsert or before writing merged cloud data over device state. This prevents a storage read failure from being mistaken for an empty local project list.
+- Regression test definitions were added for deep-copy behavior, 20-entry retention, safe restore, malformed/foreign snapshots, and local read failures during sync and cloud load. They are present in the branch; this audit does not claim they passed CI or browser testing.
+- No live storage was accessed and no Supabase data was modified.
