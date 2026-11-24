@@ -16,4 +16,4 @@ jobs:
         with:
           node-version: 22
       - name: Run account-context regression tests
-        run: node --test tests-frontend/movie-cloud-context.test.js
+        run: node --test tests-frontend/movie-cloud-context.test.js tests-frontend/movie-cloud-operations.test.js
