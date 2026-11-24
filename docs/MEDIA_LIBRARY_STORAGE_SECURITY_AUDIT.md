@@ -127,3 +127,18 @@ The existing diagnostics are metadata-oriented; they do not prove actual two-acc
 - No upload, download, public sharing, billing, provider generation or credit deduction was triggered.
 - PR #4 remains a draft and production `main` remains untouched.
 - Passing mocked/unit CI does not prove live Storage isolation or binary safety.
+
+
+## Follow-up review — 2026-11-24
+
+### Additional contract-level observations
+
+- The upload-init schema validates a positive declared `size_bytes`, but does not impose a maximum size. This is not currently an exploitable upload route because no upload-init endpoint exists; it is a required policy decision before one is implemented. The maximum must be aligned with a single reconciled bucket/API policy and enforced against actual uploaded bytes, not just the client declaration.
+- MIME allow-lists are deliberately narrow and exclude active web content such as SVG and HTML. Keep that restriction unless a separate safe-rendering and sanitization design is reviewed.
+- The owner-scope helper rejects a caller-supplied `owner_id` filter, but it is only a pure helper. It must be used on every service-role query and paired with explicit asset-owner and project-owner checks when routes are eventually implemented.
+- The current safe response model omits raw Storage paths and signed URLs. Future download authorization should return only short-lived, purpose-scoped URLs after an owner check; never persist them in project JSON, logs, or telemetry.
+- No shared asset routes or storage operations were discovered in the current application route tree. Existing schema/helper tests are not evidence of end-to-end upload, download, or cross-account isolation.
+
+### Release gate reaffirmed
+
+Storage object access, actual MIME/size verification, quarantine, metadata persistence, reference-aware deletion, and two-account A/B integration tests remain unimplemented or unverified. Do not connect studio upload controls to the buckets until the live migration ledger, bucket settings, and policies are reconciled. No production SQL, Storage operation, upload, download, deletion, or deployment was performed during this follow-up.
