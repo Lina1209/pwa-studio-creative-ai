@@ -16,7 +16,7 @@ Reviewed the current backend routes/services, Supabase storage migrations, stora
 
 - Supabase Auth is verified by the FastAPI backend; `get_current_user` derives the user UUID from a validated JWT.
 - A server-only Supabase REST helper exists for service-role operations.
-- Mini Movie Studio drafts are currently stored in browser `localStorage`; cloud project/media synchronization is not connected, as documented in `SUPABASE_CLOUD_STORAGE_SETUP.md`.
+- Mini Cinema movie-project drafts have a browser `localStorage` copy and an authenticated cloud project-sync path to `public.projects` in `app.js`. This is project JSON persistence, not media-binary upload or a shared asset library. Guest drafts remain device-local. Cloud sync depends on the live table and owner-only RLS being correctly configured; production isolation and cross-device behavior still require verification.
 - Migration sources define private buckets named `studio-media` and `studio-exports`, and a user-owned `public.projects` table.
 - A read-only diagnostic script exists at `supabase/diagnostics/inspect_cloud_storage.sql`.
 
@@ -175,3 +175,17 @@ The working roadmap records a manual live verification on 2026-11-21: `0005_clou
 The admin Supabase diagnostics endpoint performs read-only REST HEAD checks with a zero-row limit. The source review found that it checked profile, notification, messaging, and moderation tables but did not include the already-used `public.projects` table. The diagnostics table map now includes `projects` so an administrator can see whether the cloud-project REST resource is exposed without reading project rows. This is a connectivity/availability signal only: it does not inspect RLS correctness, bucket configuration, object policies, or project contents.
 
 The asset rollout must therefore preserve the verified `projects` foundation and avoid re-running its historical migration. The remaining read-only live audit should focus on the exact project-table definition/policies, the private `studio-media` bucket, the uncertain `studio-exports` bucket/policies, and the migration ledger before any asset schema or upload API is introduced.
+
+
+## 7. Clarification: project cloud sync is not asset storage
+
+A source review of the current Mini Cinema implementation confirms a real cloud persistence path for movie-project records. The earlier statement that movie-project cloud synchronization was not connected is superseded by the current frontend source review.
+
+The distinction is important:
+
+- `public.projects` stores project records and serialized workflow/settings data.
+- The per-account browser copy is a local fallback/cache.
+- Guest drafts are stored locally and no automatic guest-to-account migration was found.
+- No corresponding asset metadata API, upload-intent flow, media binary upload, shared asset listing, signed download, or cross-studio asset relationship service was found.
+
+Therefore, the Mini Cinema project cloud-sync feature must be preserved and tested; it must not be mistaken for a completed Media Library or shared asset-storage system. Production RLS and cross-account isolation remain unverified.
