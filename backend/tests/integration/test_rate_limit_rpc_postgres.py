@@ -85,6 +85,7 @@ def disposable_schema(dsn: str):
             "0013_unified_credit_wallet.sql",
             "0014_admin_analytics_summary.sql",
             "0015_credit_provider_outcome_resolution.sql",
+            "0016_credit_grant_source_allowlist.sql",
         ):
             conn.execute((MIGRATIONS / filename).read_text(encoding="utf-8"))
     yield
@@ -539,3 +540,17 @@ def test_admin_analytics_rpc_is_service_role_only(dsn):
         assert conn.execute(
             "SELECT has_function_privilege('service_role', %s, 'EXECUTE')", (signature,)
         ).fetchone()[0] is True
+
+
+
+def test_credit_grant_sql_enforces_known_provenance_sources(dsn):
+    user_id = _new_user(dsn)
+    with pytest.raises(psycopg.Error):
+        _wallet_call(
+            dsn,
+            "SELECT public.grant_user_credits(%s, %s, %s, %s)",
+            (user_id, 10, "arbitrary_client_label", "source-check-001"),
+        )
+    result = _grant(dsn, user_id, 10, "allowed-promo-source")
+    assert result["status"] == "granted"
+    assert _wallet_row(dsn, user_id) == (10, 0)
