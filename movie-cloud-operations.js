@@ -89,3 +89,4 @@ function createMovieCloudOperations(deps) {
 }
 
 if (typeof module === "object" && module.exports) module.exports = { createMovieCloudOperations };
+if (typeof window !== "undefined") window.PWAMovieCloudOperations = { createMovieCloudOperations };
