@@ -265,7 +265,7 @@ test("a stale A cloud load does not block B from starting and applying its own l
  h.setUser("B",2);h.setSelectGate(gateB);
  const loadingB=h.ops.load(h.capture());
  await Promise.resolve();
- gateB.resolve({data:[{owner_id:"A",project_type:"movie",id:"b-cloud",title:"B cloud",updated_at:"2026-02-01"}],error:null});
+ gateB.resolve({data:[{owner_id:"B",project_type:"movie",id:"b-cloud",title:"B cloud",updated_at:"2026-02-01"}],error:null});
  await loadingB;
  assert.equal(h.local.B.some(project=>project.id==="b-cloud"),true);
  gateA.resolve({data:[{owner_id:"A",project_type:"movie",id:"a-stale",title:"A stale",updated_at:"2026-03-01"}],error:null});
