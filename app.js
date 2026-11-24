@@ -1069,10 +1069,7 @@ const movieHistoryStyle = document.createElement("style");
   const movieCloudContext = window.PWAMovieCloudContext;
   if (!movieCloudContext) console.error("Movie cloud context guard is unavailable; cloud sync is disabled.");
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
-  const readMovieTombstones = () => {
-    try { const value = JSON.parse(localStorage.getItem(movieDeletedKey()) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
-    catch { return []; }
-  };
+  const readMovieTombstones = () => window.PWAMovieTombstones.read(localStorage, movieDeletedKey(), isUuid);
   const writeMovieTombstones = ids => {
     try { localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
     catch (error) { console.error("Movie deletion queue failed:", error); return false; }
@@ -1672,7 +1669,9 @@ const movieHistoryStyle = document.createElement("style");
         if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
         const currentProjects=movieRead();
         const latest=currentProjects.filter(item=>item.id!==project.id);
-        const deletedIds=readMovieTombstones();
+        let deletedIds;
+        try { deletedIds=readMovieTombstones(); }
+        catch(error) { $("#movieFeedback").textContent="Не удалось прочитать очередь удалений. Фильм не удалён и облачная синхронизация не запускалась. Проверьте память браузера и повторите попытку."; console.error("Movie deletion queue read failed:",error); return; }
         const needsTombstone=!!authSession?.user && isUuid(project.id) && !deletedIds.includes(project.id);
         if(needsTombstone && !writeMovieTombstones([...deletedIds,project.id])){
           $("#movieFeedback").textContent="Не удалось надёжно поставить облачное удаление в очередь. Фильм оставлен на месте — освободите память браузера и повторите попытку.";
@@ -1684,8 +1683,12 @@ const movieHistoryStyle = document.createElement("style");
           const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;
           $("#movieFeedback").textContent=authSession?.user?"Проект удалён с устройства. Удаление ожидает подтверждения облачной синхронизации.":"Проект удалён с этого устройства.";
         } else if(needsTombstone) {
-          // The project remains recoverable locally; undo the newly queued cloud delete.
-          if(!writeMovieTombstones(deletedIds)) console.error("Could not roll back the tombstone after local project write failed.");
+          // Roll back the newly queued cloud delete when possible. If storage also
+          // blocks rollback, explain that the cloud deletion remains queued.
+          if(!writeMovieTombstones(deletedIds)) {
+            console.error("Could not roll back the tombstone after local project write failed.");
+            $("#movieFeedback").textContent="Не удалось удалить фильм из памяти устройства. При этом очередь облачного удаления не удалось отменить: облачная копия может быть удалена при следующей синхронизации. Освободите память браузера и проверьте проект перед продолжением.";
+          }
         }
       });
       const allStagesDone=movieStages.every(stage=>(project.completedSteps||[]).includes(stage.key));
