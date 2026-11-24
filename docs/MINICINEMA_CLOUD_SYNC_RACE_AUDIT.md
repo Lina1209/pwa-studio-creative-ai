@@ -91,3 +91,21 @@ Current focused test file: `tests-frontend/movie-cloud-context.test.js`.
 CI workflow: `.github/workflows/frontend-context-tests.yml`.
 
 Important limitation: these are unit tests for the context guard and pending-context state helpers, not a full browser integration harness with mocked Supabase deferred promises/fake timers. The broader end-to-end scenarios listed above remain required before treating the account-switch race as fully closed. The PR head is still draft/open and unmerged; no production deployment has occurred.
+
+
+## Production-shared operation controller and deferred-promise tests (2026-11-24)
+
+The synchronization and cloud-load orchestration was extracted into `movie-cloud-operations.js`. The browser app now instantiates this same controller with its Supabase client, account-context guard, owner-partitioned local-storage adapters, serializer/deserializer, and UI callbacks. The Node regression suite imports the exact controller used by the browser; it does not reimplement the intended state machine.
+
+Additional deterministic tests use deferred promises and a controllable timer queue to cover:
+- account A scheduled, then switched to B before the debounce timer fires;
+- A upsert held in flight while the account changes, including explicit A owner serialization and suppression of stale UI feedback;
+- B queued while A is still synchronizing, then A cleanup and B follow-up scheduling;
+- A cloud SELECT held in flight while switching to B;
+- same-user reauthentication with a newer auth generation while the earlier SELECT is pending;
+- A deletion held in flight while switching to B, ensuring the stale continuation does not write local projects for B;
+- guest context cannot schedule cloud upload.
+
+The frontend CI run for commit `604711578f96690b84ca4a5c52942c198dba62a1` completed successfully: **15 Node tests passed, 0 failed** (8 context-guard tests + 7 operation-controller tests). Backend CI was still running at the time this document was updated.
+
+Scope limitation: the new tests exercise the production-shared orchestration module with mocked Supabase and deferred network responses; they are not a full real-browser test against the hosted Supabase project. RLS, actual token propagation, database behavior, two-account live isolation, and browser UI behavior still require separate staging/live verification. No live Supabase changes or production deployment were performed.
