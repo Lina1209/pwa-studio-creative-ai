@@ -137,3 +137,38 @@ def ensure_user_not_suspended(settings: Settings, user_id: str, scope: str):
                 "limit": "1"})
     if rows:
         raise HTTPException(status_code=403, detail="This account is temporarily restricted from using this feature.")
+
+def list_admin_audit_log(
+    settings: Settings,
+    *,
+    page: int = 1,
+    page_size: int = 50,
+    actor_user_id: str | None = None,
+    target_user_id: str | None = None,
+    action: str | None = None,
+    entity_type: str | None = None,
+):
+    """Return a bounded, filtered page of append-only admin audit events."""
+    filters = {
+        "select": "id,actor_user_id,action,target_user_id,entity_type,entity_id,metadata,created_at",
+        "order": "created_at.desc,id.desc",
+        "offset": str((page - 1) * page_size),
+        "limit": str(page_size + 1),
+    }
+    if actor_user_id is not None:
+        filters["actor_user_id"] = f"eq.{_validated_uuid(actor_user_id, 'actor user ID')}"
+    if target_user_id is not None:
+        filters["target_user_id"] = f"eq.{_validated_uuid(target_user_id, 'target user ID')}"
+    if action is not None:
+        filters["action"] = f"eq.{action}"
+    if entity_type is not None:
+        filters["entity_type"] = f"eq.{entity_type}"
+
+    rows = _request(settings, "GET", "admin_audit_log", params=filters)
+    has_more = len(rows) > page_size
+    return {
+        "items": rows[:page_size],
+        "page": page,
+        "page_size": page_size,
+        "has_more": has_more,
+    }
