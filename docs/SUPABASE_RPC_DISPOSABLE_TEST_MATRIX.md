@@ -187,7 +187,7 @@ A forward-only migration, `0015_credit_provider_outcome_resolution.sql`, now add
 - Null outcomes, missing references, invalid capture combinations, and capture amounts above the reservation are rejected.
 - This remains a trusted backend boundary: the server must call the resolver only after it has authoritative provider evidence. A caller-supplied reference alone is not proof.
 
-The disposable fixture now applies migrations 0011, 0012, 0013, 0014, and 0015 in version order, with minimal test-only `profiles`, `projects`, and `ai_usage` scaffolding for analytics. The latest tested commit `578ce198b1db54451b8fd4f052d906a432f01ae2` reports **19 passed** in the PostgreSQL suite. It covers:
+The disposable fixture now applies migrations 0011, 0012, 0013, 0014, 0015, and 0016 in version order, with minimal test-only `profiles`, `projects`, and `ai_usage` scaffolding for analytics. The latest tested commit `578ce198b1db54451b8fd4f052d906a432f01ae2` reports **19 passed** in the PostgreSQL suite. It covers:
 - Explicit provider failure resolution, rejection of direct release/settle while ambiguous, idempotent resolution, and rejection of conflicting resolution.
 - Explicit provider success resolution and correct capture/refund accounting.
 - Admin analytics aggregate counts, date-range validation, and service-role-only execution.
