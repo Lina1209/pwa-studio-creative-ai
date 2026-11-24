@@ -669,9 +669,17 @@ const movieHistoryStyle = document.createElement("style");
       status.value=["reviewing","resolved","rejected"].includes(report.status)?report.status:"reviewing";
       const save=adminNode("button","secondary-button","Сохранить решение");save.type="button";
       save.addEventListener("click",async()=>{
+        const version=authContextVersion, userId=authSession?.user?.id;
+        if(!userId)return;
         save.disabled=true;
-        try { await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})}); adminFeedback("Решение по жалобе сохранено."); await loadAdminWorkspace(); }
-        catch(error){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}
+        try {
+          await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})});
+          if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+          adminFeedback("Решение по жалобе сохранено.");
+          await loadAdminWorkspace();
+        } catch(error){
+          if(version===authContextVersion && authSession?.user?.id===userId){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}
+        }
       });
       actions.append(status,save); card.append(note,actions); list.append(card);
     });
@@ -689,7 +697,20 @@ const movieHistoryStyle = document.createElement("style");
       card.append(head,adminNode("p","admin-item-meta","Пользователь: "+item.user_id),adminNode("p","admin-item-text",item.reason||"Причина не указана"),adminNode("p","admin-item-meta","Создано: "+formatAdminDate(item.created_at)+" · До: "+formatAdminDate(item.expires_at)));
       if(!item.revoked_at && (!item.expires_at || new Date(item.expires_at)>new Date())){
         const revoke=adminNode("button","secondary-button","Отменить ограничение");revoke.type="button";
-        revoke.addEventListener("click",async()=>{if(!confirm("Отменить это ограничение доступа?"))return;revoke.disabled=true;try{await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});adminFeedback("Ограничение отменено.");await loadAdminWorkspace();}catch(error){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}});
+        revoke.addEventListener("click",async()=>{
+          if(!confirm("Отменить это ограничение доступа?"))return;
+          const version=authContextVersion, userId=authSession?.user?.id;
+          if(!userId)return;
+          revoke.disabled=true;
+          try{
+            await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});
+            if(version!==authContextVersion || authSession?.user?.id!==userId)return;
+            adminFeedback("Ограничение отменено.");
+            await loadAdminWorkspace();
+          }catch(error){
+            if(version===authContextVersion && authSession?.user?.id===userId){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}
+          }
+        });
         card.append(revoke);
       }
       list.append(card);
@@ -749,10 +770,20 @@ const movieHistoryStyle = document.createElement("style");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)){adminFeedback("Проверьте UUID пользователя — нужен полный идентификатор Supabase Auth.");return;}
     if(authSession?.user?.id===userId){adminFeedback("Нельзя ограничить собственный аккаунт.");return;}
     const payload={user_id:userId,reason,scope:$("#suspensionScope").value,expires_at:expiry?new Date(expiry).toISOString():null};
+    const version=authContextVersion, actorUserId=authSession?.user?.id;
+    if(!actorUserId)return;
     button.disabled=true;
-    try{await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});$("#adminSuspensionForm").reset();adminFeedback("Ограничение создано и записано в журнал.");await loadAdminWorkspace();}
-    catch(error){adminFeedback("Не удалось создать ограничение: "+error.message);}
-    finally{button.disabled=false;}
+    try{
+      await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});
+      if(version!==authContextVersion || authSession?.user?.id!==actorUserId)return;
+      $("#adminSuspensionForm").reset();
+      adminFeedback("Ограничение создано и записано в журнал.");
+      await loadAdminWorkspace();
+    }catch(error){
+      if(version===authContextVersion && authSession?.user?.id===actorUserId)adminFeedback("Не удалось создать ограничение: "+error.message);
+    }finally{
+      if(version===authContextVersion && authSession?.user?.id===actorUserId)button.disabled=false;
+    }
   });
   if (authSession?.user) setTimeout(loadAccountRole, 0);
   const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",control:"Центр управления",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
