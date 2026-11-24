@@ -221,3 +221,14 @@ The outbox stores no prompts, generated text, credentials or raw provider error 
 The disposable PostgreSQL fixture now applies migrations 0011–0018 and tests outbox constraints, client-role isolation, and the account-history retention guard. Unit tests cover start-before-provider fail-closed behavior, successful metadata-only completion, and conservative unknown-state handling. CI results must be checked on the final branch head before calling the change verified.
 
 Migration 0018 has not been applied to live Supabase. No production requests were run and no billing or credit deductions were enabled.
+
+
+## Durable AI usage journal — reconciliation visibility
+
+- The backend now exposes a read-only administrator endpoint at `GET /api/admin/ai-usage/reconciliation`.
+- It lists bounded pages of `started` and `unknown` journal rows, with request/account identifiers, provider/model, timestamps, measured token/cost metadata, and age in seconds. It never returns prompts or generated responses.
+- A `started` row older than the configurable `stale_after_minutes` threshold (default 15, maximum 1440) is labeled `stale_started` for manual review only. Age does not prove provider failure or absence of spend.
+- Summary values are explicitly scoped to the current page. Known costs are summed separately; NULL costs remain counted as unknown and are never treated as zero.
+- The endpoint does not mutate records, retry provider calls, release reservations, or settle charges. No authoritative DeepSeek invoice/request-ID matching is implemented; human/provider-side reconciliation remains required.
+- The endpoint is protected by the existing verified `require_admin` dependency. The underlying outbox table must exist from migration 0018 and remain inaccessible to client roles.
+- Migration 0018 remains source-only. Do not deploy this code until the live Supabase migration ledger, table definition, RLS and service-role grants have been reconciled and the migration is separately approved/applied.
