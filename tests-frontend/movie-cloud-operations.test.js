@@ -35,6 +35,38 @@ function harness(){
   setUpsertGate(g){upsertGate=g;},setSelectGate(g){selectGate=g;},setDeleteGate(g){deleteGate=g;},setTombstones(owner,ids){tombstones[owner]=[...ids];},
   flush(){const batch=[...timers.values()];timers.clear();batch.forEach(fn=>fn());}};
 }
+test("oversized cloud project is rejected before upsert",async()=>{
+ const h=harness();
+ h.local.A=[{id:"large",name:"Large film",payload:"x".repeat(270*1024)}];
+ // The production adapter serializes the full project into settings.
+ const original=h.ops;
+ const {createMovieCloudOperations}=require("../movie-cloud-operations.js");
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
+  readTombstones:()=>[],writeTombstones:()=>{},readProjects:()=>h.local.A,
+  writeProjects:()=>{},toCloudRow:(p,owner)=>({id:p.id,owner_id:owner,project_type:"movie",settings:p}),
+  fromCloudRow:r=>r,render:()=>{},feedback:()=>{},syncError:e=>calls.push({type:"error",message:e.message}),loadError:()=>{}
+ });
+ ops.schedule(capture("A",1));calls.find(c=>c.type==="timer").fn();await new Promise(r=>setImmediate(r));
+ assert.equal(calls.some(c=>c.type==="upsert"),false);
+ assert.match(calls.find(c=>c.type==="error").message,/256 КиБ/);
+});
+test("malformed cloud project settings are rejected before upsert",async()=>{
+ const {createMovieCloudOperations}=require("../movie-cloud-operations.js");
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
+  readTombstones:()=>[],writeTombstones:()=>{},readProjects:()=>[{id:"bad"}],writeProjects:()=>{},
+  toCloudRow:(p,owner)=>({id:p.id,owner_id:owner,project_type:"movie",settings:"not-an-object"}),
+  fromCloudRow:r=>r,render:()=>{},feedback:()=>{},syncError:e=>calls.push({type:"error",message:e.message}),loadError:()=>{}
+ });
+ ops.schedule(capture("A",1));calls.find(c=>c.type==="timer").fn();await new Promise(r=>setImmediate(r));
+ assert.equal(calls.some(c=>c.type==="upsert"),false);
+ assert.match(calls.find(c=>c.type==="error").message,/структура/i);
+});
 test("scheduled A sync is discarded after switching to B before debounce",async()=>{
  const h=harness(),a=h.capture();h.ops.schedule(a);h.setUser("B",2);h.flush();await new Promise(r=>setImmediate(r));
  assert.equal(h.calls.some(c=>c.type==="upsert"),false);
