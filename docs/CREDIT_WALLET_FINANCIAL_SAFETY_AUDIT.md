@@ -202,3 +202,22 @@ Added source-only forward migration `0017_preserve_credit_history_on_user_delete
 A disposable PostgreSQL integration test now grants credits, creates a reservation, deletes the corresponding Auth user, and asserts that the wallet balance, reservation and ledger events remain. The test fixture applies migrations 0011–0017 in sequence.
 
 **Important limitations:** this is a preservation safeguard, not a complete retention/privacy policy. The retained UUID may remain personal data when linkable. Before live rollout, approve a retention period, legal basis, anonymization/pseudonymization process, support-access controls, and treatment of pending reservations. Account deletion must not silently destroy financial evidence, but it also must not become indefinite retention by default. Migration 0017 is source-only and has not been applied to live Supabase.
+
+
+## Durable AI usage journal — 2026-11-25
+
+Added source-only migration `0018_durable_ai_usage_outbox.sql` and wired both `/api/chat` and `/api/prompts` through a metadata-only request lifecycle:
+
+1. Generate a stable UUID before contacting the provider.
+2. Insert a `started` outbox row first. If that write fails, return HTTP 503 and do not start provider work.
+3. On a completed provider response, persist `succeeded`, token counts and LiteLLM-reported cost metadata.
+4. On provider errors/timeouts, persist `unknown` rather than assuming the operation was free.
+5. Continue mirroring successful metadata to the legacy `ai_usage` table for existing reporting.
+
+The outbox stores no prompts, generated text, credentials or raw provider error messages. It retains only account UUID, endpoint, provider/model, lifecycle status, token counts, optional cost metadata, safe error class and timestamps. Client roles have no table privileges; service_role receives SELECT/INSERT/UPDATE.
+
+**Known remaining work:** no automated stale-`started` reconciler, retry worker, dead-letter dashboard, provider request-ID join, or invoice reconciliation exists yet. If writing the successful outcome fails after provider completion, the durable row remains `started` and must be reconciled; the user response is not discarded. A timeout remains `unknown` because the provider may have completed the operation. The existing `ai_usage` mirror remains best-effort and is not the authoritative journal.
+
+The disposable PostgreSQL fixture now applies migrations 0011–0018 and tests outbox constraints, client-role isolation, and the account-history retention guard. Unit tests cover start-before-provider fail-closed behavior, successful metadata-only completion, and conservative unknown-state handling. CI results must be checked on the final branch head before calling the change verified.
+
+Migration 0018 has not been applied to live Supabase. No production requests were run and no billing or credit deductions were enabled.
