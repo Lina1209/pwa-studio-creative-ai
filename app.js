@@ -1638,10 +1638,23 @@ const movieHistoryStyle = document.createElement("style");
       });
       const remove=makeAction("🗑 Удалить","danger-button",()=>{
         if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
-        const latest=movieRead().filter(item=>item.id!==project.id);
+        const currentProjects=movieRead();
+        const latest=currentProjects.filter(item=>item.id!==project.id);
         const deletedIds=readMovieTombstones();
-        if(isUuid(project.id) && !deletedIds.includes(project.id)) writeMovieTombstones([...deletedIds,project.id]);
-        if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён с устройства. Удаление ожидает подтверждения облачной синхронизации.":"Проект удалён с этого устройства.";}
+        const needsTombstone=!!authSession?.user && isUuid(project.id) && !deletedIds.includes(project.id);
+        if(needsTombstone && !writeMovieTombstones([...deletedIds,project.id])){
+          $("#movieFeedback").textContent="Не удалось надёжно поставить облачное удаление в очередь. Фильм оставлен на месте — освободите память браузера и повторите попытку.";
+          return;
+        }
+        if(movieWrite(latest)){
+          if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;
+          renderMovieProjects();
+          const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;
+          $("#movieFeedback").textContent=authSession?.user?"Проект удалён с устройства. Удаление ожидает подтверждения облачной синхронизации.":"Проект удалён с этого устройства.";
+        } else if(needsTombstone) {
+          // The project remains recoverable locally; undo the newly queued cloud delete.
+          if(!writeMovieTombstones(deletedIds)) console.error("Could not roll back the tombstone after local project write failed.");
+        }
       });
       const allStagesDone=movieStages.every(stage=>(project.completedSteps||[]).includes(stage.key));
       const stageButton=makeAction((allStagesDone?"Открыть готовый проект":"Продолжить работу")+" · "+movieProgress(project), "primary-button",()=>{
