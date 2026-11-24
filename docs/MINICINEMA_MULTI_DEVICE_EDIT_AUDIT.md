@@ -1,6 +1,6 @@
 # Mini Cinema multi-device editing audit
 
-Status: source-level audit updated on PR #4 head `5d101b5e7385d6064de13bd241ed6d584c73bb74`. This document records verified frontend behavior, the cloud-delete/upsert race mitigation, and the remaining server-side concurrency limitation. No production deployment, live Supabase query, schema change, or user-data mutation was performed.
+Status: source-level audit updated on PR #4 head `a49b4e42634d10bb8ff03d61a35aeba7230e7141`. This document records verified frontend behavior, local deletion-queue race mitigation, retry behavior, and the remaining cross-device/server-side concurrency limitation. No production deployment, live Supabase query, schema change, or user-data mutation was performed.
 
 ## Scope reviewed
 
@@ -17,13 +17,21 @@ Status: source-level audit updated on PR #4 head `5d101b5e7385d6064de13bd241ed6d
 4. **Restore validates the selected history entry against the latest local history.** It checks that the entry still exists, validates the snapshot's project ID and structure, preserves the current live project as the newest history backup, and only reports success after local persistence succeeds.
 5. **Cloud load merges rather than blindly replacing local drafts.** A strictly newer cloud timestamp replaces an older local copy; equal timestamps preserve local data; a valid cloud timestamp can replace a local copy with a missing/invalid timestamp; invalid cloud timestamps do not replace a valid local copy.
 6. **Cloud sync has a preflight read.** If the cloud copy is already strictly newer at the time of SELECT, that project is retained locally and excluded from the subsequent upsert.
-7. **A delete recorded while an upsert is pending is re-applied immediately after that upsert.** Sync re-reads the durable tombstone queue after the awaited upsert and issues an owner- and project-type-scoped cloud delete for any row that the just-finished upsert could have resurrected. The tombstone remains queued until a later sync confirms deletion and clears it.
+7. **A delete recorded in the same browser profile while an upsert is pending is re-applied immediately after that upsert.** Sync re-reads the local durable tombstone queue after the awaited upsert and issues an owner- and project-type-scoped cloud delete for any row that the just-finished upsert could have resurrected. The tombstone remains queued until a later sync confirms deletion and clears it. This protects same-browser tabs sharing localStorage; it does not propagate tombstones to another device.
+8. **Failed cleanup remains retryable.** If the post-upsert cloud delete fails, the tombstone is not cleared. The queued follow-up sync retries the deletion; only a confirmed deletion clears the queue.
+9. **Copy and restore are blocked while a local deletion tombstone exists.** Both actions re-read the queue and fail closed if it cannot be read, preventing a stale open history dialog or project card from creating a copy or restoring the locally deleted ID while its cloud deletion is pending.
 
 ## Important limits
 
 ### Local editor guards are not server-side revisions
 
 The editor baseline is a client timestamp string, not a monotonic server revision. It protects against many stale local-editor situations after a newer cloud copy has been loaded into local storage. It cannot prove that no other device has changed the row since the last load, and timestamp equality/clock skew can make client timestamps ambiguous.
+
+### Local tombstones do not solve a two-device delete/upsert race
+
+The deletion queue is stored in browser localStorage, so it is shared by tabs in the same browser profile but is not shared with another phone, computer, or browser profile. If device B deletes a project while device A has an upsert already in flight, device A cannot see B's tombstone. Depending on request ordering, A's later upsert can recreate the cloud row after B's delete. The new post-upsert cleanup only closes the same-browser-tab race; it must not be described as a cross-device deletion guarantee.
+
+**Required durable fix:** deletion must become a server-side tombstone/soft-delete or revisioned state transition, and upserts must atomically reject rows whose expected revision predates the delete. This is part of the same server-side compare-and-swap requirement below.
 
 ### The SELECT-then-upsert sequence is not atomic
 
@@ -41,7 +49,9 @@ Do not implement this by casually adding a column or applying a migration to the
 
 ## Test coverage and remaining verification
 
-- A deferred-promise regression test now records a tombstone while an upsert is pending and verifies that a scoped cloud delete follows the upsert while the tombstone remains queued.
+- A deferred-promise regression test records a same-browser tombstone while an upsert is pending and verifies that a scoped cloud delete follows the upsert while the tombstone remains queued.
+- A retry test makes that post-upsert delete fail, verifies that the tombstone survives, then verifies a later sync retries and clears it only after success.
+- A source-level regression test verifies that copy and restore check the tombstone queue before creating a clone or applying a restored snapshot.
 - Version-history unit tests cover deep-copy behavior, 20-entry history cap, restore backup/validation, stale stage completion baseline, rename stale-baseline guard, and restore persistence feedback.
 - Cloud-operation tests use deferred promises to exercise account switches, deletion queues, load merges, timestamp precedence, and stale-cloud preflight behavior.
 - These are deterministic Node tests against the production-shared frontend modules, not real-browser tests against two signed-in devices and the hosted Supabase project.
