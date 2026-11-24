@@ -174,3 +174,25 @@ Migration `0013_unified_credit_wallet.sql` is now included in the same disposabl
 Latest tested branch commit at this gate: `34fe534a3136fd420a7b41595ea411c22a744477`. Disposable PostgreSQL workflow: [run](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473190008). Backend and frontend workflows also passed on the same commit.
 
 This is source-migration testing in an isolated plain PostgreSQL service with minimal `auth.users` and role scaffolding, not a full Supabase emulator or production schema validation. Migration 0014 and live grants/RLS remain outside this test scope.
+
+
+## Follow-up hardening and analytics gate — 2026-11-25
+
+A forward-only migration, `0015_credit_provider_outcome_resolution.sql`, now addresses the previously recorded ambiguous-provider release gap without rewriting migration 0013:
+
+- Ordinary settle/release RPCs now accept only `reserved` state. They reject `reconciliation_required`.
+- New service-role-only `resolve_credit_reservation_provider_outcome` requires an explicit `succeeded` or `failed` outcome and a non-empty provider resolution reference.
+- A confirmed success is settled with a bounded capture amount; a confirmed failure releases the reservation. The state transition and balance/ledger mutation occur in one database transaction.
+- Replays with the same final outcome/reference return `already_resolved`; conflicting final outcomes are rejected.
+- Null outcomes, missing references, invalid capture combinations, and capture amounts above the reservation are rejected.
+- This remains a trusted backend boundary: the server must call the resolver only after it has authoritative provider evidence. A caller-supplied reference alone is not proof.
+
+The disposable fixture now applies migrations 0011, 0012, 0013, 0014, and 0015 in version order, with minimal test-only `profiles`, `projects`, and `ai_usage` scaffolding for analytics. The latest tested commit `578ce198b1db54451b8fd4f052d906a432f01ae2` reports **19 passed** in the PostgreSQL suite. It covers:
+- Explicit provider failure resolution, rejection of direct release/settle while ambiguous, idempotent resolution, and rejection of conflicting resolution.
+- Explicit provider success resolution and correct capture/refund accounting.
+- Admin analytics aggregate counts, date-range validation, and service-role-only execution.
+- All previously listed rate-limit and wallet concurrency/lifecycle cases.
+
+Latest PostgreSQL run: [run 45473891705](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473891705). Backend tests: [run 45473891875](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473891875). Frontend account-context tests: [run 45473891643](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/45473891643).
+
+The fixture is still plain disposable PostgreSQL with minimal Supabase role/auth/table scaffolding. It is not a production schema check, full Supabase emulator, or proof that migrations 0013–0015 are applied in the live project. Do not deploy these migrations until the live migration ledger and schema have been reconciled, and ensure the backend has a provider-authoritative reconciliation path before enabling paid generation.
