@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 from uuid import UUID
 
 import httpx
