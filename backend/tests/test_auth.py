@@ -42,6 +42,31 @@ def test_owner_is_admin_by_immutable_user_id(monkeypatch):
     assert user.role == "admin"
 
 
+def test_owner_uuid_comparison_is_case_insensitive(monkeypatch):
+    settings = Settings(
+        supabase_url="https://project.supabase.co",
+        owner_user_id=OWNER_ID.upper(),
+    )
+    configure_auth(monkeypatch, settings, {"sub": OWNER_ID, "email": "owner@example.com"})
+
+    user = auth.get_current_user(credentials())
+
+    assert user.role == "admin"
+
+
+def test_malformed_configured_owner_id_fails_closed(monkeypatch):
+    settings = Settings(
+        supabase_url="https://project.supabase.co",
+        owner_user_id="not-a-uuid",
+        owner_email="owner@example.com",
+    )
+    configure_auth(monkeypatch, settings, {"sub": OWNER_ID, "email": "owner@example.com"})
+
+    user = auth.get_current_user(credentials())
+
+    assert user.role == "creator"
+
+
 def test_non_owner_cannot_become_admin_by_matching_email_when_id_is_configured(monkeypatch):
     settings = Settings(
         supabase_url="https://project.supabase.co",
