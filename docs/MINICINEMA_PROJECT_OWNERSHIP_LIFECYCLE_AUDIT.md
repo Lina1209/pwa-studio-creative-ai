@@ -137,3 +137,12 @@ The browser integration still has a known consistency limitation: deletion tombs
 - Added a deterministic regression test for the boundary where a project upsert has already been sent and the user deletes that project before the upsert request completes.
 - The in-flight request cannot be recalled; the test documents that the already-submitted row may reach the cloud briefly. The scheduled follow-up sync then processes the new tombstone, deletes only that owner's movie row, and excludes the deleted project from its next upsert batch.
 - This is eventual cleanup, not atomic cancellation. The UI must continue to represent deletion as pending until the cloud delete succeeds. A failed follow-up delete must retain the tombstone for retry.
+
+
+## Follow-up — stale-device cloud upsert preflight (2026-11-24)
+
+A further review found that the load path merged by timestamp, but the sync path still upserted every local project without first checking whether another device had already saved a newer cloud copy. A stale device could therefore overwrite a newer remote draft when its debounce sync ran before a cloud reload.
+
+The sync controller now performs an owner- and movie-type-scoped SELECT for the project IDs in the outgoing batch. If a valid cloud copy is strictly newer than the local copy, the controller retains the cloud payload (including its version history) in local storage and omits that ID from the upsert batch. A stale account context after the preflight SELECT aborts before local writes or upsert. Equal timestamps continue to prefer the local copy, and invalid remote timestamps do not block the local write.
+
+This is a best-effort preflight, not full multi-device conflict resolution: another device can still write after the SELECT and before this device's upsert. The remaining race requires a server-side revision counter or atomic compare-and-swap RPC, which must wait for live migration/schema reconciliation and a disposable PostgreSQL/Supabase integration environment. The new regression tests are authored but have not been executed; no live Supabase records or schema were accessed or changed.
