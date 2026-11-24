@@ -66,3 +66,38 @@ This improves audit-log searchability and attribution; it does not make the muta
 ### Audit-log access boundary
 
 The inspected migration makes `admin_audit_log` server-managed and revokes UPDATE, DELETE, and TRUNCATE from `service_role`, granting SELECT and INSERT. The inspected API currently writes audit events but does not expose a dedicated admin audit-history read endpoint. A future read endpoint should be admin-only, paginated, and return a safe allowlist of fields; it must not grant client-side table access.
+
+## Follow-up review — mutation failure semantics and retry safety (2026-11-24)
+
+A fresh inspection of the current branch confirms the M1 issue has a concrete operator-facing failure mode:
+
+1. The service sends a PATCH/POST to the primary moderation table.
+2. The primary mutation can commit and return its row.
+3. A second REST request attempts to insert the audit event.
+4. If that second request fails, the service raises an HTTP error even though the moderation state may already have changed.
+
+This means an administrator can see an error despite a successful state change. Retrying suspension creation can create a second active suspension; retrying a report review can overwrite the first review metadata/time. The audit event can be missing. This is not fixed by catching the error or adding another sequential REST call.
+
+### Current protections and remaining gaps
+
+- Report review validates the report UUID and updates only the exact report ID.
+- Suspension revocation validates the UUID and filters to an exact record whose `revoked_at` is NULL; a repeated revoke normally returns 404.
+- Suspension creation validates the target UUID and future timezone-aware expiry, but does not carry an idempotency key or enforce a documented duplicate-active-suspension policy at the service boundary.
+- Report review does not include an expected-current-status predicate, so concurrent moderators can overwrite each other's review.
+- Existing unit tests verify actor/target attribution and normal mutation calls, but do not inject an audit-write failure after a successful primary mutation or prove transaction rollback.
+
+### Required correction before operational reliance
+
+Do not patch this with a client retry loop. First reconcile the live migration ledger and actual moderation table constraints. Then implement narrow database RPCs that, in one transaction:
+
+- lock and validate the target report/suspension row;
+- enforce allowed state transitions and an expected-current-status/version;
+- accept a stable idempotency key for create/revoke operations;
+- write the state change and append-only audit event together;
+- return the committed result and audit event only after transaction success.
+
+Add PostgreSQL integration tests for audit insert failure rollback, two moderators reviewing the same report, repeated suspension-create requests with the same idempotency key, duplicate revoke, and both concurrent ordering outcomes. Until then, treat a moderation mutation API error as an ambiguous result: inspect the current record and audit history before retrying.
+
+### Scope boundary
+
+This is source-level evidence only. No RPC or migration was added, no SQL was executed, and no live reports, suspensions, audit events, policies, or grants were accessed. Production behavior remains unverified.
