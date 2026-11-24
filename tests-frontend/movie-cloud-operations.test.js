@@ -132,3 +132,16 @@ test("successful tombstone cleanup during cloud load clears only captured owner'
  assert.equal(h.calls.some(c=>c.type==="render"),true);
  assert.deepEqual(h.tombstones.A,[]);
 });
+
+
+test("cloud load cleanup preserves tombstones created while deletion is in flight",async()=>{
+ const h=harness(),oldId="123e4567-e89b-42d3-a456-426614174000",newId="223e4567-e89b-42d3-a456-426614174000",gate=deferred();
+ h.setTombstones("A",[oldId]);h.setDeleteGate(gate);
+ const loading=h.ops.load(h.capture());
+ await Promise.resolve();await Promise.resolve();
+ h.setTombstones("A",[oldId,newId]);
+ gate.resolve({error:null});
+ await loading;
+ assert.deepEqual(h.tombstones.A,[newId]);
+ assert.deepEqual(h.calls.find(c=>c.type==="delete").filters,[["id",[oldId]],["owner_id","A"],["project_type","movie"]]);
+});
