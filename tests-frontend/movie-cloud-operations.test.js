@@ -472,3 +472,27 @@ test("deletion recorded while an upsert is pending is immediately re-applied aft
  assert.deepEqual(h.calls[deleteIndex].filters,[["id",[id]],["owner_id","A"],["project_type","movie"]]);
  assert.deepEqual(h.tombstones.A,[id],"the durable tombstone stays queued until a later sync confirms cleanup");
 });
+
+test("failed post-upsert delete keeps tombstone and a later sync retries cleanup",async()=>{
+ const h=harness(),upsertGate=deferred(),deleteGate=deferred(),id="123e4567-e89b-42d3-a456-426614174000";
+ h.local.A=[{id,name:"Film being deleted"}];
+ h.setUpsertGate(upsertGate);h.setDeleteGate(deleteGate);
+ h.ops.schedule(h.capture());h.flush();
+ await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.some(c=>c.type==="upsert"),true);
+ h.setTombstones("A",[id]);
+ h.local.A=[];
+ h.ops.schedule(h.capture());h.flush();
+ upsertGate.resolve();
+ await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.filter(c=>c.type==="delete").length,1,"post-upsert cleanup should be attempted");
+ deleteGate.resolve({error:new Error("temporary network failure")});
+ await new Promise(r=>setImmediate(r));
+ assert.deepEqual(h.tombstones.A,[id],"failed cloud deletion must not clear the durable tombstone");
+ assert.equal(h.calls.some(c=>c.type==="syncError"),true);
+ h.setDeleteGate(null);
+ h.flush();
+ await new Promise(r=>setImmediate(r));
+ assert.equal(h.calls.filter(c=>c.type==="delete").length,2,"the queued follow-up sync must retry deletion");
+ assert.deepEqual(h.tombstones.A,[],"tombstone is cleared only after retry succeeds");
+});
