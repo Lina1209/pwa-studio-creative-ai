@@ -117,8 +117,14 @@ The browser integration still has a known consistency limitation: deletion tombs
 - The baseline marker is advanced after a successful save, so repeated saves in the same open stage remain possible.
 - This is a client-side optimistic guard, not a database transaction or a multi-device conflict-resolution system. It relies on client timestamps; same-timestamp collisions, clock skew, cloud upsert races, and simultaneous edits that are not yet visible in local storage remain possible.
 - Version history is capped at 20 snapshots. Snapshots are created before edits to project details, stage drafts/completion, renames, and restores. Restoring a version first snapshots the then-current project and retains the history array.
-- The history dialog currently captures its `versions` array when opened. If another tab changes the project while that dialog remains open, the preview can become stale; restore re-reads the live project but uses the dialog's captured selected snapshot. A future improvement should re-resolve the selected immutable version against the latest history before restore and warn if it is no longer present.
+- The history dialog preview still reflects the snapshot list captured when opened, so it can look stale if another tab changes history. Restore now re-resolves the selected snapshot against the latest local history and cancels safely if it is no longer present.
 - The snapshot helper is shallow (`{...project}`) and removes only `versions`. Current project fields are predominantly strings and primitive arrays; if nested mutable objects are introduced, snapshotting should switch to a structured deep clone with schema validation.
 - No hosted Supabase reads/writes, SQL, migration, merge, or deployment were performed during this review.
 
 - History restore now verifies that the selected snapshot (matching both `savedAt` and serialized snapshot data) is still present in the latest local project's history before applying it. If another edit or history-cap event removed/replaced it while the dialog was open, restore is cancelled with a clear instruction to reopen history. This avoids restoring a stale snapshot that is no longer part of the current retained history.
+
+## Follow-up: tombstone race during sync (2026-11-24)
+
+- Sync now re-reads the owner's tombstone list after any awaited cloud deletion and excludes newly deleted project IDs from the subsequent upsert batch. This closes a client-side race where a deletion created while cleanup was in flight could otherwise be re-uploaded by the same sync cycle.
+- A regression test covers a new tombstone added during the pending delete request and verifies that the project is not included in the upsert batch and that the new tombstone remains queued.
+- This remains a browser-side coordination safeguard. It does not provide cross-device transactionality or guarantee against concurrent cloud writes from another device/session.
