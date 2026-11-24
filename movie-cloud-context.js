@@ -13,5 +13,13 @@
       context.ownerId === (currentUserId || null) &&
       context.authContextVersion === currentVersion;
   }
-  return Object.freeze({ capture, isCurrent });
+  function setPendingContext(state, context) {
+    state.pendingContext = context || null;
+  }
+  function takePendingContext(state, currentCheck) {
+    const context = state.pendingContext || null;
+    state.pendingContext = null;
+    return context && currentCheck(context) ? context : null;
+  }
+  return Object.freeze({ capture, isCurrent, setPendingContext, takePendingContext });
 });
