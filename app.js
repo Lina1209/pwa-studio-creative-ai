@@ -1126,7 +1126,10 @@ const movieHistoryStyle = document.createElement("style");
         return false;
       }
     },
-    readProjects: ownerId => ownerId === authSession?.user?.id ? movieRead() : [],
+    readProjects: ownerId => {
+      if (ownerId !== authSession?.user?.id) throw new Error("Контекст аккаунта изменился; локальные фильмы не прочитаны.");
+      return readMovieProjectsForCloud();
+    },
     writeProjects: (ownerId, projects) => localStorage.setItem("pwa-studio-movie-projects:"+ownerId,JSON.stringify(projects)),
     toCloudRow: movieToCloudRow,
     fromCloudRow: movieFromCloudRow,
@@ -1177,7 +1180,24 @@ const movieHistoryStyle = document.createElement("style");
         localStorage.setItem(movieStorageKey(), JSON.stringify(active));
       }
       return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-    } catch { return []; }
+    } catch (error) {
+      console.error("Movie project storage read failed:", error);
+      const feedback = $("#movieFeedback");
+      if (feedback) feedback.textContent = "Не удалось прочитать локальные фильмы. Чтобы не показать пустой список и не перезаписать облачные проекты, синхронизация остановлена до восстановления доступа к памяти браузера.";
+      return [];
+    }
+  };
+  // Cloud merge must distinguish an empty collection from inaccessible or corrupt local storage.
+  const readMovieProjectsForCloud = () => {
+    let raw;
+    try {
+      const stored = localStorage.getItem(movieStorageKey());
+      raw = stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      throw new Error("Не удалось прочитать локальные фильмы; облачная синхронизация остановлена: " + (error.message || "ошибка хранилища"));
+    }
+    if (!Array.isArray(raw)) throw new Error("Локальное хранилище фильмов повреждено; облачная синхронизация остановлена.");
+    return movieRead();
   };
   const movieWrite = projects => {
     try {
