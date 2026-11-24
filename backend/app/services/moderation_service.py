@@ -71,13 +71,14 @@ def list_user_reports(settings: Settings):
 def review_user_report(settings: Settings, report_id: str, moderator_id: str, payload):
     report_id = _validated_uuid(report_id, "report ID")
     rows = _request(settings, "PATCH", "user_reports",
-        params={"id": f"eq.{report_id}", "select": "id,status,created_at,reporter_user_id"},
+        params={"id": f"eq.{report_id}", "select": "id,status,created_at,reporter_user_id,reported_user_id"},
         payload={"status": payload.status, "moderator_note": payload.moderator_note,
                  "reviewed_by": moderator_id, "reviewed_at": datetime.now(timezone.utc).isoformat()})
     if not rows:
         raise HTTPException(status_code=404, detail="Report not found.")
     _write_audit(settings, moderator_id, "report.reviewed", "report", report_id,
-                 {"status": payload.status})
+                 {"status": payload.status},
+                 target_user_id=rows[0].get("reported_user_id"))
     return rows[0]
 
 
@@ -91,7 +92,8 @@ def create_suspension(settings: Settings, moderator_id: str, payload):
         raise HTTPException(status_code=502, detail="The restriction could not be created.")
     row = rows[0]
     _write_audit(settings, moderator_id, "user.suspended", "suspension", row["id"],
-                 {"user_id": payload.user_id, "scope": payload.scope})
+                 {"user_id": payload.user_id, "scope": payload.scope},
+                 target_user_id=payload.user_id)
     return row
 
 
@@ -110,14 +112,16 @@ def revoke_suspension(settings: Settings, moderator_id: str, suspension_id: str)
     if not rows:
         raise HTTPException(status_code=404, detail="Active restriction not found.")
     _write_audit(settings, moderator_id, "user.suspension_revoked", "suspension", suspension_id,
-                 {"user_id": rows[0]["user_id"], "scope": rows[0]["scope"]})
+                 {"user_id": rows[0]["user_id"], "scope": rows[0]["scope"]},
+                 target_user_id=rows[0]["user_id"])
     return {"success": True, "id": suspension_id}
 
 
 def _write_audit(settings: Settings, actor_id: str, action: str, entity_type: str,
-                 entity_id: str, metadata: dict):
+                 entity_id: str, metadata: dict, *, target_user_id: str | None = None):
     _request(settings, "POST", "admin_audit_log",
         payload={"actor_user_id": actor_id, "action": action,
+                 "target_user_id": target_user_id,
                  "entity_type": entity_type, "entity_id": entity_id,
                  "metadata": metadata})
 
