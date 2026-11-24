@@ -204,3 +204,12 @@ Migration 0016 adds a SQL-side allowlist for credit grant provenance sources, ma
 ## Migration 0017 — financial history retention
 
 The disposable fixture now applies `0017_preserve_credit_history_on_user_delete.sql` after migration 0016. A new test deletes an Auth user after a credit grant and reservation, then verifies the wallet balance, reservation, and ledger entries remain. This validates the SQL behavior only in the isolated disposable PostgreSQL service; it is not evidence of live Supabase deployment or approval of a legal retention period.
+
+
+## Migration 0018 — durable AI usage outbox
+
+- Applies `0018_durable_ai_usage_outbox.sql` after migration 0017 in the disposable PostgreSQL fixture.
+- Verifies metadata-only lifecycle storage, non-negative token/cost constraints, and allowed state transitions used by the backend.
+- Verifies anon/authenticated cannot SELECT/INSERT/UPDATE/DELETE outbox rows and service_role has only SELECT/INSERT/UPDATE.
+- Backend unit tests verify that an outbox start write must succeed before a provider call is allowed, successful results persist token/cost metadata without prompt/response text, and provider timeout is recorded as `unknown`, not treated as free.
+- Automated stale-row reconciliation and invoice matching are not yet implemented.
