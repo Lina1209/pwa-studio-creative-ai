@@ -56,3 +56,13 @@ The moderation service now validates report IDs before review and suspension IDs
 The M1 atomicity finding remains open: moderation mutations and audit-log inserts are still separate REST operations. It would be unsafe to claim atomicity or attempt to simulate it in application code. The correction requires a narrowly scoped PostgreSQL transaction/RPC after live schema and migration-ledger reconciliation.
 
 No SQL, live database action, or deployment was performed.
+
+## Audit refresh — affected-account attribution
+
+Moderation audit events now populate the migration's dedicated `target_user_id` column when a report review identifies a reported account, and when a suspension is created or revoked. The report review query now returns the reported account ID for this purpose. Regression tests assert the actor and affected account are distinct and correctly recorded.
+
+This improves audit-log searchability and attribution; it does not make the mutation and audit insert atomic. The M1 transaction finding remains open.
+
+### Audit-log access boundary
+
+The inspected migration makes `admin_audit_log` server-managed and revokes UPDATE, DELETE, and TRUNCATE from `service_role`, granting SELECT and INSERT. The inspected API currently writes audit events but does not expose a dedicated admin audit-history read endpoint. A future read endpoint should be admin-only, paginated, and return a safe allowlist of fields; it must not grant client-side table access.
