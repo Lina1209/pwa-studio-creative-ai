@@ -80,3 +80,22 @@ test("stage completion advances its stale-edit baseline only after local persist
     previous = next;
   }
 });
+
+
+test("rename re-reads the project after the prompt and aborts if its baseline changed", () => {
+  const fs = require("node:fs");
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const start = app.indexOf('const rename=makeAction("✎ Переименовать фильм"');
+  const end = app.indexOf('const copy=makeAction("⧉ Создать копию"', start);
+  assert.notEqual(start, -1, "rename action should exist");
+  assert.ok(end > start, "rename action should end before copy action");
+  const handler = app.slice(start, end);
+  const baseline = handler.indexOf("const baseUpdatedAt=initial.updatedAt||initial.createdAt||null;");
+  const prompt = handler.indexOf("window.prompt(");
+  const reread = handler.indexOf("const latest=movieRead();");
+  const guard = handler.indexOf("(original.updatedAt||original.createdAt||null)!==baseUpdatedAt");
+  const snapshot = handler.indexOf("addMovieVersion(original);");
+  assert.ok(baseline >= 0 && baseline < prompt);
+  assert.ok(prompt < reread && reread < guard && guard < snapshot);
+  assert.match(handler, /Название не изменено/);
+});
