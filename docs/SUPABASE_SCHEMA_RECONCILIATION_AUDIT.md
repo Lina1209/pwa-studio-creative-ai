@@ -5,7 +5,7 @@ Scope: repository-only review of migration inventory and read-only diagnostic sc
 
 ## Executive result
 
-The repository contains 14 SQL files but only 13 distinct numeric migration prefixes because two unrelated files are both named `0005`. This is a rollout blocker for any migration runner that keys history by version. Do not rename either historical file or replay the directory until the actual deployment history is known.
+The repository contains **15 SQL files and 14 distinct numeric migration prefixes** because two unrelated files are both named `0005`. The inventory includes `0014_admin_analytics_summary.sql`. This is a rollout blocker for any migration runner that keys history by version. Do not rename either historical file or replay the directory until the actual deployment history is known.
 
 The existing diagnostic scripts are SELECT-only. A broader inventory script has now been added, but its SQL has not been run against the live project. Repository-only function review also identified hardening items documented separately. No schema change is proposed until live state is reconciled.
 
@@ -26,7 +26,7 @@ The existing diagnostic scripts are SELECT-only. A broader inventory script has 
 | 0010 | `0010_direct_message_notifications.sql` | Extends notification type constraint |
 | 0011 | `0011_atomic_message_rate_limit.sql` | Atomic message rate-limit RPC/table |
 | 0012 | `0012_atomic_ai_rate_limit.sql` | Atomic AI rate-limit RPC/table |
-| 0013 | `0013_unified_credit_wallet.sql` | Wallet, reservations, append-only ledger, RPCs |
+| 0013 | `0013_unified_credit_wallet.sql` | Wallet, reservations, append-only ledger, RPCs |\n| 0014 | `0014_admin_analytics_summary.sql` | Owner-only aggregate analytics RPC; depends on `profiles`, `projects`, and `ai_usage` |
 
 ## Confirmed source-level conflicts and drift risks
 
@@ -63,7 +63,7 @@ The backend diagnostics endpoint is not a substitute for this SQL inventory: its
 1. Confirm the exact Supabase project identity from non-secret deployment metadata; never expose API keys, JWTs, signed URLs, or service-role credentials.
 2. Obtain the live migration ledger and determine whether the project was managed by Supabase CLI, manual SQL Editor, or both.
 3. Run only the existing SELECT-only inventory scripts after confirming the target project. Retain outputs privately and redact identifiers or user content before sharing.
-4. Run `supabase/diagnostics/inspect_full_security_reconciliation.sql` (SELECT-only) to inventory tables, policies, grants, functions, triggers, sequences, defaults, and Storage settings. Do not select user content or private media. Review the repository-only findings in `docs/SUPABASE_FUNCTION_SECURITY_SOURCE_AUDIT.md`.
+4. Run `supabase/diagnostics/inspect_full_security_reconciliation.sql` (SELECT-only) to inventory tables, policies, grants, functions, triggers, sequences, defaults, and Storage settings. Do not select user content or private media. Review the repository-only findings in `docs/SUPABASE_FUNCTION_SECURITY_SOURCE_AUDIT.md`.\n5. Follow `docs/SUPABASE_MIGRATION_RECONCILIATION_RUNBOOK.md` to record per-migration evidence and resolve the duplicate 0005 without rewriting deployed history.
 5. Compare live state to each migration's intended objects; record applied, partially applied, absent, and drifted objects. Do not infer application from a filename or documentation note.
 6. Resolve the duplicate 0005 history without rewriting already-deployed migration records. Any future changes must use a new, unique forward version chosen after ledger inspection.
 7. Design disposable-environment tests for two authenticated accounts (A/B), guest behavior, owner-scoped CRUD, storage object access, admin-only endpoints, and RPC privilege boundaries.
