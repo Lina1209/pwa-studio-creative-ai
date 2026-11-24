@@ -114,3 +114,102 @@ def list_admin_ai_usage(
             "unknown_cost_requests": sum(1 for row in rows[:page_size] if row.get("cost_usd") is None),
         },
     }
+
+
+
+def _outbox_url(settings: Settings) -> str:
+    return f"{settings.supabase_url.rstrip('/')}/rest/v1/ai_usage_outbox"
+
+
+def _require_outbox_storage(settings: Settings) -> None:
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise RuntimeError("Durable AI usage storage is not configured.")
+
+
+def begin_ai_usage_request(
+    settings: Settings, *, user_id: str, request_id: UUID,
+    endpoint: str, provider: str, model: str,
+) -> None:
+    """Durably record intent before provider spend; fail closed if this cannot be saved."""
+    _require_outbox_storage(settings)
+    payload = {
+        "request_id": str(request_id), "user_id": user_id,
+        "endpoint": endpoint, "provider": provider, "model": model,
+        "status": "started",
+    }
+    headers = supabase_headers(settings, prefer="return=minimal")
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            response = client.post(_outbox_url(settings), json=payload, headers=headers)
+            response.raise_for_status()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        logger.error(
+            "AI usage outbox could not record request before provider call: error_type=%s status_code=%s",
+            type(exc).__name__, status_code,
+        )
+        raise RuntimeError("AI usage journal is temporarily unavailable; provider call was not started.") from exc
+
+
+def complete_ai_usage_request(
+    settings: Settings, *, request_id: UUID, result: AIResult,
+) -> None:
+    """Persist provider outcome and measured metadata; never persist prompt or response text."""
+    _require_outbox_storage(settings)
+    from datetime import datetime, timezone
+
+    payload = {
+        "status": "succeeded",
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "total_tokens": result.total_tokens,
+        "cost_usd": str(result.cost_usd) if result.cost_usd is not None else None,
+        "cost_source": result.cost_source,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    headers = supabase_headers(settings, prefer="return=minimal")
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            response = client.patch(
+                _outbox_url(settings), params={"request_id": f"eq.{request_id}"},
+                json=payload, headers=headers,
+            )
+            response.raise_for_status()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        logger.error(
+            "AI usage outbox completion write failed; request remains unresolved: error_type=%s status_code=%s",
+            type(exc).__name__, status_code,
+        )
+        raise RuntimeError("AI usage outcome could not be persisted.") from exc
+
+
+def mark_ai_usage_unknown(
+    settings: Settings, *, request_id: UUID, error: Exception,
+) -> None:
+    """Record uncertainty conservatively; provider errors are not assumed to be free."""
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        return
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "status": "unknown",
+        "error_type": type(error).__name__[:100],
+        "updated_at": now,
+    }
+    headers = supabase_headers(settings, prefer="return=minimal")
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            response = client.patch(
+                _outbox_url(settings), params={"request_id": f"eq.{request_id}"},
+                json=payload, headers=headers,
+            )
+            response.raise_for_status()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", "unavailable")
+        logger.error(
+            "AI usage unknown-state write failed: error_type=%s status_code=%s",
+            type(exc).__name__, status_code,
+        )
