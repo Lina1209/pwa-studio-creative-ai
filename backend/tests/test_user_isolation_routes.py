@@ -203,7 +203,7 @@ def test_report_submission_uses_verified_reporter_identity(client, monkeypatch):
         "reported_user_id": USER_B,
         "category": "harassment",
         "description": "Please review this content.",
-        "content_reference": {"kind": "profile"},
+        "content_reference": "profile:public",
         "reporter_user_id": USER_B,
     })
     assert response.status_code == 201
