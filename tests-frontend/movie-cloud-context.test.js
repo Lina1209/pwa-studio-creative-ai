@@ -29,3 +29,21 @@ test("does not create a context for guest or invalid generation", () => {
   assert.equal(capture(null, 1), null);
   assert.equal(capture("user-a", NaN), null);
 });
+
+test("keeps only the newest pending account context", () => {
+  const state = { pendingContext: null };
+  const first = capture("user-a", 4);
+  const latest = capture("user-b", 5);
+  const { setPendingContext, takePendingContext } = require("../movie-cloud-context.js");
+  setPendingContext(state, first);
+  setPendingContext(state, latest);
+  assert.equal(takePendingContext(state, context => isCurrent(context, "user-b", 5)), latest);
+  assert.equal(state.pendingContext, null);
+});
+
+test("discards a stale pending context instead of replaying it", () => {
+  const state = { pendingContext: capture("user-a", 4) };
+  const { takePendingContext } = require("../movie-cloud-context.js");
+  assert.equal(takePendingContext(state, context => isCurrent(context, "user-b", 5)), null);
+  assert.equal(state.pendingContext, null);
+});
