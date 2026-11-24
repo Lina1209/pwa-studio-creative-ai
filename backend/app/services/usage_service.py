@@ -213,3 +213,77 @@ def mark_ai_usage_unknown(
             "AI usage unknown-state write failed: error_type=%s status_code=%s",
             type(exc).__name__, status_code,
         )
+
+
+def list_admin_ai_usage_reconciliation(
+    settings: Settings,
+    *,
+    page: int = 1,
+    page_size: int = 50,
+    status: str | None = None,
+    stale_after_minutes: int = 15,
+):
+    """Read-only, bounded view of unresolved provider requests for administrators.
+
+    A stale started row is only a review signal; this function never changes status,
+    retries a provider call, or treats missing cost as zero.
+    """
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="AI usage journal storage is not configured.")
+
+    params = {
+        "select": "request_id,user_id,endpoint,provider,model,status,input_tokens,output_tokens,total_tokens,cost_usd,cost_source,error_type,started_at,completed_at,updated_at",
+        "status": "in.(started,unknown)",
+        "order": "started_at.asc,request_id.asc",
+        "offset": str((page - 1) * page_size),
+        "limit": str(page_size + 1),
+    }
+    if status:
+        params["status"] = f"eq.{status}"
+
+    from datetime import datetime, timezone
+    from fastapi import HTTPException
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(_outbox_url(settings), params=params, headers=supabase_headers(settings))
+            response.raise_for_status()
+            rows = response.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail="AI usage journal rejected the request.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="AI usage journal is temporarily unavailable.") from exc
+
+    now = datetime.now(timezone.utc)
+    visible = rows[:page_size]
+    items = []
+    for row in visible:
+        try:
+            started = datetime.fromisoformat(row["started_at"].replace("Z", "+00:00"))
+            age_seconds = max(0, int((now - started).total_seconds()))
+        except (KeyError, TypeError, ValueError):
+            age_seconds = None
+        stale = row.get("status") == "started" and age_seconds is not None and age_seconds >= stale_after_minutes * 60
+        items.append({**row, "age_seconds": age_seconds, "review_flag": "stale_started" if stale else "needs_review"})
+
+    known_cost = sum(
+        (Decimal(str(row["cost_usd"])) for row in visible if row.get("cost_usd") is not None),
+        Decimal("0"),
+    )
+    return {
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "has_more": len(rows) > page_size,
+        "summary_scope": "current_page",
+        "stale_after_minutes": stale_after_minutes,
+        "summary": {
+            "unresolved_requests": len(visible),
+            "started_requests": sum(1 for row in visible if row.get("status") == "started"),
+            "unknown_requests": sum(1 for row in visible if row.get("status") == "unknown"),
+            "known_cost_usd": str(known_cost),
+            "unknown_cost_requests": sum(1 for row in visible if row.get("cost_usd") is None),
+            "stale_started_requests": sum(1 for item in items if item["review_flag"] == "stale_started"),
+        },
+        "automated_reconciliation": False,
+    }
