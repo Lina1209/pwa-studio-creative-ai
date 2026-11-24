@@ -48,3 +48,11 @@ The admin report and suspension lists use a fixed limit of 100 without a cursor.
 - No SQL was executed or applied.
 - No production database, account, suspension, report, notification, or user data was changed.
 - No production deploy or merge was performed.
+
+## Audit refresh — moderation identifier validation
+
+The moderation service now validates report IDs before review and suspension IDs before revocation, rejecting malformed values with HTTP 422 before making any Supabase REST request. Regression tests cover both paths. This narrows malformed-filter input at the API boundary; it does not replace database authorization or transactional enforcement.
+
+The M1 atomicity finding remains open: moderation mutations and audit-log inserts are still separate REST operations. It would be unsafe to claim atomicity or attempt to simulate it in application code. The correction requires a narrowly scoped PostgreSQL transaction/RPC after live schema and migration-ledger reconciliation.
+
+No SQL, live database action, or deployment was performed.
