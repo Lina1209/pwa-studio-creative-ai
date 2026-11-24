@@ -1,4 +1,4 @@
-const CACHE_NAME = "pwa-studio-shell-v14";
+const CACHE_NAME = "pwa-studio-shell-v15";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -6,6 +6,13 @@ const CORE_ASSETS = [
   "./app.js",
   "./audio-lab.js",
   "./supabase-config.js",
+  "./movie-cloud-context.js",
+  "./movie-cloud-operations.js",
+  "./movie-version-history.js",
+  "./movie-storage-guard.js",
+  "./movie-guest-expiry.js",
+  "./movie-tombstone-storage.js",
+  "./movie-id.js",
   "./manifest.webmanifest",
   "./assets/icon.svg"
 ];
@@ -37,7 +44,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   const isShellAsset = request.mode === "navigate" ||
-    ["/index.html", "/app.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
+    ["/index.html", "/app.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/movie-cloud-context.js", "/movie-cloud-operations.js", "/movie-version-history.js", "/movie-storage-guard.js", "/movie-guest-expiry.js", "/movie-tombstone-storage.js", "/movie-id.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
 
   if (isShellAsset) {
     event.respondWith(
