@@ -324,3 +324,36 @@ test("local project read failure prevents cloud load from overwriting device sta
  assert.equal(calls.some(x=>x.type==="feedback"),false);
  assert.match(calls.find(x=>x.type==="loadError").message,/local JSON is corrupt/);
 });
+
+
+test("deletion queue read failure aborts sync before cloud upsert",async()=>{
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({upsert:async rows=>{calls.push({type:"upsert",rows});return{error:null};}})}),
+  readTombstones:()=>{throw new Error("deletion queue unavailable");},writeTombstones:()=>true,
+  readProjects:()=>[{id:"local-a"}],writeProjects:()=>calls.push({type:"writeLocal"}),
+  toCloudRow:(p,owner)=>({id:p.id,owner_id:owner}),fromCloudRow:r=>r,
+  render:()=>calls.push({type:"render"}),feedback:()=>calls.push({type:"feedback"}),
+  syncError:e=>calls.push({type:"syncError",message:e.message}),loadError:()=>{}
+ });
+ ops.schedule(capture("A",1));calls.find(x=>x.type==="timer").fn();await new Promise(r=>setImmediate(r));
+ assert.equal(calls.some(x=>x.type==="upsert"||x.type==="writeLocal"||x.type==="feedback"),false);
+ assert.match(calls.find(x=>x.type==="syncError").message,/deletion queue unavailable/);
+});
+
+test("deletion queue read failure prevents cloud load from overwriting local projects",async()=>{
+ const calls=[];
+ const ops=createMovieCloudOperations({
+  isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
+  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){return Promise.resolve({data:[{id:"cloud-a",title:"Cloud",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
+  readTombstones:()=>{throw new Error("deletion queue unavailable");},writeTombstones:()=>true,
+  readProjects:()=>[{id:"local-a"}],writeProjects:()=>calls.push({type:"writeLocal"}),
+  toCloudRow:(p,owner)=>({id:p.id,owner_id:owner}),fromCloudRow:r=>({id:r.id}),
+  render:()=>calls.push({type:"render"}),feedback:()=>calls.push({type:"feedback"}),
+  syncError:()=>{},loadError:e=>calls.push({type:"loadError",message:e.message})
+ });
+ await ops.load(capture("A",1));
+ assert.equal(calls.some(x=>x.type==="writeLocal"||x.type==="render"||x.type==="feedback"),false);
+ assert.match(calls.find(x=>x.type==="loadError").message,/deletion queue unavailable/);
+});
