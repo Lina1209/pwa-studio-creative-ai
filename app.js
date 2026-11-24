@@ -638,6 +638,7 @@ const movieHistoryStyle = document.createElement("style");
     ["adminAnalyticsRegistrations","adminAnalyticsProjects","adminAnalyticsAI"].forEach(id => { const el=$("#"+id); if(el)el.textContent="—"; });
     const feedback=$("#adminAnalyticsFeedback"); if(feedback)feedback.textContent=message;
   };
+  let adminAnalyticsRequestId = 0;
   const loadAdminAnalytics = async () => {
     const panel=$("#adminPanel"), section=$("#adminAnalyticsSection");
     if(!authSession?.user || !panel || panel.hidden || !section)return;
@@ -647,6 +648,7 @@ const movieHistoryStyle = document.createElement("style");
     const start=new Date(startValue), end=new Date(endValue);
     if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start>=end){renderAdminAnalyticsUnavailable("Проверьте период: дата окончания должна быть позже начала.");return;}
     if(end-start>31*24*60*60*1000){renderAdminAnalyticsUnavailable("Можно выбрать период не длиннее 31 дня.");return;}
+    const requestId=++adminAnalyticsRequestId;
     const button=$("#adminAnalyticsLoad"); if(button)button.disabled=true;
     const feedback=$("#adminAnalyticsFeedback"); if(feedback)feedback.textContent="Загружаем агрегированную статистику…";
     try{
@@ -664,7 +666,7 @@ const movieHistoryStyle = document.createElement("style");
       if(version!==authContextVersion || authSession?.user?.id!==userId)return;
       renderAdminAnalyticsUnavailable(error.message.includes("not installed") || error.message.includes("not available") ? "Статистика пока не подключена к базе: миграция аналитики ещё не установлена. Остальные разделы кабинета работают отдельно." : "Статистика временно недоступна: "+error.message);
     }finally{
-      if(version===authContextVersion && authSession?.user?.id===userId && button)button.disabled=false;
+      if(requestId===adminAnalyticsRequestId && button)button.disabled=false;
     }
   };
   setAdminAnalyticsDefaultRange();
