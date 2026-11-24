@@ -129,10 +129,22 @@ test("cloud project listing is explicitly scoped to the captured owner",async()=
  const query=h.calls.find(c=>c.type==="select");
  assert.deepEqual(query.filters,[["owner_id","A"],["project_type","movie"]]);
 });
+test("foreign-owner cloud row is rejected before it can enter local projects",async()=>{
+ const h=harness(),gate=deferred();
+ h.setSelectGate(gate);
+ const loading=h.ops.load(h.capture());
+ await Promise.resolve();
+ gate.resolve({data:[{owner_id:"B",project_type:"movie",id:"foreign",title:"Foreign film",updated_at:"2026-01-01"}],error:null});
+ await loading;
+ assert.equal(h.local.A.some(project=>project.id==="foreign"),false);
+ assert.equal(h.calls.some(call=>call.type==="loadError"),true);
+ assert.equal(h.calls.some(call=>call.type==="writeLocal"),false);
+});
+
 test("stale cloud load response after account switch is ignored",async()=>{
  const h=harness(),gate=deferred();h.setSelectGate(gate);const a=h.capture();
  const loading=h.ops.load(a);await Promise.resolve();h.setUser("B",2);
- gate.resolve({data:[{id:"from-a",title:"A cloud",updated_at:"2026-01-01"}],error:null});
+ gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"from-a",title:"A cloud",updated_at:"2026-01-01"}],error:null});
  await loading;
  assert.equal(h.calls.some(c=>c.type==="render"),false);
  assert.equal(h.local.B[0].id,"b1");
@@ -140,7 +152,7 @@ test("stale cloud load response after account switch is ignored",async()=>{
 test("same-user reauthentication invalidates an older load generation",async()=>{
  const h=harness(),gate=deferred(),old=h.capture();h.setSelectGate(gate);
  const loading=h.ops.load(old);await Promise.resolve();h.setUser("A",2);
- gate.resolve({data:[{id:"stale",title:"stale",updated_at:"2026-01-01"}],error:null});await loading;
+ gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"stale",title:"stale",updated_at:"2026-01-01"}],error:null});await loading;
  assert.equal(h.calls.some(c=>c.type==="render"),false);
 });
 test("guest drafts have no cloud context and cannot be uploaded",async()=>{
@@ -253,10 +265,10 @@ test("a stale A cloud load does not block B from starting and applying its own l
  h.setUser("B",2);h.setSelectGate(gateB);
  const loadingB=h.ops.load(h.capture());
  await Promise.resolve();
- gateB.resolve({data:[{id:"b-cloud",title:"B cloud",updated_at:"2026-02-01"}],error:null});
+ gateB.resolve({data:[{owner_id:"A",project_type:"movie",id:"b-cloud",title:"B cloud",updated_at:"2026-02-01"}],error:null});
  await loadingB;
  assert.equal(h.local.B.some(project=>project.id==="b-cloud"),true);
- gateA.resolve({data:[{id:"a-stale",title:"A stale",updated_at:"2026-03-01"}],error:null});
+ gateA.resolve({data:[{owner_id:"A",project_type:"movie",id:"a-stale",title:"A stale",updated_at:"2026-03-01"}],error:null});
  await loadingA;
  assert.equal(h.local.B.some(project=>project.id==="a-stale"),false);
  assert.equal(h.local.A.some(project=>project.id==="a-stale"),false);
@@ -310,7 +322,7 @@ test("local project read failure prevents cloud load from overwriting device sta
  const calls=[];
  const ops=createMovieCloudOperations({
   isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
-  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){calls.push({type:"select"});return Promise.resolve({data:[{id:"cloud-a",title:"Cloud",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
+  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){calls.push({type:"select"});return Promise.resolve({data:[{owner_id:"A",project_type:"movie",id:"cloud-a",title:"Cloud",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
   readTombstones:()=>[],writeTombstones:()=>true,
   readProjects:()=>{throw new Error("local JSON is corrupt");},
   writeProjects:()=>calls.push({type:"writeLocal"}),toCloudRow:(p,owner)=>({id:p.id,owner_id:owner}),
@@ -346,7 +358,7 @@ test("deletion queue read failure prevents cloud load from overwriting local pro
  const calls=[];
  const ops=createMovieCloudOperations({
   isCurrent:c=>isCurrent(c,"A",1),setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
-  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){return Promise.resolve({data:[{id:"cloud-a",title:"Cloud",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
+  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){return Promise.resolve({data:[{owner_id:"A",project_type:"movie",id:"cloud-a",title:"Cloud",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
   readTombstones:()=>{throw new Error("deletion queue unavailable");},writeTombstones:()=>true,
   readProjects:()=>[{id:"local-a"}],writeProjects:()=>calls.push({type:"writeLocal"}),
   toCloudRow:(p,owner)=>({id:p.id,owner_id:owner}),fromCloudRow:r=>({id:r.id}),
@@ -364,7 +376,7 @@ test("local project storage write failure during cloud load prevents render and 
  const ops=createMovieCloudOperations({
   isCurrent:c=>isCurrent(c,"A",1),
   setTimer:fn=>{calls.push({type:"timer",fn});return 1;},clearTimer:()=>{},
-  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){return Promise.resolve({data:[{id:"cloud-a",title:"Cloud draft",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
+  supabase:()=>({from:()=>({select(){const q={eq(){return q;},order(){return Promise.resolve({data:[{owner_id:"A",project_type:"movie",id:"cloud-a",title:"Cloud draft",updated_at:"2026-01-01"}],error:null});}};return q;}})}),
   readTombstones:()=>[],writeTombstones:()=>true,
   readProjects:()=>[{id:"local-a",name:"Local draft"}],
   writeProjects:()=>{calls.push({type:"writeAttempt"});throw new Error("QuotaExceededError: storage full");},
@@ -383,7 +395,7 @@ test("local project storage write failure during cloud load prevents render and 
 test("valid newer local project is preserved when cloud copy is older",async()=>{
  const h=harness();
  h.local.A=[{id:"same",name:"Local newer",updatedAt:"2026-11-20T12:00:00Z",versions:[{savedAt:"2026-11-20T11:00:00Z"}]}];
- const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{id:"same",title:"Cloud older",updated_at:"2026-11-19T12:00:00Z"}],error:null});
+ const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"same",title:"Cloud older",updated_at:"2026-11-19T12:00:00Z"}],error:null});
  await h.ops.load(h.capture());
  assert.equal(h.local.A[0].name,"Local newer");
  assert.equal(h.local.A[0].versions.length,1);
@@ -391,7 +403,7 @@ test("valid newer local project is preserved when cloud copy is older",async()=>
 test("valid newer cloud project replaces older local copy with full cloud payload",async()=>{
  const h=harness();
  h.local.A=[{id:"same",name:"Local older",updatedAt:"2026-11-19T12:00:00Z"}];
- const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{id:"same",title:"Cloud newer",updated_at:"2026-11-20T12:00:00Z",settings:{versions:[{savedAt:"2026-11-20T11:00:00Z"}]}}],error:null});
+ const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"same",title:"Cloud newer",updated_at:"2026-11-20T12:00:00Z",settings:{versions:[{savedAt:"2026-11-20T11:00:00Z"}]}}],error:null});
  await h.ops.load(h.capture());
  assert.equal(h.local.A[0].name,"Cloud newer");
  assert.equal(h.local.A[0].versions.length,1);
@@ -399,7 +411,7 @@ test("valid newer cloud project replaces older local copy with full cloud payloa
 test("invalid cloud timestamp never overwrites a valid local project",async()=>{
  const h=harness();
  h.local.A=[{id:"same",name:"Local valid",updatedAt:"2026-11-20T12:00:00Z"}];
- const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{id:"same",title:"Cloud malformed",updated_at:"not-a-date"}],error:null});
+ const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"same",title:"Cloud malformed",updated_at:"not-a-date"}],error:null});
  await h.ops.load(h.capture());
  assert.equal(h.local.A[0].name,"Local valid");
 });
@@ -407,7 +419,7 @@ test("valid cloud timestamp replaces local project with missing or invalid times
  for (const updatedAt of [undefined,"not-a-date"]) {
   const h=harness();
   h.local.A=[{id:"same",name:"Local undated",updatedAt}];
-  const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{id:"same",title:"Cloud dated",updated_at:"2026-11-20T12:00:00Z"}],error:null});
+  const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"same",title:"Cloud dated",updated_at:"2026-11-20T12:00:00Z"}],error:null});
   await h.ops.load(h.capture());
   assert.equal(h.local.A[0].name,"Cloud dated");
  }
@@ -415,7 +427,7 @@ test("valid cloud timestamp replaces local project with missing or invalid times
 test("equal timestamps preserve local draft to avoid losing unsynced edits",async()=>{
  const h=harness();
  h.local.A=[{id:"same",name:"Local tie",updatedAt:"2026-11-20T12:00:00Z"}];
- const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{id:"same",title:"Cloud tie",updated_at:"2026-11-20T12:00:00Z"}],error:null});
+ const gate=deferred(); h.setSelectGate(gate); gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"same",title:"Cloud tie",updated_at:"2026-11-20T12:00:00Z"}],error:null});
  await h.ops.load(h.capture());
  assert.equal(h.local.A[0].name,"Local tie");
 });
@@ -425,7 +437,7 @@ test("sync does not overwrite a newer cloud project with a stale local draft",as
  h.local.A=[{id:"same",name:"Local stale",updatedAt:"2026-11-19T12:00:00Z"}];
  const gate=deferred();h.setSelectGate(gate);
  h.ops.schedule(h.capture());h.flush();await Promise.resolve();
- gate.resolve({data:[{id:"same",title:"Cloud newer",updated_at:"2026-11-20T12:00:00Z",settings:{versions:[{savedAt:"2026-11-20T11:00:00Z"}]}}],error:null});
+ gate.resolve({data:[{owner_id:"A",project_type:"movie",id:"same",title:"Cloud newer",updated_at:"2026-11-20T12:00:00Z",settings:{versions:[{savedAt:"2026-11-20T11:00:00Z"}]}}],error:null});
  await new Promise(r=>setImmediate(r));
  assert.equal(h.calls.some(c=>c.type==="upsert"),false);
  assert.equal(h.local.A[0].name,"Cloud newer");
