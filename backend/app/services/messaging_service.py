@@ -187,10 +187,12 @@ def delete_message_for_self(settings: Settings, user_id: str, message_id: str):
     column = "deleted_for_sender_at" if rows[0]["sender_id"] == user_id else "deleted_for_recipient_at"
     # Repeat the participant check in the write itself. This prevents a stale
     # ownership read from authorizing an update if the row changes in between.
-    _request(settings, "PATCH", "direct_messages", params={
+    updated = _request(settings, "PATCH", "direct_messages", params={
         "id": f"eq.{message_uuid}",
         "or": f"(sender_id.eq.{user_id},recipient_id.eq.{user_id})",
         "select": "id",
     }, payload={column: datetime.now(timezone.utc).isoformat()})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Message not found.")
     return {"deleted_for_you": True}
 
