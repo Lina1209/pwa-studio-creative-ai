@@ -1,4 +1,5 @@
 from uuid import uuid4, UUID
+from datetime import datetime
 import logging
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -10,6 +11,7 @@ from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage, list_admin_ai_usage
+from app.services.admin_analytics_service import get_admin_analytics_summary
 from app.services.ai_rate_limit_service import consume_ai_request
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended, list_admin_audit_log
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
@@ -97,6 +99,16 @@ def admin_ai_usage(
         provider=provider,
         endpoint=endpoint,
     )
+
+
+@app.get(f"{settings.api_prefix}/admin/analytics")
+def admin_analytics(
+    start_at: datetime,
+    end_at: datetime,
+    user: StudioUser = Depends(require_admin),
+):
+    """Return aggregate-only registration and observed activity counts."""
+    return get_admin_analytics_summary(settings, start_at=start_at, end_at=end_at)
 
 
 @app.get(f"{settings.api_prefix}/admin/audit-log")
