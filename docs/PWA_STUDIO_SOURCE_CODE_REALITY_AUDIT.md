@@ -68,6 +68,18 @@ Before adding a balance UI, build one bounded server-side operation lifecycle an
 
 The audio sample input advertises common audio formats, but browser preview support depends on the device/browser codecs. This is not a guarantee of server-side conversion, editing or export compatibility.
 
+### Cloud movie-project persistence (verified in frontend source)
+
+The current `app.js` does implement authenticated cloud persistence for Mini Cinema movie-project drafts:
+
+- Signed-in users load their `projects` rows filtered to `project_type = movie`; the browser client relies on Supabase RLS for owner isolation.
+- Changes are debounced and upserted to `public.projects` with the authenticated user's ID as `owner_id`; deletions are queued locally as tombstones and sent with explicit owner/type filters.
+- The browser also keeps a per-user local copy and reports when cloud synchronization fails; therefore local persistence is a fallback, not proof that every change reached the cloud.
+- Guest projects remain device-local under a guest-specific localStorage key; this source does not show guest cloud storage.
+- Project settings include the workflow draft and version history snapshot. This is project metadata/content JSON, not uploaded media binaries.
+
+The migration source enables RLS on `public.projects` and defines owner-only select/insert/update/delete policy. This establishes a source-level design for isolation, but the live table, policy, migration ledger and two-account cross-access behavior still require read-only verification and a controlled security test. Do not re-run the migration as part of this audit.
+
 ## 4. Storage and migration source risks
 
 The repository contains private-storage migration definitions, but this audit did not inspect the live Supabase migration ledger or live bucket metadata.
