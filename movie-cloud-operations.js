@@ -3,6 +3,34 @@
 function createMovieCloudOperations(deps) {
   const state = { timer: null, syncingContext: null, pendingContext: null, loadingContext: null };
   const current = context => deps.isCurrent(context);
+  const MAX_PROJECT_PAYLOAD_BYTES = 256 * 1024;
+  const MAX_SYNC_BATCH_BYTES = 2 * 1024 * 1024;
+  function validateCloudRows(rows, ownerId) {
+    if (!Array.isArray(rows)) throw new Error("Некорректный список облачных проектов.");
+    let batchBytes = 0;
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row) || row.owner_id !== ownerId ||
+          (row.project_type != null && row.project_type !== "movie") ||
+          (row.settings != null && (typeof row.settings !== "object" || Array.isArray(row.settings)))) {
+        throw new Error("Структура облачного проекта некорректна; синхронизация остановлена.");
+      }
+      let serialized;
+      try { serialized = JSON.stringify(row); }
+      catch { throw new Error("Проект содержит данные, которые нельзя безопасно сериализовать."); }
+      if (typeof serialized !== "string") throw new Error("Не удалось проверить размер облачного проекта.");
+      const bytes = typeof TextEncoder === "function"
+        ? new TextEncoder().encode(serialized).length
+        : unescape(encodeURIComponent(serialized)).length;
+      if (bytes > MAX_PROJECT_PAYLOAD_BYTES) {
+        throw new Error("Проект слишком большой для облачного сохранения (лимит 256 КиБ). Разделите материал на несколько проектов.");
+      }
+      batchBytes += bytes;
+      if (batchBytes > MAX_SYNC_BATCH_BYTES) {
+        throw new Error("Пакет облачной синхронизации превышает 2 МиБ. Уменьшите объём проектов и повторите попытку.");
+      }
+    }
+    return rows;
+  }
   const schedule = context => {
     if (!context || !current(context)) return;
     deps.clearTimer(state.timer);
@@ -27,7 +55,7 @@ function createMovieCloudOperations(deps) {
       const currentTombstones = new Set(deps.readTombstones(context.ownerId));
       const localProjects = deps.readProjects(context.ownerId).filter(project =>
         !deletedIds.includes(project.id) && !currentTombstones.has(project.id));
-      const rows = localProjects.map(project => deps.toCloudRow(project, context.ownerId));
+      const rows = validateCloudRows(localProjects.map(project => deps.toCloudRow(project, context.ownerId)), context.ownerId);
       deps.writeProjects(context.ownerId, localProjects);
       if (rows.length) {
         const { error } = await deps.supabase().from("projects").upsert(rows, { onConflict: "id" });
