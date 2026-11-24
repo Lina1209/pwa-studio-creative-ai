@@ -47,3 +47,10 @@ test("discards a stale pending context instead of replaying it", () => {
   assert.equal(takePendingContext(state, context => isCurrent(context, "user-b", 5)), null);
   assert.equal(state.pendingContext, null);
 });
+
+test("distinguishes repeated loads for the same user across auth generations", () => {
+  const firstLogin = capture("user-a", 8);
+  const secondLogin = capture("user-a", 10);
+  assert.equal(isCurrent(firstLogin, "user-a", 10), false);
+  assert.equal(isCurrent(secondLogin, "user-a", 10), true);
+});
