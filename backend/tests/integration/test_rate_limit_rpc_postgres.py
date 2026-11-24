@@ -239,7 +239,7 @@ def _grant(dsn: str, user_id, amount: int, reference: str = "seed-credits"):
     return _wallet_call(
         dsn,
         "SELECT public.grant_user_credits(%s, %s, %s, %s)",
-        (user_id, amount, "test", reference),
+        (user_id, amount, "promo", reference),
     )
 
 
