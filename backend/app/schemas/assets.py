@@ -4,7 +4,7 @@ These models intentionally do not create routes or storage behavior by themselve
 """
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _ALLOWED_MIME_PREFIXES = {
@@ -61,6 +61,7 @@ class AssetUploadInitRequest(BaseModel):
             raise ValueError("mime_type must be a bare media type")
         return value
 
+    @model_validator(mode="after")
     def validate_kind_mime_pair(self) -> "AssetUploadInitRequest":
         allowed = _ALLOWED_MIME_PREFIXES[self.kind]
         if not any(
