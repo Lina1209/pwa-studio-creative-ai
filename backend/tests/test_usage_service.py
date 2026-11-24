@@ -197,3 +197,86 @@ def test_admin_ai_usage_requires_server_storage_credentials():
     with pytest.raises(HTTPException) as error:
         usage_service.list_admin_ai_usage(Settings(), page=1, page_size=10)
     assert error.value.status_code == 503
+
+
+
+def test_durable_outbox_records_started_then_succeeded_without_private_content(monkeypatch):
+    class OutboxClient(FakeClient):
+        def __init__(self, *, timeout):
+            super().__init__(timeout=timeout)
+            self.patch_calls = []
+        def patch(self, url, *, params, json, headers):
+            self.patch_calls.append((url, params, json, headers))
+            return FakeResponse()
+
+    client = OutboxClient(timeout=8.0)
+    monkeypatch.setattr(usage_service.httpx, "Client", lambda timeout: client)
+    settings = Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="server-only",
+    )
+    request_id = uuid4()
+    usage_service.begin_ai_usage_request(
+        settings, user_id="00000000-0000-0000-0000-000000000001",
+        request_id=request_id, endpoint="chat", provider="deepseek",
+        model="deepseek-flash",
+    )
+    usage_service.complete_ai_usage_request(
+        settings, request_id=request_id,
+        result=_result(cost=Decimal("0.0000123"), cost_source="litellm_response_cost"),
+    )
+
+    start_url, start_payload, _ = client.calls[0]
+    assert start_url.endswith("/rest/v1/ai_usage_outbox")
+    assert start_payload["status"] == "started"
+    assert start_payload["request_id"] == str(request_id)
+    assert len(client.patch_calls) == 1
+    url, params, payload, _ = client.patch_calls[0]
+    assert url.endswith("/rest/v1/ai_usage_outbox")
+    assert params == {"request_id": f"eq.{request_id}"}
+    assert payload["status"] == "succeeded"
+    assert payload["input_tokens"] == 17
+    assert payload["output_tokens"] == 9
+    assert payload["cost_usd"] == "0.0000123"
+    assert "text" not in payload and "prompt" not in payload
+    assert "This private response" not in repr(start_payload) + repr(payload)
+
+
+def test_durable_outbox_fails_closed_before_provider_request_when_start_write_fails(monkeypatch):
+    class FailingClient(FakeClient):
+        def post(self, url, *, json, headers):
+            raise RuntimeError("private content must not be logged")
+
+    monkeypatch.setattr(usage_service.httpx, "Client", FailingClient)
+    settings = Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="server-only",
+    )
+    import pytest
+    with pytest.raises(RuntimeError, match="provider call was not started"):
+        usage_service.begin_ai_usage_request(
+            settings, user_id="00000000-0000-0000-0000-000000000001",
+            request_id=uuid4(), endpoint="prompts", provider="deepseek",
+            model="deepseek-flash",
+        )
+
+
+def test_durable_outbox_marks_provider_failure_as_unknown_not_free(monkeypatch):
+    class OutboxClient(FakeClient):
+        def __init__(self, *, timeout):
+            super().__init__(timeout=timeout)
+            self.patch_calls = []
+        def patch(self, url, *, params, json, headers):
+            self.patch_calls.append((url, params, json, headers))
+            return FakeResponse()
+
+    client = OutboxClient(timeout=8.0)
+    monkeypatch.setattr(usage_service.httpx, "Client", lambda timeout: client)
+    usage_service.mark_ai_usage_unknown(
+        Settings(supabase_url="https://example.supabase.co",
+                 supabase_service_role_key="server-only"),
+        request_id=uuid4(), error=TimeoutError("provider timeout"),
+    )
+    assert client.patch_calls[0][2]["status"] == "unknown"
+    assert client.patch_calls[0][2]["error_type"] == "TimeoutError"
+    assert "prompt" not in client.patch_calls[0][2]
