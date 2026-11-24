@@ -166,3 +166,8 @@ A source review of the ordinary Mini Cinema buttons found a separate hazard from
 ## Branch follow-up — retry after a failed stage save
 
 Review of the Mini Cinema stage editor found that its optimistic concurrency timestamp was advanced before the localStorage write result was known. If a write failed (for example, quota exhaustion), the editor could then reject a retry as if another window had changed the project. The timestamp is now advanced only after `movieWrite` succeeds, so a failed save does not invalidate the editor's base revision. This change is source-reviewed; browser fault-injection and automated test execution remain pending.
+
+
+## Branch follow-up — deletion queue read integrity
+
+The Mini Cinema UI previously treated local deletion-queue read/JSON errors as an empty queue. That could allow a delete action to proceed without accounting for pending cloud deletions. The UI now uses a strict reader: absent key means an empty queue, but inaccessible storage, malformed JSON, and non-array values stop the delete action with a visible message. If local project removal fails and rollback of a newly added tombstone also fails, the UI now explains that the cloud deletion remains queued instead of silently implying the project is safely retained everywhere. Added focused tests for missing, valid, inaccessible, corrupt, and wrong-shaped queues. Tests have not yet been executed.
