@@ -106,6 +106,6 @@ Additional deterministic tests use deferred promises and a controllable timer qu
 - A deletion held in flight while switching to B, ensuring the stale continuation does not write local projects for B;
 - guest context cannot schedule cloud upload.
 
-The frontend CI run for commit `604711578f96690b84ca4a5c52942c198dba62a1` completed successfully: **15 Node tests passed, 0 failed** (8 context-guard tests + 7 operation-controller tests). Backend CI was still running at the time this document was updated.
+The earlier frontend CI run for commit `604711578f96690b84ca4a5c52942c198dba62a1` completed successfully with **14 Node tests passed, 0 failed** (8 context-guard tests + 6 operation-controller tests). A seventh deferred-delete scenario was then added; the 15-test CI run for the current PR head is pending. The separate backend run for the current implementation commit completed successfully.
 
 Scope limitation: the new tests exercise the production-shared orchestration module with mocked Supabase and deferred network responses; they are not a full real-browser test against the hosted Supabase project. RLS, actual token propagation, database behavior, two-account live isolation, and browser UI behavior still require separate staging/live verification. No live Supabase changes or production deployment were performed.
