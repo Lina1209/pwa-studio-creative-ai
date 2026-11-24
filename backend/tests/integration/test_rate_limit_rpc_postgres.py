@@ -609,7 +609,7 @@ def test_ai_usage_outbox_accepts_only_metadata_and_tracks_request_state(dsn):
                FROM public.ai_usage_outbox WHERE request_id = %s""",
             (request_id,),
         ).fetchone()
-        assert row == ("succeeded", 12, 8, 20, 0.00001, "litellm_response_cost")
+        assert row == ("succeeded", 12, 8, 20, Decimal("0.00001"), "litellm_response_cost")
         with pytest.raises(psycopg.Error):
             conn.execute(
                 """UPDATE public.ai_usage_outbox
