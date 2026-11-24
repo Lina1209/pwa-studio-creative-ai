@@ -1152,7 +1152,8 @@ const movieHistoryStyle = document.createElement("style");
     const context=movieCloudContext?.capture(authSession?.user?.id,authContextVersion);
     if(context) await movieCloudOperations?.load(context);
   };
-  const movieRead = () => {
+  const movieRead = (options = {}) => {
+    const strict = options.strict === true;
     try {
       const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
       if (!Array.isArray(raw)) throw new Error("Локальное хранилище фильмов имеет неверный формат.");
@@ -1184,21 +1185,12 @@ const movieHistoryStyle = document.createElement("style");
       console.error("Movie project storage read failed:", error);
       const feedback = $("#movieFeedback");
       if (feedback) feedback.textContent = "Не удалось прочитать локальные фильмы. Чтобы не показать пустой список и не перезаписать облачные проекты, синхронизация остановлена до восстановления доступа к памяти браузера.";
+      if (strict) throw error;
       return [];
     }
   };
-  // Cloud merge must distinguish an empty collection from inaccessible or corrupt local storage.
-  const readMovieProjectsForCloud = () => {
-    let raw;
-    try {
-      const stored = localStorage.getItem(movieStorageKey());
-      raw = stored ? JSON.parse(stored) : [];
-    } catch (error) {
-      throw new Error("Не удалось прочитать локальные фильмы; облачная синхронизация остановлена: " + (error.message || "ошибка хранилища"));
-    }
-    if (!Array.isArray(raw)) throw new Error("Локальное хранилище фильмов повреждено; облачная синхронизация остановлена.");
-    return movieRead();
-  };
+  // Cloud reads use the same single read/normalization pass, but propagate failures.
+  const readMovieProjectsForCloud = () => movieRead({ strict: true });
   const movieWrite = projects => {
     try {
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
