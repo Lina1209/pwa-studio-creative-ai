@@ -102,6 +102,18 @@ function createMovieCloudOperations(deps) {
         const { error } = await deps.supabase().from("projects").upsert(rows, { onConflict: "id" });
         if (error) throw error;
         if (!current(context)) return;
+        // A delete can be recorded in another tab while this upsert is in
+        // flight. Re-check the durable queue after the write and immediately
+        // remove any just-resurrected rows; the queued sync will later clear
+        // the tombstones after this idempotent delete is confirmed.
+        const deletedDuringUpsert = deps.readTombstones(context.ownerId)
+          .filter(id => rows.some(row => row.id === id));
+        if (deletedDuringUpsert.length) {
+          const { error: cleanupError } = await deps.supabase().from("projects").delete()
+            .in("id", deletedDuringUpsert).eq("owner_id", context.ownerId).eq("project_type", "movie");
+          if (cleanupError) throw cleanupError;
+          if (!current(context)) return;
+        }
       }
       if (current(context)) deps.feedback(deletedIds.length
         ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
