@@ -122,7 +122,7 @@ Before any candidate migration is considered:
 - Apply candidate migrations in the proposed order.
 - Test two accounts (A/B), owner-only reads/writes, anonymous denial, admin-only service routes, Storage object ownership, function EXECUTE grants, and rollback behavior.
 - For Mini Cinema CAS, use concurrent transactions to prove that exactly one writer succeeds for a given expected revision and that a stale writer cannot revive a deleted row.
-- Add CI that provisions the disposable database and executes actual SQL integration tests. Current backend unit CI does not provision PostgreSQL and cannot prove row-lock behavior.
+- Add CI that provisions the disposable database and executes actual SQL integration tests. Current backend unit CI does not provision PostgreSQL and cannot prove row-lock behavior. Use `docs/SUPABASE_RPC_DISPOSABLE_TEST_MATRIX.md` as the RPC-specific acceptance checklist.
 
 ## 7. Stop conditions
 
