@@ -228,7 +228,7 @@ const movieHistoryStyle = document.createElement("style");
     if (!supabaseClient) return;
     const {error} = await supabaseClient.auth.signOut();
     if (error) setAuthMessage(error.message, true);
-    else { refreshAuthUI(null); setAuthMode("login"); }
+    else { authGate.hidden = true; setAuthMessage(""); refreshAuthUI(null); }
   });
   const profileBlock = $(".profile");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
