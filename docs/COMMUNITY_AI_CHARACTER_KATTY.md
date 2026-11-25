@@ -596,3 +596,20 @@ This creates a sensitive trust-boundary problem: if the saved API URL is changed
 **Release decision:** the current browser shell has one high-priority issue to resolve before relying on it for authenticated AI requests: the configurable API URL can become the destination for a Bearer token without a trusted-origin allowlist. Fix and regression-test that boundary before implementing or enabling Katty. Keep browser rendering non-executable, keep backend authorization authoritative, and persist Katty replies only through the trusted server.
 
 This was a source-only frontend audit and documentation update. No frontend code, API routing, CSP headers, CDN configuration, Supabase settings, live data, production service or PR merge was changed.
+
+
+## 11. Browser API-origin trust-boundary fix — 2026-11-25
+
+A branch-only frontend hardening change was committed after the audit:
+- Production now uses the fixed https://pwa-studio-creative-ai.onrender.com API origin; the pwa-studio-api-url localStorage value is ignored outside localhost/127.0.0.1 development.
+- Local development overrides are restricted to plain HTTP on the current local hostname, without credentials, query, fragment, or non-root path.
+- API requests must be relative /api/... paths and are resolved and checked against the trusted origin before fetch.
+- The application rejects caller-supplied Authorization headers; the Supabase bearer token is attached only by the trusted API request function.
+- Fetch uses credentials: omit and redirect: error to avoid ambient credentials and redirected API requests.
+- Production settings no longer allow editing the backend URL; the health-check button remains available.
+- Added source-level regression tests and included them in the frontend GitHub Actions test workflow.
+
+Scope and limitations:
+- This is a source change on the existing review branch only. It has not been merged or deployed, so it does not yet protect the live site.
+- Tests are regression checks over the source contract, not a browser penetration test or proof against same-origin XSS.
+- Localhost override behavior and production deployment headers/CSP still require separate verification.
