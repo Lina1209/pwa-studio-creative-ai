@@ -253,3 +253,88 @@ Before any limited release, add automated and human-reviewed tests covering:
 Release is blocked until policy owners approve category definitions, escalation paths, evidence access, retention periods, user notices, appeals, and measurable false-positive/false-negative review procedures. Safety filters must fail safely when unavailable; the system must not silently bypass moderation.
 
 This section defines product requirements only. No moderation pipeline, logging schema, ban action, retention policy, live database change, or production behavior is claimed to be implemented.
+
+
+## 15. Target technical architecture — shared Katty service
+
+This section defines the proposed implementation boundary for the next engineering phase. It is an architecture specification, not an implemented API or database schema.
+
+### 15.1 One character service, multiple entry points
+
+All entry points — public landing-page welcome, floating launcher, sidebar item, signed-in cabinet and (later) community rooms — must call the same Katty service and use the same versioned character profile. The interface may differ by screen size, but identity, safety policy, response format and accounting remain centralized.
+
+The service should be separated into these logical responsibilities:
+
+1. Session and access layer: identifies a short-lived guest session or verifies the signed-in user; resolves the allowed surface and permissions.
+2. Context builder: assembles only public help content and the current conversation context that the caller is allowed to use.
+3. Safety gateway: checks user input before generation and checks the generated answer before it is returned.
+4. Character orchestrator: loads the server-owned Katty persona version, selects the permitted model/provider and requests a response.
+5. Output adapter: returns text plus a constrained emotion/action code; optional TTS and avatar adapters may consume that result later.
+6. Usage and abuse controls: applies guest/account limits, cooldowns, cost ceilings, idempotency and safe operational telemetry.
+7. Moderation review: records minimal incident metadata and routes eligible events to authorized human review.
+
+No browser client may choose a privileged user ID, room membership, model credentials, safety-policy version, budget exemption or moderation outcome.
+
+### 15.2 Proposed API boundaries
+
+Names below are illustrative contracts to be finalized against the existing FastAPI conventions before coding:
+
+- POST /api/katty/sessions — create or resume an isolated guest session, or initialize the signed-in user's Katty session.
+- POST /api/katty/messages — submit one text message and receive a moderated response. The server derives the caller identity and permissions; the client supplies only the message, session reference and idempotency key.
+- GET /api/katty/session — retrieve only the current caller's permitted session metadata and recent visible conversation.
+- DELETE /api/katty/session — end/reset the current guest session or clear the current conversation according to retention rules.
+- GET /api/katty/status — return real service availability and supported modes without exposing provider details or secrets.
+- Future only: room-scoped community endpoints, TTS/STT endpoints and avatar streaming. Do not add them to the first text-only release by default.
+
+The API must validate request size, content type, session ownership, CSRF/origin requirements where applicable, idempotency and rate limits. Unknown or expired guest sessions must not fall back to a shared/global conversation.
+
+### 15.3 Session and data separation
+
+- Guest session IDs must be high-entropy, unguessable, short-lived and stored in a secure browser mechanism appropriate to the deployment; do not treat a client-provided identifier alone as proof of identity.
+- Authenticated sessions must be bound to the verified account identity on the server.
+- Guest-to-account transfer is a separate explicit operation requiring fresh authentication and user confirmation.
+- Conversation records must have an explicit owner scope (guest_session or user) and must never be queried by an unscoped session or conversation ID.
+- Public knowledge (help pages, feature descriptions and published rules) is separate from private conversation/session data.
+- Do not place Katty messages in the private one-to-one messaging tables or forge assistant rows through the browser history client.
+
+### 15.4 Response contract and character profile
+
+The text endpoint should return a typed response with:
+- message_id and session_id (opaque identifiers);
+- text;
+- persona_id and persona_version;
+- emotion from a server allowlist (for example: neutral, happy, curious, thinking, empathetic);
+- safety_status and a user-safe limitation reason when relevant;
+- optional voice_available / animation_available capability flags based on actual configuration.
+
+Do not return raw prompts, internal moderation reasoning, provider credentials, hidden chain-of-thought, private user records or unrestricted animation commands. The client must ignore unknown emotion/action values and render a neutral fallback.
+
+The character profile is versioned and server-owned: name, tone, approved greeting, boundaries, public product knowledge source, allowed emotion vocabulary and fallback messages. A profile change must be reviewable and rollback-capable.
+
+### 15.5 Provider, budget and failure isolation
+
+- Reuse the existing backend provider adapter only after verifying that it supports the required timeout, error classification and usage accounting.
+- Keep DeepSeek as the configured active default unless the owner explicitly approves a provider change. Do not silently activate Gemini or another paid provider as fallback.
+- Give Katty its own endpoint/usage label and bounded guest budget; do not let anonymous traffic consume an unlimited shared AI allowance.
+- Apply per-session, per-account, per-IP/network-abuse and global limits with privacy-aware handling; IP-derived controls must not become identity claims.
+- Set hard request and monthly spend ceilings, concurrency limits and an administrator kill switch.
+- On timeout, provider error, moderation outage or budget exhaustion, return an honest unavailable/limited state. Never return an unmoderated generated answer as a fallback.
+
+### 15.6 Observability and administration
+
+Operational records should contain request ID, timestamp, caller scope (guest/account), endpoint, provider/model label, latency, token/cost fields when reliably available, outcome class and safety decision code. They must not contain API keys or full private prompts by default.
+
+Admin controls should be server-authorized and audited: enable/disable Katty, pause guest access, adjust approved limits, inspect technical failures and review restricted moderation events. A regular user must never be able to call these controls by changing client parameters.
+
+### 15.7 Text-only MVP release sequence
+
+1. Finalize the guest-session threat model, privacy notice, retention and abuse budgets.
+2. Define request/response schemas and test them without provider calls.
+3. Implement session isolation and server-side conversation persistence.
+4. Implement the text endpoint with input/output moderation, idempotency, rate limits and hard budgets.
+5. Add public help knowledge retrieval with an explicit allowlist; no private project or message connectors.
+6. Add landing-page, sidebar and floating-launcher UI to the same endpoint.
+7. Run isolation, abuse, failure, cost and mobile-browser tests in a non-production environment.
+8. Obtain a separate approval before applying migrations, changing production settings, deploying or enabling public guest traffic.
+
+Voice, animated avatar, public-room participation and 3D video remain later phases and must not delay or silently expand the text-only MVP.
