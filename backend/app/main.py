@@ -19,7 +19,6 @@ from app.services.messaging_service import list_conversations, send_message, lis
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
 from app.services.diagnostics_service import inspect_supabase
 from app.services.assistant_history_service import save_assistant_reply
-from app.services.assistant_history_service import save_assistant_reply
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
