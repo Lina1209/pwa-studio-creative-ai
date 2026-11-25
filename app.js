@@ -476,6 +476,7 @@ const movieHistoryStyle = document.createElement("style");
     const version=authContextVersion,userId=authSession.user.id;
     const list=$("#conversationList");
     if(list)list.replaceChildren(adminNode("div","admin-empty","Загружаем диалоги…"));
+    loadBlockedUsers();
     try{
       const threads=await apiRequest("/api/conversations");
       if(version!==authContextVersion||authSession?.user?.id!==userId)return;
@@ -553,9 +554,42 @@ const movieHistoryStyle = document.createElement("style");
       $("#directMessageForm").hidden=true;
       messagesFeedback("Пользователь заблокирован. Переписка сохранена, новые сообщения между вами недоступны.");
       button.textContent="Заблокирован";
+      loadBlockedUsers();
     }catch(error){messagesFeedback("Не удалось заблокировать пользователя: "+error.message);button.disabled=false;}
   });
-  $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
+  const loadBlockedUsers = async () => {
+    const list=$("#blockedUsersList"); if(!list||!authSession?.user)return;
+    list.replaceChildren(adminNode("div","admin-empty","Загружаем список блокировок…"));
+    const version=authContextVersion,userId=authSession.user.id;
+    try{
+      const rows=await apiRequest("/api/blocks");
+      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      list.replaceChildren();
+      if(!Array.isArray(rows)||!rows.length){list.append(adminNode("div","admin-empty","Вы никого не заблокировали."));return;}
+      rows.forEach(row=>{
+        const item=adminNode("div","blocked-user-item");
+        const label=adminNode("span","", "Пользователь · "+String(row.blocked_id||"").slice(0,8)+"…");
+        const button=adminNode("button","secondary-button","Разблокировать");button.type="button";
+        button.addEventListener("click",async()=>{
+          if(!window.confirm("Разблокировать этого пользователя? Возможность переписки будет восстановлена."))return;
+          button.disabled=true;
+          try{
+            await apiRequest("/api/blocks",{method:"DELETE",body:JSON.stringify({user_id:row.blocked_id})});
+            item.remove();
+            if(!list.children.length)list.append(adminNode("div","admin-empty","Вы никого не заблокировали."));
+            messagesFeedback("Пользователь разблокирован. Теперь вы снова можете обмениваться сообщениями.");
+            if(activeMessagePartnerId===row.blocked_id){
+              const blockButton=$("#blockConversationUser");
+              if(blockButton){blockButton.textContent="Заблокировать";blockButton.disabled=false;}
+              $("#directMessageForm").hidden=false;
+            }
+          }catch(error){messagesFeedback("Не удалось разблокировать пользователя: "+error.message);button.disabled=false;}
+        });
+        item.append(label,button);list.append(item);
+      });
+    }catch(error){if(version===authContextVersion)list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить блокировки: "+error.message));}
+  };
+  $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();loadBlockedUsers();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
   $("#newConversationForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
     if(!authSession?.user)return;
