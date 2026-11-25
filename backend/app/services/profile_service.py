@@ -26,7 +26,7 @@ def _request(settings: Settings, method: str, *, params=None, payload=None, pref
         return response.json() if response.content else []
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 409 or (exc.response.status_code == 400 and "23505" in exc.response.text):
-            raise HTTPException(status_code=409, detail="This username is already in use.") from exc
+            raise HTTPException(status_code=409, detail="This display name or username is already in use. Choose another.") from exc
         raise HTTPException(status_code=502, detail="Profile storage rejected the request.") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Profile storage is temporarily unavailable.") from exc
