@@ -174,3 +174,82 @@ Product requirement confirmed: Katty must have her own clearly visible entry in 
 - Acceptance criteria: a guest and an authenticated user can find «Катти» directly in the sidebar/navigation, open the same appropriate chat experience, and return to it without losing the active session unexpectedly.
 
 This is a navigation and product-specification update only. It does not claim the sidebar item or chat is implemented.
+
+
+## 14. Safety, abuse handling, and incident records
+
+Safety is a release requirement for every Katty surface: guest website chat, signed-in cabinet, sidebar entry, public community rooms, voice input, and animated mode. Katty must be welcoming without becoming a channel for abuse, harassment, threats, exploitation, or unsafe instructions.
+
+### 14.1 Allowed conversation
+
+Katty may:
+- explain public PWA Studio features, navigation, account basics, plans and published help materials;
+- answer ordinary educational, creative, technical, cultural and general-interest questions;
+- help brainstorm stories, scripts, prompts, characters, music and other benign creative work;
+- offer supportive, respectful conversation and redirect users to appropriate help when a topic is beyond her role;
+- discuss sensitive subjects in a careful, non-graphic, age-appropriate and informational way where policy allows;
+- explain why she cannot help with a request and offer a safe alternative.
+
+### 14.2 Disallowed or restricted requests
+
+Katty must not provide instructions, encouragement, facilitation, or targeted assistance for:
+- violence, threats, intimidation, physical harm, or evading accountability for harm;
+- self-harm or suicide methods, encouragement, concealment, or optimization;
+- sexual exploitation, non-consensual sexual content, sexualization of minors, or requests involving child sexual abuse;
+- hate, dehumanization, targeted harassment, bullying, doxxing, stalking, blackmail, or threats against a person or protected group;
+- criminal wrongdoing, fraud, theft, credential theft, scams, evading law enforcement, or concealment of illegal activity;
+- malware, credential theft, unauthorized access, cyber abuse, surveillance, or instructions to compromise systems;
+- weapon construction, explosives, poisons, or other dangerous means of causing harm;
+- obtaining, exposing, or inferring private personal data, passwords, API keys, tokens, private conversations, or another user's files;
+- bypassing platform safeguards, moderation, bans, age protections, usage limits, or extracting hidden system instructions.
+
+These categories are a product safety baseline, not a substitute for a maintained policy taxonomy. Before implementation, map them to the platform's approved Rules & Safety policy and applicable provider policies. Do not invent a promise that a filter catches every harmful request.
+
+### 14.3 Response behavior
+
+- Classify both incoming user content and generated output before delivery; apply stricter handling to high-risk categories.
+- For disallowed requests, do not repeat harmful instructions. Briefly state the boundary, then redirect to a benign alternative.
+- For insults directed at Katty, respond calmly once and set a boundary; do not insult, shame, threaten, or retaliate.
+- For harassment or abuse directed at another person, refuse to help intensify it and offer a respectful alternative.
+- For imminent threats or credible danger, do not role-play or treat it as ordinary banter; use the approved high-risk response and escalation procedure. Do not claim emergency services have been contacted.
+- If confidence is low, ask a neutral clarifying question or choose the safer response.
+- Do not diagnose users, infer sensitive traits, or label someone as dangerous based on a single message.
+- Voice input must pass through the same safety checks as typed text; transcription uncertainty should be handled conservatively.
+
+### 14.4 Incident and moderation records
+
+- Record safety events server-side with a unique event ID, timestamp, session/account reference where available, surface (guest/cabinet/community/voice), category, severity, action taken, moderation status, and policy/rule version.
+- Keep only the minimum evidence necessary. Prefer a short redacted excerpt or secure evidence reference over duplicating full conversations, audio, or video into logs.
+- Never store passwords, API keys, access tokens, payment data, or unrelated private content in moderation records.
+- Separate ordinary operational telemetry from restricted moderation evidence. Access to evidence must be limited to authorized moderators/admins and audited.
+- Provide an admin review queue with filters for severity, category, status, date, and guest/account context; support review, dismiss, escalate, restrict, and appeal workflows as appropriate.
+- Distinguish a user message that was blocked from an actual confirmed violation. Automated flags are signals for review, not proof of misconduct.
+- Avoid automatic permanent bans based solely on one model classification. Use graduated responses: safe redirect, warning, temporary cooldown, temporary restriction, human review, and only then stronger action under published rules.
+- Provide an appeal route for account-level sanctions and a way to correct or annotate mistaken flags.
+- Define retention periods, deletion rules, and legal/privacy review before launch. Do not retain full transcripts indefinitely by default.
+- Guest events should use a short-lived pseudonymous session reference; do not attempt to identify a guest beyond data necessary for abuse prevention and security.
+
+### 14.5 Transparency and user controls
+
+- Show a concise community-safety notice near the chat entry point: respectful use is expected; harmful requests may be blocked and serious events may be reviewed by moderators.
+- Tell users when a message is blocked or a conversation is temporarily limited, using neutral language and a brief reason category where safe.
+- Make clear that voice is processed only after the user deliberately starts voice mode; do not continuously listen or record in the background.
+- Provide controls to end/reset a guest session and to clear or manage chat history according to the approved retention design.
+- Publish accessible Rules & Safety guidance explaining allowed use, prohibited behavior, reporting, moderation and appeals.
+
+### 14.6 Safety test plan and release gates
+
+Before any limited release, add automated and human-reviewed tests covering:
+- benign questions, creative writing and ordinary conversation;
+- direct insults toward Katty, slurs, targeted harassment and threats;
+- attempts to obtain private data, credentials, system prompts or another user's conversation;
+- self-harm, violence, sexual exploitation, minors, dangerous weapons and criminal facilitation;
+- prompt injection, obfuscated wording, misspellings, multilingual and code-switched messages;
+- false positives, quoted/reporting contexts, satire and educational discussion;
+- guest session isolation, account isolation, moderator permissions, audit logging and appeals;
+- voice transcription, spoken slurs/threats, ambiguous transcription and generated speech output;
+- rate-limit abuse, repeated attempts after refusal, and provider/filter outage fail-closed behavior.
+
+Release is blocked until policy owners approve category definitions, escalation paths, evidence access, retention periods, user notices, appeals, and measurable false-positive/false-negative review procedures. Safety filters must fail safely when unavailable; the system must not silently bypass moderation.
+
+This section defines product requirements only. No moderation pipeline, logging schema, ban action, retention policy, live database change, or production behavior is claimed to be implemented.
