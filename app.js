@@ -557,6 +557,10 @@ const movieHistoryStyle = document.createElement("style");
       loadBlockedUsers();
     }catch(error){messagesFeedback("Не удалось заблокировать пользователя: "+error.message);button.disabled=false;}
   });
+
+  const blockedUsersStyle=document.createElement("style");
+  blockedUsersStyle.textContent=".blocked-users-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:12px 0 16px;padding:12px;border:1px solid var(--border);border-radius:12px}.blocked-users-select-all{display:flex;align-items:center;gap:8px;cursor:pointer}.blocked-users-selected-count{color:var(--muted);font-size:13px}.blocked-user-item{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--border)}.blocked-user-item span{flex:1;min-width:130px}.blocked-user-item input[type=checkbox]{width:18px;height:18px;accent-color:#a98aff}";
+  document.head.appendChild(blockedUsersStyle);
   const loadBlockedUsers = async () => {
     const list=$("#blockedUsersList"); if(!list||!authSession?.user)return;
     list.replaceChildren(adminNode("div","admin-empty","Загружаем список блокировок…"));
@@ -566,27 +570,74 @@ const movieHistoryStyle = document.createElement("style");
       if(version!==authContextVersion||authSession?.user?.id!==userId)return;
       list.replaceChildren();
       if(!Array.isArray(rows)||!rows.length){list.append(adminNode("div","admin-empty","Вы никого не заблокировали."));return;}
+      const selectedIds=new Set();
+      const toolbar=adminNode("div","blocked-users-toolbar");
+      const selectAllLabel=adminNode("label","blocked-users-select-all");
+      const selectAll=document.createElement("input");selectAll.type="checkbox";
+      const selectAllText=adminNode("span","","Выбрать всех");
+      selectAllLabel.append(selectAll,selectAllText);
+      const selectedCount=adminNode("span","blocked-users-selected-count","Выбрано: 0");
+      const bulkButton=adminNode("button","primary-button","Разблокировать выбранных");
+      bulkButton.type="button";bulkButton.disabled=true;
+      toolbar.append(selectAllLabel,selectedCount,bulkButton);list.append(toolbar);
+      const updateSelection=()=>{
+        selectedCount.textContent="Выбрано: "+selectedIds.size;
+        bulkButton.disabled=selectedIds.size===0;
+        selectAll.checked=selectedIds.size===rows.length;
+        selectAll.indeterminate=selectedIds.size>0&&selectedIds.size<rows.length;
+      };
+      const unblockOne=async(row,item,button)=>{
+        button.disabled=true;
+        try{
+          await apiRequest("/api/blocks",{method:"DELETE",body:JSON.stringify({user_id:row.blocked_id})});
+          item.remove();selectedIds.delete(row.blocked_id);
+          if(activeMessagePartnerId===row.blocked_id){
+            const blockButton=$("#blockConversationUser");
+            if(blockButton){blockButton.textContent="Заблокировать";blockButton.disabled=false;}
+            $("#directMessageForm").hidden=false;
+          }
+          return true;
+        }catch(error){button.disabled=false;throw error;}
+      };
+      const items=new Map();
       rows.forEach(row=>{
         const item=adminNode("div","blocked-user-item");
-        const label=adminNode("span","", "Пользователь · "+String(row.blocked_id||"").slice(0,8)+"…");
+        const choice=document.createElement("input");choice.type="checkbox";choice.setAttribute("aria-label","Выбрать пользователя "+String(row.blocked_id||"").slice(0,8));
+        const label=adminNode("span","","Пользователь · "+String(row.blocked_id||"").slice(0,8)+"…");
         const button=adminNode("button","secondary-button","Разблокировать");button.type="button";
+        choice.addEventListener("change",()=>{if(choice.checked)selectedIds.add(row.blocked_id);else selectedIds.delete(row.blocked_id);updateSelection();});
         button.addEventListener("click",async()=>{
           if(!window.confirm("Разблокировать этого пользователя? Возможность переписки будет восстановлена."))return;
-          button.disabled=true;
           try{
-            await apiRequest("/api/blocks",{method:"DELETE",body:JSON.stringify({user_id:row.blocked_id})});
-            item.remove();
-            if(!list.children.length)list.append(adminNode("div","admin-empty","Вы никого не заблокировали."));
+            await unblockOne(row,item,button);
+            if(!list.querySelector(".blocked-user-item")){list.replaceChildren(adminNode("div","admin-empty","Вы никого не заблокировали."));}
+            else updateSelection();
             messagesFeedback("Пользователь разблокирован. Теперь вы снова можете обмениваться сообщениями.");
-            if(activeMessagePartnerId===row.blocked_id){
-              const blockButton=$("#blockConversationUser");
-              if(blockButton){blockButton.textContent="Заблокировать";blockButton.disabled=false;}
-              $("#directMessageForm").hidden=false;
-            }
-          }catch(error){messagesFeedback("Не удалось разблокировать пользователя: "+error.message);button.disabled=false;}
+          }catch(error){messagesFeedback("Не удалось разблокировать пользователя: "+error.message);}
         });
-        item.append(label,button);list.append(item);
+        item.append(choice,label,button);list.append(item);items.set(row.blocked_id,{row,item,button});
       });
+      selectAll.addEventListener("change",()=>{
+        rows.forEach(row=>{const entry=items.get(row.blocked_id);if(!entry)return;entry.item.querySelector('input[type="checkbox"]').checked=selectAll.checked;if(selectAll.checked)selectedIds.add(row.blocked_id);else selectedIds.delete(row.blocked_id);});
+        updateSelection();
+      });
+      bulkButton.addEventListener("click",async()=>{
+        const targets=rows.filter(row=>selectedIds.has(row.blocked_id));
+        if(!targets.length)return;
+        if(!window.confirm("Разблокировать выбранных пользователей: "+targets.length+"?"))return;
+        bulkButton.disabled=true;selectAll.disabled=true;
+        let success=0;const failures=[];
+        for(const row of targets){
+          const entry=items.get(row.blocked_id);if(!entry)continue;
+          try{await unblockOne(row,entry.item,entry.button);success++;}
+          catch(error){failures.push(String(row.blocked_id).slice(0,8)+": "+error.message);}
+        }
+        if(!list.querySelector(".blocked-user-item"))list.replaceChildren(adminNode("div","admin-empty","Вы никого не заблокировали."));
+        else{selectAll.disabled=false;updateSelection();}
+        if(failures.length)messagesFeedback("Разблокировано: "+success+". Не удалось: "+failures.length+". "+failures.join("; "));
+        else messagesFeedback("Успешно разблокировано пользователей: "+success+".");
+      });
+      updateSelection();
     }catch(error){if(version===authContextVersion)list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить блокировки: "+error.message));}
   };
   $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();loadBlockedUsers();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
