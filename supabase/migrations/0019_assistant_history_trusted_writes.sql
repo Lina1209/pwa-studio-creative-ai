@@ -9,7 +9,7 @@ drop policy if exists "Users delete own assistant messages" on public.assistant_
 
 revoke update on public.assistant_messages from anon, authenticated;
 grant select, insert, delete on public.assistant_messages to authenticated;
-grant all on public.assistant_messages to service_role;
+grant select, insert on public.assistant_messages to service_role;
 
 create policy "Users read own assistant messages" on public.assistant_messages
   for select to authenticated
