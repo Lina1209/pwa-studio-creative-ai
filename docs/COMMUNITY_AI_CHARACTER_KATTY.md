@@ -485,3 +485,62 @@ Implement independent, server-enforced limits rather than relying on a single re
 **Release decision:** do not enable public guest AI traffic until guest/session limits, account separation, global hard budget, concurrency control, kill switch and failure-mode tests exist. Keep DeepSeek as the configured default; no paid fallback provider is enabled by this specification.
 
 This was a source-only audit and documentation update. No limiter code, SQL migration, live database, Render setting, DeepSeek billing setting, provider key, deployment or PR merge was changed.
+
+
+
+## 19. Prompt-injection, secret-exfiltration and tool-authorization audit — 2026-11-25
+
+Read-only inspection of `backend/app/main.py`, `backend/app/services/ai_service.py`, `backend/app/services/content_safety.py`, `backend/app/services/auth.py`, `backend/app/core/config.py` and `backend/app/schemas.py` on branch `fix/supabase-key-compat-2026-11-23`.
+
+### 19.1 What the reviewed AI path currently does
+
+- The authenticated `/api/chat` route constructs a server-owned system message and sends the user's message as a separate `user` message. The system message explicitly says user messages and quoted material are untrusted and must not override system rules.
+- The prompt-generation route also keeps its instruction in a server-owned system message and places the user's idea and other request fields in a separate user message.
+- The provider adapter currently calls LiteLLM `completion` with model, messages, server-side API key, timeout, bounded retry count and output-token limit. The reviewed call does not pass model tools/function definitions or enable function/tool calling.
+- Provider credentials are loaded from backend settings and passed as a separate provider parameter; the reviewed routes do not insert API keys into the message content.
+- The reviewed chat route sends only its fixed system instruction and the current user message. It does not retrieve private projects, private messages, account records, other users' data, or external documents into the model context.
+- The provider adapter logs only diagnostic metadata (provider/model, exception type and status code), not raw prompts, credentials or raw provider errors. The client receives a generic provider-failure message for ordinary provider exceptions.
+- The authentication dependency derives the user identity and admin role from a verified Supabase JWT. The reviewed AI chat route does not grant the model the caller's admin role or any admin API capability.
+
+### 19.2 Findings and limits
+
+1. **Prompt-injection resistance is currently instruction-based, not a complete security boundary.** The system message's untrusted-input rule is useful, but a prompt can still influence model output. Never rely on prompt wording alone to protect data or authorize actions.
+2. **The current reviewed AI adapter has no tool-execution path.** This substantially limits what prompt injection can cause the model to do through this adapter today. It is not evidence that future tools, frontend actions, or other integrations are safe; those require separate authorization controls.
+3. **Input safety is a narrow first-layer keyword/pattern filter.** `check_content` is called on the incoming chat message and prompt idea, but its own module describes it as a conservative keyword guard, not complete moderation. It is not a prompt-injection detector and cannot reliably identify paraphrases, obfuscation, multilingual attacks or context-dependent intent.
+4. **Generated output is not passed through a corresponding moderation check in the reviewed routes.** The current route returns the provider's non-empty text after the call. Before Katty is introduced, both inbound content and generated output must pass the approved safety pipeline; if moderation is unavailable or uncertain, fail safely rather than deliver an unchecked response.
+5. **The generic provider adapter accepts a list of message dictionaries.** The reviewed current routes build those messages server-side, but the adapter itself does not enforce an allowlist of roles or validate a fixed message contract. Future Katty endpoints must never accept caller-supplied system/developer roles, arbitrary message arrays, provider options, tool definitions or model names.
+6. **No private-data retrieval is present in the reviewed chat request path.** This is a useful current boundary, not a guarantee for future retrieval features. Any future knowledge source must be explicitly allowlisted and public-only for guest Katty; retrieved text and uploaded material must be labelled untrusted data, not instructions.
+7. **No evidence in these files proves that every other frontend or backend feature is free of secrets or unsafe tool paths.** This audit is scoped to the named files and the reviewed AI route/adapter. It does not inspect live provider configuration, browser runtime traffic, deployment secrets or all repository integrations.
+
+### 19.3 Required defense-in-depth design for Katty
+
+- Keep system/developer instructions, persona configuration, safety policy, provider choice and output limits server-owned and versioned. Reject unknown request fields and never let the client choose a role, model, endpoint, tool, policy version or permission scope.
+- Treat every user message, quoted passage, community post, uploaded file, public web page and retrieved document as untrusted data. Delimit and label such content; never promote embedded instructions to system/developer authority.
+- Do not put API keys, service-role credentials, JWTs, passwords, hidden prompts, internal reasoning, moderation evidence or private account data in model context. Secrets must remain in backend configuration and be excluded from model-visible payloads and logs.
+- Keep the first Katty release tool-free. If tools are introduced later, use a small server-side allowlist with strict typed schemas, per-tool authorization on every invocation, least-privilege service identities, ownership checks, bounded arguments and timeouts. A model's claim that an action is authorized is never authorization.
+- Require explicit user confirmation for consequential actions (publishing, sending messages, deleting or changing user data, purchases, account changes). The backend must independently re-check permissions after confirmation; confirmation must not override policy or ownership.
+- Never expose admin tools or admin context to Katty. A user saying “I am the owner/admin” or asking the model to change roles must have no effect on verified authorization.
+- For any future retrieval or file access, enforce owner/public scope before fetching content, use fixed approved sources, block arbitrary URL fetches and internal-network/metadata targets, validate file type/size/path, and ensure one user's retrieved context cannot enter another user's request.
+- Moderate both input and output, including voice transcription and text that will be spoken aloud. Add explicit handling for prompt-extraction requests, role-confusion attempts, instruction overrides, data-exfiltration requests and indirect injections in quoted/retrieved content. Pattern matching alone is insufficient.
+- Return only a typed, minimal response contract. Never return raw provider payloads, hidden prompts, internal moderation rationale, tool traces or unapproved action instructions to the browser.
+- Redact sensitive values from logs and errors. Keep moderation evidence separate from ordinary operational logs with narrow audited moderator access and a defined retention policy.
+- Add a kill switch and fail-closed behavior for moderation, authorization, session-store or tool-authorization outages.
+
+### 19.4 Required adversarial tests and release gate
+
+Test direct and indirect injection in Russian and English, mixed languages, quoted text, Unicode/spacing obfuscation, role-play, fake “system” messages, requests to reveal hidden instructions, attempts to obtain API keys or another user's data, and instructions embedded in any future retrieved documents or uploads. Include benign discussion and educational quotation tests to reduce false positives.
+
+For the tool-free MVP, verify that:
+- client-supplied `system`/`developer` roles, message arrays, model overrides and tool/function definitions are rejected;
+- a prompt cannot cause any backend action because no tool-execution capability is exposed;
+- no secrets or private records are present in the provider message payload;
+- cross-user and guest-session context cannot be loaded by changing IDs;
+- both input and output moderation run, and moderation outage prevents an unchecked answer from being delivered;
+- provider errors and logs do not disclose credentials or raw private prompts;
+- a fake admin claim or instruction cannot change server-derived permissions.
+
+If tools are ever added, require separate tests for per-tool authorization, owner checks, consent, replay/idempotency, argument validation, SSRF/file-path abuse, privilege escalation and audit records before enabling each tool.
+
+**Release decision:** the reviewed current AI adapter has no tool/function execution and the current chat path does not retrieve private user data, which reduces the immediate impact of prompt injection. However, the existing system prompt and keyword filter are not sufficient protection for a public Katty service. Do not launch Katty until output moderation, strict server-owned message contracts, guest/account context isolation and the adversarial tests above are implemented and verified. Keep the first release tool-free.
+
+This was a read-only source audit and documentation update. No AI route, provider adapter, moderation code, authentication code, database migration, live data, provider setting, production service or PR merge was changed.
