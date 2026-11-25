@@ -139,3 +139,22 @@ Read-only review of migrations `0001` through `0018` on this branch, with focuse
 Do not implement Katty by reusing `direct_messages` or `assistant_messages` as a public feed. The future community chat requires its own room and membership model, room-scoped message table, explicit author kind (human/system/AI persona), server-owned bot writes, moderation state, retention policy, realtime delivery configuration, and per-room/per-user abuse and cost limits. Add indexes and RLS tests for cross-room and cross-user isolation before enabling it.
 
 This step was source-only. No migrations were applied and no live Supabase project was queried or modified.
+
+
+## 12. Guest welcome and always-available companion experience
+
+Product requirement confirmed: Katty should be visible and approachable not only after sign-in, but also to every first-time and returning guest who opens the public website.
+
+- The public landing page must clearly introduce her before registration: a visible, friendly message such as “Здесь вас встретит Катти — она покажет студию, всё объяснит и поможет начать”. The message should be visible without opening the chat; do not make visitors guess that a helper exists.
+- Provide an obvious “Познакомиться с Катти” / “Спросить Катти” entry point on the landing page, plus a compact persistent launcher that remains available while browsing public pages. Avoid intrusive pop-ups or forced audio.
+- Guest visitors can start a real text conversation without creating an account. Do not reduce guest mode to a scripted demo or a registration wall.
+- Offer a clear progression: guest can ask questions and explore public product information; when a task needs saving, private projects, account-only features or higher usage, explain why sign-in is needed and preserve the guest conversation where technically and legally appropriate.
+- Guest sessions use a temporary, isolated session identifier and short-lived conversation context. Do not merge guest history into another visitor's session or expose one visitor's context to another. Provide a clear way to start a fresh conversation.
+- Guest permissions are public-only: Katty can explain the platform and guide visitors through public features, but cannot read account data, private projects, personal messages, or other visitors' conversations.
+- Apply stricter guest rate and cost budgets, abuse controls, safety filters and server-side provider calls. Do not expose provider credentials or permit anonymous clients to call paid AI providers directly.
+- On sign-in, offer (do not silently force) the option to continue or save the guest conversation in the new account. Any transfer must be server-validated and bound to the authenticated user.
+- Keep the same Katty identity, character, tone and interface across guest website pages and signed-in personal cabinets. Personalize only with data the signed-in user has permitted her to use.
+- Guest mode must degrade gracefully if AI is unavailable: show a clear friendly status and useful static help/FAQ links rather than pretending that a live conversation is working.
+- Acceptance criteria: a visitor can discover Katty without registering, start and complete a genuine text chat, cannot access another visitor's or any account's private data, sees transparent AI disclosure and usage limits, and can independently opt into voice/animated mode when available.
+
+This is a product specification update only. It does not claim guest chat is implemented.
