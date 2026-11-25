@@ -1,8 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const path = require("node:path");
 
-const source = fs.readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "../app.js"), "utf8");
 
 test("production API origin is fixed and ignores browser storage", () => {
   assert.match(source, /const DEFAULT_API_BASE = "https:\/\/pwa-studio-creative-ai\.onrender\.com"/);
