@@ -242,7 +242,23 @@ const movieHistoryStyle = document.createElement("style");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
 
 
-  const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "https://pwa-studio-creative-ai.onrender.com").trim().replace(/\/+$/, "");
+  const DEFAULT_API_BASE = "https://pwa-studio-creative-ai.onrender.com";
+  const isLocalDevelopment = ["localhost", "127.0.0.1"].includes(location.hostname);
+  const getApiBase = () => {
+    // Production always uses the fixed first-party API origin. Browser storage is untrusted.
+    if (!isLocalDevelopment) return DEFAULT_API_BASE;
+    const configured = (localStorage.getItem(API_URL_KEY) || "").trim();
+    if (!configured) return DEFAULT_API_BASE;
+    try {
+      const url = new URL(configured);
+      if (url.protocol !== "http:" || url.hostname !== location.hostname ||
+          url.username || url.password || url.search || url.hash ||
+          (url.pathname !== "/" && url.pathname !== "")) return DEFAULT_API_BASE;
+      return url.origin;
+    } catch {
+      return DEFAULT_API_BASE;
+    }
+  };
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
     if (!authSession?.user || !panel) { if (panel) panel.hidden = true; return; }
@@ -260,9 +276,26 @@ const movieHistoryStyle = document.createElement("style");
   };
   const apiRequest = async (path, options = {}) => {
     const base = getApiBase();
-    if (!base) throw new Error("Сначала укажите адрес развёрнутого backend API в разделе «Настройки».");
+    if (typeof path !== "string" || !path.startsWith("/api/") || path.startsWith("//") || path.includes("\\\\")) {
+      throw new Error("Недопустимый адрес API-запроса.");
+    }
+    const target = new URL(path, base);
+    const trustedOrigin = new URL(base).origin;
+    if (target.origin !== trustedOrigin || !target.pathname.startsWith("/api/") ||
+        target.username || target.password) {
+      throw new Error("Запрос заблокирован: адрес API не входит в список доверенных.");
+    }
+    const headers = new Headers(options.headers || {});
+    if (headers.has("Authorization")) throw new Error("Заголовок авторизации задаётся только приложением.");
+    headers.set("Content-Type", "application/json");
     const token = authSession?.access_token;
-    const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(options.headers || {}) } });
+    if (token) headers.set("Authorization", "Bearer " + token);
+    const response = await fetch(target.href, {
+      ...options,
+      headers,
+      credentials: "omit",
+      redirect: "error"
+    });
     let data = {};
     try { data = await response.json(); } catch {}
     if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
@@ -1847,10 +1880,13 @@ const movieHistoryStyle = document.createElement("style");
 
   renderMovieProjects();
 
-  // Store only the backend URL in this browser; provider secrets stay server-side.
+  // Production API origin is fixed in code; only local development may use a localhost override.
   const apiUrlInput = $("#backendUrl");
   const apiStatus = $("#backendStatus");
-  if (apiUrlInput) apiUrlInput.value = getApiBase();
+  if (apiUrlInput) {
+    apiUrlInput.value = getApiBase();
+    apiUrlInput.readOnly = !isLocalDevelopment;
+  }
   const checkBackend = async () => {
     apiStatus.textContent = "Проверяем соединение…";
     try {
@@ -1861,15 +1897,24 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   $("#saveBackend").addEventListener("click", () => {
-    const value = apiUrlInput.value.trim().replace(/\/+$/, "");
-    if (value && !/^https:\/\//i.test(value) && !/^http:\/\/localhost(?::\d+)?$/i.test(value) && !/^http:\/\/127\.0\.0\.1(?::\d+)?$/i.test(value)) {
-      apiStatus.textContent = "Укажите полный адрес API с https:// (для локальной разработки допустим localhost).";
+    if (!isLocalDevelopment) {
+      apiStatus.textContent = "В production адрес API закреплён настройками приложения и не меняется из браузера.";
       return;
     }
-    localStorage.setItem(API_URL_KEY, value);
-    apiStatus.textContent = value ? "Адрес сохранён. Проверяем соединение…" : "Адрес API очищен.";
-    if (value) checkBackend();
+    const value = apiUrlInput.value.trim();
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "http:" || url.hostname !== location.hostname ||
+          url.username || url.password || url.search || url.hash ||
+          (url.pathname !== "/" && url.pathname !== "")) throw new Error();
+      localStorage.setItem(API_URL_KEY, url.origin);
+      apiStatus.textContent = "Локальный адрес сохранён. Проверяем соединение…";
+      checkBackend();
+    } catch {
+      apiStatus.textContent = "Для локальной разработки используйте только http://localhost или http://127.0.0.1 на текущем устройстве.";
+    }
   });
+  $("#saveBackend").hidden = !isLocalDevelopment;
   $("#testBackend").addEventListener("click", checkBackend);
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
