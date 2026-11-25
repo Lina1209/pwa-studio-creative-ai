@@ -300,6 +300,11 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <div><label for="messageFirstText">Первое сообщение</label><input id="messageFirstText" required maxlength="8000" placeholder="Напишите приветствие..."></div>
             <button class="primary-button" type="submit">Начать диалог</button>
           </form>
+          <section class="blocked-users-section" aria-labelledby="blockedUsersHeading">
+            <h3 id="blockedUsersHeading">Заблокированные пользователи</h3>
+            <p>Здесь можно посмотреть список блокировок и восстановить возможность переписки.</p>
+            <div id="blockedUsersList" class="blocked-users-list" aria-live="polite"><div class="admin-empty">Загрузка списка…</div></div>
+          </section>
           <div class="messages-layout">
             <div class="conversation-list-wrap"><h3>Ваши диалоги</h3><div id="conversationList" class="conversation-list" aria-live="polite"><div class="admin-empty">Загрузка диалогов…</div></div></div>
             <div class="conversation-chat">
