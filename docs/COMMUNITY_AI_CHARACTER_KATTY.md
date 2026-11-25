@@ -428,3 +428,60 @@ Use a separate, explicitly scoped Katty conversation model rather than stretchin
 - add tests for forged assistant rows, altered owner/conversation IDs, cross-account and cross-guest reads, replayed requests, deletion, expiry and account switching.
 
 This was a source-only audit and specification update. No code, migration, live database, user history, provider configuration, production service or PR merge was changed.
+
+
+## 18. Abuse, rate-limit and provider-cost audit — 2026-11-25
+
+Read-only review of `backend/app/services/ai_rate_limit_service.py`, `backend/app/services/usage_service.py`, `backend/app/core/config.py`, `backend/app/schemas.py`, migrations `0012_atomic_ai_rate_limit.sql` and `0018_durable_ai_usage_outbox.sql`, and the existing AI rate-limit tests.
+
+### 18.1 Protections already present in source
+
+- The authenticated `/api/chat` and `/api/prompts` routes call a server-side atomic Supabase RPC before a provider request.
+- The current default is 10 requests per user per endpoint in a 60-second fixed window. The database function validates its parameters and updates counters atomically.
+- Rate-limit storage errors fail closed with HTTP 503; a request is not sent to the AI provider when the limiter cannot be checked.
+- Request schemas cap chat messages at 12,000 characters and prompt ideas at 8,000 characters.
+- Server configuration caps AI output tokens at 2,048 by default (configurable within a bounded range up to 8,192).
+- AI usage journaling is designed to write a metadata-only `started` record before provider spend, then record success or unknown outcome. It does not intentionally store prompts, replies or credentials.
+- Existing tests cover the per-user limiter service and output-token configuration. These are source/unit tests, not proof of live database configuration.
+
+### 18.2 Important gaps for public guest Katty
+
+1. The existing limiter supports only `chat` and `prompts`, and its key is an authenticated Supabase user UUID plus endpoint. It cannot protect a guest session because no guest caller/session limiter exists.
+2. There is no source-verified Katty-specific budget, guest quota, per-session cooldown, per-network abuse control, global concurrency cap or daily/monthly hard spend ceiling.
+3. The 10-per-minute per-user limiter is not a complete cost ceiling: a user can continue generating requests in later windows, and request cost varies by input/context and output length.
+4. The output-token ceiling bounds a single response but does not bound total daily or monthly provider spend.
+5. The durable usage outbox migration is still a proposed migration in this repository audit; its existence in source does not prove it is applied to the live Supabase project.
+6. The reviewed limiter does not provide a guest-session identity, room-wide aggregate quota, or a kill switch specific to Katty.
+7. IP/network-derived controls are not present in the reviewed AI limiter. If introduced, they must account for shared networks and privacy; IP must not be treated as a verified person or sole enforcement signal.
+8. No live Render spend ceiling, DeepSeek account budget, Supabase migration state, or provider billing setting was inspected in this source review.
+
+### 18.3 Required layered protection before guest access
+
+Implement independent, server-enforced limits rather than relying on a single request counter:
+
+- **Per guest session:** short-window burst limit, cooldown, daily request/token budget and expiry. Use server-issued high-entropy session credentials; never trust a caller-supplied session ID by itself.
+- **Per account:** separate Katty allowance from private AI Companion and Prompt Studio quotas; apply per-minute and daily limits.
+- **Per network abuse signal:** cautious short-window throttling and anomaly detection, with shared-network false-positive handling and no identity inference.
+- **Global service:** maximum concurrent provider calls, queue bounds, overload protection and a global daily/monthly hard budget.
+- **Per request:** strict input/context size, output-token ceiling, timeout, bounded retries (prefer no automatic retry after an ambiguous provider outcome), and idempotency.
+- **Spend accounting:** reserve a conservative estimated budget before provider call; reconcile against measured token/cost data after completion; treat unknown provider outcomes as unresolved, never as zero cost.
+- **Emergency controls:** administrator kill switch for all Katty traffic, separate guest-access pause, and automatic stop when a hard budget is reached or the usage journal is unavailable.
+- **Abuse response:** progressive cooldowns and moderation review; do not permanently ban based only on an automated rate-limit or model flag.
+- **Transparency:** friendly messages for cooldown/unavailability, with no disclosure of internal thresholds that would help attackers tune bypass attempts.
+
+### 18.4 Required tests and release gates
+
+- Guest sessions cannot evade limits by changing a client-provided session ID, replaying expired credentials, or resetting the UI.
+- Account, guest, endpoint and global counters are isolated and atomically enforced under concurrent requests.
+- Repeated requests across many time windows eventually hit a daily budget; aggregate traffic hits the global budget.
+- Oversized inputs, excessive context, output-token limits, timeouts and provider retries remain bounded.
+- Duplicate idempotency keys do not trigger duplicate provider spend.
+- Limiter, usage-journal, moderation or session-store outage fails closed before provider spend.
+- Unknown provider outcomes remain visible for reconciliation and are not silently refunded or counted as free.
+- Kill switch blocks new calls immediately; already-running requests are handled and recorded safely.
+- Shared IPs do not automatically cause account-wide bans; privacy-aware network controls are tested.
+- Cost simulations cover low, typical, worst-case and burst traffic before opening guest access.
+
+**Release decision:** do not enable public guest AI traffic until guest/session limits, account separation, global hard budget, concurrency control, kill switch and failure-mode tests exist. Keep DeepSeek as the configured default; no paid fallback provider is enabled by this specification.
+
+This was a source-only audit and documentation update. No limiter code, SQL migration, live database, Render setting, DeepSeek billing setting, provider key, deployment or PR merge was changed.
