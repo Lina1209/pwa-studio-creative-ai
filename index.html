@@ -279,8 +279,8 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="notification-heading"><div><div class="eyebrow">CREATOR COMMUNITY · DISCOVER</div><h2>Сообщество авторов</h2><p>Находите участников PWA Studio и знакомьтесь с их творческими интересами. Почта и личные данные не публикуются.</p></div><button class="secondary-button" id="communityRefresh" type="button">↻ Обновить</button></div>
           <form id="communityProfileForm" class="admin-form community-profile-form">
             <h3>Моя публичная карточка</h3>
-            <label for="communityDisplayName">Отображаемое имя</label><input id="communityDisplayName" required minlength="2" maxlength="40">
-            <label for="communityUsername">Уникальный username</label><input id="communityUsername" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.]+" autocomplete="off" placeholder="например, creator_01">
+            <label for="communityDisplayName">Уникальное отображаемое имя</label><input id="communityDisplayName" required minlength="2" maxlength="40" autocomplete="nickname"><small class="helper-text">Имя должно отличаться от имён других участников.</small>
+            <label for="communityUsername">Уникальный логин</label><input id="communityUsername" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.]+" autocomplete="username" placeholder="например, lina_creator"><small class="helper-text">Логин уникален; регистр букв не учитывается.</small>
             <label for="communityBio">О себе и творческих интересах</label><textarea id="communityBio" maxlength="500" rows="3" placeholder="Расскажите, что создаёте…"></textarea>
             <div class="community-privacy-row"><label><input id="communityPublic" type="checkbox"> Публичный профиль</label><label><input id="communityListed" type="checkbox"> Показывать в каталоге</label></div>
             <button class="primary-button" type="submit">Сохранить карточку</button><p id="communityProfileFeedback" class="notification-feedback" role="status"></p>
