@@ -338,3 +338,50 @@ Admin controls should be server-authorized and audited: enable/disable Katty, pa
 8. Obtain a separate approval before applying migrations, changing production settings, deploying or enabling public guest traffic.
 
 Voice, animated avatar, public-room participation and 3D video remain later phases and must not delay or silently expand the text-only MVP.
+
+
+## 16. Authentication and role-isolation audit — 2026-11-25
+
+Read-only review of `backend/app/services/auth.py`, `backend/app/core/config.py`, `backend/app/main.py`, `backend/app/schemas.py` and `backend/tests/test_auth.py`.
+
+### 16.1 Existing behavior
+
+- The current API uses a strict Bearer-token dependency. It verifies Supabase JWT signature through the project's JWKS, accepted signing algorithms (ES256/RS256), audience `authenticated`, issuer, and required `exp/sub/iss/aud` claims.
+- Missing or invalid credentials are rejected. Existing authenticated routes derive the account UUID from the verified token; callers do not supply an arbitrary account ID to impersonate another user.
+- The current role model is effectively two roles: `admin` and `creator`. The admin dependency rejects creators with HTTP 403.
+- Admin identity prefers the configured immutable `OWNER_USER_ID` UUID. If that setting is absent, the code falls back to the token email claim compared with `OWNER_EMAIL`.
+- Tests cover owner UUID precedence, malformed owner UUID failing closed, email mismatch, case-insensitive comparison, missing Bearer token, and admin/creator guard behavior.
+- Existing `/api/chat`, profile, notification and direct-message routes require a signed-in user. There is no anonymous/guest authentication dependency or Katty-specific guest session endpoint in the reviewed routes.
+
+### 16.2 Findings and risks to resolve
+
+1. **Do not make existing authentication optional.** Changing `get_current_user` globally to accept anonymous requests would widen access across unrelated private endpoints. Guest Katty must use a separate, narrowly scoped guest-session mechanism and dedicated Katty routes.
+2. **Do not represent a guest as a creator or admin.** Guest is a separate caller scope with public-only permissions, independent budgets and no account UUID. It must never satisfy `require_admin` or access existing private routes.
+3. **Production admin configuration remains unverified.** Source supports the safer `OWNER_USER_ID` setting, but repository review cannot establish which Render environment values are currently set. Before release, verify that the immutable owner UUID is configured and that the fallback is not the only production admin control. Do not print or expose secrets during that check.
+4. **Email fallback is a transitional weakness.** When `OWNER_USER_ID` is absent, administrator identity depends on the verified token's email claim and `OWNER_EMAIL`. Keep this fallback only for compatibility; production release should use the immutable UUID and an explicit, documented recovery procedure.
+5. **No guest session security contract exists yet.** It must define high-entropy session tokens, expiry, rotation/reset, replay and rate-limit behavior, origin/CSRF protections appropriate to the chosen cookie/header design, and strict server-side ownership checks.
+6. **No implicit guest-to-account merge.** If a guest elects to save a conversation after sign-in, require a fresh authenticated action and verify ownership of the guest session on the server. Do not accept a client-provided target user ID.
+7. **Admin powers stay separate.** Guest and creator callers must not reach moderation evidence, admin settings, cost controls, or account suspension routes. Katty itself must not receive admin credentials or invoke administrative actions.
+
+### 16.3 Required Katty caller model
+
+The future Katty service should resolve one of two explicit caller contexts:
+
+- `authenticated_user`: created only from the verified Supabase JWT; includes the server-derived user UUID and ordinary creator/admin role.
+- `guest_session`: created only from a valid server-issued, unexpired guest session credential; includes an opaque session ID, expiry and public-only permission set, but no fabricated account identity.
+
+Every Katty request must be authorized against its caller context and session owner before reading conversation history or calling the provider. A guest context must be rejected by all non-Katty private routes. An authenticated admin using the public Katty chat should still receive ordinary chat permissions; admin status must not silently expose moderation records or private user data to the character.
+
+### 16.4 Acceptance tests before implementation release
+
+- Missing/invalid/expired JWT cannot access authenticated routes.
+- Creator cannot access admin routes even if the client submits `role=admin`, another user UUID, or modified profile fields.
+- Admin is resolved only from the verified immutable owner UUID in production configuration.
+- Missing, expired, rotated, replayed or guessed guest credentials cannot read another guest's conversation.
+- Guest credentials cannot access `/api/auth/me`, private projects, direct messages, notifications, reports or admin routes.
+- Authenticated user A cannot read or reset user B's Katty conversation by changing IDs.
+- Guest-to-account transfer fails unless the guest session is valid, the user is freshly authenticated, and the user explicitly confirms transfer.
+- A signed-in admin's Katty conversation does not inherit admin API privileges.
+- Authentication/session-store outage fails closed for private history and provider calls.
+
+This was a read-only source audit and specification update. No production environment values were inspected, no live Supabase state was queried, and no authentication code or route was changed.
