@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest, ProfileUpdateRequest, AssistantReplyPersistRequest)
+from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest, ProfileUpdateRequest)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
@@ -18,6 +18,7 @@ from app.services.notification_service import list_notifications, mark_notificat
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
 from app.services.diagnostics_service import inspect_supabase
+from app.services.assistant_history_service import save_assistant_reply
 from app.services.assistant_history_service import save_assistant_reply
 
 settings = get_settings()
@@ -190,12 +191,6 @@ def read_all_notifications(user: StudioUser = Depends(get_current_user)):
 
 
 
-@app.post(f"{settings.api_prefix}/assistant/history/replies", status_code=201)
-def persist_assistant_reply(payload: AssistantReplyPersistRequest, user: StudioUser = Depends(get_current_user)):
-    """Save a verified AI response; the caller cannot choose role or owner ID."""
-    return save_assistant_reply(settings, user.user_id, str(payload.conversation_id), payload.content)
-
-
 @app.get(f"{settings.api_prefix}/community/profile")
 def own_community_profile(user: StudioUser = Depends(get_current_user)):
     return get_own_profile(settings, user.user_id)
@@ -327,7 +322,15 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
             logger.exception("AI provider succeeded but durable usage outcome needs reconciliation")
         record_ai_usage(settings, user_id=user.user_id, request_id=request_id, endpoint="chat",
                         provider=settings.ai_provider, result=result)
-        return ChatResponse(reply=result.text, provider=settings.ai_provider, model=result.actual_model)
+        history_saved = True
+        if payload.conversation_id:
+            try:
+                save_assistant_reply(settings, user.user_id, str(payload.conversation_id), result.text)
+            except HTTPException:
+                history_saved = False
+                logger.exception("AI reply generated but assistant history persistence failed")
+        return ChatResponse(reply=result.text, provider=settings.ai_provider,
+                            model=result.actual_model, history_saved=history_saved)
     except AIConfigurationError as exc:
         mark_ai_usage_unknown(settings, request_id=request_id, error=exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
