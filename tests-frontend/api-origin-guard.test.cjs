@@ -31,3 +31,9 @@ test("production backend URL cannot be changed from settings", () => {
   assert.match(source, /if \(!isLocalDevelopment\) \{/);
   assert.match(source, /\$\("#saveBackend"\)\.hidden = !isLocalDevelopment/);
 });
+
+
+test("assistant-role history writes are routed through the authenticated backend", () => {
+  assert.match(source, /apiRequest\("\/api\/assistant\/history\/replies"/);
+  assert.doesNotMatch(source, /from\("assistant_messages"\)[\s\S]{0,180}role:\s*"assistant"/);
+});
