@@ -132,6 +132,45 @@ def mark_conversation_read(settings: Settings, user_id: str, thread_id: str):
     }, payload={"read_at": now})
     return {"updated": len(rows)}
 
+
+def ensure_target_not_admin(settings: Settings, target_id: str):
+    """Prevent community members from blocking the configured studio owner."""
+    target = str(UUID(target_id))
+    owner_id = (settings.owner_user_id or "").strip()
+    if owner_id and target == owner_id:
+        raise HTTPException(status_code=403, detail="The studio owner cannot be blocked.")
+
+    owner_email = (settings.owner_email or "").strip().lower()
+    if not owner_email:
+        return
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(status_code=503, detail="Administrator protection is temporarily unavailable.")
+
+    headers = {
+        "apikey": settings.supabase_service_role_key,
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+    }
+    try:
+        response = httpx.get(
+            f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{target}",
+            headers=headers,
+            timeout=12.0,
+        )
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="User not found.")
+        response.raise_for_status()
+        data = response.json()
+        account = data.get("user", data) if isinstance(data, dict) else {}
+        email = account.get("email") if isinstance(account, dict) else None
+        if isinstance(email, str) and email.strip().lower() == owner_email:
+            raise HTTPException(status_code=403, detail="The studio owner cannot be blocked.")
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Administrator protection is temporarily unavailable.") from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="Administrator protection is temporarily unavailable.") from exc
+
 def block_user(settings: Settings, blocker_id: str, blocked_id: str):
     _canonical_pair(blocker_id, blocked_id)
     rows = _request(settings, "POST", "user_blocks",
