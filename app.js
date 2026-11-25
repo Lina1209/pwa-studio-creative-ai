@@ -1084,9 +1084,10 @@ const movieHistoryStyle = document.createElement("style");
       if (!contextIsCurrent()) return;
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
       if (!contextIsCurrent()) return;
-      const { error: assistantSaveError } = await supabaseClient.from("assistant_messages")
-        .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
-      if (assistantSaveError) throw assistantSaveError;
+      await apiRequest("/api/assistant/history/replies", {
+        method: "POST",
+        body: JSON.stringify({ conversation_id: conversationId, content: result.reply })
+      });
       if (!contextIsCurrent()) return;
       renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
     } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
