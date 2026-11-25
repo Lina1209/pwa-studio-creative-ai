@@ -122,3 +122,20 @@ Reviewed on branch `fix/supabase-key-compat-2026-11-23`:
 6. Do not use direct-message notification previews as room events; notification storage is not a live chat transport.
 
 This was a read-only source review. No code route, database migration, live data, provider setting, production service, or PR merge was changed in this audit step.
+
+
+## 11. Database migration audit — community chat foundation
+
+Read-only review of migrations `0001` through `0018` on this branch, with focused inspection of `0001_initial_schema.sql`, `0004_assistant_chat_history.sql`, `0007_direct_messages.sql`, and `0011_atomic_message_rate_limit.sql`.
+
+- The migration inventory contains private one-to-one `conversation_threads` and `direct_messages`, plus per-user `message_rate_limits`. It does not contain a public-room, room-membership, community-room-message, or AI-persona-message table in the reviewed migration set.
+- Migration `0007` explicitly models one-to-one conversations, canonical user pairs and participant-only reads. Authenticated users have SELECT only; writes are intended to be server-managed. This is a useful privacy pattern, but it is not a public group chat.
+- Migration `0011` adds an atomic fixed-window rate limiter for direct messages. It is server-role-only and should not be assumed to cover room posting or Katty responses without a separate, scoped budget.
+- Migration `0004` gives authenticated users INSERT/UPDATE privileges on `assistant_messages`; its RLS policy checks that the row belongs to the user's conversation but allows the role values `user` and `assistant`. Therefore a client can potentially insert a forged assistant-role history entry into its own conversation. This does not grant access to another user's conversation, but it weakens trust in stored assistant history. Fix only together with a compatible trusted server-side persistence path; do not revoke grants in isolation.
+- The reviewed migrations do not establish a verified Supabase Realtime publication for a public community feed. Realtime configuration and live database state remain unverified; absence from these migration files is not proof that no dashboard-level publication exists.
+
+### Consequence
+
+Do not implement Katty by reusing `direct_messages` or `assistant_messages` as a public feed. The future community chat requires its own room and membership model, room-scoped message table, explicit author kind (human/system/AI persona), server-owned bot writes, moderation state, retention policy, realtime delivery configuration, and per-room/per-user abuse and cost limits. Add indexes and RLS tests for cross-room and cross-user isolation before enabling it.
+
+This step was source-only. No migrations were applied and no live Supabase project was queried or modified.
