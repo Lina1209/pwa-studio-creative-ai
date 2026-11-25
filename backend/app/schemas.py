@@ -8,12 +8,14 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1, max_length=12000)
+    conversation_id: UUID | None = None
 
 
 class ChatResponse(BaseModel):
     reply: str
     provider: str
     model: str
+    history_saved: bool = True
 
 
 class PromptRequest(BaseModel):
@@ -158,10 +160,3 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=500)
     visibility: str | None = Field(default=None, pattern=r"^(public|private)$")
     show_in_directory: bool | None = None
-
-
-class AssistantReplyPersistRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    conversation_id: UUID
-    content: str = Field(min_length=1, max_length=12000)
