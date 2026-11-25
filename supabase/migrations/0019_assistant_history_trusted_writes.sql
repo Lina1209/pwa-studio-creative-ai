@@ -7,7 +7,8 @@ drop policy if exists "Users read own assistant messages" on public.assistant_me
 drop policy if exists "Users insert own user messages" on public.assistant_messages;
 drop policy if exists "Users delete own assistant messages" on public.assistant_messages;
 
-revoke update on public.assistant_messages from anon, authenticated;
+revoke all on public.assistant_messages from anon;
+revoke update on public.assistant_messages from authenticated;
 grant select, insert, delete on public.assistant_messages to authenticated;
 grant select, insert on public.assistant_messages to service_role;
 
