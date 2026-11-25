@@ -158,3 +158,10 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=500)
     visibility: str | None = Field(default=None, pattern=r"^(public|private)$")
     show_in_directory: bool | None = None
+
+
+class AssistantReplyPersistRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: UUID
+    content: str = Field(min_length=1, max_length=12000)
