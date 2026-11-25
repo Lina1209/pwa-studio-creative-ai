@@ -544,3 +544,55 @@ If tools are ever added, require separate tests for per-tool authorization, owne
 **Release decision:** the reviewed current AI adapter has no tool/function execution and the current chat path does not retrieve private user data, which reduces the immediate impact of prompt injection. However, the existing system prompt and keyword filter are not sufficient protection for a public Katty service. Do not launch Katty until output moderation, strict server-owned message contracts, guest/account context isolation and the adversarial tests above are implemented and verified. Keep the first release tool-free.
 
 This was a read-only source audit and documentation update. No AI route, provider adapter, moderation code, authentication code, database migration, live data, provider setting, production service or PR merge was changed.
+
+
+## 20. Browser/client trust-boundary and request-routing audit — 2026-11-25
+
+Read-only review of `app.js`, `index.html`, `supabase-config.js` and `sw.js` on branch `fix/supabase-key-compat-2026-11-23`. This review covers the current browser shell and AI Companion request path; Katty's own frontend does not yet exist.
+
+### 20.1 Positive findings
+
+- The browser configuration contains the Supabase project URL and a publishable key. The file explicitly identifies this as a browser-safe publishable key; it is not the Supabase service-role key. A publishable key is expected to be public and must rely on correct RLS and server authorization.
+- The current AI Companion renders message text using `textContent`, not by inserting model/user message strings as HTML. The inspected dynamic `innerHTML` assignments use fixed markup and do not interpolate user-controlled message text.
+- The service worker limits its custom cache handling to same-origin GET requests and does not intentionally cache API POST requests. It uses versioned shell caches and removes older caches during activation.
+- The reviewed browser code does not expose the DeepSeek provider key. The AI request goes through the backend API.
+
+### 20.2 High-priority finding: configurable API origin receives the user's Bearer token
+
+The frontend reads its API base URL from localStorage key `pwa-studio-api-url` (or uses the Render URL by default). The Settings UI accepts any HTTPS URL and saves it in localStorage. The shared `apiRequest` helper then attaches the current Supabase access token as `Authorization: Bearer ...` to requests sent to that base URL.
+
+This creates a sensitive trust-boundary problem: if the saved API URL is changed to an attacker-controlled HTTPS origin, subsequent authenticated API calls can send the user's Supabase Bearer token to that origin (subject to that server's CORS response). The URL is not currently restricted to a fixed allowlist of trusted backend origins before the token is attached. A malicious or compromised script that changes this localStorage value could exploit the same path.
+
+**Required correction before Katty or wider public release:**
+- For production builds, use a fixed server/API origin from trusted build-time configuration or a strict server-controlled allowlist. Do not let an arbitrary localStorage URL receive authenticated tokens.
+- If local development overrides remain, permit only explicit localhost origins in development builds and never attach production credentials to them.
+- Validate the parsed URL's scheme, origin and path before every request; reject credentials, fragments and unexpected path prefixes.
+- Bind authorization headers only after the destination origin has passed the allowlist check. Do not allow arbitrary caller-provided `options.headers` to override or redirect authentication behavior.
+- Consider separating public unauthenticated health requests from authenticated API requests.
+- Add regression tests proving that an attacker-controlled URL, malformed URL, URL with user-info, alternate port, lookalike hostname, redirect or modified localStorage value never receives an Authorization header. Do not rely on CORS as the protection.
+
+### 20.3 Additional browser security observations
+
+1. **Supabase browser session is accessible to same-origin JavaScript.** The Supabase client is created with its normal browser configuration; the reviewed code does not configure a custom HttpOnly-cookie session. This is common for a browser SPA, but it means an XSS vulnerability could access the user's session. Keep all user-controlled content on safe DOM APIs, minimize third-party scripts, and consider a backend-for-frontend/HttpOnly-cookie architecture if the threat model warrants it.
+2. **Third-party scripts are loaded from CDNs.** The page loads Tailwind's CDN script and Supabase JS from jsDelivr. The inspected tags do not show Subresource Integrity hashes, and the inspected HTML has no Content-Security-Policy meta tag. Static-host response headers were not inspected, so a host-level CSP may exist; this source review cannot confirm it. Before release, pin dependency versions, use integrity hashes where feasible, self-host critical assets where practical, and configure a restrictive CSP at the hosting layer (including explicit script/connect origins and no unsafe inline/eval unless justified).
+3. **Fixed HTML snippets are not the same as safe rendering of future Katty content.** The current inspected `innerHTML` uses are static snippets. Keep Katty text, display names, room messages, moderation notes and retrieved content rendered with `textContent` or safe DOM construction. If rich Markdown is later supported, sanitize with a maintained allowlist sanitizer and test script/event-handler/URL payloads.
+4. **Client-side visibility is not authorization.** Hiding the admin panel, changing navigation, editing localStorage, or altering JavaScript must never grant access. Backend JWT verification and `require_admin` remain the authority for every protected route.
+5. **The AI Companion history is still browser-written.** The frontend inserts both user and assistant-role history rows directly through the Supabase client. The previously documented assistant-role forgery issue therefore remains relevant: a browser client must not be trusted to attest that an assistant response was genuinely generated. Katty messages must be persisted by a trusted backend only.
+6. **No Katty guest session or Katty chat client exists in the reviewed frontend.** The current AI Companion requires sign-in and blocks guests at the UI. This is not a guest Katty implementation and must not be repurposed by simply removing the UI gate.
+7. **Service-worker cache is a shell cache, not a security boundary.** Cached JavaScript can remain available offline until an updated worker activates; the current versioned cache strategy is helpful, but release procedures should verify activation/update behavior and ensure sensitive responses are never added to the shell cache.
+
+### 20.4 Required tests and release gates
+
+- API destination allowlist is enforced before any authenticated request; test lookalike domains, subdomains, alternate ports, redirects, malformed values and localStorage tampering.
+- A guest request never carries an account Bearer token; an authenticated request never sends that token to an untrusted origin.
+- Caller-supplied headers cannot replace authorization policy or smuggle credentials to a different destination.
+- Stored XSS payloads in user messages, AI replies, display names, project titles, reports and moderator notes render as inert text.
+- Markdown/HTML sanitization tests cover `<script>`, event handlers, `javascript:` URLs, SVG payloads and malformed markup if rich text is introduced.
+- Backend endpoints continue to reject creators/guests from admin routes even when the frontend is modified.
+- Katty guest session credentials are separate from Supabase account tokens, scoped only to Katty endpoints, short-lived and never stored in a shared/public identifier.
+- Service-worker updates do not serve stale security-sensitive application code indefinitely, and API/private responses are not cached.
+- Production CSP and CDN dependency integrity are verified from the deployed response headers/browser network panel before launch.
+
+**Release decision:** the current browser shell has one high-priority issue to resolve before relying on it for authenticated AI requests: the configurable API URL can become the destination for a Bearer token without a trusted-origin allowlist. Fix and regression-test that boundary before implementing or enabling Katty. Keep browser rendering non-executable, keep backend authorization authoritative, and persist Katty replies only through the trusted server.
+
+This was a source-only frontend audit and documentation update. No frontend code, API routing, CSP headers, CDN configuration, Supabase settings, live data, production service or PR merge was changed.
