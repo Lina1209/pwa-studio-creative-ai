@@ -451,6 +451,22 @@ const movieHistoryStyle = document.createElement("style");
   });
 
   const messagesFeedback = message => { const el = $("#messagesFeedback"); if (el) el.textContent = message; };
+  const messageProfileCache = new Map();
+  const messageProfilePending = new Map();
+  const messageDisplayName = userId => {
+    const profile = messageProfileCache.get(userId);
+    return profile?.display_name || profile?.username || ("Пользователь · " + String(userId || "").slice(0, 8) + "…");
+  };
+  const loadMessageProfile = async userId => {
+    if (!userId || messageProfileCache.has(userId)) return messageProfileCache.get(userId);
+    if (messageProfilePending.has(userId)) return messageProfilePending.get(userId);
+    const pending = apiRequest("/api/community/profiles/" + encodeURIComponent(userId))
+      .then(profile => { messageProfileCache.set(userId, profile || {}); return profile; })
+      .catch(() => { messageProfileCache.set(userId, {}); return null; })
+      .finally(() => messageProfilePending.delete(userId));
+    messageProfilePending.set(userId, pending);
+    return pending;
+  };
   const messagePartnerId = thread => thread.user_a_id === authSession?.user?.id ? thread.user_b_id : thread.user_a_id;
   const renderConversations = threads => {
     conversationsCache = Array.isArray(threads) ? threads : [];
@@ -462,9 +478,10 @@ const movieHistoryStyle = document.createElement("style");
       const button = adminNode("button","conversation-button");
       button.type = "button";
       button.setAttribute("aria-current",String(thread.id === activeMessageThreadId));
-      button.append(adminNode("b","", "Пользователь · "+partnerId.slice(0,8)+"…"));
+      button.append(adminNode("b","", messageDisplayName(partnerId)));
       button.append(adminNode("small","",thread.last_message_at ? "Последнее сообщение · "+formatAdminDate(thread.last_message_at) : "Диалог создан"));
       button.addEventListener("click",()=>openConversation(thread.id,partnerId));
+      loadMessageProfile(partnerId).then(()=>{const title=button.querySelector("b");if(title)title.textContent=messageDisplayName(partnerId);if(thread.id===activeMessageThreadId)$( "#conversationTitle" ).textContent="Диалог с "+messageDisplayName(partnerId);});
       list.append(button);
     });
   };
@@ -537,7 +554,7 @@ const movieHistoryStyle = document.createElement("style");
   };
   const openConversation = (threadId,partnerId) => {
     activeMessageThreadId=threadId;activeMessagePartnerId=partnerId;
-    $("#conversationTitle").textContent="Диалог с пользователем "+partnerId;
+    $("#conversationTitle").textContent="Диалог с "+messageDisplayName(partnerId);
     $("#directMessageForm").hidden=false;
     const blockButton=$("#blockConversationUser");if(blockButton){blockButton.hidden=false;blockButton.textContent="Заблокировать";blockButton.disabled=false;}
     renderConversations(conversationsCache);
@@ -603,7 +620,8 @@ const movieHistoryStyle = document.createElement("style");
       rows.forEach(row=>{
         const item=adminNode("div","blocked-user-item");
         const choice=document.createElement("input");choice.type="checkbox";choice.setAttribute("aria-label","Выбрать пользователя "+String(row.blocked_id||"").slice(0,8));
-        const label=adminNode("span","","Пользователь · "+String(row.blocked_id||"").slice(0,8)+"…");
+        const label=adminNode("span","",messageDisplayName(row.blocked_id));
+        loadMessageProfile(row.blocked_id).then(()=>{if(item.isConnected)label.textContent=messageDisplayName(row.blocked_id);});
         const button=adminNode("button","secondary-button","Разблокировать");button.type="button";
         choice.addEventListener("change",()=>{if(choice.checked)selectedIds.add(row.blocked_id);else selectedIds.delete(row.blocked_id);updateSelection();});
         button.addEventListener("click",async()=>{
@@ -653,7 +671,8 @@ const movieHistoryStyle = document.createElement("style");
       const sent=await apiRequest("/api/conversations/"+encodeURIComponent(recipient)+"/messages",{method:"POST",body:JSON.stringify({body})});
       if(version!==authContextVersion||authSession?.user?.id!==userId)return;
       form.reset();activeMessageThreadId=sent.thread_id;activeMessagePartnerId=recipient;
-      $("#conversationTitle").textContent="Диалог с пользователем "+recipient;
+      await loadMessageProfile(recipient);
+      $("#conversationTitle").textContent="Диалог с "+messageDisplayName(recipient);
       $("#directMessageForm").hidden=false;
       await loadConversations();await loadConversationMessages(activeMessageThreadId);
       messagesFeedback("Первое сообщение отправлено.");
