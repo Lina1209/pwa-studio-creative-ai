@@ -34,6 +34,8 @@ test("production backend URL cannot be changed from settings", () => {
 
 
 test("assistant-role history writes are routed through the authenticated backend", () => {
-  assert.match(source, /apiRequest\("\/api\/assistant\/history\/replies"/);
-  assert.doesNotMatch(source, /from\("assistant_messages"\)[\s\S]{0,180}role:\s*"assistant"/);
+  assert.match(source, /apiRequest\("\/api\/chat"/);
+  assert.match(source, /conversation_id:\s*conversationId/);
+  assert.match(source, /history_saved === false/);
+  assert.doesNotMatch(source, /insert\(\{\s*conversation_id:\s*conversationId,\s*user_id:\s*requestUserId,\s*role:\s*"assistant"/);
 });
