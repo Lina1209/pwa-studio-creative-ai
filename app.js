@@ -95,6 +95,8 @@
       $("#accountLogin").hidden = false; $("#accountLogout").hidden = true;
       const guestNav = $("#guestSpaceNav"); if (guestNav) guestNav.hidden = false;
       const panel = $("#adminPanel"); if (panel) panel.hidden = true;
+      const movieFeedback = $("#movieFeedback");
+      if (movieFeedback) movieFeedback.textContent = "✓ Гостевые черновики сохраняются только в этом браузере. Синхронизация с Supabase отключена.";
       const topAvatar = $(".top-avatar");
       if (topAvatar) topAvatar.textContent = "L";
     }
@@ -1050,12 +1052,13 @@ const movieHistoryStyle = document.createElement("style");
     catch (error) { console.error("Movie deletion queue failed:", error); return false; }
   };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
-  const movieToCloudRow = project => {
+  const movieToCloudRow = (project, ownerId = authSession?.user?.id) => {
+    if (!ownerId) throw new Error("Облачное сохранение недоступно гостю.");
     if (!isUuid(project.id)) project.id = movieId();
     const snapshot = { ...project, cloudSchemaVersion: 1 };
     return {
       id: project.id,
-      owner_id: authSession.user.id,
+      owner_id: ownerId,
       title: project.name || "Без названия",
       description: project.idea || "",
       project_type: "movie",
@@ -1081,10 +1084,12 @@ const movieHistoryStyle = document.createElement("style");
     };
   };
   const scheduleMovieCloudSync = () => {
-    if (!authSession?.user || !supabaseClient) return;
+    const userId = authSession?.user?.id;
+    if (!userId || !supabaseClient) return;
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
-      if (!authSession?.user) return;
+      // Never let a queued sync from one account run after switching to guest or another user.
+      if (authSession?.user?.id !== userId) return;
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
@@ -1096,9 +1101,10 @@ const movieHistoryStyle = document.createElement("style");
           writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
         }
         const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
-        const rows = localProjects.map(movieToCloudRow);
+        const rows = localProjects.map(project => movieToCloudRow(project, userId));
         // Persist any UUID normalization before sending rows to Supabase.
-        localStorage.setItem(movieStorageKey(), JSON.stringify(localProjects));
+        localStorage.setItem("pwa-studio-movie-projects:" + userId, JSON.stringify(localProjects));
+        if (authSession?.user?.id !== userId) return;
         if (rows.length) {
           const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
           if (error) throw error;
