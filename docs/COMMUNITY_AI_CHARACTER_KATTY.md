@@ -158,3 +158,19 @@ Product requirement confirmed: Katty should be visible and approachable not only
 - Acceptance criteria: a visitor can discover Katty without registering, start and complete a genuine text chat, cannot access another visitor's or any account's private data, sees transparent AI disclosure and usage limits, and can independently opt into voice/animated mode when available.
 
 This is a product specification update only. It does not claim guest chat is implemented.
+
+
+## 13. Dedicated Katty item in the sidebar navigation
+
+Product requirement confirmed: Katty must have her own clearly visible entry in the main left sidebar, in addition to the floating/persistent chat launcher and the welcome section on the public landing page.
+
+- Add a dedicated navigation item named **«Катти»** (optionally with a small friendly character/avatar icon) rather than hiding her under Settings, Guide, or AI Companion.
+- The item opens the full Katty conversation experience: text chat by default, with explicit controls to switch to voice or animated on-screen character mode when those capabilities are available.
+- Keep the item available to guests on public pages and to signed-in users in their cabinets. For guests, opening it starts or resumes only that visitor's isolated temporary guest session; it must not require registration just to begin a conversation.
+- On small screens, include the same destination in the mobile navigation/drawer and ensure the label remains understandable; do not rely on an icon alone.
+- The sidebar item, landing-page introduction, and floating launcher must open the same conversation experience and share the same session safely, rather than creating disconnected duplicate chats.
+- Show a subtle availability state (for example, ready / temporarily unavailable) and a visible AI-persona label. Do not show a misleading online/live indicator if the service is not actually available.
+- Preserve existing navigation and avoid crowding: the Katty item should be visually distinct but not overpower the studio tools.
+- Acceptance criteria: a guest and an authenticated user can find «Катти» directly in the sidebar/navigation, open the same appropriate chat experience, and return to it without losing the active session unexpectedly.
+
+This is a navigation and product-specification update only. It does not claim the sidebar item or chat is implemented.
