@@ -1084,9 +1084,9 @@ const movieHistoryStyle = document.createElement("style");
       if (!contextIsCurrent()) return;
       const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value, conversation_id: conversationId }) });
       if (!contextIsCurrent()) return;
-      if (result.history_saved === false) setAssistantStatus("Ответ получен, но не удалось сохранить его в истории.");
       if (!contextIsCurrent()) return;
       renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
+      if (result.history_saved === false) setAssistantStatus("Ответ получен, но не удалось сохранить его в истории.");
     } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
     finally { button.disabled = false; input.disabled = false; input.focus(); }
   });
