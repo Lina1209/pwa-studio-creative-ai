@@ -114,11 +114,13 @@ def read_all_notifications(user: StudioUser = Depends(get_current_user)):
 
 @app.get(f"{settings.api_prefix}/community/profile")
 def own_community_profile(user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return get_own_profile(settings, user.user_id)
 
 
 @app.patch(f"{settings.api_prefix}/community/profile")
 def update_community_profile(payload: ProfileUpdateRequest, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     if not changes:
         raise HTTPException(status_code=400, detail="No profile changes were supplied.")
@@ -133,16 +135,19 @@ def community_user_search(q: str, user: StudioUser = Depends(get_current_user)):
 
 @app.get(f"{settings.api_prefix}/community/profiles/{{profile_user_id}}")
 def community_public_profile(profile_user_id: str, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return get_public_profile(settings, profile_user_id, user.user_id)
 
 
 @app.get(f"{settings.api_prefix}/conversations")
 def conversations(user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return list_conversations(settings, user.user_id)
 
 
 @app.get(f"{settings.api_prefix}/conversations/{{thread_id}}/messages")
 def conversation_messages(thread_id: str, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return list_messages(settings, user.user_id, thread_id)
 
 
@@ -163,6 +168,7 @@ def create_direct_message(recipient_id: str, payload: DirectMessageCreateRequest
 
 @app.post(f"{settings.api_prefix}/conversations/{{thread_id}}/read")
 def read_conversation(thread_id: str, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return mark_conversation_read(settings, user.user_id, thread_id)
 
 
