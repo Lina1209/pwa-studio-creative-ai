@@ -100,3 +100,25 @@
 - голос/микрофон включаются только действием пользователя;
 - отказ любого AI-провайдера безопасно обрабатывается;
 - тесты из этапов A–B проходят на изолированном тестовом окружении.
+
+
+## 10. Baseline source audit — 2026-11-25
+
+Reviewed on branch `fix/supabase-key-compat-2026-11-23`:
+- `backend/app/main.py`: authenticated `/api/chat` exists for the signed-in user's AI Companion; it checks suspension, content safety, per-user AI rate limits, writes durable usage status, and calls the configured provider. It accepts one message (up to 12,000 characters) and does not accept a room/thread identifier or public-room context.
+- The same file exposes direct-message routes under `/api/conversations` and `/api/messages`; these are private one-to-one conversations, not a public community room.
+- `backend/app/services/messaging_service.py`: direct-message storage checks participant membership, bilateral blocks and an atomic per-user send limit. It is not suitable as a public room feed or as a way to deliver a bot response to all room members.
+- `backend/app/schemas.py`: chat and direct-message request models exist, but there is no public-room message/event schema in the reviewed file.
+- `backend/app/services/notification_service.py`: owner-scoped notification reads and updates exist; this is not a real-time room event transport.
+- Existing direct-message body limit is 8,000 characters; AI Companion request limit is 12,000 characters. Neither is a Katty-specific budget.
+
+### Findings and implementation decision
+
+1. A safe, existing authenticated AI backend can be reused as a starting point, but the current `/api/chat` endpoint is a private one-message AI Companion endpoint, not a community bot endpoint.
+2. The reviewed routes do not establish a public multi-user room, room membership/visibility policy, public message feed, or real-time event delivery. Do not insert Katty into direct messages or infer a public-room implementation from those routes.
+3. Before text-mode Katty, define and test the community room model and its membership/visibility rules, then add a dedicated room-scoped bot endpoint. It must fetch only messages visible in that room and must verify membership server-side.
+4. Bot replies need an explicit sender identity/type (AI persona), idempotency, cooldown, per-room and per-user limits, and moderation. They must not be forgeable as ordinary user messages.
+5. Existing AI rate limits and usage journaling are useful foundations, but a separate Katty budget/endpoint label and abuse controls are needed so community traffic cannot exhaust the user's private AI Companion allowance.
+6. Do not use direct-message notification previews as room events; notification storage is not a live chat transport.
+
+This was a read-only source review. No code route, database migration, live data, provider setting, production service, or PR merge was changed in this audit step.
