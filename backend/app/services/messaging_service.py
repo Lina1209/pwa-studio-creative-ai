@@ -133,12 +133,15 @@ def mark_conversation_read(settings: Settings, user_id: str, thread_id: str):
     return {"updated": len(rows)}
 
 
-def ensure_target_not_admin(settings: Settings, target_id: str):
-    """Prevent community members from blocking the configured studio owner."""
-    target = str(UUID(target_id))
+def ensure_target_not_owner(settings: Settings, target_id: str):
+    """Prevent moderation and community actions from targeting the configured studio owner."""
+    try:
+        target = str(UUID(target_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="A valid user ID is required.") from exc
     owner_id = (settings.owner_user_id or "").strip()
-    if owner_id and target == owner_id:
-        raise HTTPException(status_code=403, detail="The studio owner cannot be blocked.")
+    if owner_id and target.lower() == owner_id.lower():
+        raise HTTPException(status_code=403, detail="The studio owner account is protected.")
 
     owner_email = (settings.owner_email or "").strip().lower()
     if not owner_email:
@@ -163,7 +166,7 @@ def ensure_target_not_admin(settings: Settings, target_id: str):
         account = data.get("user", data) if isinstance(data, dict) else {}
         email = account.get("email") if isinstance(account, dict) else None
         if isinstance(email, str) and email.strip().lower() == owner_email:
-            raise HTTPException(status_code=403, detail="The studio owner cannot be blocked.")
+            raise HTTPException(status_code=403, detail="The studio owner account is protected.")
     except HTTPException:
         raise
     except httpx.HTTPError as exc:
