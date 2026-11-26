@@ -181,22 +181,26 @@ def update_direct_message(message_id: str, payload: DirectMessageEditRequest,
 
 @app.delete(f"{settings.api_prefix}/messages/{{message_id}}")
 def remove_direct_message(message_id: str, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return delete_message_for_self(settings, user.user_id, message_id)
 
 
 @app.get(f"{settings.api_prefix}/blocks")
 def blocked_users(user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return list_blocked_users(settings, user.user_id)
 
 
 @app.post(f"{settings.api_prefix}/blocks", status_code=201)
 def create_user_block(payload: UserBlockRequest, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     ensure_target_not_admin(settings, payload.user_id)
     return block_user(settings, user.user_id, payload.user_id)
 
 
 @app.delete(f"{settings.api_prefix}/blocks")
 def remove_user_block(payload: UserBlockRequest, user: StudioUser = Depends(get_current_user)):
+    ensure_user_not_suspended(settings, user.user_id, "community")
     return unblock_user(settings, user.user_id, payload.user_id)
 
 
