@@ -1607,6 +1607,9 @@ const movieHistoryStyle = document.createElement("style");
     if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
     const notice=$("#guestExpiryNotice");
     if(notice){notice.hidden=sessionStorage.getItem("pwa-studio-guest-expired-notice")!=="1";if(!notice.hidden)sessionStorage.removeItem("pwa-studio-guest-expired-notice");}
+    const warning=$("#guestExpiryWarning");
+    const hasExpiring=projects.some(project=>{const left=Date.parse(project.guestExpiresAt)-Date.now();return left>0&&left<=60*60*1000;});
+    if(warning)warning.hidden=!hasExpiring;
     list.replaceChildren();
     if(!projects.length){
       const empty=document.createElement("div");empty.className="movie-empty";
@@ -1623,12 +1626,66 @@ const movieHistoryStyle = document.createElement("style");
       head.append(number,title);
       const meta=document.createElement("p");meta.textContent=[project.genre||"Жанр не указан",(project.duration||5)+" мин",project.frame||"16:9",movieProgress(project)].join(" · ");
       const expiry=document.createElement("div");expiry.className="guest-project-expiry";expiry.textContent="Осталось: "+formatGuestRemaining(project.guestExpiresAt);
+      const remaining=Date.parse(project.guestExpiresAt)-Date.now();
+      if(remaining>0&&remaining<=60*60*1000){expiry.textContent+=" · Скоро удаление — скачайте копию";expiry.setAttribute("role","alert");}
       const actions=document.createElement("div");actions.className="guest-project-actions";
       const open=document.createElement("button");open.type="button";open.className="primary-button";open.textContent="Продолжить фильм";open.addEventListener("click",()=>{activeMovieId=project.id;editingMovieId=project.id;navigate("movie");const next=movieStages.findIndex(stage=>!(project.completedSteps||[]).includes(stage.key));if((project.completedSteps||[]).length===4)openMovieOverview(project.id);else openMovieStage(project.id,next<0?0:next);});
       const download=document.createElement("button");download.type="button";download.className="secondary-button";download.textContent="⇩ Скачать проект";download.addEventListener("click",()=>downloadGuestProject(project));
       actions.append(open,download);card.append(head,meta,expiry,actions);list.append(card);
     });
   };
+  // Import is deliberately guest-only: imported backups never enter a signed-in account.
+  const guestActions=$("#guestExportAll")?.parentElement;
+  if(guestActions&&!$("#guestImportButton")){
+    const importButton=document.createElement("button");
+    importButton.type="button";importButton.id="guestImportButton";importButton.className="secondary-button";importButton.textContent="⇧ Импорт JSON-копии";
+    const importInput=document.createElement("input");
+    importInput.type="file";importInput.accept=".json,application/json";importInput.hidden=true;importInput.id="guestImportInput";
+    importButton.addEventListener("click",()=>{
+      if(authSession?.user){window.alert("Импорт гостевых копий доступен только без входа в аккаунт. Выйдите из аккаунта и повторите попытку.");return;}
+      importInput.click();
+    });
+    importInput.addEventListener("change",async()=>{
+      const file=importInput.files?.[0];importInput.value="";
+      if(!file)return;
+      if(authSession?.user){window.alert("Нельзя импортировать гостевой проект в аккаунт.");return;}
+      if(file.size>5*1024*1024){window.alert("Файл слишком большой. Максимальный размер JSON-копии — 5 МБ.");return;}
+      try{
+        const data=JSON.parse(await file.text());
+        const imported=Array.isArray(data?.projects)?data.projects:(data?.project?[data.project]:[]);
+        if(!["PWA Studio guest project","PWA Studio guest workspace"].includes(data?.format)||!imported.length)throw new Error("Это не резервная копия PWA Studio.");
+        const valid=imported.filter(item=>item&&typeof item==="object"&&!Array.isArray(item));
+        if(!valid.length)throw new Error("В файле нет проектов для импорта.");
+        const current=movieRead();
+        const now=new Date().toISOString();
+        const used=new Set(current.map(item=>item.id));
+        const restored=valid.map(item=>{
+          const copy={...item};
+          copy.id=movieId();
+          while(used.has(copy.id))copy.id=movieId();
+          used.add(copy.id);
+          copy.name=String(copy.name||"Импортированный фильм").slice(0,160);
+          copy.idea=String(copy.idea||copy.story||"").slice(0,20000);
+          copy.story=String(copy.story||copy.idea||"").slice(0,30000);
+          copy.storyboard=String(copy.storyboard||"").slice(0,30000);
+          copy.characters=String(copy.characters||"").slice(0,30000);
+          copy.voices=String(copy.voices||"").slice(0,30000);
+          copy.edit=String(copy.edit||"").slice(0,30000);
+          copy.completedSteps=Array.isArray(copy.completedSteps)?copy.completedSteps.filter(key=>movieStages.some(stage=>stage.key===key)):[];
+          copy.versions=Array.isArray(copy.versions)?copy.versions.slice(0,20):[];
+          copy.createdAt=now;copy.updatedAt=now;
+          copy.guestExpiresAt=new Date(Date.now()+24*60*60*1000).toISOString();
+          copy.workflowStep=Math.max(0,Math.min(3,Number(copy.workflowStep)||0));
+          return copy;
+        });
+        if(!movieWrite([...restored,...current]))throw new Error("Не удалось сохранить импорт. Проверьте свободное место в браузере.");
+        activeMovieId=restored[0].id;
+        renderGuestSpace();renderMovieProjects();
+        window.alert("Импортировано проектов: "+restored.length+". Они будут храниться в этом браузере ещё 24 часа.");
+      }catch(error){window.alert("Не удалось импортировать файл: "+(error.message||"проверьте JSON-копию."));}
+    });
+    guestActions.append(importButton,importInput);
+  }
   $("#guestCreateMovie")?.addEventListener("click",()=>navigate("movie"));
   $("#guestExportAll")?.addEventListener("click",()=>{
     const projects=movieRead();
@@ -1637,7 +1694,18 @@ const movieHistoryStyle = document.createElement("style");
     const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   renderGuestSpace();
-  setInterval(()=>{if(!authSession?.user && !$("#view-guestspace")?.hidden)renderGuestSpace();},60000);
+  // Re-check expiry on a timer and whenever the tab becomes active again.
+  const refreshGuestExpiry=()=>{
+    if(authSession?.user)return;
+    const before=localStorage.getItem(movieStorageKey());
+    const active=movieRead();
+    const after=localStorage.getItem(movieStorageKey());
+    if(before!==after||!$("#view-guestspace")?.hidden)renderGuestSpace();
+  };
+  setInterval(refreshGuestExpiry,60000);
+  window.addEventListener("focus",refreshGuestExpiry);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshGuestExpiry();});
+  window.addEventListener("pageshow",refreshGuestExpiry);
 
   renderMovieProjects();
 
