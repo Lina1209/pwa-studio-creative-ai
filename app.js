@@ -1442,6 +1442,20 @@ const movieHistoryStyle = document.createElement("style");
       const textarea=document.createElement("textarea"); textarea.rows=(key==="story"||key==="storyboard")?7:6; textarea.maxLength=30000; textarea.placeholder=placeholder; textarea.style.cssText="display:block;width:100%;min-height:150px;padding:13px;border:1px solid rgba(166,154,187,.35);border-radius:9px;background:#0f0e1d;color:#eee9fa;font:inherit;font-size:14px;line-height:1.55;resize:vertical;visibility:visible;opacity:1;";
       textarea.value=project[key]||(key==="story"?project.idea||"":""); inputs[key]=textarea; wrap.append(label,textarea); form.append(wrap);
     });
+    let showTitlesControl=null;
+    if(stage.key==="edit"){
+      const titlesWrap=document.createElement("label");
+      titlesWrap.className="movie-stage-field";
+      titlesWrap.style.cssText="display:flex;align-items:center;gap:12px;padding:14px;border:1px solid rgba(166,154,187,.22);border-radius:12px;background:rgba(17,16,32,.72);color:#e5def5;";
+      showTitlesControl=document.createElement("input");
+      showTitlesControl.type="checkbox";
+      showTitlesControl.checked=project.showTitles!==false;
+      showTitlesControl.style.cssText="width:20px;height:20px;accent-color:#a98aff;flex:0 0 auto;";
+      const titlesLabel=document.createElement("span");
+      titlesLabel.textContent="Показывать титры (вступительные, имена персонажей и заключительные)";
+      titlesWrap.append(showTitlesControl,titlesLabel);
+      form.append(titlesWrap);
+    }
     const aiTools=document.createElement("div"); aiTools.className="movie-stage-ai-tools";
     aiTools.style.cssText="display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;width:100%;";
     let aiStatus=null;
@@ -1512,7 +1526,8 @@ const movieHistoryStyle = document.createElement("style");
             "Ты — режиссёр монтажа и супервайзер постпроизводства PWA Studio.",
             "Составь подробный план монтажа и будущего экспорта фильма «"+title+"» по предоставленным материалам.",
             "Сохраняй сюжет, порядок событий, имена и визуальные решения. Не добавляй новые сцены, если их нет в сценарии; допустимы только технические предложения, явно помеченные как предложения.",
-            "Структура: 1) монтажная концепция и ориентировочный хронометраж; 2) последовательность сцен с длительностью, ключевыми кадрами и склейками; 3) темп и ритм; 4) цветокоррекция и визуальная непрерывность; 5) размещение диалогов, музыки и эффектов с учётом плана озвучки; 6) титры; 7) параметры будущего экспорта и список контроля качества.",
+            "Структура: 1) монтажная концепция и ориентировочный хронометраж; 2) последовательность сцен с длительностью, ключевыми кадрами и склейками; 3) темп и ритм; 4) цветокоррекция и визуальная непрерывность; 5) размещение диалогов, музыки и эффектов с учётом плана озвучки; 6) титры только согласно настройке пользователя; 7) параметры будущего экспорта и список контроля качества.",
+            "Настройка титров: "+(showTitlesControl?.checked?"ТИТРЫ ВКЛЮЧЕНЫ — предложи уместные вступительные, имена персонажей и заключительные титры.":"ТИТРЫ ОТКЛЮЧЕНЫ — не добавляй никаких титров, надписей, имён персонажей или заключительных заставок; оставь только изображение и звук."),
             "Учитывай настройки проекта: длительность "+String(latest.duration||5)+" минут, кадр "+String(latest.frame||"16:9")+". Предлагай Full HD и 24 кадра/с только как параметры будущего экспорта, не заявляй, что рендер уже выполнен.",
             "Пиши по-русски, практично и по сценам.",
             "\nСЦЕНАРИЙ:\n"+story,
@@ -1566,6 +1581,7 @@ const movieHistoryStyle = document.createElement("style");
         if(index<0){draftStatus.textContent="Не удалось найти этот фильм. Вернитесь к проекту и откройте этап снова.";return;}
         const current=latest[index]; addMovieVersion(current);
         stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+        if(stage.key==="edit"&&showTitlesControl)current.showTitles=showTitlesControl.checked;
         if(stage.key==="story" && current.story) current.idea=current.story;
         current.updatedAt=new Date().toISOString();
         if(!movieWrite(latest)){draftStatus.textContent="Сохранение не удалось. Проверьте сообщение вверху страницы.";return;}
@@ -1586,6 +1602,7 @@ const movieHistoryStyle = document.createElement("style");
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
       const current=latest[index]; addMovieVersion(current);
       stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+      if(stage.key==="edit"&&showTitlesControl)current.showTitles=showTitlesControl.checked;
       current.completedSteps=(Array.isArray(current.completedSteps)?current.completedSteps:[]).filter(key=>movieStages.findIndex(item=>item.key===key)<=stageIndex);
       if(!current.completedSteps.includes(stage.key))current.completedSteps.push(stage.key);
       current.workflowStep=Math.min(stageIndex+1,4); current.updatedAt=new Date().toISOString();
