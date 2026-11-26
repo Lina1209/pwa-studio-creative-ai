@@ -1046,10 +1046,10 @@ const movieHistoryStyle = document.createElement("style");
       const conversationId = activeAssistantConversationId;
       const { data: previousMessages, error: historyError } = await supabaseClient.from("assistant_messages")
         .select("role,content").eq("conversation_id", conversationId)
-        .eq("user_id", requestUserId).order("created_at", { ascending: true }).limit(40);
+        .eq("user_id", requestUserId).order("created_at", { ascending: false }).limit(20);
       if (historyError) throw historyError;
       if (!contextIsCurrent()) return;
-      const chatHistory = (previousMessages || []).slice(-20)
+      const chatHistory = (previousMessages || []).reverse()
         .filter(message => ["user", "assistant"].includes(message.role) && typeof message.content === "string")
         .map(message => ({ role: message.role, content: message.content.slice(0, 12000) }));
       const { error: userSaveError } = await supabaseClient.from("assistant_messages")
