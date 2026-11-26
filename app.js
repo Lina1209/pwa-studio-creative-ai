@@ -1635,19 +1635,17 @@ const movieHistoryStyle = document.createElement("style");
       actions.append(open,download);card.append(head,meta,expiry,actions);list.append(card);
     });
   };
-  // Import is deliberately guest-only: imported backups never enter a signed-in account.
-  const guestActions=$("#guestExportAll")?.parentElement;
-  if(guestActions&&!$("#guestImportButton")){
-    const importButton=document.createElement("button");
-    importButton.type="button";importButton.id="guestImportButton";importButton.className="secondary-button";importButton.textContent="⇧ Импорт JSON-копии";
-    const importInput=document.createElement("input");
-    importInput.type="file";importInput.accept=".json,application/json";importInput.hidden=true;importInput.id="guestImportInput";
-    importButton.addEventListener("click",()=>{
+  // Import controls are static in index.html so they remain visible even if dynamic rendering changes.
+  const guestImportButton=$("#guestImportButton");
+  const guestImportInput=$("#guestImportInput");
+  if(guestImportButton&&guestImportInput&&!guestImportButton.dataset.bound){
+    guestImportButton.dataset.bound="true";
+    guestImportButton.addEventListener("click",()=>{
       if(authSession?.user){window.alert("Импорт гостевых копий доступен только без входа в аккаунт. Выйдите из аккаунта и повторите попытку.");return;}
-      importInput.click();
+      guestImportInput.click();
     });
-    importInput.addEventListener("change",async()=>{
-      const file=importInput.files?.[0];importInput.value="";
+    guestImportInput.addEventListener("change",async()=>{
+      const file=guestImportInput.files?.[0];guestImportInput.value="";
       if(!file)return;
       if(authSession?.user){window.alert("Нельзя импортировать гостевой проект в аккаунт.");return;}
       if(file.size>5*1024*1024){window.alert("Файл слишком большой. Максимальный размер JSON-копии — 5 МБ.");return;}
@@ -1685,7 +1683,6 @@ const movieHistoryStyle = document.createElement("style");
         window.alert("Импортировано проектов: "+restored.length+". Они будут храниться в этом браузере ещё 24 часа.");
       }catch(error){window.alert("Не удалось импортировать файл: "+(error.message||"проверьте JSON-копию."));}
     });
-    guestActions.append(importButton,importInput);
   }
   $("#guestCreateMovie")?.addEventListener("click",()=>navigate("movie"));
   $("#guestExportAll")?.addEventListener("click",()=>{
