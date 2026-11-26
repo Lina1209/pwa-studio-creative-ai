@@ -911,13 +911,52 @@ const movieHistoryStyle = document.createElement("style");
   const assistantMessages = $("#assistantMessages");
   const assistantStatus = $("#assistantHistoryStatus");
   const setAssistantStatus = message => { if (assistantStatus) assistantStatus.textContent = message || ""; };
+  const copyAssistantText = async (content, button) => {
+    try {
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(content);
+      } else {
+        const area = document.createElement("textarea");
+        area.value = content; area.setAttribute("readonly", "");
+        area.style.position = "fixed"; area.style.opacity = "0";
+        document.body.appendChild(area); area.select();
+        const copied = document.execCommand("copy"); area.remove();
+        if (!copied) throw new Error("copy unavailable");
+      }
+      const previous = button.textContent;
+      button.textContent = "Скопировано ✓";
+      setTimeout(() => { button.textContent = previous; }, 1800);
+    } catch {
+      setAssistantStatus("Не удалось скопировать автоматически. Выделите текст ответа и скопируйте вручную.");
+    }
+  };
   const renderAssistantMessage = (role, content) => {
     const bubble = document.createElement("div");
     bubble.className = "helper-text assistant-message " + (role === "user" ? "user-message" : "ai-message");
-    bubble.textContent = (role === "user" ? "Вы: " : "Studio AI: ") + content;
+    const text = document.createElement("div");
+    text.className = "assistant-message-content";
+    text.textContent = (role === "user" ? "Вы: " : "Studio AI: ") + content;
+    bubble.appendChild(text);
+    if (role !== "user") {
+      const copy = document.createElement("button");
+      copy.type = "button"; copy.className = "secondary-button assistant-copy-button";
+      copy.textContent = "⧉ Копировать";
+      copy.addEventListener("click", () => copyAssistantText(content, copy));
+      bubble.appendChild(copy);
+    }
     assistantMessages.appendChild(bubble);
+    const welcome = document.querySelector(".assistant-welcome");
+    if (welcome) welcome.hidden = true;
+    const suggestions = document.querySelector(".assistant-panel .suggestion-row");
+    if (suggestions) suggestions.hidden = true;
   };
-  const clearAssistantMessages = () => { if (assistantMessages) assistantMessages.replaceChildren(); };
+  const clearAssistantMessages = () => {
+    if (assistantMessages) assistantMessages.replaceChildren();
+    const welcome = document.querySelector(".assistant-welcome");
+    if (welcome) welcome.hidden = false;
+    const suggestions = document.querySelector(".assistant-panel .suggestion-row");
+    if (suggestions) suggestions.hidden = false;
+  };
   const loadAssistantMessages = async conversationId => {
     if (!supabaseClient || !authSession?.user || !conversationId) return;
     const requestUserId = authSession.user.id;
@@ -1005,6 +1044,14 @@ const movieHistoryStyle = document.createElement("style");
       if (!activeAssistantConversationId) await startAssistantConversation();
       if (!contextIsCurrent()) return;
       const conversationId = activeAssistantConversationId;
+      const { data: previousMessages, error: historyError } = await supabaseClient.from("assistant_messages")
+        .select("role,content").eq("conversation_id", conversationId)
+        .eq("user_id", requestUserId).order("created_at", { ascending: true }).limit(40);
+      if (historyError) throw historyError;
+      if (!contextIsCurrent()) return;
+      const chatHistory = (previousMessages || []).slice(-20)
+        .filter(message => ["user", "assistant"].includes(message.role) && typeof message.content === "string")
+        .map(message => ({ role: message.role, content: message.content.slice(0, 12000) }));
       const { error: userSaveError } = await supabaseClient.from("assistant_messages")
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "user", content: value });
       if (userSaveError) throw userSaveError;
@@ -1018,7 +1065,7 @@ const movieHistoryStyle = document.createElement("style");
           .update({ title: value.slice(0, 72) }).eq("id", conversationId).eq("user_id", requestUserId);
       }
       if (!contextIsCurrent()) return;
-      const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value }) });
+      const result = await apiRequest("/api/chat", { method: "POST", body: JSON.stringify({ message: value, history: chatHistory }) });
       if (!contextIsCurrent()) return;
       const { error: assistantSaveError } = await supabaseClient.from("assistant_messages")
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
