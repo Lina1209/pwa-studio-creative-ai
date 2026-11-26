@@ -263,6 +263,50 @@ const movieHistoryStyle = document.createElement("style");
     return data;
   };
 
+  // Shared bridge for Audio → Story. Uses the existing authenticated AI endpoint and movie storage.
+  window.PWAStudioAudioBridge = {
+    async generate({ transcript, outputType, language, sourceKind, fileName }) {
+      const clean = String(transcript || "").trim();
+      if (!clean) throw new Error("Добавьте распознанный текст или описание аудио.");
+      const labels = { movie:"сценарий короткометражного фильма с названием, персонажами, сценами, диалогами и финалом", story:"цельный художественный рассказ с названием, развитием и завершённой концовкой", lyrics:"оригинальный текст песни: куплеты, припев и при необходимости бридж" };
+      const prompt = [
+        "Создай творческий материал для PWA Studio на основе материала пользователя.",
+        "Тип исходника: " + (sourceKind || "аудиозапись") + ".",
+        "Имя аудиофайла (только справочно, содержимое файла не передавалось): " + (fileName || "не указано") + ".",
+        "Язык результата: " + (language || "русский") + ".",
+        "Нужный результат: " + (labels[outputType] || labels.movie) + ".",
+        "Если исходник — распознанная речь, бережно сохрани основные мысли и факты, исправь очевидные ошибки распознавания, не выдумывай факты от имени говорящего.",
+        "Если исходник — музыкальная идея или описание песни, используй её настроение и образы, но не воспроизводи защищённые авторские тексты.",
+        "Если исходник короткий или неясный, развей его творчески и отметь придуманные детали как художественные.",
+        "\nМатериал пользователя:\n" + clean
+      ].join("\n");
+      const result = await apiRequest("/api/chat", { method:"POST", body:JSON.stringify({message:prompt,history:[]}) });
+      return result.reply;
+    },
+    createMovie({ title, story, sourceLabel }) {
+      const name = String(title || "История из аудио").trim().slice(0,90) || "История из аудио";
+      const text = String(story || "").trim();
+      if (!text) throw new Error("Сценарий пуст.");
+      const now = new Date().toISOString();
+      const project = {
+        id: movieId(), name, idea: text.slice(0,12000), genre:"Приключения",
+        duration:5, frame:"16:9", createdAt:now, updatedAt:now,
+        ...(!authSession?.user ? {guestExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString()} : {}),
+        workflowStep:0, completedSteps:[], story:text, storyboard:"", characters:"",
+        voices: sourceLabel ? "Источник идеи: " + String(sourceLabel).slice(0,180) : "", edit:"", versions:[]
+      };
+      const projects = movieRead();
+      projects.unshift(project);
+      if (!movieWrite(projects)) throw new Error("Не удалось сохранить проект фильма.");
+      activeMovieId = project.id; editingMovieId = project.id;
+      renderMovieProjects();
+      if (!authSession?.user) renderGuestSpace();
+      navigate("movie");
+      setTimeout(() => openMovieStage(project.id,0), 80);
+      return { id:project.id, name };
+    }
+  };
+
 
   const communityFeedback = message => { const el=$("#communityProfileFeedback"); if(el)el.textContent=message; };
   const loadCommunityProfile = async () => {
@@ -1615,50 +1659,6 @@ const movieHistoryStyle = document.createElement("style");
     $("#movieFeedback").textContent="Задайте основу нового фильма. Уже существующие проекты останутся без изменений.";
     $("#movieName").focus(); $("#movieForm").scrollIntoView({behavior:"smooth",block:"center"});
   });
-
-  // Shared bridge for Audio → Story. Uses the existing authenticated AI endpoint and movie storage.
-  window.PWAStudioAudioBridge = {
-    async generate({ transcript, outputType, language, sourceKind, fileName }) {
-      const clean = String(transcript || "").trim();
-      if (!clean) throw new Error("Добавьте распознанный текст или описание аудио.");
-      const labels = { movie:"сценарий короткометражного фильма с названием, персонажами, сценами, диалогами и финалом", story:"цельный художественный рассказ с названием, развитием и завершённой концовкой", lyrics:"оригинальный текст песни: куплеты, припев и при необходимости бридж" };
-      const prompt = [
-        "Создай творческий материал для PWA Studio на основе материала пользователя.",
-        "Тип исходника: " + (sourceKind || "аудиозапись") + ".",
-        "Имя аудиофайла (только справочно, содержимое файла не передавалось): " + (fileName || "не указано") + ".",
-        "Язык результата: " + (language || "русский") + ".",
-        "Нужный результат: " + (labels[outputType] || labels.movie) + ".",
-        "Если исходник — распознанная речь, бережно сохрани основные мысли и факты, исправь очевидные ошибки распознавания, не выдумывай факты от имени говорящего.",
-        "Если исходник — музыкальная идея или описание песни, используй её настроение и образы, но не воспроизводи защищённые авторские тексты.",
-        "Если исходник короткий или неясный, развей его творчески и отметь придуманные детали как художественные.",
-        "\nМатериал пользователя:\n" + clean
-      ].join("\n");
-      const result = await apiRequest("/api/chat", { method:"POST", body:JSON.stringify({message:prompt,history:[]}) });
-      return result.reply;
-    },
-    createMovie({ title, story, sourceLabel }) {
-      const name = String(title || "История из аудио").trim().slice(0,90) || "История из аудио";
-      const text = String(story || "").trim();
-      if (!text) throw new Error("Сценарий пуст.");
-      const now = new Date().toISOString();
-      const project = {
-        id: movieId(), name, idea: text.slice(0,12000), genre:"Приключения",
-        duration:5, frame:"16:9", createdAt:now, updatedAt:now,
-        ...(!authSession?.user ? {guestExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString()} : {}),
-        workflowStep:0, completedSteps:[], story:text, storyboard:"", characters:"",
-        voices: sourceLabel ? "Источник идеи: " + String(sourceLabel).slice(0,180) : "", edit:"", versions:[]
-      };
-      const projects = movieRead();
-      projects.unshift(project);
-      if (!movieWrite(projects)) throw new Error("Не удалось сохранить проект фильма.");
-      activeMovieId = project.id; editingMovieId = project.id;
-      renderMovieProjects();
-      if (!authSession?.user) renderGuestSpace();
-      navigate("movie");
-      setTimeout(() => openMovieStage(project.id,0), 80);
-      return { id:project.id, name };
-    }
-  };
 
   $("#movieForm").addEventListener("submit",event=>{
     event.preventDefault();
