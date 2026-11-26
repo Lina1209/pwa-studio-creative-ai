@@ -822,6 +822,7 @@ const movieHistoryStyle = document.createElement("style");
     $("#crumbCurrent").textContent = labels[view];
     $("#sidebar").classList.remove("open");
     window.location.hash = view === "home" ? "" : view;
+    if(view==="guestspace" && typeof renderGuestSpace==="function")renderGuestSpace();
     window.scrollTo({top:0,behavior:"smooth"});
   }
 
