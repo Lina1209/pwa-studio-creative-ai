@@ -60,6 +60,7 @@
       if (status) status.textContent = nextUserId ? "Загружаем историю нового аккаунта…" : "Войдите в аккаунт, чтобы сохранять историю диалогов.";
     }
     authSession = session;
+    if (typeof accessCheckButton !== "undefined") accessCheckButton.hidden = !session?.user;
     const user = session && session.user;
     authGate.hidden = true;
     $("#openLogin").hidden = !!user;
