@@ -1681,8 +1681,8 @@ const movieHistoryStyle = document.createElement("style");
       if(authSession?.user){window.alert("Нельзя импортировать гостевой проект в аккаунт.");return;}
       if(file.size>5*1024*1024){window.alert("Файл слишком большой. Максимальный размер JSON-копии — 5 МБ.");return;}
       try{
-        const status=$("#guestImportStatus");
-        if(status){status.hidden=false;status.textContent="Читаем резервную копию…";}
+        const importStatus=$("#guestImportStatus");
+        if(importStatus){importStatus.hidden=false;importStatus.textContent="Читаем резервную копию…";}
         const raw=await new Promise((resolve,reject)=>{
           if(typeof file.text==="function"){file.text().then(resolve,reject);return;}
           const reader=new FileReader();
