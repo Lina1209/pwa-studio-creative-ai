@@ -255,7 +255,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
 
       <section class="view guest-space-view" id="view-guestspace">
         <div class="page-heading"><div class="eyebrow">TEMPORARY CREATOR WORKSPACE</div><h1>Гостевое <span class="gradient-text">пространство</span></h1><p>Ваши временные фильмы и черновики. Работы хранятся в этом браузере до 24 часов — скачайте копию, чтобы сохранить её у себя.</p></div>
-        <div class="guest-space-hero panel"><div><span class="guest-space-badge">✧ ГОСТЕВОЙ РЕЖИМ</span><h2>Творите без регистрации</h2><p>Каждый гостевой проект доступен в течение 24 часов с момента создания. Перед уходом скачайте JSON-копию проекта. Если очистить данные браузера или открыть студию на другом устройстве, локальный черновик может стать недоступен.</p></div><div class="guest-space-actions"><button class="primary-button" id="guestCreateMovie" type="button">＋ Создать фильм</button><button class="secondary-button" id="guestExportAll" type="button">⇩ Скачать все проекты</button><label class="secondary-button guest-import-label" id="guestImportButton" for="guestImportInput">⇧ Импорт JSON-копии<input id="guestImportInput" type="file" accept=".json,application/json" aria-label="Выбрать JSON-копию"></label></div></div>
+        <div class="guest-space-hero panel"><div><span class="guest-space-badge">✧ ГОСТЕВОЙ РЕЖИМ</span><h2>Творите без регистрации</h2><p>Каждый гостевой проект доступен в течение 24 часов с момента создания. Перед уходом скачайте JSON-копию проекта. Если очистить данные браузера или открыть студию на другом устройстве, локальный черновик может стать недоступен.</p></div><div class="guest-space-actions"><button class="primary-button" id="guestCreateMovie" type="button">＋ Создать фильм</button><button class="secondary-button" id="guestExportAll" type="button">⇩ Скачать все проекты</button><label class="secondary-button guest-import-label" id="guestImportButton" for="guestImportInput">⇧ Импорт JSON-копии<input id="guestImportInput" type="file" accept=".json,application/json" aria-label="Выбрать JSON-копию"></label></div><div class="guest-expiry-notice" id="guestImportStatus" role="status" aria-live="polite" hidden></div></div>
         <div class="guest-expiry-notice" id="guestExpiryNotice" role="status" hidden>Некоторые гостевые черновики удалены после истечения срока хранения. Если вы скачивали копии, они останутся у вас.</div>
         <div class="guest-expiry-notice" id="guestExpiryWarning" role="alert" hidden>Некоторые проекты будут удалены в течение часа. Скачайте JSON-копию заранее, чтобы не потерять работу.</div>
         <div class="guest-projects-head"><div><div class="eyebrow">YOUR TEMPORARY PROJECTS</div><h2>Мои гостевые фильмы</h2></div><span class="guest-project-count" id="guestProjectCount">0 проектов</span></div>
@@ -450,7 +450,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./supabase-config.js"></script>
-  <script src="./app.js?v=20261126-3" defer></script>
+  <script src="./app.js?v=20261126-4" defer></script>
   <script src="./audio-lab.js?v=20261121-1" defer></script>
 </body>
 </html>
