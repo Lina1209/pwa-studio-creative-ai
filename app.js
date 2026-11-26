@@ -1203,6 +1203,9 @@ const movieHistoryStyle = document.createElement("style");
           const { error: deleteError } = await supabaseClient.from("projects").delete()
             .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
           if (deleteError) throw deleteError;
+          // The account may change while Supabase is processing the delete.
+          // Do not touch the new account's local tombstones or project list.
+          if (authSession?.user?.id !== userId) return;
           writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
         }
         const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
@@ -1213,13 +1216,16 @@ const movieHistoryStyle = document.createElement("style");
         if (rows.length) {
           const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
           if (error) throw error;
+          if (authSession?.user?.id !== userId) return;
         }
+        if (authSession?.user?.id !== userId) return;
         const feedback = $("#movieFeedback");
         if (feedback) feedback.textContent = deletedIds.length
           ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
           : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
+        if (authSession?.user?.id !== userId) return;
         const feedback = $("#movieFeedback");
         if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
       } finally {
@@ -1248,8 +1254,11 @@ const movieHistoryStyle = document.createElement("style");
         const { error: deleteError } = await supabaseClient.from("projects").delete()
           .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
+        // Re-check after the awaited delete before accessing account-scoped local storage.
+        if (authSession?.user?.id !== userId) return;
         writeMovieTombstones([]);
       }
+      if (authSession?.user?.id !== userId) return;
       const deletedSet = new Set(deletedIds);
       const local = movieRead().filter(project => !deletedSet.has(project.id));
       const merged = new Map(local.map(project => [project.id, project]));
@@ -1269,6 +1278,7 @@ const movieHistoryStyle = document.createElement("style");
       }
     } catch (error) {
       console.error("Movie cloud load failed:", error);
+      if (authSession?.user?.id !== userId) return;
       const feedback = $("#movieFeedback");
       if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
     } finally {
