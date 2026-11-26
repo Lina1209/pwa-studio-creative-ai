@@ -1033,6 +1033,9 @@ const movieHistoryStyle = document.createElement("style");
 
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
+  const guestArchiveKey = () => "pwa-studio-movie-archive:guest";
+  const readGuestArchive = () => { try { const value=JSON.parse(localStorage.getItem(guestArchiveKey())||"[]"); return Array.isArray(value)?value.filter(item=>item&&typeof item==="object"&&item.id):[]; } catch { return []; } };
+  const writeGuestArchive = items => { try { localStorage.setItem(guestArchiveKey(),JSON.stringify(items)); return true; } catch(error) { console.error("Guest archive write failed:",error); return false; } };
   let activeMovieId = null;
   let editingMovieId = null;
   const movieStages = [
@@ -1189,15 +1192,24 @@ const movieHistoryStyle = document.createElement("style");
         }
         return project;
       });
-      const active = authSession?.user ? projects : projects.filter(project => {
-        const expired = Date.parse(project.guestExpiresAt) <= now;
-        if (expired) changed = true;
-        return !expired;
-      });
-      if (changed) {
-        if (!authSession?.user && active.length !== projects.length) sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
-        localStorage.setItem(movieStorageKey(), JSON.stringify(active));
+      let active = projects;
+      if (!authSession?.user) {
+        const expired = projects.filter(project => Number.isFinite(Date.parse(project.guestExpiresAt)) && Date.parse(project.guestExpiresAt) <= now);
+        active = projects.filter(project => !expired.includes(project));
+        if (expired.length) {
+          const archived = readGuestArchive();
+          const byId = new Map(archived.map(project => [project.id, project]));
+          expired.forEach(project => byId.set(project.id, { ...project, guestArchivedAt: project.guestArchivedAt || new Date(now).toISOString() }));
+          if (writeGuestArchive([...byId.values()])) {
+            changed = true;
+            sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
+          } else {
+            // If archiving fails (for example, storage is full), keep expired records in the main list.
+            active = projects;
+          }
+        }
       }
+      if (changed) localStorage.setItem(movieStorageKey(), JSON.stringify(active));
       return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
     } catch { return []; }
   };
@@ -1634,6 +1646,28 @@ const movieHistoryStyle = document.createElement("style");
       const download=document.createElement("button");download.type="button";download.className="secondary-button";download.textContent="⇩ Скачать проект";download.addEventListener("click",()=>downloadGuestProject(project));
       actions.append(open,download);card.append(head,meta,expiry,actions);list.append(card);
     });
+    const archived=authSession?.user?[]:readGuestArchive();
+    if(archived.length){
+      const archiveHeading=document.createElement("h3");archiveHeading.textContent="Архив гостевых проектов";archiveHeading.style.margin="22px 0 10px";list.append(archiveHeading);
+      archived.forEach((project,index)=>{
+        const card=document.createElement("article");card.className="guest-project-card";
+        const head=document.createElement("div");head.className="guest-project-card-head";
+        const number=document.createElement("span");number.className="movie-project-number";number.textContent="А"+String(index+1).padStart(2,"0");
+        const title=document.createElement("b");title.textContent=project.name||"Без названия";head.append(number,title);
+        const meta=document.createElement("p");meta.textContent=[project.genre||"Жанр не указан",(project.duration||5)+" мин",project.frame||"16:9",movieProgress(project)].join(" · ");
+        const expiry=document.createElement("div");expiry.className="guest-project-expiry";expiry.textContent="Срок хранения истёк · проект сохранён в архиве";
+        const actions=document.createElement("div");actions.className="guest-project-actions";
+        const restore=document.createElement("button");restore.type="button";restore.className="primary-button";restore.textContent="↶ Восстановить на 24 часа";restore.addEventListener("click",()=>{
+          const current=movieRead();if(current.some(item=>item.id===project.id)){window.alert("Этот проект уже есть в активном списке.");return;}
+          const restored={...project,guestExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString(),updatedAt:new Date().toISOString()};const nextArchive=readGuestArchive().filter(item=>item.id!==project.id);
+          if(!writeGuestArchive(nextArchive))return;
+          if(!movieWrite([restored,...current])){writeGuestArchive([...nextArchive,project]);return;}
+          renderGuestSpace();renderMovieProjects();
+        });
+        const download=document.createElement("button");download.type="button";download.className="secondary-button";download.textContent="⇩ Скачать копию";download.addEventListener("click",()=>downloadGuestProject(project));
+        actions.append(restore,download);card.append(head,meta,expiry,actions);list.append(card);
+      });
+    }
   };
   // Import controls are static in index.html so they remain visible even if dynamic rendering changes.
   const guestImportButton=$("#guestImportButton");
@@ -1651,7 +1685,7 @@ const movieHistoryStyle = document.createElement("style");
       if(file.size>5*1024*1024){window.alert("Файл слишком большой. Максимальный размер JSON-копии — 5 МБ.");return;}
       try{
         const data=JSON.parse(await file.text());
-        const imported=Array.isArray(data?.projects)?data.projects:(data?.project?[data.project]:[]);
+        const imported=[...(Array.isArray(data?.projects)?data.projects:[]),...(Array.isArray(data?.archivedProjects)?data.archivedProjects:[]),...(data?.project?[data.project]:[])];
         if(!["PWA Studio guest project","PWA Studio guest workspace"].includes(data?.format)||!imported.length)throw new Error("Это не резервная копия PWA Studio.");
         const valid=imported.filter(item=>item&&typeof item==="object"&&!Array.isArray(item));
         if(!valid.length)throw new Error("В файле нет проектов для импорта.");
@@ -1688,7 +1722,7 @@ const movieHistoryStyle = document.createElement("style");
   $("#guestExportAll")?.addEventListener("click",()=>{
     const projects=movieRead();
     if(!projects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
-    const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:1,exportedAt:new Date().toISOString(),projects},null,2)],{type:"application/json;charset=utf-8"});
+    const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:2,exportedAt:new Date().toISOString(),projects,archivedProjects:readGuestArchive()},null,2)],{type:"application/json;charset=utf-8"});
     const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   renderGuestSpace();
