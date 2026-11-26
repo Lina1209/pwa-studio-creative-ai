@@ -1629,7 +1629,7 @@ const movieHistoryStyle = document.createElement("style");
       const icon=document.createElement("span");icon.textContent="✧";
       const title=document.createElement("b");title.textContent="Пока здесь пусто";
       const hint=document.createElement("small");hint.textContent="Создайте фильм в Миникиностудии — он появится в этом пространстве.";
-      empty.append(icon,title,hint);list.append(empty);return;
+      empty.append(icon,title,hint);list.append(empty);
     }
     projects.forEach((project,index)=>{
       const card=document.createElement("article");card.className="guest-project-card";
@@ -1720,9 +1720,9 @@ const movieHistoryStyle = document.createElement("style");
   }
   $("#guestCreateMovie")?.addEventListener("click",()=>navigate("movie"));
   $("#guestExportAll")?.addEventListener("click",()=>{
-    const projects=movieRead();
-    if(!projects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
-    const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:2,exportedAt:new Date().toISOString(),projects,archivedProjects:readGuestArchive()},null,2)],{type:"application/json;charset=utf-8"});
+    const projects=movieRead(); const archivedProjects=readGuestArchive();
+    if(!projects.length&&!archivedProjects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
+    const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:2,exportedAt:new Date().toISOString(),projects,archivedProjects},null,2)],{type:"application/json;charset=utf-8"});
     const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   renderGuestSpace();
