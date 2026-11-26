@@ -245,3 +245,25 @@ body.light .message-new-form input,body.light .direct-message-form input{backgro
   font-size: 14px !important;
   line-height: 1.55 !important;
 }
+
+
+/* Mini Movie Studio: keep Studio AI controls visible on every production stage, including stage 4. */
+#movieWorkflowPanel:not([hidden]) .movie-stage-ai-tools {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  width: 100% !important;
+  min-height: 44px !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  margin: 14px 0 !important;
+}
+#movieWorkflowPanel:not([hidden]) .movie-stage-ai-tools > button,
+#movieWorkflowPanel:not([hidden]) .movie-stage-ai-tools > p {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+#movieWorkflowPanel[data-active-stage="edit"] .movie-stage-ai-tools > button {
+  display: inline-flex !important;
+}
