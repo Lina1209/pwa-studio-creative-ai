@@ -209,3 +209,8 @@ body.light .message-new-form input,body.light .direct-message-form input{backgro
 .guest-space-actions .guest-import-label{display:flex!important;align-items:center;justify-content:center;position:relative;box-sizing:border-box;min-height:44px;width:100%;margin:0;padding:12px 14px;white-space:normal;text-align:center;cursor:pointer;touch-action:manipulation;overflow:hidden}
 .guest-space-actions .guest-import-label input[type=file]{position:absolute;inset:0;display:block!important;width:100%;height:100%;margin:0;padding:0;opacity:0;cursor:pointer;z-index:2}
 @media(max-width:720px){.guest-space-actions{display:flex!important;flex-direction:column!important;width:100%;gap:10px}.guest-space-actions>.guest-import-label{display:flex!important;width:100%!important;min-height:48px;flex:0 0 auto}.guest-space-actions>.primary-button,.guest-space-actions>.secondary-button{width:100%!important;min-height:48px}}
+
+/* AI Companion: copy complete assistant replies on mobile and desktop. */
+.assistant-copy-button{display:inline-flex;align-items:center;gap:6px;margin-top:10px;min-height:36px;padding:8px 12px;font-size:10px;}
+.assistant-message-content{white-space:pre-wrap;overflow-wrap:anywhere;}
+.assistant-welcome[hidden],.assistant-panel .suggestion-row[hidden]{display:none!important;}
