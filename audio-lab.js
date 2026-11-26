@@ -164,7 +164,7 @@
           <label>Язык результата<select id="audioStoryLanguage"><option value="русский">Русский</option><option value="казахский">Казахский</option><option value="английский">Английский</option></select></label>
           <label>Тип исходника<select id="audioStorySource"><option value="речь / голосовая запись">Речь или голосовая запись</option><option value="песня / вокал">Песня или вокал</option><option value="инструментальная музыка">Инструментальная музыка</option><option value="свободная творческая идея">Другое / идея</option></select></label>
         </div>
-        <div class="audio-record-controls"><button class="audio-disabled-action" id="audioStoryGenerate" type="button" style="opacity:1;cursor:pointer">✦ Создать с Studio AI</button><button class="audio-clear-button" id="audioStoryClear" type="button">Очистить текст</button></div>
+        <div class="audio-record-controls"><button class="audio-record-button" id="audioStoryGenerate" type="button">✦ Создать с Studio AI</button><button class="audio-clear-button" id="audioStoryClear" type="button">Очистить текст</button></div>
         <p class="audio-live-status" id="audioStoryStatus" role="status" aria-live="polite">Важно: автоматическая расшифровка загруженного файла и анализ самой музыки пока не подключены. Для работы AI используйте распознанный текст или диктовку.</p>
       </div>
       <div class="audio-story-result" id="audioStoryResult" hidden>
