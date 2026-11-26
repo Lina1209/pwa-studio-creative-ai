@@ -237,6 +237,54 @@ const movieHistoryStyle = document.createElement("style");
 
 
   const getApiBase = () => (localStorage.getItem(API_URL_KEY) || "https://pwa-studio-creative-ai.onrender.com").trim().replace(/\/+$/, "");
+  // Temporary owner-access diagnostic: uses the current Supabase session without exposing its token.
+  const accessCheckButton = document.createElement("button");
+  accessCheckButton.type = "button";
+  accessCheckButton.className = "secondary-button";
+  accessCheckButton.textContent = "Проверить защиту админ-доступа";
+  accessCheckButton.style.marginTop = "10px";
+  const accessCheckResult = document.createElement("p");
+  accessCheckResult.setAttribute("role", "status");
+  accessCheckResult.setAttribute("aria-live", "polite");
+  accessCheckResult.style.marginTop = "8px";
+  accessCheckResult.style.fontSize = "13px";
+  const accountRoleElement = $("#accountRole");
+  if (accountRoleElement) {
+    accountRoleElement.insertAdjacentElement("afterend", accessCheckButton);
+    accessCheckButton.insertAdjacentElement("afterend", accessCheckResult);
+  }
+  accessCheckButton.hidden = !authSession?.user;
+  accessCheckButton.addEventListener("click", async () => {
+    if (!authSession?.access_token) {
+      accessCheckResult.textContent = "Нет активной сессии. Войдите в аккаунт и повторите проверку.";
+      return;
+    }
+    const sessionUserId = authSession.user.id;
+    accessCheckButton.disabled = true;
+    accessCheckResult.textContent = "Проверяем ответ сервера…";
+    try {
+      const response = await fetch(getApiBase() + "/api/admin/me", {
+        method: "GET",
+        headers: { "Accept": "application/json", "Authorization": "Bearer " + authSession.access_token }
+      });
+      if (authSession?.user?.id !== sessionUserId) {
+        accessCheckResult.textContent = "Аккаунт изменился во время проверки. Повторите её.";
+      } else if (response.status === 200) {
+        accessCheckResult.textContent = "HTTP 200 — сервер подтвердил административный доступ.";
+      } else if (response.status === 403) {
+        accessCheckResult.textContent = "HTTP 403 — отлично: сервер распознал аккаунт и отказал в правах администратора.";
+      } else if (response.status === 401) {
+        accessCheckResult.textContent = "HTTP 401 — сервер не принял сессию. Выйдите и войдите снова, затем повторите проверку.";
+      } else {
+        accessCheckResult.textContent = "Ответ сервера: HTTP " + response.status + ". Проверим отдельно.";
+      }
+    } catch (error) {
+      accessCheckResult.textContent = "Не удалось связаться с API: " + (error?.message || "ошибка сети");
+    } finally {
+      accessCheckButton.disabled = false;
+    }
+  });
+
   const loadAccountRole = async () => {
     const panel = $("#adminPanel");
     if (!authSession?.user || !panel) { if (panel) panel.hidden = true; return; }
