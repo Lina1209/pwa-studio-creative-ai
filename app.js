@@ -1435,11 +1435,11 @@ const movieHistoryStyle = document.createElement("style");
     const edition=movieEditionLabel(project);
     const subtitle=document.createElement("p"); subtitle.textContent="Фильм: "+project.name+(edition?" · "+edition:"")+" · "+(done.includes(stage.key)?"Этап сохранён — его можно редактировать.":"Заполните материалы и сохраните, чтобы открыть следующий этап.");
     head.append(title,subtitle);
-    const form=document.createElement("div"); form.className="movie-stage-fields"; const inputs={};
+    const form=document.createElement("div"); form.className="movie-stage-fields"; form.style.cssText="display:grid;grid-template-columns:minmax(0,1fr);gap:14px;width:100%;margin:16px 0;"; const inputs={};
     stage.fields.forEach(([key,labelText,placeholder])=>{
-      const wrap=document.createElement("label"); wrap.className="movie-stage-field";
-      const label=document.createElement("span"); label.textContent=labelText;
-      const textarea=document.createElement("textarea"); textarea.rows=(key==="story"||key==="storyboard")?7:6; textarea.maxLength=30000; textarea.placeholder=placeholder;
+      const wrap=document.createElement("label"); wrap.className="movie-stage-field"; wrap.style.cssText="display:grid;gap:9px;width:100%;min-width:0;padding:14px;border:1px solid rgba(166,154,187,.22);border-radius:12px;background:rgba(17,16,32,.72);color:#c4bed5;";
+      const label=document.createElement("span"); label.textContent=labelText; label.style.cssText="display:block;font-size:13px;font-weight:700;color:#e5def5;";
+      const textarea=document.createElement("textarea"); textarea.rows=(key==="story"||key==="storyboard")?7:6; textarea.maxLength=30000; textarea.placeholder=placeholder; textarea.style.cssText="display:block;width:100%;min-height:150px;padding:13px;border:1px solid rgba(166,154,187,.35);border-radius:9px;background:#0f0e1d;color:#eee9fa;font:inherit;font-size:14px;line-height:1.55;resize:vertical;visibility:visible;opacity:1;";
       textarea.value=project[key]||(key==="story"?project.idea||"":""); inputs[key]=textarea; wrap.append(label,textarea); form.append(wrap);
     });
     const actions=document.createElement("div"); actions.className="movie-stage-actions";
