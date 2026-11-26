@@ -1674,10 +1674,7 @@ const movieHistoryStyle = document.createElement("style");
   const guestImportInput=$("#guestImportInput");
   if(guestImportButton&&guestImportInput&&!guestImportButton.dataset.bound){
     guestImportButton.dataset.bound="true";
-    guestImportButton.addEventListener("click",()=>{
-      if(authSession?.user){window.alert("Импорт гостевых копий доступен только без входа в аккаунт. Выйдите из аккаунта и повторите попытку.");return;}
-      guestImportInput.click();
-    });
+    // The native label in index.html opens the Android file picker directly.
     guestImportInput.addEventListener("change",async()=>{
       const file=guestImportInput.files?.[0];guestImportInput.value="";
       if(!file)return;
