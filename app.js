@@ -1603,7 +1603,7 @@ const movieHistoryStyle = document.createElement("style");
     });
     const previous= document.createElement("button"); previous.type="button"; previous.className="secondary-button"; previous.textContent="← Предыдущий лист";
     previous.addEventListener("click",()=>stageIndex===0?openMovieDetailsStage(projectId):openMovieStage(projectId,stageIndex-1));
-    actions.append(previous,draft,close,save,draftStatus); panel.append(head,...(stage.key==="voices"?[aiTools]:[]),form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
+    actions.append(previous,draft,close,save,draftStatus); panel.append(head,aiTools,form,actions); panel.hidden=false; panel.setAttribute("data-active-stage",stage.key); requestAnimationFrame(()=>panel.scrollIntoView({behavior:"smooth",block:"start"}));
   };
   const openMovieOverview = projectId => {
     const project=movieRead().find(item=>item.id===projectId); const panel=ensureMovieWorkflowPanel();
