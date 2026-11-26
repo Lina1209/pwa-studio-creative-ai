@@ -174,6 +174,20 @@
         <p class="audio-live-status" id="audioStoryResultStatus" role="status"></p>
       </div>`;
     audioWorkspace.append(panel);
+    tab.addEventListener("click", () => {
+      document.querySelectorAll("[data-audio-tab]").forEach(item => {
+        const active = item.dataset.audioTab === "audio-story";
+        item.classList.toggle("active", item === tab);
+        item.setAttribute("aria-selected", String(item === tab));
+      });
+      document.querySelectorAll("[data-audio-panel]").forEach(item => {
+        const active = item.dataset.audioPanel === "audio-story";
+        item.hidden = !active; item.classList.toggle("active", active);
+      });
+    });
+    const audioStoryStyle = document.createElement("style");
+    audioStoryStyle.textContent = ".audio-story-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-bottom:14px}.audio-story-form{margin-top:14px}.audio-story-result{margin-top:16px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#111020}.audio-story-result textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;background:#0c0b18;color:#eee9fa;font:inherit;font-size:11px;line-height:1.6;resize:vertical}.audio-story-result[hidden]{display:none}.audio-story-grid audio{width:100%;margin-top:10px}@media(max-width:600px){.audio-story-grid{grid-template-columns:1fr}}";
+    document.head.append(audioStoryStyle);
     const input = document.querySelector("#audioStoryFile");
     const fileStatus = document.querySelector("#audioStoryFileStatus");
     const preview = document.querySelector("#audioStoryPreview");
