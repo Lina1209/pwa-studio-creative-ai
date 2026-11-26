@@ -1681,7 +1681,16 @@ const movieHistoryStyle = document.createElement("style");
       if(authSession?.user){window.alert("Нельзя импортировать гостевой проект в аккаунт.");return;}
       if(file.size>5*1024*1024){window.alert("Файл слишком большой. Максимальный размер JSON-копии — 5 МБ.");return;}
       try{
-        const data=JSON.parse(await file.text());
+        const status=$("#guestImportStatus");
+        if(status){status.hidden=false;status.textContent="Читаем резервную копию…";}
+        const raw=await new Promise((resolve,reject)=>{
+          if(typeof file.text==="function"){file.text().then(resolve,reject);return;}
+          const reader=new FileReader();
+          reader.onload=()=>resolve(String(reader.result||""));
+          reader.onerror=()=>reject(new Error("Не удалось прочитать выбранный файл."));
+          reader.readAsText(file,"UTF-8");
+        });
+        const data=JSON.parse(raw);
         const imported=[...(Array.isArray(data?.projects)?data.projects:[]),...(Array.isArray(data?.archivedProjects)?data.archivedProjects:[]),...(data?.project?[data.project]:[])];
         if(!["PWA Studio guest project","PWA Studio guest workspace"].includes(data?.format)||!imported.length)throw new Error("Это не резервная копия PWA Studio.");
         const valid=imported.filter(item=>item&&typeof item==="object"&&!Array.isArray(item));
@@ -1711,8 +1720,13 @@ const movieHistoryStyle = document.createElement("style");
         if(!movieWrite([...restored,...current]))throw new Error("Не удалось сохранить импорт. Проверьте свободное место в браузере.");
         activeMovieId=restored[0].id;
         renderGuestSpace();renderMovieProjects();
-        window.alert("Импортировано проектов: "+restored.length+". Они будут храниться в этом браузере ещё 24 часа.");
-      }catch(error){window.alert("Не удалось импортировать файл: "+(error.message||"проверьте JSON-копию."));}
+        const message="Импортировано проектов: "+restored.length+". Они будут храниться в этом браузере ещё 24 часа.";
+        const status=$("#guestImportStatus");if(status){status.hidden=false;status.textContent="✓ "+message;}
+        window.alert(message);
+      }catch(error){
+        const status=$("#guestImportStatus");if(status){status.hidden=false;status.textContent="Ошибка импорта: "+(error.message||"проверьте JSON-копию.");}
+        window.alert("Не удалось импортировать файл: "+(error.message||"проверьте JSON-копию."));
+      }
     });
   }
   $("#guestCreateMovie")?.addEventListener("click",()=>navigate("movie"));
