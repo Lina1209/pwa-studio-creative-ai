@@ -1445,38 +1445,108 @@ const movieHistoryStyle = document.createElement("style");
     const aiTools=document.createElement("div"); aiTools.className="movie-stage-ai-tools";
     aiTools.style.cssText="display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;width:100%;";
     let aiStatus=null;
-    if(stage.key==="voices"){
+    if(["story","characters","voices","edit"].includes(stage.key)){
       const aiButton=document.createElement("button"); aiButton.type="button"; aiButton.className="primary-button"; aiButton.textContent="✦ Создать с Studio AI";
       const manualButton=document.createElement("button"); manualButton.type="button"; manualButton.className="secondary-button"; manualButton.textContent="✍ Заполнить самостоятельно";
       aiStatus=document.createElement("p"); aiStatus.className="movie-stage-feedback"; aiStatus.setAttribute("role","status"); aiStatus.setAttribute("aria-live","polite"); aiStatus.style.cssText="display:block;flex-basis:100%;margin:4px 0;padding:10px 12px;border-radius:10px;background:rgba(157,121,235,.12);font-size:13px;";
-      aiStatus.textContent="Studio AI подготовит распределение голосов, реплики, музыку и звуковые эффекты по материалам фильма.";
-      manualButton.addEventListener("click",()=>{inputs.voices?.focus();aiStatus.textContent="Можно вписать план озвучки самостоятельно.";});
+      const stageHints={
+        story:"Studio AI создаст сценарий и раскадровку по идее фильма.",
+        characters:"Studio AI разработает персонажей и сохранит визуальную непрерывность.",
+        voices:"Studio AI подготовит распределение голосов, реплики, музыку и звуковые эффекты.",
+        edit:"Studio AI составит подробный план монтажа и будущего экспорта."
+      };
+      aiStatus.textContent=stageHints[stage.key];
+      manualButton.addEventListener("click",()=>{const first=Object.values(inputs)[0];first?.focus();aiStatus.textContent="Можно заполнить материалы самостоятельно. Ваш текст сохранится после нажатия кнопки сохранения.";});
       aiButton.addEventListener("click",async()=>{
-        if(!inputs.voices)return;
         aiButton.disabled=true;manualButton.disabled=true;aiButton.textContent="Studio AI работает…";
-        aiStatus.textContent="Анализирую сценарий и персонажей, готовлю план озвучки…";
+        aiStatus.textContent="Изучаю материалы фильма и готовлю результат для этого этапа…";
         const latest=movieRead().find(item=>item.id===projectId)||project;
-        const prompt=[
-          "Ты — режиссёр по звуку и специалист по озвучке PWA Studio.",
-          "Подготовь полный практический план голосов и звука для фильма «"+String(latest.name||"Без названия").slice(0,100)+"».",
-          "Используй сценарий и раскадровку, а также описания персонажей ниже. Не меняй сюжет и имена персонажей. Если точные реплики уже есть в сценарии, бери их оттуда; не придумывай события.",
-          "Структура ответа: 1) язык и общий стиль озвучки; 2) таблица персонаж → тип/тембр/возрастное звучание/манера речи/темп/эмоция; 3) реплики и голос за кадром по сценам с пометкой персонажа; 4) музыка по сценам и переходам; 5) звуковые эффекты и атмосфера; 6) короткие технические заметки для будущей генерации.",
-          "Пиши по-русски, конкретно и удобно для последующего производства. Если данных недостаточно, предложи аккуратные художественные решения и обозначь их как предложения.",
-          "\nСЦЕНАРИЙ:\n"+String(latest.story||latest.idea||"Пока не заполнен.").slice(0,14000),
-          "\nРАСКАДРОВКА:\n"+String(latest.storyboard||"Не заполнена.").slice(0,5000),
-          "\nПЕРСОНАЖИ:\n"+String(latest.characters||"Не заполнены.").slice(0,5000),
-          "\nЗАМЕТКИ ПО ОЗВУЧКЕ:\n"+String(inputs.voices.value||"Нет.").slice(0,3000)
-        ].join("\n");
+        const title=String(latest.name||"Без названия").slice(0,100);
+        const idea=String(latest.idea||"").slice(0,5000);
+        const story=String(latest.story||latest.idea||"").slice(0,16000);
+        const storyboard=String(latest.storyboard||"").slice(0,7000);
+        const characters=String(latest.characters||"").slice(0,7000);
+        const voices=String(latest.voices||"").slice(0,9000);
+        const edit=String(latest.edit||"").slice(0,7000);
+        let prompt="";
+        if(stage.key==="story"){
+          prompt=[
+            "Ты — сценарист и режиссёр раскадровки PWA Studio.",
+            "Разработай сценарий фильма «"+title+"» и подробную раскадровку.",
+            "Исходная идея: "+(idea||"Пользователь пока не добавил отдельное описание идеи. Развивай название и имеющиеся материалы бережно."),
+            "Жанр: "+String(latest.genre||"не указан")+". Заявленная длительность: "+String(latest.duration||5)+" минут. Кадр: "+String(latest.frame||"16:9")+".",
+            "Если ниже уже есть сценарий или раскадровка, улучшай и развивай их, сохраняя имена, факты, сюжетные решения и авторский замысел. Не переписывай без необходимости уже готовый материал.",
+            "Верни строго два раздела с точными заголовками: === СЦЕНАРИЙ === и === РАСКАДРОВКА ===.",
+            "В сценарии: логлайн, персонажи в кратком виде, сцены по порядку, место/время, действия и диалоги, кульминация и финал. Соблюдай заявленную длительность; если история длиннее, честно укажи ориентировочный хронометраж.",
+            "В раскадровке: для каждой сцены нумерованные кадры, крупность, композиция, движение камеры, действие, свет/цвет, переход и ориентировочная длительность. Учитывай, что это план, а не готовое видео.",
+            "Пиши по-русски. Не добавляй опасных инструкций, не выдавай вымысел за реальные факты.",
+            "\nТЕКУЩИЙ СЦЕНАРИЙ:\n"+story,
+            "\nТЕКУЩАЯ РАСКАДРОВКА:\n"+storyboard
+          ].join("\n");
+        }else if(stage.key==="characters"){
+          prompt=[
+            "Ты — художник-постановщик и специалист по дизайну персонажей PWA Studio.",
+            "Создай подробную библию персонажей фильма «"+title+"» на основе сценария и раскадровки.",
+            "Не меняй сюжет, имена, возраст и отношения, если они уже указаны. Не добавляй новых важных героев без необходимости. Для каждого героя опиши роль, возраст (только если известен), лицо, телосложение, волосы, одежду, обувь, аксессуары, характер, пластику, мимику, манеру держаться и отличительные детали.",
+            "Добавь отдельные блоки: визуальные референсы словами для генерации; палитра и материалы; правила постоянства внешности между сценами; что нельзя менять от кадра к кадру; варианты одежды только если они обоснованы сценой.",
+            "Если персонаж появляется только голосом, явно отметь это и не придумывай ему видимую внешность. Не приписывай реальным людям неуказанные особенности.",
+            "Пиши по-русски, структурированно и практически, чтобы описание можно было использовать как основу для генерации изображений и видео.",
+            "\nСЦЕНАРИЙ:\n"+story,
+            "\nРАСКАДРОВКА:\n"+storyboard,
+            "\nТЕКУЩИЕ ОПИСАНИЯ ПЕРСОНАЖЕЙ:\n"+String(inputs.characters?.value||characters).slice(0,7000)
+          ].join("\n");
+        }else if(stage.key==="voices"){
+          prompt=[
+            "Ты — режиссёр по звуку и специалист по озвучке PWA Studio.",
+            "Подготовь полный практический план голосов и звука для фильма «"+title+"».",
+            "Используй сценарий, раскадровку и персонажей. Не меняй сюжет и имена. Точные реплики бери из сценария, не придумывай события.",
+            "Структура: 1) язык и общий стиль; 2) таблица персонаж → тип/тембр/возрастное звучание/манера речи/темп/эмоция; 3) реплики и голос за кадром по сценам; 4) музыка по сценам и переходам; 5) звуковые эффекты и атмосфера; 6) технические заметки для будущей генерации.",
+            "Пиши по-русски, конкретно. Художественные предложения помечай как предложения. Не утверждай, что аудио уже создано.",
+            "\nСЦЕНАРИЙ:\n"+story,
+            "\nРАСКАДРОВКА:\n"+storyboard,
+            "\nПЕРСОНАЖИ:\n"+characters,
+            "\nТЕКУЩИЙ ПЛАН ОЗВУЧКИ:\n"+String(inputs.voices?.value||voices||"Нет.").slice(0,5000)
+          ].join("\n");
+        }else{
+          prompt=[
+            "Ты — режиссёр монтажа и супервайзер постпроизводства PWA Studio.",
+            "Составь подробный план монтажа и будущего экспорта фильма «"+title+"» по предоставленным материалам.",
+            "Сохраняй сюжет, порядок событий, имена и визуальные решения. Не добавляй новые сцены, если их нет в сценарии; допустимы только технические предложения, явно помеченные как предложения.",
+            "Структура: 1) монтажная концепция и ориентировочный хронометраж; 2) последовательность сцен с длительностью, ключевыми кадрами и склейками; 3) темп и ритм; 4) цветокоррекция и визуальная непрерывность; 5) размещение диалогов, музыки и эффектов с учётом плана озвучки; 6) титры; 7) параметры будущего экспорта и список контроля качества.",
+            "Учитывай настройки проекта: длительность "+String(latest.duration||5)+" минут, кадр "+String(latest.frame||"16:9")+". Предлагай Full HD и 24 кадра/с только как параметры будущего экспорта, не заявляй, что рендер уже выполнен.",
+            "Пиши по-русски, практично и по сценам.",
+            "\nСЦЕНАРИЙ:\n"+story,
+            "\nРАСКАДРОВКА:\n"+storyboard,
+            "\nПЕРСОНАЖИ:\n"+characters,
+            "\nПЛАН ОЗВУЧКИ:\n"+voices,
+            "\nТЕКУЩИЙ ПЛАН МОНТАЖА:\n"+String(inputs.edit?.value||edit||"Нет.").slice(0,7000)
+          ].join("\n");
+        }
         try{
           const result=await apiRequest("/api/chat",{method:"POST",body:JSON.stringify({message:prompt,history:[]})});
           const generated=String(result.reply||"").trim();
           if(!generated)throw new Error("Studio AI вернул пустой ответ.");
-          inputs.voices.value=generated;
-          inputs.voices.dispatchEvent(new Event("input",{bubbles:true}));
-          aiStatus.textContent="✓ План озвучки создан. Проверь его, при необходимости отредактируй и нажми «Сохранить черновик» или «Сохранить и открыть следующий этап».";
-          inputs.voices.focus();
+          if(stage.key==="story"){
+            const storyMarker="=== СЦЕНАРИЙ ===";
+            const boardMarker="=== РАСКАДРОВКА ===";
+            const storyAt=generated.indexOf(storyMarker);
+            const boardAt=generated.indexOf(boardMarker);
+            if(storyAt>=0&&boardAt>storyAt){
+              inputs.story.value=generated.slice(storyAt+storyMarker.length,boardAt).trim();
+              inputs.storyboard.value=generated.slice(boardAt+boardMarker.length).trim();
+            }else{
+              inputs.story.value=generated;
+              aiStatus.textContent="✓ Черновик сценария создан. Если раскадровка не выделилась отдельно, попроси Studio AI повторить с двумя точными заголовками.";
+            }
+          }else{
+            const key=stage.key==="characters"?"characters":stage.key==="voices"?"voices":"edit";
+            if(inputs[key])inputs[key].value=generated;
+          }
+          Object.values(inputs).forEach(input=>input.dispatchEvent(new Event("input",{bubbles:true})));
+          if(!aiStatus.textContent.startsWith("✓ Черновик сценария"))aiStatus.textContent="✓ Материалы этапа подготовлены. Проверь их, при необходимости отредактируй и нажми «Сохранить черновик» или кнопку завершения этапа.";
+          Object.values(inputs)[0]?.focus();
         }catch(error){
-          aiStatus.textContent="Не удалось создать план: "+(error?.message||"ошибка соединения")+". Можно заполнить поле самостоятельно.";
+          aiStatus.textContent="Не удалось создать материалы: "+(error?.message||"ошибка соединения")+". Можно заполнить поля самостоятельно.";
         }finally{
           aiButton.disabled=false;manualButton.disabled=false;aiButton.textContent="✦ Создать с Studio AI";
         }
