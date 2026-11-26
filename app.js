@@ -894,6 +894,16 @@ const movieHistoryStyle = document.createElement("style");
     document.body.classList.add("light");
     $("#themeToggle").textContent = "☾";
   }
+  const videoTitlesKey = "pwa-studio-video-show-titles";
+  const videoTitleControls = [$("#showVideoTitles"), $("#editorShowVideoTitles")].filter(Boolean);
+  const savedVideoTitles = localStorage.getItem(videoTitlesKey);
+  videoTitleControls.forEach(control => {
+    control.checked = savedVideoTitles === null ? true : savedVideoTitles === "true";
+    control.addEventListener("change", () => {
+      localStorage.setItem(videoTitlesKey, String(control.checked));
+      videoTitleControls.forEach(other => { if (other !== control) other.checked = control.checked; });
+    });
+  });
 
   $("#quickCreate").addEventListener("submit", event => {
     event.preventDefault();
