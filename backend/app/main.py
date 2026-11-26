@@ -12,7 +12,7 @@ from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
-from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self, ensure_target_not_admin
+from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self, ensure_target_not_owner
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
 
 settings = get_settings()
@@ -194,7 +194,7 @@ def blocked_users(user: StudioUser = Depends(get_current_user)):
 @app.post(f"{settings.api_prefix}/blocks", status_code=201)
 def create_user_block(payload: UserBlockRequest, user: StudioUser = Depends(get_current_user)):
     ensure_user_not_suspended(settings, user.user_id, "community")
-    ensure_target_not_admin(settings, payload.user_id)
+    ensure_target_not_owner(settings, payload.user_id)
     return block_user(settings, user.user_id, payload.user_id)
 
 
@@ -208,6 +208,7 @@ def remove_user_block(payload: UserBlockRequest, user: StudioUser = Depends(get_
 def suspend_user(payload: SuspensionCreateRequest, user: StudioUser = Depends(require_admin)):
     if payload.user_id == user.user_id:
         raise HTTPException(status_code=400, detail="Administrators cannot suspend their own account.")
+    ensure_target_not_owner(settings, payload.user_id)
     return create_suspension(settings, user.user_id, payload)
 
 
