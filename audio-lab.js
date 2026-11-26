@@ -123,6 +123,128 @@
   recordStop?.addEventListener("click", () => {
     if (mediaRecorder?.state === "recording") mediaRecorder.stop();
   });
+
+  // Audio → Story: local audio preview + browser speech dictation + AI transformation of supplied transcript.
+  const audioTabBar = document.querySelector(".audio-lab-tabs");
+  const audioWorkspace = document.querySelector(".audio-lab-workspace");
+  if (audioTabBar && audioWorkspace && !document.querySelector('[data-audio-tab="audio-story"]')) {
+    const tab = document.createElement("button");
+    tab.className = "audio-tab"; tab.type = "button"; tab.role = "tab";
+    tab.id = "audio-tab-audio-story"; tab.setAttribute("aria-selected","false");
+    tab.setAttribute("aria-controls","audio-panel-audio-story"); tab.dataset.audioTab = "audio-story";
+    tab.innerHTML = "<span>✦</span> Аудио → История";
+    audioTabBar.append(tab);
+    const panel = document.createElement("div");
+    panel.className = "audio-panel"; panel.id = "audio-panel-audio-story";
+    panel.role = "tabpanel"; panel.setAttribute("aria-labelledby",tab.id);
+    panel.dataset.audioPanel = "audio-story"; panel.hidden = true;
+    panel.innerHTML = `
+      <div class="audio-panel-intro"><div><div class="eyebrow">AUDIO TO CREATIVE</div><h3>Превратите звук в историю</h3><p>Загрузите запись, добавьте её расшифровку или надиктуйте текст — Studio AI поможет создать сценарий, рассказ или песню.</p></div><span class="audio-coming">Новый инструмент</span></div>
+      <div class="audio-story-grid">
+        <section class="audio-card-inner">
+          <div class="audio-card-icon">🎧</div><h4>1. Добавьте аудио</h4>
+          <label class="audio-upload-zone" for="audioStoryFile"><span>＋</span><b>Выбрать аудиофайл</b><small>MP3, WAV, M4A, OGG, WebM · до 25 МБ</small></label>
+          <input class="audio-file-input" id="audioStoryFile" type="file" accept="audio/*">
+          <p class="audio-live-status" id="audioStoryFileStatus" role="status">Файл остаётся на устройстве и пока используется только для прослушивания.</p>
+          <audio id="audioStoryPreview" controls hidden></audio>
+        </section>
+        <section class="audio-card-inner">
+          <div class="audio-card-icon">🗣</div><h4>2. Получите текст записи</h4>
+          <p>Можно вставить уже распознанный текст или надиктовать речь с помощью распознавания браузера.</p>
+          <div class="audio-record-controls"><button class="audio-record-button" id="audioStoryDictate" type="button">🎙 Начать диктовку</button><button class="audio-stop-button" id="audioStoryDictateStop" type="button" disabled>Остановить</button></div>
+          <p class="audio-live-status" id="audioStoryDictateStatus" role="status">Распознавание речи работает через браузер, если он поддерживает эту функцию.</p>
+        </section>
+      </div>
+      <div class="audio-form-card audio-story-form">
+        <label for="audioStoryTranscript">Текст или описание аудио</label>
+        <textarea id="audioStoryTranscript" rows="7" maxlength="12000" placeholder="Вставьте расшифровку речи, опишите мелодию и её настроение или напишите, о чём аудиозапись..."></textarea>
+        <div class="audio-form-meta"><span id="audioStoryCount">0 / 12000</span><span>Текст отправится в Studio AI только после нажатия кнопки ниже.</span></div>
+        <div class="audio-form-row">
+          <label>Что создаём<select id="audioStoryOutput"><option value="movie">Сценарий фильма</option><option value="story">Рассказ</option><option value="lyrics">Текст песни</option></select></label>
+          <label>Язык результата<select id="audioStoryLanguage"><option value="русский">Русский</option><option value="казахский">Казахский</option><option value="английский">Английский</option></select></label>
+          <label>Тип исходника<select id="audioStorySource"><option value="речь / голосовая запись">Речь или голосовая запись</option><option value="песня / вокал">Песня или вокал</option><option value="инструментальная музыка">Инструментальная музыка</option><option value="свободная творческая идея">Другое / идея</option></select></label>
+        </div>
+        <div class="audio-record-controls"><button class="audio-disabled-action" id="audioStoryGenerate" type="button" style="opacity:1;cursor:pointer">✦ Создать с Studio AI</button><button class="audio-clear-button" id="audioStoryClear" type="button">Очистить текст</button></div>
+        <p class="audio-live-status" id="audioStoryStatus" role="status" aria-live="polite">Важно: автоматическая расшифровка загруженного файла и анализ самой музыки пока не подключены. Для работы AI используйте распознанный текст или диктовку.</p>
+      </div>
+      <div class="audio-story-result" id="audioStoryResult" hidden>
+        <div class="audio-panel-intro"><div><div class="eyebrow">STUDIO AI RESULT</div><h3>Ваш творческий материал</h3></div></div>
+        <textarea id="audioStoryResultText" rows="12" readonly aria-label="Результат Studio AI"></textarea>
+        <div class="audio-record-controls"><button class="audio-record-button" id="audioStoryCopy" type="button">⧉ Копировать</button><button class="audio-record-button" id="audioStoryToMovie" type="button">🎬 Отправить в Миникиностудию</button></div>
+        <p class="audio-live-status" id="audioStoryResultStatus" role="status"></p>
+      </div>`;
+    audioWorkspace.append(panel);
+    const input = document.querySelector("#audioStoryFile");
+    const fileStatus = document.querySelector("#audioStoryFileStatus");
+    const preview = document.querySelector("#audioStoryPreview");
+    const transcript = document.querySelector("#audioStoryTranscript");
+    const count = document.querySelector("#audioStoryCount");
+    const status = document.querySelector("#audioStoryStatus");
+    const generate = document.querySelector("#audioStoryGenerate");
+    const resultBox = document.querySelector("#audioStoryResult");
+    const resultText = document.querySelector("#audioStoryResultText");
+    let selectedFile = null, previewUrl = null, recognition = null, latestResult = "";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0]; if (!file) return;
+      if (!file.type.startsWith("audio/") || file.size > 25*1024*1024) {
+        fileStatus.textContent = "Выберите аудиофайл размером до 25 МБ."; input.value = ""; selectedFile = null; return;
+      }
+      selectedFile = file;
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(file); preview.src = previewUrl; preview.hidden = false;
+      fileStatus.textContent = "Выбран файл: " + file.name + ". Он не загружается на сервер.";
+    });
+    transcript.addEventListener("input",()=>count.textContent=transcript.value.length+" / 12000");
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const dictate = document.querySelector("#audioStoryDictate");
+    const stop = document.querySelector("#audioStoryDictateStop");
+    const dictateStatus = document.querySelector("#audioStoryDictateStatus");
+    if (!SpeechRecognition) {
+      dictate.disabled = true;
+      dictateStatus.textContent = "В этом браузере нет встроенного распознавания речи. Можно вставить готовую расшифровку вручную.";
+    } else {
+      dictate.addEventListener("click",()=>{
+        recognition = new SpeechRecognition(); recognition.lang = document.querySelector("#audioStoryLanguage").value==="казахский"?"kk-KZ":document.querySelector("#audioStoryLanguage").value==="английский"?"en-US":"ru-RU";
+        recognition.continuous = true; recognition.interimResults = true;
+        const base = transcript.value.trim(); let finalText = "";
+        recognition.onresult = event => {
+          let interim = "";
+          for(let i=event.resultIndex;i<event.results.length;i++){const part=event.results[i][0].transcript;if(event.results[i].isFinal)finalText += part+" ";else interim += part;}
+          transcript.value = [base,finalText,interim].filter(Boolean).join(base?" ":"");
+          count.textContent=transcript.value.length+" / 12000";
+        };
+        recognition.onerror = event => dictateStatus.textContent = "Распознавание остановлено: "+event.error+".";
+        recognition.onend = () => {dictate.disabled=false;stop.disabled=true;dictateStatus.textContent="Диктовка завершена. Проверьте распознанный текст и исправьте ошибки."};
+        try{recognition.start();dictate.disabled=true;stop.disabled=false;dictateStatus.textContent="Слушаю речь… Говорите в микрофон."}catch(error){dictateStatus.textContent="Не удалось запустить микрофон: "+error.message}
+      });
+      stop.addEventListener("click",()=>{if(recognition)recognition.stop()});
+    }
+    document.querySelector("#audioStoryClear").addEventListener("click",()=>{transcript.value="";count.textContent="0 / 12000";resultBox.hidden=true;latestResult="";});
+    generate.addEventListener("click",async()=>{
+      if(!transcript.value.trim()){status.textContent="Сначала добавьте расшифровку или описание аудио.";transcript.focus();return;}
+      if(!window.PWAStudioAudioBridge){status.textContent="Модуль студии ещё загружается. Обновите страницу через минуту.";return;}
+      generate.disabled=true;status.textContent="Studio AI создаёт материал…";
+      try{
+        latestResult=await window.PWAStudioAudioBridge.generate({transcript:transcript.value,outputType:document.querySelector("#audioStoryOutput").value,language:document.querySelector("#audioStoryLanguage").value,sourceKind:document.querySelector("#audioStorySource").value,fileName:selectedFile?.name||""});
+        resultText.value=latestResult;resultBox.hidden=false;status.textContent="✓ Материал создан. Проверьте его перед сохранением.";
+        resultBox.scrollIntoView({behavior:"smooth",block:"start"});
+      }catch(error){status.textContent="Не удалось создать материал: "+error.message}
+      finally{generate.disabled=false;}
+    });
+    document.querySelector("#audioStoryCopy").addEventListener("click",async()=>{
+      try{await navigator.clipboard.writeText(latestResult);document.querySelector("#audioStoryResultStatus").textContent="Скопировано ✓";}
+      catch{resultText.focus();resultText.select();document.querySelector("#audioStoryResultStatus").textContent="Выделите текст и скопируйте вручную."}
+    });
+    document.querySelector("#audioStoryToMovie").addEventListener("click",()=>{
+      try{
+        const heading=latestResult.match(/^\s*[#*]*\s*[«"]?([^\n»"]{3,90})[»"]?/m);
+        const title=(heading?.[1]||"История из аудио").replace(/[#*]/g,"").trim();
+        const created=window.PWAStudioAudioBridge.createMovie({title,story:latestResult,sourceLabel:selectedFile?.name||"Аудио → История"});
+        document.querySelector("#audioStoryResultStatus").textContent="✓ Проект «"+created.name+"» создан и открыт в Миникиностудии.";
+      }catch(error){document.querySelector("#audioStoryResultStatus").textContent="Не удалось перенести проект: "+error.message}
+    });
+  }
+
   window.addEventListener("beforeunload", () => {
     mediaStream?.getTracks().forEach((track) => track.stop());
     if (previewUrl) URL.revokeObjectURL(previewUrl);
