@@ -1,5 +1,6 @@
 import httpx
 from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import HTTPException
 
 from app.core.config import Settings
@@ -43,6 +44,10 @@ def list_notifications(settings: Settings, user_id: str):
 
 
 def mark_notification_read(settings: Settings, user_id: str, notification_id: str):
+    try:
+        notification_id = str(UUID(notification_id))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=422, detail="A valid notification ID is required.") from exc
     rows = _request(settings, "PATCH", params={
         "id": f"eq.{notification_id}", "user_id": f"eq.{user_id}",
         "select": "id,read_at"},
