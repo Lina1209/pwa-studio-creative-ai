@@ -107,3 +107,22 @@ Required environment:
 - Local `psql` and Python 3.
 
 Run with `bash supabase/tests/0018_media_upload_claim_race.sh`. The script refuses to run if any other media verification event is pending or claimed, creates one fixture, runs the race, and deletes its own fixture on exit. It does not call Storage. Use a disposable database only; never production. This harness has been authored but not executed.
+
+## 10. Character deletion and cross-owner cleanup matrix (planned integration gate)
+
+The pure planner and Storage DELETE primitive are drafted, but the database orchestration and cleanup worker do not exist yet. Before any delete route is enabled, add disposable-database fixtures for:
+
+- Character A with zero media rows: delete only the owner-matched character; no Storage request.
+- Character A with several owned assets: every asset becomes `cleanup_pending` and gets exactly one cleanup event in the same transaction.
+- Character A with one asset still referenced by another metadata row or passport field: abort or retain that object; never delete it.
+- Character A with a foreign-owner media row supplied by a corrupted fixture: reject the entire character cleanup plan.
+- User B submits A's character ID, asset ID, or exact Storage path: uniform not-found/authorization failure; no object lookup or DELETE request.
+- Two cleanup workers claim the same event: only one lease succeeds.
+- Worker A's lease expires and B reclaims: A cannot delete/finalize/ack after B's fencing token is issued.
+- Storage returns 404: finalize as already absent; repeated cleanup remains idempotent.
+- Storage times out after the delete may have succeeded: keep the event retryable and reconcile existence before declaring completion.
+- A new reference is attempted while cleanup is pending: database/API layer must reject it or serialize it before the Storage side effect.
+- Character deletion is attempted before all child assets are terminal: reject and preserve the character row.
+- Final character deletion succeeds only after all associated media objects are confirmed absent and tombstones are finalized.
+
+The current branch contains only pure planning and a narrow Storage DELETE primitive for this flow. No cleanup SQL RPC, event claim path, worker, route, or end-to-end integration test is present. These checks are release blockers, not passed tests.
