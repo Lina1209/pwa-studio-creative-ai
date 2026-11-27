@@ -145,6 +145,7 @@ Strix — инструмент для динамического тестиро�
 - [Provider attempt and reconciliation contract](GENERATION_PROVIDER_RECONCILIATION_CONTRACT.md) — durable provider attempts, ambiguous outcomes, cancellation races, reconciliation leases, audit evidence, and credit holds. Status: design only; no worker or billing activation.
 
 - [Katty visual identity passport](KATTY_VISUAL_IDENTITY_PASSPORT.md) and [machine-readable identity manifest](../../assets/characters/katty/identity.v1.json) — canonical appearance and cross-tool continuity.
+- [Katty 2D layer and motion contract](KATTY_2D_LAYER_AND_MOTION_CONTRACT.md) and [layer manifest](../../assets/characters/katty/2d-layers.v1.json) — semantic face, hair, clothing and accessory layers; static fallback and reduced-motion rules. Design-only, no rig/runtime yet.
 - [Katty expression system contract](KATTY_EXPRESSION_SYSTEM_CONTRACT.md) and [expression manifest](../../assets/characters/katty/expressions.v1.json) — versioned expression vocabulary and future 2D/3D rig requirements; design-only, no runtime animation.
 - [Profile Avatar Selection contract](PROFILE_AVATAR_SELECTION_CONTRACT.md) — product requirements for free standard 2D categories, a separate real-3D collection, mobile selection, Katty identity continuity, and owner-scoped custom-avatar safety.
 - [Profile avatar implementation audit](PROFILE_AVATAR_IMPLEMENTATION_AUDIT.md) — nine free 2D SVG avatars, responsive picker, owner-fenced persistence, community rendering, additive migration draft, and verified CI.
