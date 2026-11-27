@@ -187,6 +187,24 @@
       check(rows.length === 2 && rows.every(row => row.ownerId === owner), "owner list leaked or omitted journal");
       check((await api.list(otherOwner)).length === 0, "foreign list leaked a journal");
     });
+    await test("same local character ID is isolated across different owners", async () => {
+      const sharedLocalCharacterId = uuid();
+      const secondOwner = uuid();
+      await api.create({
+        ownerId: owner, localCharacterId: sharedLocalCharacterId,
+        passportFingerprint: sha, references: []
+      });
+      await api.create({
+        ownerId: secondOwner, localCharacterId: sharedLocalCharacterId,
+        passportFingerprint: "c".repeat(64), references: []
+      });
+      const first = await api.get(owner, sharedLocalCharacterId);
+      const second = await api.get(secondOwner, sharedLocalCharacterId);
+      check(first && second, "one owner could not retrieve its own same-ID journal");
+      check(first.ownerId === owner && second.ownerId === secondOwner, "same-ID journals crossed owner boundary");
+      check((await api.list(owner)).every(row => row.ownerId === owner), "first owner's list exposed another owner's journal");
+      check((await api.list(secondOwner)).length === 1, "second owner's list did not return only its own journal");
+    });
     await test("cloud character mapping is immutable", async () => {
       await api.setCloudCharacter(owner, localCharacter, cloudCharacter);
       await rejects(() => api.setCloudCharacter(owner, localCharacter, uuid()), "cloud mapping replacement unexpectedly accepted");
