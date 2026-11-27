@@ -35,6 +35,18 @@ begin
     raise exception 'invalid_lease_seconds' using errcode = '22023';
   end if;
 
+  -- Poisoned events that exhausted delivery attempts are explicitly dead-lettered.
+  update public.generation_job_outbox
+  set dead_lettered_at = now(),
+      last_error_code = coalesce(last_error_code, 'delivery_attempt_limit_reached'),
+      claimed_at = null,
+      claimed_by = null,
+      claim_token = null
+  where delivered_at is null
+    and dead_lettered_at is null
+    and delivery_attempts >= 20
+    and (claimed_at is null or claimed_at < now() - make_interval(secs => p_lease_seconds));
+
   return query
   with candidates as (
     select o.id
@@ -69,7 +81,7 @@ create or replace function public.ack_generation_outbox(
 returns boolean
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_count integer;
@@ -91,7 +103,7 @@ create or replace function public.claim_generation_job(
 returns setof public.generation_jobs
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_job_id uuid;
@@ -152,7 +164,7 @@ create or replace function public.heartbeat_generation_job(
 returns boolean
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_count integer;
@@ -181,7 +193,7 @@ create or replace function public.complete_generation_job(
 returns boolean
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_count integer;
@@ -222,7 +234,7 @@ create or replace function public.fail_generation_job(
 returns text
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_job public.generation_jobs%rowtype;
@@ -251,7 +263,7 @@ begin
     return 'stale_lease';
   end if;
 
-  if p_retryable and v_job.attempt_count < v_job.max_attempts then
+  if p_retryable is true and v_job.attempt_count < v_job.max_attempts then
     v_new_status := 'retry_wait';
     update public.generation_jobs
     set status = v_new_status,
@@ -288,7 +300,7 @@ create or replace function public.request_generation_job_cancel(
 returns text
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_job public.generation_jobs%rowtype;
@@ -423,7 +435,7 @@ begin
 returns boolean
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_count integer;
@@ -521,7 +533,7 @@ create or replace function public.finish_generation_job_cancel(
 returns boolean
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_count integer;
