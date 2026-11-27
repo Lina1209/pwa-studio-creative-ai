@@ -20,6 +20,7 @@
   let activeMessageThreadId = null;
   let activeMessagePartnerId = null;
   let conversationsCache = [];
+  let conversationRenderVersion = 0;
   let communitySearchRequestVersion = 0;
   let communityProfileRequestVersion = 0;
   const setAuthMessage = (message, isError = false) => {
@@ -659,9 +660,12 @@ const movieHistoryStyle = document.createElement("style");
   const renderConversations = threads => {
     conversationsCache = Array.isArray(threads) ? threads : [];
     const list = $("#conversationList"); if (!list) return;
+    const renderVersion = ++conversationRenderVersion;
+    const contextVersion = authContextVersion;
+    const userId = authSession?.user?.id;
     list.replaceChildren();
-    if (!threads.length) { list.append(adminNode("div","admin-empty","Пока нет диалогов. Начните переписку с первого сообщения.")); return; }
-    threads.forEach(thread => {
+    if (!conversationsCache.length) { list.append(adminNode("div","admin-empty","Пока нет диалогов. Начните переписку с первого сообщения.")); return; }
+    conversationsCache.forEach(thread => {
       const partnerId = messagePartnerId(thread);
       const button = adminNode("button","conversation-button");
       button.type = "button";
@@ -669,7 +673,12 @@ const movieHistoryStyle = document.createElement("style");
       button.append(adminNode("b","", messageDisplayName(partnerId)));
       button.append(adminNode("small","",thread.last_message_at ? "Последнее сообщение · "+formatAdminDate(thread.last_message_at) : "Диалог создан"));
       button.addEventListener("click",()=>openConversation(thread.id,partnerId));
-      loadMessageProfile(partnerId).then(()=>{const title=button.querySelector("b");if(title)title.textContent=messageDisplayName(partnerId);if(thread.id===activeMessageThreadId)$( "#conversationTitle" ).textContent="Диалог с "+messageDisplayName(partnerId);});
+      loadMessageProfile(partnerId).then(()=>{
+        if(renderVersion!==conversationRenderVersion||contextVersion!==authContextVersion||authSession?.user?.id!==userId||!button.isConnected)return;
+        const title=button.querySelector("b");
+        if(title)title.textContent=messageDisplayName(partnerId);
+        if(thread.id===activeMessageThreadId)$("#conversationTitle").textContent="Диалог с "+messageDisplayName(partnerId);
+      });
       list.append(button);
     });
   };
