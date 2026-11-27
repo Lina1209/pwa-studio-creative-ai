@@ -15,7 +15,7 @@ from app.services.moderation_service import create_user_report, list_user_report
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self, ensure_target_not_owner
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
-from app.services.media_repository import get_owned_media_asset
+from app.services.media_repository import get_owned_media_asset, list_owned_character_media_assets
 from app.services.media_read import plan_private_media_read
 from app.services.media_signed_url import create_private_media_signed_url, SIGNED_URL_TTL_SECONDS
 from app.services.media_access import media_asset_public_view
@@ -77,6 +77,14 @@ def health():
 
 
 
+
+@app.get(f"{settings.api_prefix}/characters/{{character_id}}/references")
+def list_character_reference_status(character_id: str, response: Response, user: StudioUser = Depends(get_current_user)):
+    """Return owner-scoped upload and independent-verification states for a character."""
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    get_owned_character_for_media_upload(settings, character_id, user.user_id)
+    return list_owned_character_media_assets(settings, character_id, user.user_id)
 
 @app.post(f"{settings.api_prefix}/characters/{{character_id}}/references", status_code=202)
 async def upload_character_reference(
