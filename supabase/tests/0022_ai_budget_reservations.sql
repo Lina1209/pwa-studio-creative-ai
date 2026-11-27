@@ -24,19 +24,23 @@ declare
   v_duplicate uuid;
   v_status text;
   v_count integer;
+  v_created boolean;
 begin
-  select reservation_id into v_first
+  select reservation_id,reservation_created into v_first,v_created
   from public.reserve_ai_budget(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',v_user,'budget-test-key-0001',
     repeat('a',64),'chat','deepseek','deepseek-flash',0.02
   );
+  if not v_created then raise exception 'new reservation was not marked created'; end if;
 
-  select reservation_id into v_duplicate
+  select reservation_id,reservation_created into v_duplicate,v_created
   from public.reserve_ai_budget(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',v_user,'budget-test-key-0001',
     repeat('a',64),'chat','deepseek','deepseek-flash',0.02
   );
-  if v_first <> v_duplicate then raise exception 'idempotency returned a second reservation'; end if;
+  if v_first <> v_duplicate or v_created then
+    raise exception 'idempotency did not return the existing reservation';
+  end if;
 
   begin
     perform * from public.reserve_ai_budget(
