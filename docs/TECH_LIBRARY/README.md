@@ -118,7 +118,7 @@ Strix — инструмент для динамического тестиро�
 **Текущий статус внедрения:** не интегрировать в продукт и не запускать на production. Сначала отдельно оценить безопасность самого инструмента, его зависимости, передачу данных и фактическую совместимость с нашей инфраструктурой.
 
 ---
- 
+
 ## Будущие разделы библиотеки
 
 1. AI-модели и интеллектуальные агенты.
@@ -135,3 +135,4 @@ Strix — инструмент для динамического тестиро�
 **Главный принцип:** берём лучшее из технологий, но создаём собственную экосистему PWA Studio.
 
 - [Generation Jobs contract](GENERATION_JOBS_CONTRACT.md) — inactive job lifecycle, durable queue, cancellation, retry, billing, and go-live gates.
+- [Generation Credits Ledger contract](GENERATION_CREDITS_LEDGER_CONTRACT.md) — design-only immutable ledger, atomic reservations, idempotent settlement/release, and reconciliation. No wallet or billing implementation is active.
