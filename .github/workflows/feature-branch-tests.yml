@@ -117,3 +117,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Run real-browser IndexedDB journal tests
         run: python tests/browser/run_character_backup_journal.py
+      - name: Check frontend syntax and account-switch fencing
+        run: |
+          node --check app.js
+          python tests/test_character_library_account_fencing.py
