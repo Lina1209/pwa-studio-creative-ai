@@ -110,7 +110,7 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         audio = (Path(__file__).resolve().parents[1] / "audio-lab.js").read_text(encoding="utf-8")
         self.assertIn('resultText.addEventListener("input",()=>{latestResult=resultText.value;});', audio)
         bridge_start = APP.index("window.PWAStudioAudioBridge = {")
-        bridge_end = APP.index("\\n  };", bridge_start) + 5
+        bridge_end = APP.index("\n  };", bridge_start) + 5
         bridge = APP[bridge_start:bridge_end]
         self.assertIn('!String(story || "").trim()', bridge)
         self.assertNotIn('generation.reply !== String(story || "")', bridge)
