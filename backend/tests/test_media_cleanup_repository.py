@@ -31,6 +31,19 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
         self.assertEqual(call.call_args.args[1], "pwa_request_character_media_cleanup")
 
     @patch("app.services.media_cleanup_repository._call")
+    def test_claim_rejects_multiple_rpc_rows_as_ambiguous(self, call):
+        from app.services.media_cleanup_repository import claim_media_cleanup
+        event = {
+            "owner_id": OWNER, "asset_id": ASSET, "character_id": CHARACTER, "event_id": EVENT,
+            "claim_token": TOKEN, "bucket": "studio-media",
+            "storage_path": f"{OWNER}/characters/{CHARACTER}/{ASSET}.png",
+            "attempts": 1, "max_attempts": 8,
+        }
+        call.return_value = [event, event]
+        with self.assertRaisesRegex(RuntimeError, "multiple rows"):
+            claim_media_cleanup(settings(), TOKEN)
+
+    @patch("app.services.media_cleanup_repository._call")
     def test_claim_validates_required_payload(self, call):
         event = {
             "owner_id": OWNER, "asset_id": ASSET, "character_id": CHARACTER, "event_id": EVENT,
