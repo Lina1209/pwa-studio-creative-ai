@@ -84,6 +84,13 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         self.assertEqual(cancelled.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(cancelled.result_asset_id)
 
+    def test_cancel_during_reconciliation_records_intent_without_releasing_hold(self):
+        running = claim_job(new_job(), NOW)
+        unresolved = mark_failed(running, NOW, "provider_timeout", True)
+        cancelled = request_cancel(unresolved, NOW + timedelta(seconds=5))
+        self.assertEqual(cancelled.status, JobStatus.RECONCILIATION_REQUIRED)
+        self.assertEqual(cancelled.cancel_requested_at, NOW + timedelta(seconds=5))
+
     def test_success_requires_processing_and_asset_id(self):
         running = claim_job(new_job(), NOW)
         self.assertEqual(mark_succeeded(running, "asset-1").status, JobStatus.SUCCEEDED)
