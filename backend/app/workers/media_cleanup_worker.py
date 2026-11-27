@@ -49,12 +49,14 @@ def _validate_claim(event: dict) -> None:
     if len(parts) != 4 or parts[0] != event["owner_id"] or parts[1] != "characters" or parts[2] != event["character_id"]:
         raise ValueError("Media cleanup claim object key is outside the owner's namespace.")
     try:
-        UUID(parts[2])
+        resource_id = str(UUID(parts[2]))
         object_name, extension = parts[3].rsplit(".", 1)
-        UUID(object_name)
+        storage_object_id = str(UUID(object_name))
     except (ValueError, TypeError, IndexError) as exc:
         raise ValueError("Media cleanup claim contains a malformed object key.") from exc
-    if extension.lower() not in {"png", "jpg", "webp"}:
+    if resource_id != parts[2] or storage_object_id != object_name:
+        raise ValueError("Media cleanup claim object key is not canonical.")
+    if extension not in {"png", "jpg", "webp"}:
         raise ValueError("Media cleanup claim contains an unsupported object extension.")
     attempts, maximum = event.get("attempts"), event.get("max_attempts")
     if not isinstance(attempts, int) or isinstance(attempts, bool) or not 1 <= attempts <= 8:
