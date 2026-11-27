@@ -108,6 +108,24 @@ begin
     raise exception 'cleanup reservation did not enqueue exactly one asset: %',v_request;
   end if;
 
+  -- Browser clients cannot create unindexed studio-media objects. The API's
+  -- character-reference uploader uses service_role after a DB reservation.
+  if exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and cmd='INSERT' and roles @> array['authenticated']::name[]
+      and coalesce(with_check,'') ilike '%studio-media%'
+  ) then
+    raise exception 'an authenticated Storage INSERT policy still exposes studio-media';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and policyname='Users upload own studio exports' and cmd='INSERT'
+  ) then
+    raise exception 'owner-scoped studio-exports upload policy is missing';
+  end if;
+
   -- Authenticated users must not bypass the media cleanup outbox by deleting
   -- private studio-media objects directly. Export deletion remains owner-scoped.
   if exists (
