@@ -11,6 +11,16 @@ APP = (Path(__file__).resolve().parents[1] / "app.js").read_text(encoding="utf-8
 
 
 class CharacterLibraryAccountFencingTests(unittest.TestCase):
+    def test_logout_response_is_fenced_to_originating_account(self):
+        logout_start = APP.index('authLogoutButton.addEventListener("click"')
+        logout_end = APP.index('\n  });', logout_start) + 6
+        logout = APP[logout_start:logout_end]
+        self.assertIn("const requestUserId = authSession.user.id;", logout)
+        self.assertIn("const requestVersion = authContextVersion;", logout)
+        self.assertIn("if (!contextIsCurrent()) return;", logout)
+        self.assertIn("if (contextIsCurrent()) authLogoutButton.disabled = false;", logout)
+        self.assertNotIn("refreshAuthUI(null);", logout.split("if (!contextIsCurrent()) return;")[0])
+
     def test_render_stops_when_account_changes_during_image_read(self):
         self.assertIn("const contextVersion=authContextVersion;", APP)
         self.assertIn(
