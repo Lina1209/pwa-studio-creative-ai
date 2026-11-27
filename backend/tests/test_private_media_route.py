@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.auth import StudioUser, get_current_user
+from app.core.config import Settings
 from app.services.image_reference_validation import ValidatedReference
 
 OWNER = "11111111-1111-4111-8111-111111111111"
@@ -96,7 +97,8 @@ class PrivateMediaRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         sign.assert_not_called()
 
-    def test_missing_bearer_token_is_rejected(self):
+    @patch("app.services.auth.get_settings", return_value=Settings(supabase_url="https://example.supabase.co"))
+    def test_missing_bearer_token_is_rejected(self, _settings):
         app.dependency_overrides.clear()
         response = self.client.get(f"/api/media/{ASSET}/access")
         self.assertEqual(response.status_code, 401)
