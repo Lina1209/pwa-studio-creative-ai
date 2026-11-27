@@ -40,7 +40,7 @@ This commit adds the isolated persistence primitive only. It does not claim brow
 - IndexedDB durability after reload and browser restart;
 - owner separation and account switching;
 - duplicate creation within one tab and racing creation from two independent browser tabs; aborted IndexedDB write rollback with no partial journal record;
-- quota failure and transaction abort;
+- simulated `QuotaExceededError` during IndexedDB open (not physical storage exhaustion), source Blob preservation, and transaction abort;
 - invalid/forbidden state transitions and immutable mappings;
 - lost network response and offline recovery in the future coordinator;
 - proof that source localStorage and image Blob records remain byte-for-byte unchanged.
@@ -53,6 +53,6 @@ Do not enable an importer, add network orchestration, or remove local source dat
 - Runner: `tests/browser/run_character_backup_journal.py`.
 - CI job: `character-backup-journal-browser-tests` in `.github/workflows/feature-branch-tests.yml`.
 - The runner serves the repository over loopback HTTP and launches a fresh Chromium context. IndexedDB data is isolated to that temporary browser context.
-- Current cases: create/read-back while asserting an existing local image Blob remains byte-for-byte unchanged, duplicate creation rejection, concurrent duplicate creation in one tab and across two independent tabs (exactly one winner), owner-scoped get/list, immutable cloud character mapping, malformed passport fingerprint rejection, rejection of skipped upload states and premature verified transitions, valid lifecycle through verified, completion criteria, and terminal verified state. The runner also reopens the same persistent Chromium profile and verifies journal recovery after browser restart.
+- Current cases: create/read-back while asserting an existing local image Blob remains byte-for-byte unchanged, duplicate creation rejection, concurrent duplicate creation in one tab and across two independent tabs (exactly one winner), owner-scoped get/list, immutable cloud character mapping, malformed passport fingerprint rejection, rejection of skipped upload states and premature verified transitions, valid lifecycle through verified, completion criteria, terminal verified state, aborted-transaction rollback, and simulated IndexedDB quota/open failure with source Blob preservation. The runner also reopens the same persistent Chromium profile and verifies journal recovery after browser restart.
 
-This suite does not yet simulate process termination mid-transaction, quota exhaustion, account-switch UI behavior, or network recovery. Those remain required before importer integration.
+The suite simulates an IndexedDB `QuotaExceededError` at database-open time and verifies that the source Blob and journal remain unchanged. This is not a physical browser storage-exhaustion test. The suite does not yet simulate process termination mid-transaction, real quota exhaustion, account-switch UI behavior, or network recovery. Those remain required before importer integration.
