@@ -148,3 +148,4 @@ Strix — инструмент для динамического тестиро�
 - [Profile avatar implementation audit](PROFILE_AVATAR_IMPLEMENTATION_AUDIT.md) — nine free 2D SVG avatars, responsive picker, owner-fenced persistence, community rendering, additive migration draft, and verified CI.
 - [Profile avatar 3D architecture](PROFILE_AVATAR_3D_ARCHITECTURE.md) — design-only 3D model validation, renderer readiness, mobile/accessibility requirements, and explicit gates before enabling 3D.
 - Shared local catalogue metadata lives in `profile-avatar-catalog.js`; the `katty-katarina` identity key is a continuity hint, not a profile-to-character foreign key. Profile avatars remain separate from Character Library records.
+- [Katty visual identity passport](KATTY_VISUAL_IDENTITY_PASSPORT.md) — canonical face, hair, eyes, freckles, wardrobe, accessories, palette, allowed variations, and 2D/3D continuity rules. Machine-readable source: `assets/characters/katty/identity.v1.json`.
