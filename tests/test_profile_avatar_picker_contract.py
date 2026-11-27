@@ -88,8 +88,19 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("const kattyResponseState", app)
         self.assertIn('setKattyAssistantExpression(kattyContextState(value))', app)
         self.assertIn('setKattyAssistantExpression(kattyResponseState(value, result.reply))', app)
-        self.assertIn('const clearAssistantMessages = () => {\\n    setKattyAssistantExpression("neutral");', app)
-        self.assertIn('const loadAssistantMessages = async conversationId => {\\n    setKattyAssistantExpression("neutral");', app)
+        self.assertIn("const clearAssistantMessages = () => {", app)
+        self.assertIn("const loadAssistantMessages = async conversationId => {", app)
 
 if __name__ == "__main__":
+    def test_katty_assistant_modes_are_separate_from_expression_states(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const KATTY_ASSISTANT_MODES", app)
+        for mode in ("companion", "teacher", "creator", "guide"):
+            self.assertIn(mode + ": { label:", app)
+        self.assertIn("const kattyModeForMessage", app)
+        self.assertIn("const setKattyAssistantMode", app)
+        self.assertIn("image.dataset.assistantMode = mode", app)
+        self.assertIn("setKattyAssistantMode(kattyModeForMessage(value))", app)
+        self.assertIn("setKattyAssistantExpression(kattyContextState(value))", app)
+
     unittest.main()
