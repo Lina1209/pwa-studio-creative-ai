@@ -106,3 +106,5 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=500)
     visibility: str | None = Field(default=None, pattern=r"^(public|private)$")
     show_in_directory: bool | None = None
+    avatar_catalog_id: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]+$")
+    avatar_representation: str | None = Field(default=None, pattern=r"^(2d|3d)$")
