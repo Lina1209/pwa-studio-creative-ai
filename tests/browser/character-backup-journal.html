@@ -7,6 +7,21 @@
 (async () => {
   const output = document.getElementById("results");
   const passed = [];
+  const params = new URLSearchParams(location.search);
+  if (params.has("verify-restart")) {
+    try {
+      const row = await window.PWACharacterBackupJournal.get(params.get("owner"), params.get("character"));
+      if (!row || row.references.length !== 1 || row.references[0].state !== "verified") throw new Error("Persisted journal was not restored after browser restart.");
+      document.documentElement.dataset.persistOwner = owner;
+    document.documentElement.dataset.persistCharacter = localCharacter;
+    document.documentElement.dataset.testResult = "passed";
+      output.textContent = "PASS persistent IndexedDB journal restored after browser restart";
+    } catch (error) {
+      document.documentElement.dataset.testResult = "failed";
+      output.textContent = "FAIL browser restart recovery\n" + (error.stack || error);
+    }
+    return;
+  }
   const uuid = () => crypto.randomUUID();
   const sha = "a".repeat(64);
   const check = (condition, message) => { if (!condition) throw new Error(message); };
@@ -52,7 +67,7 @@
     await test("owner boundary prevents foreign reads", async () => {
       check(await api.get(otherOwner, localCharacter) === null, "foreign owner read returned a record");
       const rows = await api.list(owner);
-      check(rows.length === 1 && rows[0].ownerId === owner, "owner list leaked or omitted journal");
+      check(rows.length === 2 && rows.every(row => row.ownerId === owner), "owner list leaked or omitted journal");
       check((await api.list(otherOwner)).length === 0, "foreign list leaked a journal");
     });
     await test("cloud character mapping is immutable", async () => {
