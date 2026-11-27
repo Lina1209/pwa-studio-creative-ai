@@ -6,7 +6,7 @@
     { id: "forest-elf", name: "Лесная фея", category: "fantasy", group: "Фэнтези", representation: "2d", assetPath: "assets/avatars/2d/forest-elf.svg" },
     { id: "fox-scout", name: "Лисёнок", category: "animals", group: "Животные", representation: "2d", assetPath: "assets/avatars/2d/fox-scout.svg" },
     { id: "robo-buddy", name: "Робот-друг", category: "robots", group: "Роботы", representation: "2d", assetPath: "assets/avatars/2d/robo-buddy.svg" },
-    { id: "katty-assistant", name: "Катти · помощница PWA Studio", category: "cartoon", group: "Мультяшные", representation: "2d", assetPath: "assets/avatars/2d/katty-assistant.svg", identityKey: "katty-katarina" },
+    { id: "katty-assistant", name: "Катти · помощница PWA Studio", category: "cartoon", group: "Мультяшные", representation: "2d", assetPath: "assets/avatars/2d/katty-assistant.svg", identityKey: "katty-katarina", identityManifest: "assets/characters/katty/identity.v1.json" },
     { id: "comic-star", name: "Комикс-герой", category: "cartoon", group: "Мультяшные", representation: "2d", assetPath: "assets/avatars/2d/comic-star.svg" },
     { id: "cosmo-pilot", name: "Космический пилот", category: "space", group: "Космос", representation: "2d", assetPath: "assets/avatars/2d/cosmo-pilot.svg" },
     { id: "sun-garden", name: "Солнечный сад", category: "nature", group: "Природа", representation: "2d", assetPath: "assets/avatars/2d/sun-garden.svg" },
