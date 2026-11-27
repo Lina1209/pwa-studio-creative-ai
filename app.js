@@ -2149,8 +2149,20 @@ const movieHistoryStyle = document.createElement("style");
     try {
       await new Promise((resolve,reject)=>{
         const tx=db.transaction("images","readwrite"),store=tx.objectStore("images");
-        store.put({id,ownerId,blob,createdAt:new Date().toISOString()});
-        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("Сохранение изображения отменено."));
+        let failure=null;
+        const existing=store.get(id);
+        existing.onsuccess=()=>{
+          if(existing.result&&existing.result.ownerId!==ownerId){
+            failure=new Error("Идентификатор изображения уже принадлежит другому аккаунту. Исходная запись сохранена.");
+            tx.abort();
+            return;
+          }
+          store.put({id,ownerId,blob,createdAt:new Date().toISOString()});
+        };
+        existing.onerror=()=>{failure=existing.error||new Error("Не удалось проверить владельца изображения.");};
+        tx.oncomplete=resolve;
+        tx.onerror=()=>reject(failure||tx.error||new Error("Не удалось сохранить изображение."));
+        tx.onabort=()=>reject(failure||tx.error||new Error("Сохранение изображения отменено."));
       });
     } finally { db.close(); }
   };
