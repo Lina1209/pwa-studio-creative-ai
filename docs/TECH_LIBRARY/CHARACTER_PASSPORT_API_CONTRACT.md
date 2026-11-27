@@ -10,7 +10,7 @@ Status: implementation foundation; do not deploy or apply migrations.
 - No DELETE endpoint is provided. Character removal must use the existing cleanup/outbox lifecycle.
 
 ## Data contract
-The existing migration 0012 schema has `id`, `owner_id`, `name`, `description`, `avatar_url`, `reference_data`, and `created_at`; migration 0020 adds nullable `source_local_id` with a unique owner-scoped constraint. The API intentionally does not accept avatar URLs or storage paths and returns only `id`, `name`, `description`, `reference_data`, and `created_at`. Image blobs remain in IndexedDB until an explicit, verified backup flow exists.
+The existing migration 0012 schema has `id`, `owner_id`, `name`, `description`, `avatar_url`, `reference_data`, and `created_at`; migration 0020 adds nullable `source_local_id` with a unique owner-scoped constraint. The API intentionally does not accept avatar URLs or storage paths and returns `id`, `source_local_id`, `name`, `description`, `reference_data`, and `created_at` (never `owner_id`). Image blobs remain in IndexedDB until an explicit, verified backup flow exists.
 
 `reference_data` must be a JSON object, max 24 KiB serialized, max depth 6, max 80 keys per object, max 100 items per array, and max 4,000 characters per string. Name is 1–120 characters; description max 5,000 characters. The database service credential is server-only.
 
@@ -39,10 +39,10 @@ Proposed metadata mapping:
 - `description` → API `description` (the API limit is aligned with the existing local 5,000-character limit).
 - `kind`, `representation`, `voice`, `passport`, and reference image descriptors → API `reference_data`.
 - `createdAt` stays local provenance unless a reviewed server schema explicitly supports it.
-- local `id` must be preserved in a separate explicit mapping record; never assume a browser UUID is a cloud ID.
+- local `id` is sent as `source_local_id`; the server generates a separate cloud `id`. The API response returns both IDs so the browser can persist an explicit local↔cloud mapping.
 - image blobs are uploaded only through the authenticated server upload route after cloud character creation; no Blob/base64 data is placed in `reference_data`.
 
-A safe importer still needs durable idempotency across interrupted requests, an explicit local↔cloud ID mapping, per-image upload state, a read-back verification step, and a non-destructive backup/rollback procedure. Current API POST does not yet provide a durable idempotency key or caller-selected ID; retries can create duplicates. Therefore do not implement automatic retries or frontend import yet. Guest records remain local-only. Existing records and image blobs must never be deleted as part of import.
+The durable owner-scoped idempotency primitive now protects metadata creation across interrupted/retried requests. A safe importer still needs per-image upload state, read-back verification for every uploaded object, and a non-destructive backup/rollback procedure. Therefore do not implement frontend import yet. Guest records remain local-only. Existing records and image blobs must never be deleted as part of import.
 
 
 ## Durable local-to-cloud identity (migration 0020 draft)
