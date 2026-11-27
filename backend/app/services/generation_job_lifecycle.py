@@ -93,8 +93,11 @@ def request_cancel(job: GenerationJob, now: datetime) -> GenerationJob:
 
 def mark_succeeded(job: GenerationJob, result_asset_id: str) -> GenerationJob:
     if job.status == JobStatus.CANCEL_REQUESTED:
-        # A cancelled result must never be published or attached to the user's library.
-        return replace(job, status=JobStatus.CANCELLED, lease_expires_at=None, result_asset_id=None)
+        # Provider completion can still be billable; suppress publication and reconcile usage.
+        return replace(
+            job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
+            result_asset_id=None, error_code="provider_completed_after_cancel",
+        )
     if job.status != JobStatus.PROCESSING:
         raise ValueError("Only a processing job can succeed.")
     if not result_asset_id:
@@ -111,10 +114,8 @@ def mark_failed(
     submission_outcome: ProviderSubmissionOutcome = ProviderSubmissionOutcome.UNKNOWN,
 ) -> GenerationJob:
     _validate_now(now)
-    if job.status == JobStatus.CANCEL_REQUESTED:
-        return replace(job, status=JobStatus.CANCELLED, lease_expires_at=None, result_asset_id=None)
-    if job.status != JobStatus.PROCESSING:
-        raise ValueError("Only a processing job can fail.")
+    if job.status not in {JobStatus.PROCESSING, JobStatus.CANCEL_REQUESTED}:
+        raise ValueError("Only an active job can fail.")
     if not error_code or len(error_code) > 80:
         raise ValueError("A short, non-sensitive error code is required.")
     if retry_delay_seconds < 1 or retry_delay_seconds > 3600:
@@ -132,6 +133,8 @@ def mark_failed(
             job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
             next_attempt_at=None, error_code="provider_outcome_unknown",
         )
+    if job.status == JobStatus.CANCEL_REQUESTED:
+        return replace(job, status=JobStatus.CANCELLED, lease_expires_at=None, result_asset_id=None)
     can_retry = retryable and safe_to_retry and job.attempt_count < job.max_attempts
     return replace(
         job,
