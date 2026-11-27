@@ -43,6 +43,15 @@ class MediaCleanupWorkerTests(unittest.TestCase):
             with self.subTest(path=bad_path), self.assertRaises(ValueError):
                 _validate_claim(claim(storage_path=bad_path))
 
+    def test_rejects_noncanonical_claim_token(self):
+        for token in (
+            "g7777777-7777-4777-8777-777777777777",
+            "77777777777747778777777777777777",
+            "77777777-7777-4777-8777-77777777777Z",
+        ):
+            with self.subTest(token=token), self.assertRaises(ValueError):
+                _validate_claim(claim(claim_token=token))
+
     def test_rejects_non_object_claim_before_field_access(self):
         for value in (None, [], "claim", 42):
             with self.subTest(value=value), self.assertRaises(ValueError):
