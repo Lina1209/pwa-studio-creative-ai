@@ -305,3 +305,24 @@ A narrow Storage primitive now exists in `backend/app/services/media_storage_del
 8. If any step fails, keep the character and cleanup-pending tombstones; never cascade-delete metadata before the private objects are reconciled.
 
 **Not implemented yet:** there is no character-delete route, no atomic cleanup-reservation/finalization RPC, no cleanup event claim RPC, and no cleanup worker. Migration 0018 permits the cleanup event type but current claim RPC processes verification events only. The new planner and Storage primitive are foundations, not a working delete feature. Character deletion and cloud cleanup remain disabled until the persistence sequence and disposable multi-session tests exist.
+
+## 28. Durable character cleanup worker (feature-branch draft)
+
+Migration `0019_private_media_cleanup_outbox.sql` adds service-role-only RPCs for atomic cleanup reservation, fenced event claiming, retry, completion, and final character deletion. It reuses the private `media_asset_outbox` table introduced by migration 0018.
+
+- `pwa_request_character_media_cleanup` locks the owner-matched character and complete associated media set, validates the immutable character-reference object key, checks surviving media/passport references, changes eligible assets to `cleanup_pending`, and inserts idempotent cleanup events in one transaction.
+- Transaction-scoped advisory locks serialize new media-row and character-passport references against a cleanup reservation. Triggers reject new pointers to `cleanup_pending` or `deleted` objects.
+- `pwa_claim_media_cleanup` leases one event with a fresh UUID fencing token and rechecks surviving references before returning the server-stored bucket/path.
+- `media_cleanup_worker.py` validates the claim before Storage access, issues one exact private-object DELETE through the service-role primitive, treats 404 as already absent, and only then calls the fenced completion RPC.
+- `pwa_complete_media_cleanup` atomically changes the media row to `deleted`, detaches its character association while retaining the tombstone, and acknowledges the event.
+- `pwa_finalize_character_media_cleanup` deletes the character only after no associated media rows remain. A dead-letter cleanup leaves the character and tombstone in place for operator recovery.
+
+The worker is a separate process: `python -m app.workers.media_cleanup_worker`. It needs the same server-only `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables as the verification worker. No Render worker has been created, no secret has been added, and no process has been deployed.
+
+### Remaining safety boundary
+
+The cleanup worker rechecks references at claim time, while advisory-lock triggers prevent later metadata pointers from being created through the protected tables. Storage deletion and Postgres completion cannot be one distributed transaction; if the worker loses its lease after Storage DELETE, a later worker repeats the DELETE (404 is idempotent) and completes with its own token. This is intentional at-least-once behavior.
+
+The current request RPC supports character-linked image objects in the private `studio-media` bucket with the canonical `<owner>/characters/<character>/<object>.(png|jpg|webp)` key. Other media types and arbitrary legacy paths fail closed rather than being deleted.
+
+**Not implemented:** no public/API character-delete endpoint is enabled; no UI delete action is wired to these RPCs. The service-role repository exposes reservation/finalization methods for future route integration. Migration 0019 and all its tests remain drafts until they pass on a disposable database.
