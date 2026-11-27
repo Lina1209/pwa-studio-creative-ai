@@ -11,6 +11,31 @@ insert into public.ai_budget_policies(
   'platform','platform',date_trunc('month',now()),date_trunc('month',now()) + interval '1 month',0.05,true
 );
 
+do $
+begin
+  if (not (select not enforcement_enabled and kill_switch_enabled
+           from public.ai_budget_control where singleton=true)) then
+    raise exception 'AI budget control must default to disabled and stopped';
+  end if;
+  if has_table_privilege('anon','public.ai_budget_reservations','SELECT')
+     or has_table_privilege('authenticated','public.ai_budget_ledger','SELECT')
+     or has_function_privilege('anon',
+       'public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric)','EXECUTE') then
+    raise exception 'browser role unexpectedly has AI budget privileges';
+  end if;
+  begin
+    perform * from public.reserve_ai_budget(
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      current_setting('pwa.test_owner_id')::uuid,'budget-closed-key-0001',
+      repeat('e',64),'chat','deepseek','deepseek-flash',0.01
+    );
+    raise exception 'AI budget RPC must fail closed while disabled';
+  exception when sqlstate '55000' then
+    if sqlerrm <> 'ai_budget_enforcement_unavailable' then raise; end if;
+  end;
+end;
+$;
+
 update public.ai_budget_control
 set enforcement_enabled=true, kill_switch_enabled=false
 where singleton=true;
