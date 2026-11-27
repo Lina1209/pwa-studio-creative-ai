@@ -201,10 +201,18 @@
     let audioStoryRequestVersion = 0;
     window.addEventListener("pwa-studio-auth-changed", () => {
       audioStoryRequestVersion += 1;
+      if (recognition) {
+        const staleRecognition = recognition;
+        recognition = null;
+        try { staleRecognition.abort(); } catch {}
+      }
       latestResult = "";
       resultText.value = "";
       resultBox.hidden = true;
       generate.disabled = false;
+      if (dictate) dictate.disabled = !SpeechRecognition;
+      if (stop) stop.disabled = true;
+      if (dictateStatus) dictateStatus.textContent = "Диктовка остановлена из-за смены аккаунта.";
       status.textContent = "Аккаунт изменился. Создайте материал заново в текущем сеансе.";
     });
     input.addEventListener("change", () => {
@@ -227,18 +235,29 @@
       dictateStatus.textContent = "В этом браузере нет встроенного распознавания речи. Можно вставить готовую расшифровку вручную.";
     } else {
       dictate.addEventListener("click",()=>{
-        recognition = new SpeechRecognition(); recognition.lang = document.querySelector("#audioStoryLanguage").value==="казахский"?"kk-KZ":document.querySelector("#audioStoryLanguage").value==="английский"?"en-US":"ru-RU";
+        recognition = new SpeechRecognition();
+        const activeRecognition = recognition;
+        const recognitionVersion = audioStoryRequestVersion;
+        const recognitionIsCurrent = () => recognition === activeRecognition && recognitionVersion === audioStoryRequestVersion;
+        recognition.lang = document.querySelector("#audioStoryLanguage").value==="казахский"?"kk-KZ":document.querySelector("#audioStoryLanguage").value==="английский"?"en-US":"ru-RU";
         recognition.continuous = true; recognition.interimResults = true;
         const base = transcript.value.trim(); let finalText = "";
         recognition.onresult = event => {
+          if (!recognitionIsCurrent()) return;
           let interim = "";
           for(let i=event.resultIndex;i<event.results.length;i++){const part=event.results[i][0].transcript;if(event.results[i].isFinal)finalText += part+" ";else interim += part;}
           transcript.value = [base,finalText,interim].filter(Boolean).join(base?" ":"");
           count.textContent=transcript.value.length+" / 12000";
         };
-        recognition.onerror = event => dictateStatus.textContent = "Распознавание остановлено: "+event.error+".";
-        recognition.onend = () => {dictate.disabled=false;stop.disabled=true;dictateStatus.textContent="Диктовка завершена. Проверьте распознанный текст и исправьте ошибки."};
-        try{recognition.start();dictate.disabled=true;stop.disabled=false;dictateStatus.textContent="Слушаю речь… Говорите в микрофон."}catch(error){dictateStatus.textContent="Не удалось запустить микрофон: "+error.message}
+        recognition.onerror = event => { if (recognitionIsCurrent()) dictateStatus.textContent = "Распознавание остановлено: "+event.error+"."; };
+        recognition.onend = () => {
+          if (!recognitionIsCurrent()) return;
+          recognition = null;
+          dictate.disabled=false;stop.disabled=true;
+          dictateStatus.textContent="Диктовка завершена. Проверьте распознанный текст и исправьте ошибки.";
+        };
+        try{recognition.start();dictate.disabled=true;stop.disabled=false;dictateStatus.textContent="Слушаю речь… Говорите в микрофон."}
+        catch(error){if(recognitionIsCurrent()){recognition=null;dictate.disabled=false;stop.disabled=true;dictateStatus.textContent="Не удалось запустить микрофон: "+error.message}}
       });
       stop.addEventListener("click",()=>{if(recognition)recognition.stop()});
     }
