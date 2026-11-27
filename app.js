@@ -424,7 +424,8 @@ const movieHistoryStyle = document.createElement("style");
     event.preventDefault();
     if(!authSession?.user)return;
     const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
-    const version=authContextVersion;
+    const version=authContextVersion,userId=authSession.user.id;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;
     const payload={
       display_name:$("#communityDisplayName").value.trim(),
       username:$("#communityUsername").value.trim().toLowerCase(),
@@ -438,8 +439,11 @@ const movieHistoryStyle = document.createElement("style");
       if(version!==authContextVersion||authSession?.user?.id!==saved.user_id)return;
       $("#communityUsername").value=saved.username;
       communityFeedback("✓ Карточка сохранена. "+(saved.visibility==="public"&&saved.show_in_directory?"Она доступна в каталоге.":"Профиль не показывается в каталоге."));
-    }catch(error){if(version===authContextVersion)communityFeedback("Не удалось сохранить профиль: "+error.message);}
-    finally{button.disabled=false;}
+    }catch(error){if(contextIsCurrent())communityFeedback("Не удалось сохранить профиль: "+error.message);}
+    finally{
+      // A save started by another account must not unlock this account's form.
+      if(contextIsCurrent())button.disabled=false;
+    }
   });
   const renderCommunityResults = profiles => {
     const list=$("#communityResults");if(!list)return;
