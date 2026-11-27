@@ -102,6 +102,11 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
         self.assertEqual(complete_media_cleanup(settings(), {
             "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT, "claim_token": TOKEN
         })["status"], "deleted")
+        call.return_value = {"id": EVENT, "status": "deleted"}
+        with self.assertRaisesRegex(RuntimeError, "invalid result"):
+            complete_media_cleanup(settings(), {
+                "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT, "claim_token": TOKEN
+            })
         call.return_value = {"event_status": "pending", "asset_status": "cleanup_pending"}
         self.assertEqual(retry_media_cleanup(settings(), {
             "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT, "claim_token": TOKEN
@@ -113,6 +118,9 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
             }, 60)
         call.return_value = {"character_id": CHARACTER, "status": "deleted"}
         self.assertEqual(finalize_character_media_cleanup(settings(), OWNER, CHARACTER)["status"], "deleted")
+        call.return_value = {"character_id": OWNER, "status": "deleted"}
+        with self.assertRaisesRegex(RuntimeError, "invalid result"):
+            finalize_character_media_cleanup(settings(), OWNER, CHARACTER)
 
     def test_requires_service_credentials(self):
         with self.assertRaises(RuntimeError):
