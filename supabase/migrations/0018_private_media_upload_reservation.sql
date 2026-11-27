@@ -336,7 +336,9 @@ begin
 
   update public.media_asset_outbox
   set status='delivered',claim_token=null,claim_expires_at=null,delivered_at=clock_timestamp()
-  where id=p_event_id and claim_token=p_claim_token and status='claimed';
+  where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
+    and event_type='media_upload_verify_requested'
+    and claim_token=p_claim_token and status='claimed';
   if not found then
     raise exception 'media verification claim was lost' using errcode='P0002';
   end if;
