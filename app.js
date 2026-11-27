@@ -1268,6 +1268,7 @@ const movieHistoryStyle = document.createElement("style");
       if (!activeAssistantConversationId) await startAssistantConversation();
       if (!contextIsCurrent()) return;
       const conversationId = activeAssistantConversationId;
+      const conversationIsCurrent = () => contextIsCurrent() && activeAssistantConversationId === conversationId;
       const { data: previousMessages, error: historyError } = await supabaseClient.from("assistant_messages")
         .select("role,content").eq("conversation_id", conversationId)
         .eq("user_id", requestUserId).order("created_at", { ascending: false }).limit(20);
@@ -1279,7 +1280,7 @@ const movieHistoryStyle = document.createElement("style");
       const { error: userSaveError } = await supabaseClient.from("assistant_messages")
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "user", content: value });
       if (userSaveError) throw userSaveError;
-      if (!contextIsCurrent()) return;
+      if (!conversationIsCurrent()) return;
       renderAssistantMessage("user", value);
       const { data: titleRow } = await supabaseClient.from("assistant_conversations")
         .select("title").eq("id", conversationId).eq("user_id", requestUserId).single();
@@ -1295,9 +1296,18 @@ const movieHistoryStyle = document.createElement("style");
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
       if (!contextIsCurrent()) return;
-      renderAssistantMessage("assistant", result.reply); setKattyAssistantExpression(kattyResponseState(value, result.reply)); await renderAssistantHistory();
-    } catch (error) { setKattyAssistantExpression("neutral"); setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
-    finally { button.disabled = false; input.disabled = false; input.focus(); }
+      if (conversationIsCurrent()) {
+        renderAssistantMessage("assistant", result.reply);
+        setKattyAssistantExpression(kattyResponseState(value, result.reply));
+        await renderAssistantHistory();
+      }
+    } catch (error) {
+      if (contextIsCurrent() && (!activeAssistantConversationId || activeAssistantConversationId === conversationId))
+        { setKattyAssistantExpression("neutral"); setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
+    } finally {
+      button.disabled = false; input.disabled = false;
+      if (contextIsCurrent()) input.focus();
+    }
   });
   setTimeout(() => renderAssistantHistory(), 0);
 
