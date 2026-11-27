@@ -441,7 +441,6 @@ const movieHistoryStyle = document.createElement("style");
       if(contextIsCurrent())button.disabled=profileAvatarDraftId===profileAvatarSavedId;
     }
   });
-  let communityProfileRequestVersion = 0;
   const loadCommunityProfile = async () => {
     const requestVersion=++communityProfileRequestVersion;
     const version=authContextVersion,userId=authSession?.user?.id;
