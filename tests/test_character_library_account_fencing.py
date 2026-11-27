@@ -301,6 +301,19 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if(contextIsCurrent())aiStatus.textContent=", handler)
         self.assertIn("if(contextIsCurrent()){aiButton.disabled=false;", handler)
 
+    def test_message_profile_cache_is_cleared_and_fenced_on_account_change(self):
+        boundary_start = APP.index("const refreshAuthUI = session =>")
+        boundary_end = APP.index("authSession = session;", boundary_start)
+        boundary = APP[boundary_start:boundary_end]
+        self.assertIn("messageProfileCache.clear();", boundary)
+        self.assertIn("messageProfilePending.clear();", boundary)
+        loader_start = APP.index("const loadMessageProfile = async userId =>")
+        loader_end = APP.index("const messagePartnerId", loader_start)
+        loader = APP[loader_start:loader_end]
+        self.assertIn("const requestVersion=authContextVersion,requestOwnerId=authSession?.user?.id;", loader)
+        self.assertIn("if(contextIsCurrent())messageProfileCache.set(userId, profile || {});", loader)
+        self.assertIn("if(messageProfilePending.get(userId)===pending)messageProfilePending.delete(userId);", loader)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
