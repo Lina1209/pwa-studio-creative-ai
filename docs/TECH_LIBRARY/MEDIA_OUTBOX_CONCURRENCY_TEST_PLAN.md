@@ -126,3 +126,24 @@ The pure planner and Storage DELETE primitive are drafted, but the database orch
 - Final character deletion succeeds only after all associated media objects are confirmed absent and tombstones are finalized.
 
 The current branch contains only pure planning and a narrow Storage DELETE primitive for this flow. No cleanup SQL RPC, event claim path, worker, route, or end-to-end integration test is present. These checks are release blockers, not passed tests.
+
+## 11. Character cleanup outbox and worker (migration 0019 draft)
+
+The disposable-only SQL harness is `supabase/tests/0019_media_cleanup_transaction.sql`. It creates a character and one private media fixture, reserves cleanup twice with the same operation ID, checks exactly one outbox event, claims with worker A, expires the lease, reclaims with worker B, and verifies that A cannot complete or retry. It then simulates Storage DELETE success by invoking worker B's completion RPC, verifies the tombstone is detached and the event delivered, and finalizes the character. All database fixtures roll back.
+
+Run only with:
+- `DISPOSABLE_DATABASE_URL` pointing to a disposable Supabase/PostgreSQL database.
+- `PWA_TEST_OWNER_ID` set to an existing disposable Auth user UUID.
+- Migrations 0005, 0012, 0017, 0018, and 0019 applied to that disposable database.
+- `psql` available locally.
+
+Example:
+```bash
+psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+  -f supabase/tests/0019_media_cleanup_transaction.sql
+```
+
+The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet.
+
+Before activation, add and run a two-session cleanup claim race (parallel with the existing upload race), a disposable Storage test for successful DELETE/404/timeout-after-delete, a foreign-owner request test, and an adversarial reference-write-vs-cleanup race. Never run these harnesses against production.
