@@ -389,7 +389,7 @@ const movieHistoryStyle = document.createElement("style");
     try{
       const saved=await apiRequest("/api/community/profile",{method:"PATCH",body:JSON.stringify({avatar_catalog_id:profileAvatarDraftId,avatar_representation:"2d"})});
       if(version!==authContextVersion||authSession?.user?.id!==userId||saved.user_id!==userId)return;
-      profileAvatarSavedId=saved.avatar_catalog_id||PROFILE_AVATAR_DEFAULT;profileAvatarDraftId=profileAvatarSavedId;renderProfileAvatarPicker();
+      profileAvatarSavedId=saved.avatar_catalog_id||PROFILE_AVATAR_DEFAULT;profileAvatarDraftId=profileAvatarSavedId;renderProfileAvatarPicker();applyProfileAvatarChrome(profileAvatarSavedId);
       if(feedback)feedback.textContent="✓ Аватар сохранён и будет использоваться в карточке сообщества.";
       const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarSavedId);
       if($("#profileAvatarPreview"))$("#profileAvatarPreview").alt="Текущий аватар профиля: "+(item?.name||"Стандартный");
