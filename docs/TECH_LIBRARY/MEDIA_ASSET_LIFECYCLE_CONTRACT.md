@@ -149,3 +149,22 @@ This helper does NOT issue leases, increment counters, lock rows, persist idempo
 A lease timeout alone is not proof that an old worker stopped. Fencing is mandatory: every stale worker must be unable to commit even if it wakes after lease expiry. Storage deletion is an external side effect and cannot be rolled back with Postgres; use a durable cleanup job/outbox and idempotent retries, with the object already made unavailable before deletion.
 
 Seven tests are authored in `backend/tests/test_media_concurrency.py`; they have not been executed. No lease table, migration, RPC, transaction, endpoint, worker, or Storage call was added.
+
+## 16. Durable media outbox lifecycle model added (not persistence)
+
+`backend/app/services/media_outbox.py` defines the pure event lifecycle for future background work: `pending` → `claimed` → `delivered`, with retry back to `pending` or terminal `dead_letter`. Claims require a UUID token and bounded lease; acknowledgement/retry require the matching unexpired token. Expired claims can be recovered, and attempt limits prevent infinite retry loops. Event types are a closed allowlist (`media_cleanup_requested`, `media_upload_verify_requested`); payload design intentionally carries opaque IDs, not bytes, credentials, signed URLs, or client paths.
+
+Ten tests are authored in `backend/tests/test_media_outbox.py`; they have not been executed. No outbox table, database RPC, scheduler, broker, worker, or Storage operation was added.
+
+### Required durable implementation before activation
+
+- Insert the media metadata row and its outbox event in the SAME Postgres transaction. Never commit a pending upload/cleanup request without its corresponding durable event.
+- Claim batches with `FOR UPDATE SKIP LOCKED`, set a fresh random claim token and expiry, and increment attempts atomically.
+- Acknowledge, retry, and finalize only with a conditional update matching event ID, current claim token, and unexpired lease. A stale worker must not acknowledge a newer claim.
+- Workers must be idempotent because delivery is at-least-once, not exactly-once. Use operation IDs and immutable object keys; verify current metadata state before every side effect.
+- On worker crash, recover expired claims. After max attempts, move to dead-letter and alert; never silently discard.
+- Keep events private to service role. Do not expose raw Storage paths or event payloads to browser clients.
+- For cleanup, re-check exact references under the database serialization boundary immediately before Storage deletion; finalize the tombstone only after Storage confirms success. If Storage outcome is ambiguous, reconcile object existence before retrying.
+- For upload verification, only transition to `ready` after the object is verified and the owner-bound metadata transaction succeeds.
+
+The model is intentionally not a queue implementation. The actual transactional outbox requires a reviewed schema/RPC and disposable-database concurrency tests before any migration can be considered for deployment.
