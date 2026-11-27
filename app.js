@@ -20,6 +20,8 @@
   let activeMessageThreadId = null;
   let activeMessagePartnerId = null;
   let conversationsCache = [];
+  const messageProfileCache = new Map();
+  const messageProfilePending = new Map();
   let conversationRenderVersion = 0;
   let conversationMessagesRequestVersion = 0;
   let communitySearchRequestVersion = 0;
@@ -51,6 +53,8 @@
       const communityPublicProfile = $("#communityPublicProfile"); if (communityPublicProfile) { communityPublicProfile.hidden = true; communityPublicProfile.replaceChildren(); }
       const conversationList = $("#conversationList"); if (conversationList) conversationList.replaceChildren();
       conversationsCache = [];
+      messageProfileCache.clear();
+      messageProfilePending.clear();
       const directMessageList = $("#directMessageList"); if (directMessageList) directMessageList.replaceChildren();
       const directMessageForm = $("#directMessageForm"); if (directMessageForm) directMessageForm.hidden = true;
       const conversationTitle = $("#conversationTitle"); if (conversationTitle) conversationTitle.textContent = "Выберите диалог";
@@ -648,8 +652,6 @@ const movieHistoryStyle = document.createElement("style");
   });
 
   const messagesFeedback = message => { const el = $("#messagesFeedback"); if (el) el.textContent = message; };
-  const messageProfileCache = new Map();
-  const messageProfilePending = new Map();
   const messageDisplayName = userId => {
     const profile = messageProfileCache.get(userId);
     return profile?.display_name || profile?.username || ("Пользователь · " + String(userId || "").slice(0, 8) + "…");
@@ -657,10 +659,12 @@ const movieHistoryStyle = document.createElement("style");
   const loadMessageProfile = async userId => {
     if (!userId || messageProfileCache.has(userId)) return messageProfileCache.get(userId);
     if (messageProfilePending.has(userId)) return messageProfilePending.get(userId);
+    const requestVersion=authContextVersion,requestOwnerId=authSession?.user?.id;
+    const contextIsCurrent=()=>requestVersion===authContextVersion&&authSession?.user?.id===requestOwnerId;
     const pending = apiRequest("/api/community/profiles/" + encodeURIComponent(userId))
-      .then(profile => { messageProfileCache.set(userId, profile || {}); return profile; })
-      .catch(() => { messageProfileCache.set(userId, {}); return null; })
-      .finally(() => messageProfilePending.delete(userId));
+      .then(profile => { if(contextIsCurrent())messageProfileCache.set(userId, profile || {}); return profile; })
+      .catch(() => { if(contextIsCurrent())messageProfileCache.set(userId, {}); return null; })
+      .finally(() => { if(messageProfilePending.get(userId)===pending)messageProfilePending.delete(userId); });
     messageProfilePending.set(userId, pending);
     return pending;
   };
