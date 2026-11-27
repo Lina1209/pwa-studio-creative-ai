@@ -90,5 +90,14 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("generation.userId !== (authSession?.user?.id || null)", bridge)
 
 
+    def test_audio_lab_discards_stale_results_and_cleanup_after_account_change(self):
+        audio = (ROOT / "audio-lab.js").read_text(encoding="utf-8")
+        self.assertIn('window.addEventListener("pwa-studio-auth-changed"', audio)
+        self.assertIn("audioStoryRequestVersion += 1;", audio)
+        self.assertIn("if (requestVersion !== audioStoryRequestVersion) return;", audio)
+        self.assertIn("if(requestVersion===audioStoryRequestVersion)status.textContent", audio)
+        self.assertIn("finally{if(requestVersion===audioStoryRequestVersion)generate.disabled=false;}", audio)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
