@@ -312,3 +312,10 @@ The current SQL draft does NOT yet match this behavior:
 - No per-attempt persistence table or reconciliation RPC/worker is implemented.
 
 This is a deliberate activation blocker. Do not patch/apply these SQL drafts piecemeal: first design a coherent additive per-attempt schema, reconciliation state transitions, fencing/lease rules, cancellation confirmation semantics, and credit-hold behavior; then validate the complete migration set on a disposable database with concurrency and crash-window tests. No production migration was run.
+
+
+## Unified provider attempt/reconciliation design
+
+The consolidated design for per-attempt persistence, provider submission evidence, reconciliation leases, cancellation races, audit events, and credit holds is documented in `docs/TECH_LIBRARY/GENERATION_PROVIDER_RECONCILIATION_CONTRACT.md`. Treat that document as the design authority when revising future SQL drafts. It is not implemented or activated.
+
+Lifecycle helper review note: a user may request cancellation while a job is already in `reconciliation_required`. The helper now records the cancellation timestamp while preserving the reconciliation hold; it does not mark the job cancelled, release credits, or authorize another provider submission. This prevents cancellation from being blocked while preserving the fact that the provider outcome is unresolved.
