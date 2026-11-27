@@ -24,6 +24,18 @@ create policy "Users delete own studio exports" on storage.objects
     and (storage.foldername(name))[1] = (select auth.uid())::text
   );
 
+-- Browser clients must not create unindexed objects in studio-media.
+-- Character-reference uploads use the authenticated API and service-role Storage
+-- after an owner-scoped reservation; exports retain owner-folder uploads.
+drop policy if exists "Users upload own studio media" on storage.objects;
+drop policy if exists "Users upload own studio exports" on storage.objects;
+create policy "Users upload own studio exports" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'studio-exports'
+    and (storage.foldername(name))[1] = (select auth.uid())::text
+  );
+
 -- Browser clients must not overwrite a verified character reference in place.
 -- A replacement must reserve and verify a new immutable object through the API.
 drop policy if exists "Users update own studio media" on storage.objects;
