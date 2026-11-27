@@ -78,10 +78,16 @@ jobs:
             supabase/migrations/0012_character_library_media_links.sql \
             supabase/migrations/0017_owner_scoped_media_associations.sql \
             supabase/migrations/0018_private_media_upload_reservation.sql \
-            supabase/migrations/0019_private_media_cleanup_outbox.sql; do
+            supabase/migrations/0019_private_media_cleanup_outbox.sql \
+            supabase/migrations/0020_character_local_identity.sql; do
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
+      - name: Run character idempotency transaction harness
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+            -f supabase/tests/0020_character_local_identity.sql
       - name: Run cleanup transaction and rollback harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
