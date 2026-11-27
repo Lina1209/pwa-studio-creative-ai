@@ -10,6 +10,7 @@ The Character Library remains browser-local. It is not yet a cloud-synced librar
 - Reference image Blobs live in IndexedDB and each row stores its `ownerId`.
 - Image reads return a Blob only when the stored owner matches the current owner.
 - Image deletion checks the stored owner before deleting a row.
+- Image writes first check an existing IndexedDB key in the same read-write transaction; a key owned by another account causes an abort instead of overwriting that account's Blob.
 - On account identity changes, the auth UI increments `authContextVersion`, clears account-bound panels, and dispatches `pwa-studio-auth-changed`. The Character Library resets its editor and rerenders.
 
 ## Async account-switch fencing
