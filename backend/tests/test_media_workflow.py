@@ -4,6 +4,7 @@ from io import BytesIO
 from uuid import uuid4
 
 from PIL import Image
+from fastapi import HTTPException
 
 from app.services.media_lifecycle import MediaStatus
 from app.services.media_outbox import OutboxStatus
@@ -47,11 +48,12 @@ class CharacterReferenceWorkflowTests(unittest.TestCase):
         self.assertNotIn("..", result.storage_path)
 
     def test_foreign_character_is_rejected_before_planning(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(HTTPException) as caught:
             plan(character={"id": CHARACTER, "owner_id": OTHER})
+        self.assertEqual(caught.exception.status_code, 404)
 
     def test_client_cannot_choose_public_bucket(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(HTTPException):
             plan(bucket="public")
 
     def test_mime_spoofing_is_rejected(self):
