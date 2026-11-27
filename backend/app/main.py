@@ -1,7 +1,7 @@
 from uuid import uuid4
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -86,12 +86,6 @@ def private_media_content(asset_id: str,
         file_name=asset.get("file_name") or "image",
         expected_mime_type=asset.get("file_type") or "",
     )
-    response.headers["Cache-Control"] = "private, no-store, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-    response.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
-    response.headers["Content-Disposition"] = f'inline; filename="{image.safe_filename}"'
     return Response(
         content=image.content,
         media_type=image.mime_type,
