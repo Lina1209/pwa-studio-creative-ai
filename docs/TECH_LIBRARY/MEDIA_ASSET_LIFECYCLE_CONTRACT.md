@@ -133,3 +133,19 @@ Seven tests are authored in `backend/tests/test_media_replacement.py`; they have
 The `exact_object_is_referenced` value MUST come from a trusted server-side query over all relevant metadata rows, matching both bucket and exact immutable object key; it must never come from a request parameter or client assertion. The actual worker must re-check references immediately before Storage deletion and use a database lease/lock or equivalent fencing so concurrent replacement cannot race cleanup. After successful Storage deletion, it must persist the `deleted` tombstone idempotently. Storage failure leaves the row `cleanup_pending` for retry.
 
 Seven tests are authored in `backend/tests/test_media_cleanup.py`; they have not been executed. This is not a cleanup worker, Storage delete call, API route, or database transaction.
+
+## 15. Concurrent mutation guard added (not database concurrency control)
+
+`backend/app/services/media_concurrency.py` adds a pure optimistic-concurrency check. A mutation is accepted only when the caller's expected row version equals the current database version and its fencing token equals the current lease fencing token. It returns the next version and rejects stale workers, stale edits, malformed operation IDs, invalid counters, and signed-bigint version exhaustion.
+
+This helper does NOT issue leases, increment counters, lock rows, persist idempotency keys, or prevent races by itself. Production persistence MUST:
+1. acquire/renew a lease and increment a monotonically increasing fencing token atomically in Postgres;
+2. read the row under `SELECT ... FOR UPDATE` (or use a conditional UPDATE that checks owner, status, version, and fence);
+3. apply the mutation only if the expected version and current fence still match;
+4. increment the row version in the same transaction;
+5. make every worker write include the fence so an expired worker cannot commit after a newer worker;
+6. re-check exact object references and acquire the cleanup lease in the same serialization boundary immediately before deleting from Storage, then finalize the tombstone idempotently.
+
+A lease timeout alone is not proof that an old worker stopped. Fencing is mandatory: every stale worker must be unable to commit even if it wakes after lease expiry. Storage deletion is an external side effect and cannot be rolled back with Postgres; use a durable cleanup job/outbox and idempotent retries, with the object already made unavailable before deletion.
+
+Seven tests are authored in `backend/tests/test_media_concurrency.py`; they have not been executed. No lease table, migration, RPC, transaction, endpoint, worker, or Storage call was added.
