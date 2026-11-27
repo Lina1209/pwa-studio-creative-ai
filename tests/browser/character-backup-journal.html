@@ -12,9 +12,7 @@
     try {
       const row = await window.PWACharacterBackupJournal.get(params.get("owner"), params.get("character"));
       if (!row || row.references.length !== 1 || row.references[0].state !== "verified") throw new Error("Persisted journal was not restored after browser restart.");
-      document.documentElement.dataset.persistOwner = owner;
-    document.documentElement.dataset.persistCharacter = localCharacter;
-    document.documentElement.dataset.testResult = "passed";
+      document.documentElement.dataset.testResult = "passed";
       output.textContent = "PASS persistent IndexedDB journal restored after browser restart";
     } catch (error) {
       document.documentElement.dataset.testResult = "failed";
