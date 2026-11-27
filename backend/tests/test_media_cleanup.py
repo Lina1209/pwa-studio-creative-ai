@@ -63,5 +63,21 @@ class MediaCleanupTests(unittest.TestCase):
                                exact_object_is_referenced=False)
 
 
+    def test_object_key_requires_exact_server_generated_shape(self):
+        invalid_paths = (
+            f"{OWNER}/unknown/{ASSET}/{ASSET}.png",
+            f"{OWNER}/characters/not-a-uuid/{ASSET}.png",
+            f"{OWNER}/characters/{ASSET}/not-a-uuid.png",
+            f"{OWNER}/characters/{ASSET}/{ASSET}.svg",
+            f"{OWNER}/characters/{ASSET}/{ASSET}.png/extra",
+        )
+        for path in invalid_paths:
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                plan_media_cleanup(
+                    authenticated_owner_id=OWNER, asset=row(storage_path=path),
+                    exact_object_is_referenced=False,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
