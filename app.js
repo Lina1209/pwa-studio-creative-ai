@@ -1138,6 +1138,7 @@ const movieHistoryStyle = document.createElement("style");
     if (suggestions) suggestions.hidden = true;
   };
   const clearAssistantMessages = () => {
+    setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (assistantMessages) assistantMessages.replaceChildren();
     const welcome = document.querySelector(".assistant-welcome");
@@ -1146,6 +1147,7 @@ const movieHistoryStyle = document.createElement("style");
     if (suggestions) suggestions.hidden = false;
   };
   const loadAssistantMessages = async conversationId => {
+    setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (!supabaseClient || !authSession?.user || !conversationId) return;
     const requestUserId = authSession.user.id;
@@ -1209,6 +1211,7 @@ const movieHistoryStyle = document.createElement("style");
     } finally { assistantHistoryBusy = false; }
   };
   const startAssistantConversation = async () => {
+    setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
     const { data, error } = await supabaseClient.from("assistant_conversations")
