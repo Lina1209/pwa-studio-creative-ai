@@ -6,7 +6,7 @@ import httpx
 from fastapi import HTTPException
 
 PROFILE_AVATAR_CATALOG = frozenset({
-    "portrait-violet", "forest-elf", "fox-scout", "robo-buddy",
+    "portrait-violet", "forest-elf", "fox-scout", "robo-buddy", "katty-assistant",
     "comic-star", "cosmo-pilot", "sun-garden", "prism-orbit",
 })
 PROFILE_AVATAR_DEFAULT = "portrait-violet"
