@@ -310,7 +310,65 @@ const movieHistoryStyle = document.createElement("style");
   };
 
 
+  const PROFILE_AVATAR_CATALOG = [
+    {id:"portrait-violet",name:"Лавандовый портрет",category:"people",group:"Люди"},
+    {id:"forest-elf",name:"Лесная фея",category:"fantasy",group:"Фэнтези"},
+    {id:"fox-scout",name:"Лисёнок",category:"animals",group:"Животные"},
+    {id:"robo-buddy",name:"Робот-друг",category:"robots",group:"Роботы"},
+    {id:"comic-star",name:"Комикс-герой",category:"cartoon",group:"Мультяшные"},
+    {id:"cosmo-pilot",name:"Космический пилот",category:"space",group:"Космос"},
+    {id:"sun-garden",name:"Солнечный сад",category:"nature",group:"Природа"},
+    {id:"prism-orbit",name:"Призма",category:"abstract",group:"Абстракция"}
+  ];
+  const PROFILE_AVATAR_DEFAULT="portrait-violet";
+  let profileAvatarSavedId=PROFILE_AVATAR_DEFAULT,profileAvatarDraftId=PROFILE_AVATAR_DEFAULT,profileAvatarCategory="all";
+  const profileAvatarPath=id=>{
+    const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===id)||PROFILE_AVATAR_CATALOG[0];
+    return "assets/avatars/2d/"+item.id+".svg";
+  };
+  const profileAvatarNode=(profile,large=false)=>{
+    const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profile.avatar_catalog_id);
+    const node=document.createElement("div");
+    node.className="community-user-avatar"+(large?" community-user-avatar-large":"");
+    if(item){
+      const img=document.createElement("img");img.src=profileAvatarPath(item.id);img.alt="Аватар: "+item.name;img.loading="lazy";
+      img.onerror=()=>{node.replaceChildren();node.textContent=(profile.display_name||"?").trim().charAt(0).toUpperCase();};
+      node.append(img);
+    }else node.textContent=(profile.display_name||"?").trim().charAt(0).toUpperCase();
+    return node;
+  };
+  const renderProfileAvatarPicker=()=>{
+    const grid=$("#profileAvatarGrid"),categories=$("#profileAvatarCategories"),preview=$("#profileAvatarPreview"),apply=$("#profileAvatarApply");
+    if(!grid||!categories)return;
+    if(preview){preview.src=profileAvatarPath(profileAvatarDraftId);const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarDraftId);preview.alt="Предпросмотр аватара: "+(item?.name||"Стандартный");}
+    categories.replaceChildren();
+    const groups=[["all","Все"],...Array.from(new Map(PROFILE_AVATAR_CATALOG.map(item=>[item.category,[item.category,item.group]])).values())];
+    groups.forEach(([id,label])=>{const button=adminNode("button","profile-avatar-category",label);button.type="button";button.classList.toggle("is-active",profileAvatarCategory===id);button.setAttribute("aria-pressed",String(profileAvatarCategory===id));button.addEventListener("click",()=>{profileAvatarCategory=id;renderProfileAvatarPicker();});categories.append(button);});
+    grid.replaceChildren();
+    PROFILE_AVATAR_CATALOG.filter(item=>profileAvatarCategory==="all"||item.category===profileAvatarCategory).forEach(item=>{
+      const button=document.createElement("button");button.type="button";button.className="profile-avatar-option"+(profileAvatarDraftId===item.id?" is-selected":"");button.setAttribute("aria-pressed",String(profileAvatarDraftId===item.id));button.setAttribute("aria-label",item.name);
+      const img=document.createElement("img");img.src=profileAvatarPath(item.id);img.alt="";img.loading="lazy";
+      const label=adminNode("span","",item.name);button.append(img,label);
+      button.addEventListener("click",()=>{profileAvatarDraftId=item.id;renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран образ «"+item.name+"». Нажмите «Применить аватар», чтобы сохранить.";});
+      grid.append(button);
+    });
+    if(apply)apply.disabled=profileAvatarDraftId===profileAvatarSavedId;
+  };
   const communityFeedback = message => { const el=$("#communityProfileFeedback"); if(el)el.textContent=message; };
+  $("#profileAvatarReset")?.addEventListener("click",()=>{profileAvatarDraftId=PROFILE_AVATAR_DEFAULT;profileAvatarCategory="all";renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран стандартный аватар. Нажмите «Применить аватар», чтобы сохранить.";});
+  $("#profileAvatarApply")?.addEventListener("click",async()=>{
+    const userId=authSession?.user?.id;if(!userId)return;
+    const version=authContextVersion,button=$("#profileAvatarApply");button.disabled=true;
+    const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Сохраняем аватар…";
+    try{
+      const saved=await apiRequest("/api/community/profile",{method:"PATCH",body:JSON.stringify({avatar_catalog_id:profileAvatarDraftId,avatar_representation:"2d"})});
+      if(version!==authContextVersion||authSession?.user?.id!==userId||saved.user_id!==userId)return;
+      profileAvatarSavedId=saved.avatar_catalog_id||PROFILE_AVATAR_DEFAULT;profileAvatarDraftId=profileAvatarSavedId;renderProfileAvatarPicker();
+      if(feedback)feedback.textContent="✓ Аватар сохранён и будет использоваться в карточке сообщества.";
+      const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarSavedId);
+      if($("#profileAvatarPreview"))$("#profileAvatarPreview").alt="Текущий аватар профиля: "+(item?.name||"Стандартный");
+    }catch(error){if(version===authContextVersion&&authSession?.user?.id===userId){if(feedback)feedback.textContent="Не удалось сохранить аватар: "+error.message;button.disabled=false;}}
+  });
   const loadCommunityProfile = async () => {
     const version=authContextVersion,userId=authSession?.user?.id;
     const panel=$("#communityPanel");
@@ -320,6 +378,8 @@ const movieHistoryStyle = document.createElement("style");
     try{
       const profile=await apiRequest("/api/community/profile");
       if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      profileAvatarSavedId=PROFILE_AVATAR_CATALOG.some(item=>item.id===profile.avatar_catalog_id)?profile.avatar_catalog_id:PROFILE_AVATAR_DEFAULT;
+      profileAvatarDraftId=profileAvatarSavedId;profileAvatarCategory="all";renderProfileAvatarPicker();
       $("#communityDisplayName").value=profile.display_name||"";
       $("#communityUsername").value=profile.username||"";
       $("#communityBio").value=profile.bio||"";
@@ -355,7 +415,7 @@ const movieHistoryStyle = document.createElement("style");
     if(!profiles.length){list.append(adminNode("div","admin-empty","По этому запросу авторы не найдены."));return;}
     profiles.forEach(profile=>{
       const card=adminNode("article","community-user-card");
-      const avatar=adminNode("div","community-user-avatar",(profile.display_name||"?").trim().charAt(0).toUpperCase());
+      const avatar=profileAvatarNode(profile);
       const details=adminNode("div","community-user-details");
       details.append(adminNode("b","",profile.display_name||"Автор"));
       details.append(adminNode("small","","@"+profile.username));
@@ -396,7 +456,7 @@ const movieHistoryStyle = document.createElement("style");
       if(version!==authContextVersion||authSession?.user?.id!==userId)return;
       box.replaceChildren();
       const head=adminNode("div","community-profile-card");
-      head.append(adminNode("div","community-user-avatar community-user-avatar-large",(profile.display_name||"?").trim().charAt(0).toUpperCase()));
+      head.append(profileAvatarNode(profile,true));
       const info=adminNode("div","community-user-details");
       info.append(adminNode("b","",profile.display_name||"Автор"));
       info.append(adminNode("small","","@"+profile.username));
