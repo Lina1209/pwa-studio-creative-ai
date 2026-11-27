@@ -151,6 +151,18 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
             end = app.index("\n  };", start) + 5
             self.assertIn('setKattyAssistantMode("companion")', app[start:end])
 
+    def test_ai_companion_reply_stays_in_originating_conversation(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index('$("#assistantForm").addEventListener("submit"')
+        end = app.index("\n  });", start) + 6
+        handler = app[start:end]
+        self.assertIn("let requestConversationId = null;", handler)
+        self.assertIn("requestConversationId = conversationId;", handler)
+        self.assertIn("const conversationIsCurrent = () => contextIsCurrent() && activeAssistantConversationId === conversationId;", handler)
+        self.assertIn("if (conversationIsCurrent()) {", handler)
+        self.assertIn("activeAssistantConversationId === requestConversationId", handler)
+        self.assertIn("if (contextIsCurrent()) input.focus();", handler)
+
 
 if __name__ == "__main__":
     unittest.main()
