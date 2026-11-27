@@ -67,8 +67,12 @@ def execute_reserved_ai_call(
     try:
         result = provider_call()
     except Exception:
-        # Best effort: never release exposure on an ambiguous provider outcome.
-        store.mark_unknown(reservation.reservation_id, "provider_outcome_unknown")
+        # Best effort: preserve the provider exception even if the DB is unavailable.
+        # Never release exposure on an ambiguous provider outcome.
+        try:
+            store.mark_unknown(reservation.reservation_id, "provider_outcome_unknown")
+        except Exception:
+            pass
         raise
 
     try:
