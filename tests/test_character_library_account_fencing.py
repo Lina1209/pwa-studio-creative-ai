@@ -314,6 +314,15 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if(contextIsCurrent())messageProfileCache.set(userId, profile || {});", loader)
         self.assertIn("if(messageProfilePending.get(userId)===pending)messageProfilePending.delete(userId);", loader)
 
+    def test_movie_cloud_sync_rechecks_account_after_each_async_boundary(self):
+        start = APP.index("const scheduleMovieCloudSync = () =>")
+        end = APP.index("const loadMovieProjectsFromCloud", start)
+        sync = APP[start:end]
+        self.assertIn("requestVersion = authContextVersion", sync)
+        self.assertIn("const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === userId;", sync)
+        self.assertGreaterEqual(sync.count("if (!contextIsCurrent()) return;"), 5)
+        self.assertIn("if (contextIsCurrent()) {", sync)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
