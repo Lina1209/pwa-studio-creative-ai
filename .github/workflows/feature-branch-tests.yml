@@ -99,3 +99,21 @@ jobs:
         run: bash supabase/tests/0019_media_cleanup_reference_race.sh
       - name: Run 50-event five-worker cleanup stress harness
         run: bash supabase/tests/0019_media_cleanup_batch_race.sh
+
+  character-backup-journal-browser-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Playwright
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Run real-browser IndexedDB journal tests
+        run: python tests/browser/run_character_backup_journal.py
