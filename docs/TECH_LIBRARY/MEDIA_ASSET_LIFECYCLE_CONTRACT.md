@@ -174,3 +174,13 @@ The model is intentionally not a queue implementation. The actual transactional 
 The detailed design is in `docs/TECH_LIBRARY/MEDIA_OUTBOX_POSTGRES_DESIGN.md`. It defines atomic metadata+event transactions, owner-scoped idempotency, `FOR UPDATE SKIP LOCKED` claims, fenced acknowledgements, crash recovery, and safe ordering for upload verification and cleanup.
 
 No SQL migration or RPC was added because the current `media_assets` draft schema does not yet contain the final status/version/operation columns and has not been reconciled against a disposable database. The design is intentionally non-executable. Do not apply it to production or treat it as a live queue.
+
+## 18. Character-reference upload composition boundary
+
+Added `backend/app/services/media_workflow.py` as a pure composition layer. It checks the authenticated owner against the server-loaded character row, fully validates image bytes and declared MIME, restricts the bucket, builds the immutable object key from server-side UUIDs, and creates the matching upload-verification outbox event model. It returns a server-internal plan with the initial `pending_upload` state.
+
+The helper does not write the asset row, insert the outbox event, upload bytes, or return a URL. The future API must persist asset metadata and event in one transaction, perform the Storage upload using the internal plan, and never serialize `storage_path`, bucket, owner metadata, or raw internal metadata to the browser. A public response must use the explicit `media_asset_public_view()` allowlist from `media_access.py`.
+
+Also tightened cleanup path validation: a deletable object key must have exactly four segments, an allowlisted resource kind and extension, and canonical UUID resource/object segments. Tests were added for malformed keys and for the public metadata projection.
+
+Seven composition tests are authored in `backend/tests/test_media_workflow.py`; tests have not been executed. This is still a planning boundary, not an active upload route or Storage integration.
