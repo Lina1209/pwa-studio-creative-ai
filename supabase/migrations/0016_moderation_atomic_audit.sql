@@ -137,3 +137,6 @@ comment on function public.pwa_create_user_suspension(uuid, uuid, text, text, ti
   'Atomically creates a user suspension and appends the corresponding admin audit event.';
 comment on function public.pwa_revoke_user_suspension(uuid, uuid) is
   'Atomically revokes an active user suspension and appends the corresponding admin audit event.';
+
+-- Make the new RPC signatures visible to PostgREST after migration commit.
+notify pgrst, 'reload schema';
