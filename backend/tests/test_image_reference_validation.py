@@ -41,7 +41,7 @@ class ImageReferenceValidationTests(unittest.TestCase):
 
     def test_rejects_signature_only_fake_png(self):
         with self.assertRaises(ValueError):
-            validate_reference_image(b"\\x89PNG\\r\\n\\x1a\\n" + b"x" * 20, "fake.png")
+            validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x" * 20, "fake.png")
 
     def test_rejects_truncated_image(self):
         valid = make_image()
@@ -59,7 +59,7 @@ class ImageReferenceValidationTests(unittest.TestCase):
 
     def test_rejects_oversized_file(self):
         with self.assertRaises(ValueError):
-            validate_reference_image(b"\\x89PNG\\r\\n\\x1a\\n" + b"x" * MAX_REFERENCE_BYTES, "large.png")
+            validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x" * MAX_REFERENCE_BYTES, "large.png")
 
     def test_rejects_excessive_dimensions(self):
         data = make_image(size=(MAX_IMAGE_WIDTH + 1, 1))
