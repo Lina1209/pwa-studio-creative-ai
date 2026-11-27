@@ -20,8 +20,8 @@ MAX_IMAGE_PIXELS = 16_000_000
 MAX_IMAGE_FRAMES = 1
 
 _SIGNATURES = (
-    (b"\\x89PNG\\r\\n\\x1a\\n", "image/png", ".png"),
-    (b"\\xff\\xd8\\xff", "image/jpeg", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
+    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
 )
 _FORMAT_TO_MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp"}
 
