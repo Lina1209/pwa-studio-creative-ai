@@ -339,7 +339,7 @@ begin
       and other.status <> 'deleted'
   ) or exists (
     select 1 from public.characters other_character
-    where other_character.id <> v_asset.character_id
+    where (v_asset.character_id is null or other_character.id <> v_asset.character_id)
       and other_character.owner_id=v_asset.owner_id
       and (
         position(v_asset.storage_path in coalesce(other_character.reference_data::text,'')) > 0
