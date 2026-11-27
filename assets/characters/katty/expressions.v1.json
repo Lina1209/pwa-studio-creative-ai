@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "identityKey": "katty-katarina",
+  "status": "design_and_expression_tokens_only",
+  "runtimeStatus": "not_connected",
+  "visualIdentityManifest": "assets/characters/katty/identity.v1.json",
+  "coordinateConvention": {
+    "range": "0..1",
+    "origin": "top-left",
+    "meaning": "normalized authoring guidance, not a rig or animation file"
+  },
+  "invariants": [
+    "Keep large green eyes and their recognizable shape.",
+    "Keep natural freckles visible across the nose and cheeks.",
+    "Keep long, voluminous, curly fire-red hair.",
+    "Keep the friendly stylized-cartoon face proportions.",
+    "Do not change the canonical hoodie, PWA Studio shirt, headphones, or star accents."
+  ],
+  "expressions": [
+    {
+      "id": "neutral-warm",
+      "label": "Спокойная доброжелательность",
+      "brows": "relaxed, slightly raised toward the center",
+      "eyes": "open, attentive, soft focus",
+      "mouth": "small natural smile",
+      "cheeks": "relaxed",
+      "intensity": 0.25,
+      "use": ["default", "idle", "listening"]
+    },
+    {
+      "id": "joy",
+      "label": "Радость",
+      "brows": "softly lifted",
+      "eyes": "bright, gently narrowed by the smile",
+      "mouth": "open or closed cheerful smile",
+      "cheeks": "lifted",
+      "intensity": 0.7,
+      "use": ["welcome", "success", "friendly response"]
+    },
+    {
+      "id": "delight",
+      "label": "Восторг",
+      "brows": "raised",
+      "eyes": "wide and sparkling",
+      "mouth": "broad open smile",
+      "cheeks": "lifted",
+      "intensity": 1,
+      "use": ["creative reveal", "celebration"]
+    },
+    {
+      "id": "curious",
+      "label": "Любопытство",
+      "brows": "one brow subtly raised",
+      "eyes": "focused, open",
+      "mouth": "small thoughtful smile",
+      "cheeks": "relaxed",
+      "intensity": 0.45,
+      "use": ["question", "idea exploration"]
+    },
+    {
+      "id": "focused",
+      "label": "Сосредоточенность",
+      "brows": "gently drawn inward, never angry",
+      "eyes": "steady focused gaze",
+      "mouth": "closed neutral line",
+      "cheeks": "relaxed",
+      "intensity": 0.5,
+      "use": ["explaining", "working", "problem solving"]
+    },
+    {
+      "id": "surprised",
+      "label": "Лёгкое удивление",
+      "brows": "raised evenly",
+      "eyes": "widened",
+      "mouth": "small rounded opening",
+      "cheeks": "relaxed",
+      "intensity": 0.55,
+      "use": ["unexpected discovery", "playful reaction"]
+    },
+    {
+      "id": "empathetic",
+      "label": "Сочувствие",
+      "brows": "inner corners slightly raised",
+      "eyes": "soft, attentive",
+      "mouth": "gentle closed smile",
+      "cheeks": "relaxed",
+      "intensity": 0.4,
+      "use": ["support", "careful listening"]
+    },
+    {
+      "id": "thinking",
+      "label": "Размышление",
+      "brows": "slightly asymmetric, relaxed",
+      "eyes": "brief upward or side glance",
+      "mouth": "subtle thoughtful expression",
+      "cheeks": "relaxed",
+      "intensity": 0.35,
+      "use": ["planning", "considering options"]
+    }
+  ],
+  "motionPrinciples": {
+    "status": "guidance_only_no_animation_assets",
+    "blink": "natural and occasional; never continuous or excessively fast",
+    "gaze": "small smooth shifts; avoid jitter and abrupt eye snapping",
+    "head": "subtle movement with soft ease-in and ease-out",
+    "expressionTransition": "blend gradually; avoid popping between unrelated extremes",
+    "idle": "quiet and low-motion; do not animate continuously when off-screen",
+    "accessibility": "respect reduced-motion preferences; provide a static expression fallback"
+  },
+  "futureRigRequirements": [
+    "separate brows, eyelids, pupils, mouth shapes, cheeks, and head controls",
+    "preserve freckles and face silhouette in every expression",
+    "use the same expression IDs for 2D and 3D mappings",
+    "allow missing 3D mappings to fall back to approved 2D artwork",
+    "record asset revision and license for every approved expression asset"
+  ]
+}
