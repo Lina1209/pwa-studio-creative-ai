@@ -88,3 +88,16 @@ Failure behavior:
 - Local IndexedDB images remain the source of truth until explicit cloud backup succeeds. No local image is deleted by a cloud upload attempt.
 
 Migration 0019 draft removes authenticated direct INSERT/UPDATE/DELETE access to `studio-media`; only owner-scoped export uploads remain available directly to browser clients. The private character upload endpoint uses the server credential after reservation. This migration remains draft-only and has not been applied to any live database.
+
+
+## 10. Authenticated character passport API foundation (2026-11-27)
+
+The feature branch now contains a server-side repository and authenticated routes for listing, creating, reading, and patching character passport metadata. Routes are registered under the configured API prefix:
+- `GET /characters`
+- `POST /characters`
+- `GET /characters/{character_id}`
+- `PATCH /characters/{character_id}`
+
+Every route requires `get_current_user`. The server derives owner_id exclusively from the verified session subject. List/read/update PostgREST requests are owner-filtered; missing and foreign records return the same 404. Request schemas reject unknown fields such as owner_id and storage_path. The API excludes avatar_url and private media paths from its response contract, bounds passport JSON to 24 KiB, and exposes no delete operation. Character deletion remains behind the fenced cleanup lifecycle.
+
+This is an API foundation, not cloud-library activation. The frontend remains local-only; do not change IndexedDB/localStorage behavior or add UI calls yet. Before UI integration, verify the new routes and repository tests in CI, run disposable Supabase A/B account tests, and define an idempotent local-to-cloud mapping/import flow with a non-destructive backup. No production migration, deploy, merge, or live database operation is authorized.
