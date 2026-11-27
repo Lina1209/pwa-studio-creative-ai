@@ -1,6 +1,6 @@
 # PWA Studio — media outbox concurrency and crash-recovery test plan
 
-**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 58 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
+**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 66 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
 **Target:** disposable PostgreSQL/Supabase project matching the reviewed migration chain.
 **Never run this plan against production.**
 
@@ -128,7 +128,7 @@ No user-facing delete route or frontend integration is enabled. Migration 0019 i
 
 ## 11. Character cleanup outbox and worker (migration 0019 draft)
 
-The disposable-only SQL harness is `supabase/tests/0019_media_cleanup_transaction.sql`. It creates a character and one private media fixture, verifies foreign-owner denial, reserves cleanup twice with the same operation ID, checks exactly one outbox event, claims with worker A, expires the lease, reclaims with worker B, and verifies that A cannot complete or retry. It simulates Storage DELETE success by invoking worker B's completion RPC, verifies the tombstone is detached and the event delivered, and finalizes the character. It also checks zero-media finalization and a transient retry followed by a fresh claim and successful completion. All database fixtures roll back.
+The disposable-only SQL harness is `supabase/tests/0019_media_cleanup_transaction.sql`. It creates a character and one private media fixture, verifies foreign-owner denial, reserves cleanup twice with the same operation ID, checks exactly one outbox event, claims with worker A, expires the lease, reclaims with worker B, and verifies that A cannot complete or retry. It simulates Storage DELETE success by invoking worker B's completion RPC, verifies the tombstone is detached and the event delivered, and finalizes the character. It also checks zero-media finalization, a transient retry followed by a fresh claim and successful completion, and retry exhaustion: the event enters dead-letter while the character and cleanup-pending tombstone remain in place and cannot be finalized. All database fixtures roll back.
 
 Run only with:
 - `DISPOSABLE_DATABASE_URL` pointing to a disposable Supabase/PostgreSQL database.
@@ -145,7 +145,7 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
 
 The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet. The Storage delete unit tests also cover mocked 200/404, timeout, permanent rejection, invalid path/bucket, and missing credentials; these mocks do not verify a real Supabase Storage deployment.
 
-A second race harness, `supabase/tests/0019_media_cleanup_reference_race.sh`, tests both serialisation outcomes for passport writes versus cleanup intent. It passed in GitHub Actions run 58: a reference transaction that acquires the advisory lock first causes cleanup to wait and reject; when cleanup commits first, a later passport pointer update is rejected. Neither case contacts Storage.
+A second race harness, `supabase/tests/0019_media_cleanup_reference_race.sh`, tests both serialisation outcomes for passport writes versus cleanup intent. It passed in GitHub Actions run 66: a reference transaction that acquires the advisory lock first causes cleanup to wait and reject; when cleanup commits first, a later passport pointer update is rejected. Neither case contacts Storage.
 
 The two-session race harness is `supabase/tests/0019_media_cleanup_claim_race.sh`. It creates one disposable character and ready image, requests cleanup, launches two independent `psql` sessions, and asserts exactly one claim. It then expires the lease, reclaims with a new token, verifies that the stale token cannot retry or complete, completes using the fresh token, and finalizes the character. It does not contact Storage.
 
@@ -153,7 +153,7 @@ Run only after migrations 0005, 0012, 0017, 0018, and 0019 are applied to a disp
 ```bash
 DISPOSABLE_DATABASE_URL="..." PWA_TEST_OWNER_ID="..." bash supabase/tests/0019_media_cleanup_claim_race.sh
 ```
-The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 58 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
+The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 66 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
 
 Still required before activation: run the full Supabase two-account RLS/Storage matrix; test actual Storage DELETE success/404/timeout-after-delete; test batches of many events and workers; and exercise dead-letter/operator recovery. The foreign-owner cleanup reservation check is now covered by the passing SQL transaction harness. Never run these harnesses against production.
 
