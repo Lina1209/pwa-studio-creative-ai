@@ -24,6 +24,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('id="profileAvatarTab3d"', html)
         self.assertIn('disabled aria-disabled="true"', html)
         self.assertIn('assets/avatars/2d/', catalog)
+        self.assertIn('identityKey: "katty-katarina"', catalog)
 
     def test_avatar_persistence_is_fenced_to_current_authenticated_account(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
