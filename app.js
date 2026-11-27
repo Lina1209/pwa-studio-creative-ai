@@ -1982,6 +1982,92 @@ const movieHistoryStyle = document.createElement("style");
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshGuestExpiry();});
   window.addEventListener("pageshow",refreshGuestExpiry);
 
+  // Character Library cloud backup v1: explicit, one-way backup for signed-in users.
+  // Local-first data remains untouched if any cloud operation fails.
+  const makeCharacterUuid = () => {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+    return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
+  };
+  const isCharacterUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || "");
+  const backupCharacterLibrary = async () => {
+    const status=$("#characterLibraryStatus"),button=$("#backupCharacterLibrary");
+    const user=authSession?.user;
+    if(!supabaseClient || !user?.id){
+      status.textContent="Для облачной копии сначала войдите в свой аккаунт PWA Studio.";
+      return;
+    }
+    const items=readCharacterLibrary();
+    if(!items.length){status.textContent="Локальная библиотека пока пуста — нечего копировать.";return;}
+    if(!window.confirm("Создать облачную копию "+items.length+" материалов и их доступных изображений в вашем закрытом хранилище? Локальные данные останутся на месте."))return;
+    button.disabled=true;
+    let uploaded=0,skipped=0;
+    try{
+      const {data:sessionData,error:sessionError}=await supabaseClient.auth.getSession();
+      if(sessionError)throw sessionError;
+      if(sessionData.session?.user?.id!==user.id)throw new Error("Сеанс аккаунта изменился. Обновите страницу и повторите.");
+      for(const item of items){
+        if(!isCharacterUuid(item.id))throw new Error("У карточки «"+item.name+"» неподдерживаемый идентификатор. Локальная запись не изменена; обратитесь к поддержке.");
+        const refs=Array.isArray(item.referenceImages)?item.referenceImages.slice(0,6):[];
+        const passport={
+          kind:item.kind||"character",
+          representation:item.representation||"2d",
+          voice:item.voice||"",
+          passport:item.passport||{},
+          referenceImages:[]
+        };
+        for(const ref of refs){
+          if(!ref || typeof ref.id!=="string")continue;
+          const path=user.id+"/characters/"+item.id+"/"+ref.id;
+          const blob=await getCharacterImage(ref.id,user.id);
+          if(!blob){
+            if(ref.storagePath){passport.referenceImages.push({...ref});skipped++;continue;}
+            throw new Error("Не найден локальный файл «"+(ref.name||ref.id)+"». Облачная копия остановлена, исходные данные сохранены.");
+          }
+          const contentType=blob.type||ref.type||"application/octet-stream";
+          const {error:uploadError}=await supabaseClient.storage.from("studio-media").upload(path,blob,{
+            upsert:true,contentType,cacheControl:"3600"
+          });
+          if(uploadError)throw uploadError;
+          const assetId=isCharacterUuid(ref.cloudAssetId)?ref.cloudAssetId:makeCharacterUuid();
+          const assetRow={
+            id:assetId,owner_id:user.id,project_id:null,character_id:item.id,
+            file_name:(ref.name||"reference").slice(0,255),file_type:contentType,
+            storage_path:path,metadata:{source:"character-library",character_id:item.id,local_reference_id:ref.id}
+          };
+          const {error:assetError}=await supabaseClient.from("media_assets").upsert(assetRow,{onConflict:"id"});
+          if(assetError)throw assetError;
+          passport.referenceImages.push({...ref,cloudAssetId:assetId,storagePath:path,type:contentType});
+          uploaded++;
+        }
+        const characterRow={
+          id:item.id,owner_id:user.id,name:item.name,description:item.description||"",
+          avatar_url:null,
+          reference_data:{...passport,local_created_at:item.createdAt||null,local_updated_at:item.updatedAt||null}
+        };
+        const {error:characterError}=await supabaseClient.from("characters").upsert(characterRow,{onConflict:"id"});
+        if(characterError)throw characterError;
+        // Persist cloud paths only after the corresponding character and assets are saved.
+        const latest=readCharacterLibrary();
+        const index=latest.findIndex(row=>row.id===item.id);
+        if(index>=0){
+          latest[index]={...latest[index],referenceImages:passport.referenceImages,cloudBackupAt:new Date().toISOString()};
+          localStorage.setItem(characterLibraryKey(),JSON.stringify(latest));
+        }
+      }
+      status.textContent="Облачная копия создана: "+items.length+" карточек, загружено изображений: "+uploaded+(skipped?"; уже имеющихся в облаке пропущено: "+skipped:"")+". Локальные материалы сохранены.";
+      await renderCharacterLibrary();
+    }catch(error){
+      console.error("Character library cloud backup:",error);
+      status.textContent="Облачная копия не завершена: "+(error.message||"ошибка Supabase")+". Локальные данные не удалены. Проверьте миграцию 0012 и права доступа.";
+    }finally{button.disabled=false;}
+  };
+  $("#backupCharacterLibrary")?.addEventListener("click",backupCharacterLibrary);
+
   // Character Library v1: owner-scoped metadata in localStorage and image blobs in IndexedDB.
   const characterLibraryDbName = "pwa-studio-character-library-v1";
   const characterLibraryKey = () => "pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest");
@@ -2115,7 +2201,7 @@ const movieHistoryStyle = document.createElement("style");
     if(!existing&&current.length>=100){$("#characterLibraryStatus").textContent="Достигнут лимит в 100 материалов.";return;}
     if(files.length+(existing?.referenceImages?.length||0)>6){$("#characterLibraryStatus").textContent="У одного материала может быть не более 6 референсов.";return;}
     if(files.some(file=>!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>8*1024*1024)){ $("#characterLibraryStatus").textContent="Поддерживаются PNG, JPEG и WebP до 8 МБ каждый.";return; }
-    const id=existing?.id||(crypto.randomUUID?crypto.randomUUID():String(Date.now()));
+    const id=existing?.id||makeCharacterUuid();
     const refs=files.map(file=>({id:id+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)),name:file.name.slice(0,120),type:file.type}));
     const updated={...(existing||{}),id,name:name.slice(0,80),description:description.slice(0,5000),kind,representation,voice:$("#characterVoice").value.trim().slice(0,500),
       passport:{face:$("#characterFace").value.trim().slice(0,1200),body:$("#characterBody").value.trim().slice(0,1200),wardrobe:$("#characterWardrobe").value.trim().slice(0,1200),palette:$("#characterPalette").value.trim().slice(0,1200)},
