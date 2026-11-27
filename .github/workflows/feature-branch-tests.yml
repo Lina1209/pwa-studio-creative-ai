@@ -126,6 +126,7 @@ jobs:
         run: python tests/browser/run_character_backup_journal.py
       - name: Check frontend syntax and account-switch fencing
         run: |
+          node --check profile-avatar-catalog.js
           node --check app.js
           python tests/test_character_library_account_fencing.py
           python tests/test_profile_avatar_picker_contract.py
