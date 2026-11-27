@@ -1,6 +1,6 @@
 # PWA Studio — private media asset lifecycle contract
 
-**Status:** design/security contract only; no upload, signed-URL, delete, or cleanup API is active.
+**Status:** private media read/sign API routes and server-side read services exist on the feature branch; upload, delete, cleanup, and frontend integration remain inactive.
 **Scope:** future character references, project media, and private exports in Supabase Storage.
 **Activation:** NO-GO until the two-account integration matrix and decoder validation pass.
 
@@ -90,7 +90,7 @@ Use two disposable Auth accounts A and B, and exercise both buckets separately:
 
 ## 9. Current implementation boundary
 
-At this revision there is no backend media upload/read/sign/replace/delete route, no Storage lifecycle service, and no cleanup worker. `image_reference_validation.py` now performs full bounded Pillow decoding, but does not normalize images, strip EXIF, or isolate decoding in a separate OS-limited worker. Migration 0017 is a draft schema hardening change, not a deployed policy. This contract must not be interpreted as an implemented upload or cloud-backup feature.
+At this revision, authenticated private-image content proxy and short-lived signed-URL routes exist on the feature branch. There is still no upload, replace, delete, or cleanup API/worker, and no frontend media-library/character-card integration. No route has been deployed or verified against live Supabase Storage. `image_reference_validation.py` now performs full bounded Pillow decoding, but does not normalize images, strip EXIF, or isolate decoding in a separate OS-limited worker. Migration 0017 is a draft schema hardening change, not a deployed policy. This contract must not be interpreted as an implemented upload or cloud-backup feature.
 
 ## 10. Backend guard primitives added (not an endpoint)
 
@@ -225,3 +225,13 @@ Four mocked unit tests are authored in `backend/tests/test_media_signed_url.py`;
 The response contains the short-lived `signed_url`, `expires_in`, and the explicit `media_asset_public_view` allowlist. It does not return owner ID, bucket, object path, or private metadata. The route sets `Cache-Control: private, no-store, max-age=0` and `Pragma: no-cache`. Missing/foreign and non-ready assets do not reach the signer. The URL itself remains a bearer capability and must not be persisted or logged by clients.
 
 Mocked route tests are authored in `backend/tests/test_private_media_route.py` for success, safe projection, no-store headers, absent/foreign access, non-ready rejection, and missing authentication. They have not been executed. The route is committed to the feature branch but has not been deployed or verified against a live Supabase project. Do not enable production use until tests and the two-account Storage integration matrix pass.
+
+## 22. Authenticated image proxy added for revocable access checks
+
+`GET /api/media/{asset_id}/content` is a private image proxy for media-library and character-card previews. It re-authenticates each request, reloads the media row through the owner-filtered repository, verifies linked-resource ownership, requires `ready`, and validates the private bucket and immutable object key before downloading bytes from Storage.
+
+The proxy is deliberately image-only (PNG/JPEG/WebP) and enforces the same 8 MiB maximum as reference images. It streams the Storage response in bounded chunks, rejects an oversized declared or observed body, then fully decodes and verifies the image with the existing Pillow validation. It returns the image bytes directly with `Cache-Control: private, no-store`, `nosniff`, same-origin resource policy, and a restrictive content security policy. It does not expose a Storage URL or internal object path.
+
+Because the database authorization/status check runs on every proxy request, a later request is denied after the asset is tombstoned/deleted or no longer ready. An already in-flight response cannot be recalled, and bytes already delivered to a client cannot be made to disappear. The separate `/access` signed-URL endpoint remains a bearer-capability path: a previously issued signed URL may remain usable until its 60-second expiry or Storage-side object removal. Sensitive previews should prefer the authenticated proxy.
+
+Tests are authored in `backend/tests/test_private_media_route.py` and `backend/tests/test_media_content.py` for no-store headers, deleted-asset denial, size limits, MIME restrictions, and image validation. They have not been executed. The frontend has not yet been changed to fetch this endpoint with its Supabase access token and render a temporary in-memory object URL; no production or live Storage request has been made.
