@@ -49,6 +49,7 @@ begin
         position(a.storage_path in coalesce(new.reference_data::text,'')) > 0
         or position(a.storage_path in coalesce(new.avatar_url,'')) > 0
       )
+    order by a.bucket,a.storage_path
   loop
     perform pg_advisory_xact_lock(hashtextextended(
       new.owner_id::text || ':' || v_asset.bucket || ':' || v_asset.storage_path, 0
@@ -83,38 +84,30 @@ as $$
 declare
   v_reference record;
 begin
-  if new.bucket is not null and new.storage_path is not null then
-    perform pg_advisory_xact_lock(hashtextextended(
-      new.owner_id::text || ':' || new.bucket || ':' || new.storage_path, 0
-    ));
-    if exists (
-      select 1 from public.media_assets pending
-      where pending.id <> new.id
-        and pending.owner_id = new.owner_id
-        and pending.bucket = new.bucket
-        and pending.storage_path = new.storage_path
-        and pending.status in ('cleanup_pending','deleted')
-    ) then
-      raise exception 'media object is already being removed'
-        using errcode='23514';
-    end if;
-  end if;
-
-  -- Metadata may also carry a pointer. Serialize those writes against every
-  -- known object key and reject references to cleanup-pending/deleted objects.
+  -- Gather the row's own object key and every key embedded in its metadata,
+  -- then acquire all advisory locks in one global order. This avoids lock-order
+  -- inversions when a metadata update references several existing objects.
   for v_reference in
-    select a.bucket,a.storage_path
-    from public.media_assets a
-    where a.id <> new.id and a.owner_id=new.owner_id
-      and a.storage_path is not null
-      and position(a.storage_path in coalesce(new.metadata::text,'')) > 0
+    select refs.bucket,refs.storage_path
+    from (
+      select new.bucket as bucket,new.storage_path as storage_path
+      where new.bucket is not null and new.storage_path is not null
+      union
+      select a.bucket,a.storage_path
+      from public.media_assets a
+      where a.id <> new.id and a.owner_id=new.owner_id
+        and a.storage_path is not null
+        and position(a.storage_path in coalesce(new.metadata::text,'')) > 0
+    ) refs
+    order by refs.bucket,refs.storage_path
   loop
     perform pg_advisory_xact_lock(hashtextextended(
       new.owner_id::text || ':' || v_reference.bucket || ':' || v_reference.storage_path, 0
     ));
     if exists (
       select 1 from public.media_assets pending
-      where pending.owner_id=new.owner_id
+      where pending.id <> new.id
+        and pending.owner_id=new.owner_id
         and pending.bucket=v_reference.bucket
         and pending.storage_path=v_reference.storage_path
         and pending.status in ('cleanup_pending','deleted')
@@ -264,7 +257,7 @@ begin
   for v_asset in
     select * from public.media_assets
     where owner_id=p_owner_id and character_id=p_character_id
-    order by id
+    order by bucket,storage_path,id
     for update
   loop
     if v_asset.status = 'deleted' then
