@@ -3,8 +3,20 @@ import httpx
 
 from app.core.config import Settings
 
+_ALLOWED_RPC_FUNCTIONS = frozenset({
+    "pwa_request_character_media_cleanup",
+    "pwa_claim_media_cleanup",
+    "pwa_complete_media_cleanup",
+    "pwa_retry_media_cleanup",
+    "pwa_finalize_character_media_cleanup",
+})
+
 
 def _call(settings: Settings, function_name: str, payload: dict, *, timeout: float = 15.0):
+    if function_name not in _ALLOWED_RPC_FUNCTIONS:
+        raise ValueError("Unsupported media cleanup RPC function.")
+    if not isinstance(payload, dict):
+        raise ValueError("Media cleanup RPC payload must be an object.")
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise RuntimeError("Media cleanup database credentials are not configured.")
     headers = {
