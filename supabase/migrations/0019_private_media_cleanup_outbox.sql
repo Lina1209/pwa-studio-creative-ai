@@ -80,6 +80,8 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public
 as $$
+declare
+  v_reference record;
 begin
   if new.bucket is not null and new.storage_path is not null then
     perform pg_advisory_xact_lock(hashtextextended(
@@ -97,13 +99,37 @@ begin
         using errcode='23514';
     end if;
   end if;
+
+  -- Metadata may also carry a pointer. Serialize those writes against every
+  -- known object key and reject references to cleanup-pending/deleted objects.
+  for v_reference in
+    select a.bucket,a.storage_path
+    from public.media_assets a
+    where a.id <> new.id and a.owner_id=new.owner_id
+      and a.storage_path is not null
+      and position(a.storage_path in coalesce(new.metadata::text,'')) > 0
+  loop
+    perform pg_advisory_xact_lock(hashtextextended(
+      new.owner_id::text || ':' || v_reference.bucket || ':' || v_reference.storage_path, 0
+    ));
+    if exists (
+      select 1 from public.media_assets pending
+      where pending.owner_id=new.owner_id
+        and pending.bucket=v_reference.bucket
+        and pending.storage_path=v_reference.storage_path
+        and pending.status in ('cleanup_pending','deleted')
+    ) then
+      raise exception 'media metadata references an object that is being removed'
+        using errcode='23514';
+    end if;
+  end loop;
   return new;
 end;
 $$;
 
 drop trigger if exists media_assets_guard_cleanup_reference on public.media_assets;
 create trigger media_assets_guard_cleanup_reference
-before insert or update of owner_id, bucket, storage_path, status
+before insert or update of owner_id, bucket, storage_path, status, metadata
 on public.media_assets
 for each row execute function public.pwa_guard_media_cleanup_reference();
 
@@ -276,6 +302,11 @@ begin
       where other.id <> v_asset.id
         and other.bucket=v_asset.bucket
         and other.storage_path=v_asset.storage_path
+        and other.status <> 'deleted'
+    ) or exists (
+      select 1 from public.media_assets other
+      where other.id <> v_asset.id
+        and position(v_asset.storage_path in coalesce(other.metadata::text,'')) > 0
         and other.status <> 'deleted'
     ) or exists (
       select 1 from public.characters other_character
