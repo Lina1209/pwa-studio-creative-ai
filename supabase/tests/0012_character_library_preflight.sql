@@ -22,7 +22,7 @@ WITH checks AS (
       WHERE c.conrelid='public.media_assets'::regclass
         AND c.confrelid='public.characters'::regclass
         AND c.contype='f'
-        AND lower(regexp_replace(replace(pg_get_constraintdef(c.oid),'public.',''),'\\s','','g')) LIKE
+        AND lower(regexp_replace(replace(pg_get_constraintdef(c.oid),'public.',''),'[[:space:]]','','g')) LIKE
           'foreignkey(character_id,owner_id)referencescharacters(id,owner_id)%'
     ),
     'FK (character_id, owner_id) -> characters(id, owner_id)'
@@ -33,7 +33,7 @@ WITH checks AS (
       SELECT 1 FROM pg_constraint c
       WHERE c.conrelid='public.characters'::regclass
         AND c.contype='u'
-        AND lower(regexp_replace(replace(pg_get_constraintdef(c.oid),'public.',''),'\\s','','g')) LIKE 'unique(id,owner_id)%'
+        AND lower(regexp_replace(replace(pg_get_constraintdef(c.oid),'public.',''),'[[:space:]]','','g')) LIKE 'unique(id,owner_id)%'
     ),
     'UNIQUE (id, owner_id)'
   UNION ALL
@@ -57,7 +57,7 @@ WITH checks AS (
     EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename='characters'
-        AND roles @> ARRAY['authenticated']::name[]
+        AND roles @> ARRAY['authenticated']::name[]::name[]
         AND cmd='ALL'
         AND qual ILIKE '%owner_id%auth.uid()%'
         AND with_check ILIKE '%owner_id%auth.uid()%'
@@ -69,7 +69,7 @@ WITH checks AS (
     EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename='media_assets'
-        AND roles @> ARRAY['authenticated']
+        AND roles @> ARRAY['authenticated']::name[]
         AND cmd='ALL'
         AND qual ILIKE '%owner_id%auth.uid()%'
         AND with_check ILIKE '%owner_id%auth.uid()%'
