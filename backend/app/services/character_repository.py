@@ -98,7 +98,7 @@ def update_owned_character(settings, owner_id, character_id, changes):
     if "description" in changes:
         value = changes["description"]
         if value is not None and not isinstance(value, str): raise HTTPException(status_code=422, detail="Character description must be text.")
-        if value is not None and len(value) > 2000: raise HTTPException(status_code=422, detail="Character description is too long.")
+        if value is not None and len(value) > 5000: raise HTTPException(status_code=422, detail="Character description exceeds 5,000 characters.")
         payload["description"] = value.strip() if value else None
     if "reference_data" in changes: payload["reference_data"] = validate_reference_data(changes["reference_data"])
     if not payload: raise HTTPException(status_code=400, detail="No character changes were supplied.")
