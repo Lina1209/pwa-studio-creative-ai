@@ -110,6 +110,30 @@
       check(results.filter(item => item.status === "rejected").length === 1, "concurrent duplicate was not rejected");
       check(!!(await api.get(owner, racingCharacter)), "winning concurrent journal was not persisted");
     });
+    await test("aborted IndexedDB write leaves no partial journal", async () => {
+      const abortedCharacter = uuid();
+      const abortedId = owner + ":" + abortedCharacter;
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("pwa-studio-character-backup-journal-v1", 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        await new Promise(resolve => {
+          const tx = db.transaction("journals", "readwrite");
+          tx.objectStore("journals").put({
+            id: abortedId, protocolVersion: 1, ownerId: owner,
+            localCharacterId: abortedCharacter, references: [],
+            passportFingerprint: sha, createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          tx.onabort = resolve;
+          tx.onerror = resolve;
+          tx.abort();
+        });
+      } finally { db.close(); }
+      check(await api.get(owner, abortedCharacter) === null, "aborted write left a partial journal record");
+    });
     await test("owner boundary prevents foreign reads", async () => {
       check(await api.get(otherOwner, localCharacter) === null, "foreign owner read returned a record");
       const rows = await api.list(owner);
