@@ -51,7 +51,7 @@ class UsageTelemetryTests(unittest.TestCase):
             "cost_usd": "0.0001",
             "cost_source": "litellm_response_cost",
         })
-        self.assertNotIn("Authorization", kwargs["headers"])
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer eyJlegacy-service-role-token")
         self.assertEqual(kwargs["headers"]["apikey"], "eyJlegacy-service-role-token")
         self.assertNotIn(self.result.text, str(kwargs["json"]))
 
