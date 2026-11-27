@@ -56,6 +56,28 @@ begin
     raise exception 'cleanup reservation did not enqueue exactly one asset: %',v_request;
   end if;
 
+  -- The browser role cannot forge, update, or delete server-managed media rows.
+  if has_table_privilege('authenticated','public.media_assets','INSERT')
+     or has_table_privilege('authenticated','public.media_assets','UPDATE')
+     or has_table_privilege('authenticated','public.media_assets','DELETE')
+     or has_table_privilege('authenticated','public.characters','DELETE') then
+    raise exception 'browser role retains an unsafe media/character write privilege';
+  end if;
+
+  -- A late upload reservation is blocked by the character deletion marker.
+  begin
+    perform public.pwa_reserve_character_reference_upload(
+      v_owner,v_character,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
+      'late-upload-' || gen_random_uuid()::text,'late.png','image/png',
+      'studio-media',
+      v_owner::text || '/characters/' || v_character::text || '/' || gen_random_uuid()::text || '.png',
+      128,repeat('b',64),8,8
+    );
+    raise exception 'late media upload unexpectedly succeeded';
+  exception when sqlstate '23514' then
+    null;
+  end;
+
   -- Same operation is idempotent and must not create a second event.
   v_request := public.pwa_request_character_media_cleanup(v_owner,v_character,v_operation);
   if (select count(*) from public.media_asset_outbox
