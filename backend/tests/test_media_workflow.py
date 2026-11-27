@@ -1,5 +1,6 @@
 """Composition tests for the private character-reference upload boundary."""
 import unittest
+import hashlib
 from io import BytesIO
 from uuid import uuid4
 
@@ -43,6 +44,7 @@ class CharacterReferenceWorkflowTests(unittest.TestCase):
         self.assertEqual(result.outbox_event.event_type, "media_upload_verify_requested")
         self.assertEqual(result.file_name, "hero.png")
         self.assertEqual(result.file_type, "image/png")
+        self.assertEqual(result.content_sha256, hashlib.sha256(png()).hexdigest())
         self.assertEqual(result.storage_path.split("/")[0], OWNER)
         self.assertEqual(result.storage_path.split("/")[1], "characters")
         self.assertNotIn("..", result.storage_path)
