@@ -90,11 +90,14 @@ def update_owned_character(settings, owner_id, character_id, changes):
     character = canonical_uuid(character_id, "character")
     payload = {}
     if "name" in changes:
-        value = changes["name"].strip()
+        value = changes["name"]
+        if not isinstance(value, str): raise HTTPException(status_code=422, detail="Character name must be text.")
+        value = value.strip()
         if not value or len(value) > 120: raise HTTPException(status_code=422, detail="Character name must contain 1–120 characters.")
         payload["name"] = value
     if "description" in changes:
         value = changes["description"]
+        if value is not None and not isinstance(value, str): raise HTTPException(status_code=422, detail="Character description must be text.")
         if value is not None and len(value) > 2000: raise HTTPException(status_code=422, detail="Character description is too long.")
         payload["description"] = value.strip() if value else None
     if "reference_data" in changes: payload["reference_data"] = validate_reference_data(changes["reference_data"])
