@@ -244,6 +244,23 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if(!contextIsCurrent())return;", form)
         self.assertIn("finally{if(contextIsCurrent())button.disabled=false;}", form)
 
+    def test_conversation_list_refresh_ignores_older_requests(self):
+        start = APP.index("const loadConversations = async () =>")
+        end = APP.index("const loadConversationMessages", start)
+        loader = APP[start:end]
+        self.assertIn("const requestVersion=list?(Number(list.dataset.requestVersion)||0)+1:1;", loader)
+        self.assertIn("Number(list.dataset.requestVersion)===requestVersion", loader)
+        self.assertIn("if(!contextIsCurrent())return;", loader)
+
+    def test_admin_workspace_refresh_is_latest_request_and_account_only(self):
+        start = APP.index("let adminWorkspaceRequestVersion = 0;")
+        end = APP.index("const renderAdminReports", start)
+        loader = APP[start:end]
+        self.assertIn("requestVersion = ++adminWorkspaceRequestVersion", loader)
+        self.assertIn("requestVersion === adminWorkspaceRequestVersion", loader)
+        self.assertIn("authSession?.user?.id === userId", loader)
+        self.assertIn("if (!contextIsCurrent()) return;", loader)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
