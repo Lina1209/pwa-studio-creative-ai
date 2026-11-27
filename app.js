@@ -1453,6 +1453,8 @@ const movieHistoryStyle = document.createElement("style");
   const loadMovieProjectsFromCloud = async () => {
     const userId = authSession?.user?.id;
     if (!userId || !supabaseClient || movieCloudState.loadingUser === userId) return;
+    const version = authContextVersion;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     movieCloudState.loadingUser = userId;
     try {
       const { data, error } = await supabaseClient
@@ -1461,12 +1463,13 @@ const movieHistoryStyle = document.createElement("style");
         .eq("project_type", "movie")
         .order("updated_at", { ascending: false });
       if (error) throw error;
-      if (authSession?.user?.id !== userId) return;
+      if (!contextIsCurrent()) return;
       const deletedIds = readMovieTombstones();
       if (deletedIds.length) {
         const { error: deleteError } = await supabaseClient.from("projects").delete()
           .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
+        if (!contextIsCurrent()) return;
         writeMovieTombstones([]);
       }
       const deletedSet = new Set(deletedIds);
@@ -1480,7 +1483,7 @@ const movieHistoryStyle = document.createElement("style");
         }
       });
       const projects = [...merged.values()].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-      if (movieWrite(projects)) {
+      if (contextIsCurrent() && movieWrite(projects)) {
         renderMovieProjects();
         scheduleMovieCloudSync();
         const feedback = $("#movieFeedback");
@@ -1489,7 +1492,7 @@ const movieHistoryStyle = document.createElement("style");
     } catch (error) {
       console.error("Movie cloud load failed:", error);
       const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+      if (contextIsCurrent() && feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
     } finally {
       if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
     }
