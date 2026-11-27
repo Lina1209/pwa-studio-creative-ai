@@ -51,7 +51,6 @@ def _public(row: dict) -> dict:
         "username": row["username"],
         "display_name": row["display_name"],
         "bio": row.get("bio") or "",
-        "avatar_path": row.get("avatar_path"),
         "avatar_catalog_id": row.get("avatar_catalog_id") or PROFILE_AVATAR_DEFAULT,
         "avatar_representation": row.get("avatar_representation") or "2d",
         "updated_at": row.get("updated_at"),
