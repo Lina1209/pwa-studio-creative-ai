@@ -45,7 +45,13 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
             "owner_id": OWNER, "character_id": CHARACTER, "operation_id": TOKEN,
             "assets_enqueued": 1, "status": "cleanup_pending",
         }
-        for changes in ({"assets_enqueued": True}, {"assets_enqueued": -1}, {"status": "deleted"}):
+        for changes in (
+            {"assets_enqueued": True},
+            {"assets_enqueued": -1},
+            {"status": "deleted"},
+            {"assets_enqueued": 0, "status": "cleanup_pending"},
+            {"assets_enqueued": 2, "status": "ready_to_finalize"},
+        ):
             with self.subTest(changes=changes):
                 call.return_value = {**base, **changes}
                 with self.assertRaisesRegex(RuntimeError, "mismatched or invalid fields"):
