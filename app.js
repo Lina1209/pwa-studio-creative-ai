@@ -54,6 +54,11 @@
       activeMessagePartnerId = null;
       assistantUserId = nextUserId;
       authContextVersion += 1;
+      // Invalidate every in-flight Companion operation at the account boundary.
+      assistantConversationLoadVersion += 1;
+      assistantConversationIntentVersion += 1;
+      assistantHistoryLoadVersion += 1;
+      assistantHistoryBusy = false;
       activeAssistantConversationId = null;
       const history = $("#assistantHistoryList");
       const messages = $("#assistantMessages");
