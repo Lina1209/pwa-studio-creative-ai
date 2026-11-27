@@ -71,6 +71,11 @@ def claim_media_cleanup(settings: Settings, claim_token: str, lease_seconds: int
     }
     if not required.issubset(result):
         raise RuntimeError("Media cleanup claim returned an invalid payload.")
+    # A claim must echo the nonce generated for this exact RPC request. If the
+    # response carries another token, never let the worker delete before its
+    # eventual completion is rejected as stale.
+    if result.get("claim_token") != claim_token:
+        raise RuntimeError("Media cleanup claim returned a mismatched fencing token.")
     return result
 
 
