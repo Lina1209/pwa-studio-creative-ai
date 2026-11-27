@@ -9,7 +9,7 @@ from app.services.character_repository import (
 class CharacterCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=120)
-    description: str | None = Field(default=None, max_length=2000)
+    description: str | None = Field(default=None, max_length=5000)
     reference_data: dict = Field(default_factory=dict)
 
 class CharacterPatch(BaseModel):
