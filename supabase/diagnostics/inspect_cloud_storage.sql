@@ -73,3 +73,17 @@ select
       and conname = 'media_assets_project_owner_fkey'
       and contype = 'f'
   ) as project_owner_fk_present;
+
+-- 9) Storage object table grants. RLS policies and SQL grants are separate gates.
+select table_schema, table_name, grantee, privilege_type
+from information_schema.role_table_grants
+where table_schema = 'storage'
+  and table_name = 'objects'
+  and grantee in ('anon','authenticated','service_role')
+order by grantee, privilege_type;
+
+-- 10) Confirm both expected buckets are private (no row means bucket missing).
+select id, public, file_size_limit, allowed_mime_types
+from storage.buckets
+where id in ('studio-media', 'studio-exports')
+order by id;
