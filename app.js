@@ -1324,8 +1324,11 @@ const movieHistoryStyle = document.createElement("style");
       if (contextIsCurrent() && (!requestConversationId || activeAssistantConversationId === requestConversationId))
         { setKattyAssistantExpression("neutral"); setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
     } finally {
-      button.disabled = false; input.disabled = false;
-      if (contextIsCurrent()) input.focus();
+      // A stale request must not unlock or steal focus from a newer account's UI.
+      if (contextIsCurrent()) {
+        button.disabled = false; input.disabled = false;
+        input.focus();
+      }
     }
   });
   setTimeout(() => renderAssistantHistory(), 0);
