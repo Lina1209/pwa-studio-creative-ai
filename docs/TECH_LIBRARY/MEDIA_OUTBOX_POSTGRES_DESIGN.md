@@ -137,3 +137,11 @@ Draft migration 0018_private_media_upload_reservation.sql now adds the media lif
 The authenticated API route and server-only Storage upload primitive are also present on the feature branch. They have not been deployed, the migration has not been applied, and no database/Storage call has been made against a live project. The outbox claim/ack/retry SQL RPCs and actual verification worker remain unimplemented. Therefore object_uploaded is not ready: the asset remains unreadable until a future worker independently verifies the stored object and conditionally marks it ready.
 
 This is a draft implementation boundary, not a claim of database-level verification. Required disposable-database rollback, idempotency, owner-isolation, and multi-session concurrency tests remain outstanding.
+
+## 12. Verification worker and claim/complete/retry RPCs are drafted
+
+Draft migration 0018 now includes service-role-only RPCs to claim a verification event with `FOR UPDATE SKIP LOCKED`, lease expiry, and a UUID fencing token; complete verification atomically with the media transition to ready; and schedule a bounded retry or dead-letter an exhausted event. Expired claims can be reclaimed by another worker, and stale tokens cannot acknowledge or reschedule work.
+
+The feature branch includes `backend/app/workers/media_outbox_worker.py` and a service-role RPC repository. It downloads and fully decodes the stored private object, then compares SHA-256, size, MIME type, and dimensions with the immutable upload reservation before calling the atomic completion RPC. Backoff starts at 30 seconds, doubles by attempt, and caps at one hour. After eight attempts the event is dead-lettered and the media row becomes upload_failed. The worker uses a database-backed poll loop and graceful SIGTERM/SIGINT handling; it does not require a Redis broker.
+
+This implementation is still draft-only: no migration application, database concurrency tests, Storage integration, Render worker service, or deployment has occurred. The authored worker unit tests have not been executed. The disposable-database test matrix remains a release gate.
