@@ -1,4 +1,5 @@
 """Authenticated character passport CRUD routes; guest libraries remain browser-local."""
+from uuid import UUID
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field
 from app.services.auth import StudioUser, get_current_user
@@ -8,6 +9,7 @@ from app.services.character_repository import (
 
 class CharacterCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    source_local_id: UUID
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=5000)
     reference_data: dict = Field(default_factory=dict)
@@ -27,7 +29,7 @@ def build_character_router(settings):
     @router.post("/characters", status_code=201)
     def create_character(payload: CharacterCreate, response: Response, user: StudioUser = Depends(get_current_user)):
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
-        return create_owned_character(settings, user.user_id, payload.name, payload.description, payload.reference_data)
+        return create_owned_character(settings, user.user_id, str(payload.source_local_id), payload.name, payload.description, payload.reference_data)
     @router.get("/characters/{character_id}")
     def read_character(character_id: str, response: Response, user: StudioUser = Depends(get_current_user)):
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
