@@ -8,6 +8,9 @@ from app.services import profile_service
 
 
 class ProfileAvatarCatalogTests(unittest.TestCase):
+    def test_katty_is_an_optional_published_2d_catalog_entry(self):
+        self.assertIn("katty-assistant", profile_service.PROFILE_AVATAR_CATALOG)
+
     def test_profile_schema_accepts_catalog_selection(self):
         payload = ProfileUpdateRequest(avatar_catalog_id="forest-elf", avatar_representation="2d")
         self.assertEqual(payload.avatar_catalog_id, "forest-elf")
