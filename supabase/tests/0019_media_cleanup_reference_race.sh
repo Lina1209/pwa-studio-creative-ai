@@ -71,7 +71,7 @@ if ! grep -q 'REFERENCE_LOCK_HELD' "$OUT_A"; then
 fi
 
 psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
-  -v owner_id="$PWA_TEST_OWNER_ID" -v target_id="$TARGET_A" -v operation_id="$OP_A" <<'SQL'
+  -v owner_id="$PWA_TEST_OWNER_ID" -v target_id="$TARGET_A" -v asset_id="$ASSET_A" -v operation_id="$OP_A" <<'SQL'
 select set_config('pwa.race.owner', :'owner_id', false);
 select set_config('pwa.race.target', :'target_id', false);
 select set_config('pwa.race.operation', :'operation_id', false);
