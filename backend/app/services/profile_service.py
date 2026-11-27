@@ -100,6 +100,8 @@ def update_own_profile(settings: Settings, user_id: str, changes: dict) -> dict:
         catalog_id = str(payload["avatar_catalog_id"]).strip()
         if catalog_id not in PROFILE_AVATAR_CATALOG:
             raise HTTPException(status_code=422, detail="Choose an avatar from the published standard catalog.")
+        if payload.get("avatar_representation", "2d") != "2d":
+            raise HTTPException(status_code=422, detail="3D profile avatars are not available yet.")
         payload["avatar_catalog_id"] = catalog_id
         payload["avatar_representation"] = "2d"
         payload["avatar_updated_at"] = datetime.now(timezone.utc).isoformat()
