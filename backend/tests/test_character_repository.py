@@ -39,15 +39,19 @@ class CharacterRepositoryTests(unittest.TestCase):
         self.assertEqual(list_owned_characters(self.settings, OWNER), [])
         self.assertEqual(request.call_args.kwargs["params"]["owner_id"], f"eq.{OWNER}")
 
-    @patch("app.services.character_repository.httpx.request")
-    def test_create_uses_verified_owner_not_client_owner_id(self, request):
-        request.return_value = Mock(content=b'[{"id":"%s","name":"Lina","description":null,"reference_data":{},"created_at":"now"}]' % CHARACTER.encode(), json=lambda: [{
-            "id": CHARACTER, "name": "Lina", "description": None, "reference_data": {}, "created_at": "now"
-        }])
-        row = create_owned_character(self.settings, OWNER, " Lina ", None, {})
+    @patch("app.services.character_repository.httpx.post")
+    def test_create_uses_verified_owner_and_stable_local_mapping(self, request):
+        local_id = "44444444-4444-4444-8444-444444444444"
+        request.return_value = Mock(content=b"{}", json=lambda: {
+            "id": CHARACTER, "owner_id": OWNER, "source_local_id": local_id,
+            "name": "Lina", "description": None, "reference_data": {}, "created_at": "now"
+        })
+        row = create_owned_character(self.settings, OWNER, local_id, " Lina ", None, {})
         payload = request.call_args.kwargs["json"]
-        self.assertEqual(payload["owner_id"], OWNER)
-        self.assertEqual(payload["name"], "Lina")
+        self.assertEqual(payload["p_owner_id"], OWNER)
+        self.assertEqual(payload["p_source_local_id"], local_id)
+        self.assertEqual(payload["p_name"], "Lina")
+        self.assertEqual(row["source_local_id"], local_id)
         self.assertNotIn("avatar_url", row)
         self.assertNotIn("owner_id", row)
 
