@@ -1529,6 +1529,22 @@ const movieHistoryStyle = document.createElement("style");
       };
       refreshLinked();picker.append(linked);form.append(picker);
     }
+    if(stage.key==="story"){
+      const assigned=(Array.isArray(project.characterLibrarySnapshots)?project.characterLibrarySnapshots:[]).filter(item=>Array.isArray(item.selectedReferenceIds)&&item.selectedReferenceIds.length);
+      if(assigned.length){
+        const continuity=document.createElement("aside");continuity.className="movie-scene-reference-guidance";
+        const title=document.createElement("strong");title.textContent="Визуальные ориентиры для раскадровки";
+        const intro=document.createElement("p");intro.textContent="Учитывайте эти утверждённые референсы при описании кадров. Номера сцен указаны в настройках персонажей.";
+        continuity.append(title,intro);
+        assigned.forEach(item=>{
+          const line=document.createElement("p");const sceneText=Array.isArray(item.sceneNumbers)&&item.sceneNumbers.length?"Сцены "+item.sceneNumbers.join(", "):"Все сцены";
+          const selected=(item.referenceImages||[]).filter(ref=>item.selectedReferenceIds.includes(ref.id)).map(ref=>ref.name).filter(Boolean);
+          line.textContent=(item.kind==="scene"?"Локация: ":"Персонаж: ")+item.name+" · "+sceneText+" · "+(selected.length?selected.join(", "):"выбранные референсы");
+          continuity.append(line);
+        });
+        form.append(continuity);
+      }
+    }
     let showTitlesControl=null;
     if(stage.key==="edit"){
       const titlesWrap=document.createElement("label");
