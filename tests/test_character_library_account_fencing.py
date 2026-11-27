@@ -278,6 +278,20 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("requestVersion===notificationLoadRequestVersion", loader)
         self.assertIn("if (!contextIsCurrent()) return;", loader)
 
+    def test_admin_report_and_suspension_actions_are_account_fenced(self):
+        reports_start = APP.index("const renderAdminReports = reports =>")
+        suspensions_start = APP.index("const renderAdminSuspensions = suspensions =>", reports_start)
+        reports = APP[reports_start:suspensions_start]
+        self.assertIn("const contextIsCurrent=()=>renderVersion===authContextVersion&&authSession?.user?.id===renderUserId;", reports)
+        self.assertIn("if(!contextIsCurrent())return;", reports)
+        self.assertIn("finally{if(contextIsCurrent())save.disabled=false;}", reports)
+        admin_form_start = APP.index("const renderAdminSuspensions = suspensions =>")
+        admin_form_end = APP.index('$("#adminRefresh")?.addEventListener', admin_form_start)
+        suspensions = APP[admin_form_start:admin_form_end]
+        self.assertIn("const contextIsCurrent=()=>renderVersion===authContextVersion&&authSession?.user?.id===renderUserId;", suspensions)
+        self.assertIn("if(!contextIsCurrent()||!confirm(", suspensions)
+        self.assertIn("finally{if(contextIsCurrent())revoke.disabled=false;}", suspensions)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
