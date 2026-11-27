@@ -78,5 +78,17 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertLess(loader.index("await supabaseClient.from(\"projects\").delete()"), loader.index("if (!contextIsCurrent()) return;", loader.index("await supabaseClient.from(\"projects\").delete()")))
 
 
+    def test_audio_story_generation_and_movie_handoff_are_account_fenced(self):
+        bridge_start = APP.index("window.PWAStudioAudioBridge = {")
+        bridge_end = APP.index("\n  };", bridge_start) + 5
+        bridge = APP[bridge_start:bridge_end]
+        self.assertIn("const requestUserId = authSession?.user?.id || null;", bridge)
+        self.assertIn("const requestVersion = authContextVersion;", bridge)
+        self.assertIn("requestVersion !== authContextVersion", bridge)
+        self.assertIn("latestAudioGenerationContext = { userId:requestUserId, version:requestVersion, reply:result.reply };", bridge)
+        self.assertIn("generation.version !== authContextVersion", bridge)
+        self.assertIn("generation.userId !== (authSession?.user?.id || null)", bridge)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
