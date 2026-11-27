@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from app.services.media_access import (
     build_storage_object_key,
     canonical_uuid,
+    media_asset_public_view,
     require_owned_row,
     require_private_bucket,
     require_same_owner,
@@ -54,6 +55,22 @@ class MediaAccessGuardTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             require_private_bucket("public")
         self.assertEqual(caught.exception.status_code, 422)
+
+
+    def test_public_media_view_never_exposes_private_fields(self):
+        row = {
+            "id": RESOURCE, "owner_id": OWNER, "project_id": None,
+            "character_id": RESOURCE, "file_name": "portrait.png",
+            "file_type": "image/png", "created_at": "2026-01-01T00:00:00Z",
+            "bucket": "studio-media", "storage_path": f"{OWNER}/characters/{RESOURCE}/{OBJECT}.png",
+            "metadata": {"private": "do-not-return"},
+        }
+        public = media_asset_public_view(row)
+        self.assertEqual(public["id"], RESOURCE)
+        self.assertNotIn("owner_id", public)
+        self.assertNotIn("bucket", public)
+        self.assertNotIn("storage_path", public)
+        self.assertNotIn("metadata", public)
 
 
 if __name__ == "__main__":
