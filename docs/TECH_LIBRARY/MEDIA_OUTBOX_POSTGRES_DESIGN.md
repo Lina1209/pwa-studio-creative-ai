@@ -120,7 +120,7 @@ If Storage returns an ambiguous outcome, reconcile object existence before retry
 9. Verify dead-letter behavior, retry bounds, and operational alerting.
 10. Verify no browser role can read or write the outbox.
 
-No migration, RPC, worker, scheduler, or Storage call is implemented by this document.
+This document is a design reference; the separate draft migration/RPC implementation is tracked in section 11. No worker, scheduler, or live Storage/database operation is active.
 
 ## 9. Concurrency verification plan
 
