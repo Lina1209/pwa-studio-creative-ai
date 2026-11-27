@@ -141,7 +141,7 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
   -f supabase/tests/0019_media_cleanup_transaction.sql
 ```
 
-The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet.
+The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet. The Storage delete unit tests also cover mocked 200/404, timeout, permanent rejection, invalid path/bucket, and missing credentials; these mocks do not verify a real Supabase Storage deployment.
 
 The two-session race harness is `supabase/tests/0019_media_cleanup_claim_race.sh`. It creates one disposable character and ready image, requests cleanup, launches two independent `psql` sessions, and asserts exactly one claim. It then expires the lease, reclaims with a new token, verifies that the stale token cannot retry or complete, completes using the fresh token, and finalizes the character. It does not contact Storage.
 
@@ -149,7 +149,7 @@ Run only after migrations 0005, 0012, 0017, 0018, and 0019 are applied to a disp
 ```bash
 DISPOSABLE_DATABASE_URL="..." PWA_TEST_OWNER_ID="..." bash supabase/tests/0019_media_cleanup_claim_race.sh
 ```
-The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness has been authored but not executed.
+The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness has been authored but not executed. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
 
 Before activation, add and run a two-session cleanup claim race (parallel with the existing upload race), a disposable Storage test for successful DELETE/404/timeout-after-delete, a foreign-owner request test, and an adversarial reference-write-vs-cleanup race. Never run these harnesses against production.
 
