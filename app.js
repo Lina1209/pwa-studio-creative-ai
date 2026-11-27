@@ -1477,6 +1477,7 @@ const movieHistoryStyle = document.createElement("style");
           });
           if(!added.length){selectedStatus.textContent="Выбранные карточки уже добавлены.";return;}
           const identityText=added.map(item=>[
+            "[[PWA_LIBRARY_ITEM:"+item.id+"]]",
             (item.kind==="scene"?"ЛОКАЦИЯ":"ПЕРСОНАЖ")+": "+item.name,
             "Тип представления: "+(item.representation==="both"?"2D + 3D":item.representation==="3d"?"3D-паспорт":"2D"),
             "Описание: "+item.description,
@@ -1485,7 +1486,8 @@ const movieHistoryStyle = document.createElement("style");
             "Одежда и аксессуары: "+(item.passport.wardrobe||"—"),
             "Палитра и эмоции: "+(item.passport.palette||"—"),
             "Голос: "+(item.voice||"—"),
-            "Референсы: "+(item.referenceImages.length?item.referenceImages.map(ref=>ref.name).join(", "):"не указаны")
+            "Референсы (файлы пока не прикреплены к проекту): "+(item.referenceImages.length?item.referenceImages.map(ref=>ref.name).join(", "):"не указаны"),
+            "[[/PWA_LIBRARY_ITEM:"+item.id+"]]"
           ].join("\n")).join("\n\n");
           const currentText=inputs.characters.value.trim();
           inputs.characters.value=(currentText?currentText+"\n\n":"")+identityText;
@@ -1499,7 +1501,7 @@ const movieHistoryStyle = document.createElement("style");
         linked.replaceChildren();
         if(!selectedLibrarySnapshots.length){const empty=document.createElement("p");empty.className="movie-stage-note";empty.textContent="К этому фильму пока не привязаны карточки из библиотеки.";linked.append(empty);return;}
         const caption=document.createElement("p");caption.className="movie-stage-note";caption.textContent="Снимки паспортов, которые будут сохранены вместе с фильмом:";linked.append(caption);
-        selectedLibrarySnapshots.forEach(item=>{const row=document.createElement("div");row.className="movie-character-linked-row";const name=document.createElement("span");name.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать из фильма";remove.addEventListener("click",()=>{selectedLibrarySnapshots=selectedLibrarySnapshots.filter(saved=>saved.id!==item.id);refreshLinked();});row.append(name,remove);linked.append(row);});
+        selectedLibrarySnapshots.forEach(item=>{const row=document.createElement("div");row.className="movie-character-linked-row";const name=document.createElement("span");name.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать из фильма";remove.addEventListener("click",()=>{selectedLibrarySnapshots=selectedLibrarySnapshots.filter(saved=>saved.id!==item.id);const startMarker="[[PWA_LIBRARY_ITEM:"+item.id+"]]",endMarker="[[/PWA_LIBRARY_ITEM:"+item.id+"]]",parts=inputs.characters.value.split(startMarker);if(parts.length>1){const rest=parts.slice(1).map(part=>{const endAt=part.indexOf(endMarker);return endAt>=0?part.slice(endAt+endMarker.length):part;}).join("");inputs.characters.value=parts[0]+rest;inputs.characters.dispatchEvent(new Event("input",{bubbles:true}));}refreshLinked();});row.append(name,remove);linked.append(row);});
       };
       refreshLinked();picker.append(linked);form.append(picker);
     }
