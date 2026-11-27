@@ -117,7 +117,11 @@ def retry_media_cleanup(settings: Settings, event: dict, retry_delay_seconds: in
         "p_claim_token": event["claim_token"],
         "p_retry_delay_seconds": retry_delay_seconds,
     }), "Media cleanup retry")
-    if not isinstance(result, dict) or result.get("event_status") not in {"pending", "dead_letter"}:
+    if (
+        not isinstance(result, dict)
+        or result.get("event_status") not in {"pending", "dead_letter"}
+        or result.get("asset_status") != "cleanup_pending"
+    ):
         raise RuntimeError("Media cleanup retry returned an invalid result.")
     return result
 
