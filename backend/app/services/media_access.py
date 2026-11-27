@@ -1,0 +1,60 @@
+"""Reusable ownership guards for future private media endpoints.
+
+These helpers do not access Supabase or Storage. Call them only after loading
+rows server-side; always filter database queries by both resource ID and owner.
+"""
+from uuid import UUID
+
+from fastapi import HTTPException
+
+
+ALLOWED_BUCKETS = frozenset({"studio-media", "studio-exports"})
+ALLOWED_RESOURCE_KINDS = frozenset({"characters", "projects", "exports"})
+ALLOWED_EXTENSIONS = frozenset({"png", "jpg", "webp"})
+
+
+def canonical_uuid(value: str, label: str = "resource") -> str:
+    """Parse an untrusted identifier and return its canonical UUID form."""
+    try:
+        return str(UUID(str(value)))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=422, detail=f"A valid {label} ID is required.") from exc
+
+
+def require_owned_row(row: dict | None, owner_id: str) -> dict:
+    """Hide both absent and foreign-owned rows behind the same 404 response."""
+    if not isinstance(row, dict) or row.get("owner_id") != owner_id:
+        raise HTTPException(status_code=404, detail="Media resource not found.")
+    return row
+
+
+def require_same_owner(owner_id: str, *related_rows: dict | None) -> None:
+    """Reject a project/character association unless every row belongs to owner."""
+    if any(not isinstance(row, dict) or row.get("owner_id") != owner_id
+           for row in related_rows):
+        raise HTTPException(status_code=404, detail="Media resource not found.")
+
+
+def build_storage_object_key(
+    owner_id: str,
+    resource_kind: str,
+    resource_id: str,
+    object_id: str,
+    extension: str,
+) -> str:
+    """Build an immutable key; never accept a client-supplied Storage path."""
+    owner = canonical_uuid(owner_id, "owner")
+    resource = canonical_uuid(resource_id, "resource")
+    object_uuid = canonical_uuid(object_id, "object")
+    kind = str(resource_kind).lower()
+    suffix = str(extension).lower().lstrip(".")
+    if kind not in ALLOWED_RESOURCE_KINDS or suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="Unsupported media resource type.")
+    return f"{owner}/{kind}/{resource}/{object_uuid}.{suffix}"
+
+
+def require_private_bucket(bucket: str) -> str:
+    """Restrict server operations to the two explicitly provisioned private buckets."""
+    if bucket not in ALLOWED_BUCKETS:
+        raise HTTPException(status_code=422, detail="Unsupported media storage bucket.")
+    return bucket
