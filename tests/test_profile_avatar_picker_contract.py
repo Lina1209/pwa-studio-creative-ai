@@ -265,5 +265,16 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertNotIn("finally{button.disabled=false;}", handler)
 
 
+    def test_profile_avatar_save_cleanup_is_account_fenced(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index('$("#profileAvatarApply")?.addEventListener("click"')
+        end = app.index("\n  });", start) + 6
+        handler = app[start:end]
+        self.assertIn("const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;", handler)
+        self.assertIn("if(contextIsCurrent())button.disabled=profileAvatarDraftId===profileAvatarSavedId;", handler)
+        self.assertIn("if(contextIsCurrent()&&feedback)", handler)
+        self.assertIn("finally{", handler)
+
+
 if __name__ == "__main__":
     unittest.main()
