@@ -148,7 +148,7 @@ begin
     id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
     metadata,version,operation_id,size_bytes,content_sha256,width,height
   ) values (
-    v_referencing_asset,v_owner,null,'pointer.json','application/json',
+    v_referencing_asset,v_owner,null,'pointer.png','image/png',
     'studio-media','ready',
     v_owner::text || '/misc/' || gen_random_uuid()::text || '.png',
     jsonb_build_object('linked_object',v_referenced_path),1,gen_random_uuid(),
