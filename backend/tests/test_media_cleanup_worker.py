@@ -81,14 +81,16 @@ class MediaCleanupWorkerTests(unittest.TestCase):
     @patch("app.workers.media_cleanup_worker.delete_private_media_object")
     @patch("app.workers.media_cleanup_worker.complete_media_cleanup")
     @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
-    def test_storage_delete_then_lost_completion_is_recovered_idempotently(
+    def test_expired_lease_reclaims_after_storage_delete_and_lost_ack(
         self, claim_rpc, complete, delete, retry
     ):
         first_claim = claim()
         second_claim = claim(claim_token="77777777-7777-4777-8777-777777777777", attempts=2)
         claim_rpc.side_effect = [first_claim, second_claim]
-        # First DELETE succeeds, but the worker loses the DB completion response.
-        # The retry RPC is also unavailable, so the lease must expire naturally.
+        # The mock claim sequence represents a later poll after the first lease
+        # expired: attempt 2 has a fresh fencing token. First DELETE succeeded,
+        # but completion and retry RPC responses were lost. The second DELETE
+        # is the idempotent already-absent case (HTTP 404 is accepted by client).
         complete.side_effect = [RuntimeError("completion response lost"), None]
         retry.side_effect = RuntimeError("retry RPC unavailable")
 
@@ -98,9 +100,9 @@ class MediaCleanupWorkerTests(unittest.TestCase):
         self.assertEqual(delete.call_count, 2)
         self.assertEqual(complete.call_count, 2)
         self.assertEqual(complete.call_args.args[1], second_claim)
+        self.assertEqual(second_claim["attempts"], first_claim["attempts"] + 1)
+        self.assertNotEqual(second_claim["claim_token"], first_claim["claim_token"])
         retry.assert_called_once()
-        # The second DELETE represents Storage's idempotent 404/already-absent
-        # outcome; the worker then acknowledges using the fresh fencing token.
 
 
 if __name__ == "__main__":
