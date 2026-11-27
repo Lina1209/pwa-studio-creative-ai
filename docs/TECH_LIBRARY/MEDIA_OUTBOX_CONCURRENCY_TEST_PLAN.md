@@ -147,3 +147,5 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
 The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet.
 
 Before activation, add and run a two-session cleanup claim race (parallel with the existing upload race), a disposable Storage test for successful DELETE/404/timeout-after-delete, a foreign-owner request test, and an adversarial reference-write-vs-cleanup race. Never run these harnesses against production.
+
+The 0019 SQL harness also verifies that authenticated browser roles have no direct media metadata INSERT/UPDATE/DELETE or character DELETE privilege, and that a late character-reference upload reservation is rejected after cleanup intent is committed. These assertions are authored but have not been executed.
