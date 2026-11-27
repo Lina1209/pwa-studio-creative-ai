@@ -404,7 +404,7 @@ begin
   for update;
   if not found or v_asset.status <> 'cleanup_pending'
      or v_asset.character_id is null
-     or v_asset.bucket not in ('studio-media','studio-exports')
+     or v_asset.bucket <> 'studio-media'
      or v_asset.storage_path is null then
     update public.media_asset_outbox
     set status='dead_letter',claim_token=null,claim_expires_at=null
