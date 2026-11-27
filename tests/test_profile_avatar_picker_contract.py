@@ -28,6 +28,8 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('authSession?.user?.id!==userId', app)
         self.assertIn('saved.user_id!==userId', app)
         self.assertIn('avatar_catalog_id:profileAvatarDraftId', app)
+        self.assertIn('applyProfileAvatarChrome(profileAvatarSavedId)', app)
+        self.assertIn('"#accountAvatar","#topAvatar",".profile .avatar"', app)
 
     def test_all_catalog_assets_exist_and_are_svg(self):
         ids = [
