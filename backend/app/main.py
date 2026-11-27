@@ -1,7 +1,7 @@
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Response, File, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -19,6 +19,14 @@ from app.services.media_read import plan_private_media_read
 from app.services.media_signed_url import create_private_media_signed_url, SIGNED_URL_TTL_SECONDS
 from app.services.media_access import media_asset_public_view
 from app.services.media_content import download_private_media_image
+from app.services.media_workflow import plan_character_reference_upload
+from app.services.media_upload_repository import (
+    get_owned_character_for_media_upload,
+    reserve_character_reference_upload,
+    mark_character_reference_object_uploaded,
+)
+from app.services.media_storage_upload import upload_character_reference_object
+from app.services.image_reference_validation import MAX_REFERENCE_BYTES
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -65,6 +73,60 @@ def health():
 
 
 
+
+
+@app.post(f"{settings.api_prefix}/characters/{{character_id}}/references", status_code=202)
+async def upload_character_reference(
+    character_id: str,
+    file: UploadFile = File(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    user: StudioUser = Depends(get_current_user),
+):
+    """Reserve and upload one validated private character reference image."""
+    if not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 160:
+        raise HTTPException(status_code=422, detail="A valid Idempotency-Key header is required.")
+    if any(ord(char) < 33 or ord(char) > 126 for char in idempotency_key):
+        raise HTTPException(status_code=422, detail="A valid Idempotency-Key header is required.")
+    content = await file.read(MAX_REFERENCE_BYTES + 1)
+    if len(content) > MAX_REFERENCE_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds the 8 MiB limit.")
+    character = get_owned_character_for_media_upload(settings, character_id, user.user_id)
+    asset_id = str(uuid5(NAMESPACE_URL, f"pwa-media:{user.user_id}:{idempotency_key}:asset"))
+    object_id = str(uuid5(NAMESPACE_URL, f"pwa-media:{user.user_id}:{idempotency_key}:object"))
+    event_id = str(uuid5(NAMESPACE_URL, f"pwa-media:{user.user_id}:{idempotency_key}:event"))
+    try:
+        plan = plan_character_reference_upload(
+            authenticated_owner_id=user.user_id,
+            character=character,
+            asset_id=asset_id,
+            object_id=object_id,
+            event_id=event_id,
+            idempotency_key=idempotency_key,
+            content=content,
+            filename=file.filename or "reference",
+            declared_mime_type=file.content_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="The uploaded image is invalid.") from exc
+
+    reservation = reserve_character_reference_upload(settings, plan)
+    if reservation.get("status") == "pending_upload":
+        upload_character_reference_object(settings, plan, content)
+        reservation = mark_character_reference_object_uploaded(settings, plan)
+
+    return {
+        "asset": {
+            "id": asset_id,
+            "character_id": plan.character_id,
+            "file_name": plan.file_name,
+            "file_type": plan.file_type,
+            "size_bytes": plan.size_bytes,
+            "width": plan.width,
+            "height": plan.height,
+            "status": reservation.get("status", "object_uploaded"),
+        },
+        "verification": "pending",
+    }
 
 
 @app.get(f"{settings.api_prefix}/media/{{asset_id}}/content")
