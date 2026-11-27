@@ -372,6 +372,7 @@ begin
   where a.id=v_event.asset_id and a.owner_id=v_event.owner_id
   for update;
   if not found or v_asset.status <> 'cleanup_pending'
+     or v_asset.character_id is null
      or v_asset.bucket not in ('studio-media','studio-exports')
      or v_asset.storage_path is null then
     update public.media_asset_outbox
@@ -410,7 +411,7 @@ begin
 
   return jsonb_build_object(
     'event_id',v_event.id,'owner_id',v_event.owner_id,'asset_id',v_asset.id,
-    'claim_token',p_claim_token,'attempts',v_event.attempts,
+    'character_id',v_asset.character_id,'claim_token',p_claim_token,'attempts',v_event.attempts,
     'max_attempts',v_event.max_attempts,
     'bucket',v_asset.bucket,'storage_path',v_asset.storage_path
   );
