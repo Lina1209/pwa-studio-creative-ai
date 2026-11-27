@@ -367,3 +367,22 @@ These results are limited to Python unit tests and disposable PostgreSQL 16 with
 The pure cleanup planner now enforces the same canonical object-key spelling as the background worker: resource and storage-object UUIDs must use the exact lowercase canonical representation, and the extension must be one of the allowed lowercase values. This prevents alternate uppercase spellings from passing the planner even when a caller bypasses the worker's earlier validation. Tests cover uppercase resource UUID, uppercase object UUID, and uppercase extension rejection.
 
 GitHub Actions push and pull-request workflows passed for commits `3fbb939c9fdd397b4cdcd0e46f4562ae978febd2` and `d7e96c3935cd8e5ea625958bc87a42b1764cb11a`. The backend unit suite ran **234 tests** successfully. The disposable PostgreSQL 16 integration passed cleanup claim exclusivity, expired-lease recovery with fresh fencing token, stale-token fencing, both orderings of the reference-writer/cleanup race, and 50 cleanup events processed by five concurrent workers. The database harness is a minimal Supabase-compatible schema; it does not verify live Supabase Auth/RLS or real Supabase Storage behavior. Migration 0019 remains a draft; no production SQL, Storage, Render service, or deployment was touched.
+
+## 34. Private Storage mutation policy hardening (2026-11-27)
+
+Draft migration `0019_private_media_cleanup_outbox.sql` now explicitly removes the legacy owner-folder DELETE policy for `studio-media` and replaces it with owner-scoped DELETE for `studio-exports` only. It also removes the legacy broad UPDATE policy and replaces it with owner-scoped UPDATE for `studio-exports` only. Verified character-reference objects are therefore immutable to authenticated browser clients; replacement must use a newly reserved object and the server verification flow.
+
+The disposable SQL contract test asserts that no authenticated Storage UPDATE/DELETE policy still exposes `studio-media`, and that the owner-scoped export UPDATE/DELETE policies exist.
+
+CI evidence for commit `9704a1ea4a20337af9477d7cf469e49499a3045a`:
+- push run `46010630976`: success;
+- pull-request run `46010636075`: success;
+- backend unit suite: 234 tests, all passed;
+- PostgreSQL 16 disposable integration job: passed;
+- shell syntax checks for the cleanup concurrency scripts: passed.
+
+Scope caveat: PostgreSQL integration uses a disposable PostgreSQL 16 database with a minimal Supabase-compatible schema. It is not a live Supabase Storage/Auth/RLS session test. The earlier local HTTP mock covers the Storage DELETE client path but is not the real Storage service.
+
+Follow-up audit item: direct authenticated INSERT remains owner-folder scoped for the broader `studio-media` bucket to preserve existing media workflows. Character-library uploads are still expected to use the service-side reservation and verification RPCs; before narrowing that INSERT policy, trace every existing frontend/backend media upload flow and add compatibility tests. Do not claim the whole bucket is protected from arbitrary orphan uploads yet.
+
+Migration remains DRAFT ONLY. No production SQL, Supabase Storage, Render deployment, merge, or main-branch change was performed.
