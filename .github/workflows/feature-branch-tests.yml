@@ -128,6 +128,7 @@ jobs:
         run: |
           node --check profile-avatar-catalog.js
           node --check app.js
+          node --check audio-lab.js
           node tests/test_profile_avatar_catalog.js
           node tests/test_katty_expression_manifest.js
           node tests/test_katty_2d_layer_manifest.js
