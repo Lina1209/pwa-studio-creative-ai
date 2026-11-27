@@ -22,6 +22,7 @@ class MediaOutboxEvent:
     owner_id: str
     asset_id: str
     event_type: str
+    idempotency_key: str
     status: OutboxStatus = OutboxStatus.PENDING
     available_at: datetime | None = None
     claim_token: str | None = None
@@ -34,6 +35,10 @@ class MediaOutboxEvent:
             _uuid(getattr(self, field_name), field_name)
         if self.event_type not in {"media_cleanup_requested", "media_upload_verify_requested"}:
             raise ValueError("Unsupported media outbox event type.")
+        if not isinstance(self.idempotency_key, str) or not 8 <= len(self.idempotency_key) <= 160:
+            raise ValueError("idempotency_key must contain between 8 and 160 characters.")
+        if any(ord(char) < 33 or ord(char) > 126 for char in self.idempotency_key):
+            raise ValueError("idempotency_key must be printable ASCII without spaces.")
         if not 1 <= self.max_attempts <= 20 or not 0 <= self.attempts <= self.max_attempts:
             raise ValueError("Outbox attempt counters are outside the allowed range.")
         for value in (self.available_at, self.claim_expires_at):
