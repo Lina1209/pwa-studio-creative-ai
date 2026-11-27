@@ -85,5 +85,32 @@ class MediaOutboxTests(unittest.TestCase):
             acknowledge_media_event(claimed, claim_token=OTHER_TOKEN, now=NOW)
 
 
+    def test_reclaimed_event_rejects_previous_worker_token(self):
+        worker_a = claim_media_event(event(), now=NOW, claim_token=TOKEN, lease_seconds=10)
+        recovered = recover_expired_media_claim(worker_a, now=NOW + timedelta(seconds=10))
+        worker_b = claim_media_event(recovered, now=NOW + timedelta(seconds=10), claim_token=OTHER_TOKEN)
+        with self.assertRaises(ValueError):
+            acknowledge_media_event(worker_b, claim_token=TOKEN, now=NOW + timedelta(seconds=11))
+
+    def test_reclaimed_event_accepts_only_new_worker_token(self):
+        worker_a = claim_media_event(event(), now=NOW, claim_token=TOKEN, lease_seconds=10)
+        recovered = recover_expired_media_claim(worker_a, now=NOW + timedelta(seconds=10))
+        worker_b = claim_media_event(recovered, now=NOW + timedelta(seconds=10), claim_token=OTHER_TOKEN)
+        done = acknowledge_media_event(worker_b, claim_token=OTHER_TOKEN, now=NOW + timedelta(seconds=11))
+        self.assertEqual(done.status, OutboxStatus.DELIVERED)
+
+    def test_max_attempts_pending_event_goes_directly_to_dead_letter(self):
+        result = claim_media_event(event(attempts=8, max_attempts=8), now=NOW, claim_token=TOKEN)
+        self.assertEqual(result.status, OutboxStatus.DEAD_LETTER)
+        self.assertIsNone(result.claim_token)
+
+    def test_expired_worker_cannot_schedule_retry_after_reclaim(self):
+        worker_a = claim_media_event(event(), now=NOW, claim_token=TOKEN, lease_seconds=10)
+        recovered = recover_expired_media_claim(worker_a, now=NOW + timedelta(seconds=10))
+        worker_b = claim_media_event(recovered, now=NOW + timedelta(seconds=10), claim_token=OTHER_TOKEN)
+        with self.assertRaises(ValueError):
+            retry_media_event(worker_b, claim_token=TOKEN, now=NOW + timedelta(seconds=11))
+
+
 if __name__ == "__main__":
     unittest.main()
