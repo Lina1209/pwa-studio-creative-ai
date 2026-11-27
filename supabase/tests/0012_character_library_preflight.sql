@@ -107,7 +107,7 @@ WITH checks AS (
         AND with_check ILIKE '%foldername%'
     ),
     'INSERT policy restricts bucket studio-media and first folder to auth.uid()'
-,
+  UNION ALL
   SELECT
     'studio-media UPDATE policy is owner-folder scoped',
     EXISTS (
