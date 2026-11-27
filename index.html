@@ -321,6 +321,14 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
           <div class="notification-heading"><div><div class="eyebrow">CREATOR COMMUNITY · DISCOVER</div><h2>Сообщество авторов</h2><p>Находите участников PWA Studio и знакомьтесь с их творческими интересами. Почта и личные данные не публикуются.</p></div><button class="secondary-button" id="communityRefresh" type="button">↻ Обновить</button></div>
           <form id="communityProfileForm" class="admin-form community-profile-form">
             <h3>Моя публичная карточка</h3>
+            <section class="profile-avatar-picker" aria-labelledby="profileAvatarTitle">
+              <div class="profile-avatar-heading"><div><h4 id="profileAvatarTitle">Аватар профиля</h4><p>Бесплатная коллекция 2D · выберите образ для карточки и сообщества.</p></div><img id="profileAvatarPreview" class="profile-avatar-preview" src="assets/avatars/2d/portrait-violet.svg" alt="Текущий аватар профиля"></div>
+              <div class="profile-avatar-tabs" role="tablist" aria-label="Формат аватара"><button class="profile-avatar-tab is-active" id="profileAvatarTab2d" type="button" aria-selected="true">2D · доступно</button><button class="profile-avatar-tab" id="profileAvatarTab3d" type="button" disabled aria-disabled="true" title="Настоящие 3D-модели появятся в отдельном обновлении">3D · скоро</button></div>
+              <div id="profileAvatarCategories" class="profile-avatar-categories" aria-label="Категории аватаров"></div>
+              <div id="profileAvatarGrid" class="profile-avatar-grid" aria-label="Выбор 2D-аватара"></div>
+              <div class="profile-avatar-actions"><button id="profileAvatarApply" class="primary-button" type="button" disabled>Применить аватар</button><button id="profileAvatarReset" class="secondary-button" type="button">Вернуть стандартный</button></div>
+              <p id="profileAvatarFeedback" class="notification-feedback" role="status">Выберите понравившийся образ.</p>
+            </section>
             <label for="communityDisplayName">Уникальное отображаемое имя</label><input id="communityDisplayName" required minlength="2" maxlength="40" autocomplete="nickname"><small class="helper-text">Имя должно отличаться от имён других участников.</small>
             <label for="communityUsername">Уникальный логин</label><input id="communityUsername" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.]+" autocomplete="username" placeholder="например, lina_creator"><small class="helper-text">Логин уникален; регистр букв не учитывается.</small>
             <label for="communityBio">О себе и творческих интересах</label><textarea id="communityBio" maxlength="500" rows="3" placeholder="Расскажите, что создаёте…"></textarea>
