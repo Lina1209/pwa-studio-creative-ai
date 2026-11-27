@@ -46,3 +46,13 @@ This commit adds the isolated persistence primitive only. It does not claim brow
 - proof that source localStorage and image Blob records remain byte-for-byte unchanged.
 
 Do not enable an importer, add network orchestration, or remove local source data until the browser acceptance plan passes. No production database or Storage operations are part of this module.
+
+## Automated browser acceptance suite
+
+- Browser page: `tests/browser/character-backup-journal.html`.
+- Runner: `tests/browser/run_character_backup_journal.py`.
+- CI job: `character-backup-journal-browser-tests` in `.github/workflows/feature-branch-tests.yml`.
+- The runner serves the repository over loopback HTTP and launches a fresh Chromium context. IndexedDB data is isolated to that temporary browser context.
+- Current cases: create/read-back, duplicate creation rejection, owner-scoped get/list, immutable cloud character mapping, illegal state rejection, valid lifecycle through verified, completion criteria, and terminal verified state.
+
+This suite does not yet simulate process termination mid-transaction, browser restart with a persistent profile, quota exhaustion, simultaneous tabs, account-switch UI behavior, or network recovery. Those remain required before importer integration.
