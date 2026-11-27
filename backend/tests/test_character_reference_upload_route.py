@@ -123,7 +123,10 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         lookup.assert_not_called()
 
-    def test_missing_authentication_is_rejected(self):
+    @patch("app.services.auth.get_settings")
+    def test_missing_authentication_is_rejected(self, get_settings):
+        from app.core.config import Settings
+        get_settings.return_value = Settings(supabase_url="https://auth.example.test")
         app.dependency_overrides.clear()
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
