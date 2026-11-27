@@ -227,8 +227,13 @@ def delete_message_for_self(settings: Settings, user_id: str, message_id: str):
     if not rows:
         raise HTTPException(status_code=404, detail="Message not found.")
     column = "deleted_for_sender_at" if rows[0]["sender_id"] == user_id else "deleted_for_recipient_at"
+    # Keep the participant predicate on the write itself as well as the
+    # preceding read. The service-role client bypasses RLS, so this second
+    # owner/participant check must be part of the UPDATE filter.
     _request(settings, "PATCH", "direct_messages", params={
-        "id": f"eq.{message_uuid}", "select": "id",
+        "id": f"eq.{message_uuid}",
+        "or": f"(sender_id.eq.{user_id},recipient_id.eq.{user_id})",
+        "select": "id",
     }, payload={column: datetime.now(timezone.utc).isoformat()})
     return {"deleted_for_you": True}
 
