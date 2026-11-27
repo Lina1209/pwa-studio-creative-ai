@@ -490,12 +490,25 @@ begin
     raise exception 'media cleanup claim is stale' using errcode='P0002';
   end if;
 
+  select * into v_asset
+  from public.media_assets
+  where id=p_asset_id and owner_id=p_owner_id and status='cleanup_pending'
+  for update;
+  if not found or v_asset.character_id is null or not exists (
+    select 1 from public.characters c
+    where c.id=v_asset.character_id and c.owner_id=p_owner_id
+      and c.cleanup_operation_id=v_event.operation_id
+  ) then
+    raise exception 'media cleanup asset is no longer pending for this operation'
+      using errcode='P0002';
+  end if;
+
   update public.media_assets
   set status='deleted',character_id=null,version=version+1
   where id=p_asset_id and owner_id=p_owner_id and status='cleanup_pending'
   returning * into v_asset;
   if not found then
-    raise exception 'media cleanup asset is no longer pending' using errcode='P0002';
+    raise exception 'media cleanup asset finalization was lost' using errcode='P0002';
   end if;
 
   update public.media_asset_outbox
