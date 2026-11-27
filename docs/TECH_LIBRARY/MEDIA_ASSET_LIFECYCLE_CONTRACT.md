@@ -217,3 +217,11 @@ Six unit tests are authored in `backend/tests/test_media_read.py`; they have not
 This is callable service code, but there is still no FastAPI route invoking it, so the browser cannot request or receive signed links yet. A future route must authenticate with the verified JWT, call `get_owned_media_asset`, call `plan_private_media_read`, then call `create_private_media_signed_url`; return only the short-lived URL and safe display metadata. Never persist, cache, log, or publish the signed URL. Treat it as a bearer capability until expiry.
 
 Four mocked unit tests are authored in `backend/tests/test_media_signed_url.py`; they have not been executed. No live Storage request was made, no endpoint was added, and no production setting or database was changed.
+
+## 21. Authenticated private media access route added
+
+`GET /api/media/{asset_id}/access` is now wired in `backend/app/main.py` behind `get_current_user`. It derives the owner only from the verified Supabase JWT subject, loads the asset through `get_owned_media_asset` (including same-owner project/character checks), applies the `ready`/private-bucket/immutable-path gate, and only then asks Supabase Storage for a 60-second signed URL.
+
+The response contains the short-lived `signed_url`, `expires_in`, and the explicit `media_asset_public_view` allowlist. It does not return owner ID, bucket, object path, or private metadata. The route sets `Cache-Control: private, no-store, max-age=0` and `Pragma: no-cache`. Missing/foreign and non-ready assets do not reach the signer. The URL itself remains a bearer capability and must not be persisted or logged by clients.
+
+Mocked route tests are authored in `backend/tests/test_private_media_route.py` for success, safe projection, no-store headers, absent/foreign access, non-ready rejection, and missing authentication. They have not been executed. The route is committed to the feature branch but has not been deployed or verified against a live Supabase project. Do not enable production use until tests and the two-account Storage integration matrix pass.
