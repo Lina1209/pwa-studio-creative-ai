@@ -1,0 +1,80 @@
+"""Tests for private media cleanup worker boundaries."""
+import unittest
+from unittest.mock import Mock, patch
+
+from app.services.media_cleanup import MediaCleanupPlan
+from app.workers.media_cleanup_worker import _validate_claim, process_one
+
+OWNER = "11111111-1111-4111-8111-111111111111"
+ASSET = "22222222-2222-4222-8222-222222222222"
+EVENT = "33333333-3333-4333-8333-333333333333"
+TOKEN = "44444444-4444-4444-8444-444444444444"
+CHARACTER = "55555555-5555-4555-8555-555555555555"
+OBJECT = "66666666-6666-4666-8666-666666666666"
+PATH = f"{OWNER}/characters/{CHARACTER}/{OBJECT}.png"
+
+
+def claim(**changes):
+    values = {
+        "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT,
+        "claim_token": TOKEN, "bucket": "studio-media",
+        "storage_path": PATH, "attempts": 1, "max_attempts": 8,
+    }
+    values.update(changes)
+    return values
+
+
+class MediaCleanupWorkerTests(unittest.TestCase):
+    def test_accepts_valid_server_claim(self):
+        _validate_claim(claim())
+
+    def test_rejects_invalid_ids_bucket_path_and_attempts(self):
+        bad_claims = [
+            claim(owner_id="not-a-uuid"),
+            claim(bucket="public"),
+            claim(storage_path=f"{OWNER}/../{OBJECT}.png"),
+            claim(storage_path=f"{OWNER}/characters/{CHARACTER}/../../bad.png"),
+            claim(attempts=0),
+            claim(max_attempts=9),
+        ]
+        for item in bad_claims:
+            with self.subTest(item=item), self.assertRaises(ValueError):
+                _validate_claim(item)
+
+    @patch("app.workers.media_cleanup_worker.retry_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.delete_private_media_object")
+    @patch("app.workers.media_cleanup_worker.complete_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
+    def test_success_deletes_then_completes_with_claim(
+        self, claim_rpc, complete, delete, retry
+    ):
+        claim_rpc.return_value = claim()
+        self.assertTrue(process_one(object()))
+        delete.assert_called_once()
+        self.assertIsInstance(delete.call_args.args[1], MediaCleanupPlan)
+        complete.assert_called_once_with(unittest.mock.ANY, claim())
+        retry.assert_not_called()
+
+    @patch("app.workers.media_cleanup_worker.retry_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.delete_private_media_object")
+    @patch("app.workers.media_cleanup_worker.complete_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
+    def test_storage_failure_schedules_retry_without_completion(
+        self, claim_rpc, complete, delete, retry
+    ):
+        claim_rpc.return_value = claim()
+        delete.side_effect = RuntimeError("storage timeout")
+        retry.return_value = {"event_status": "pending"}
+        self.assertTrue(process_one(object()))
+        complete.assert_not_called()
+        retry.assert_called_once()
+        self.assertEqual(retry.call_args.args[2], 30)
+
+    @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
+    def test_empty_queue_returns_false(self, claim_rpc):
+        claim_rpc.return_value = None
+        self.assertFalse(process_one(object()))
+
+
+if __name__ == "__main__":
+    unittest.main()
