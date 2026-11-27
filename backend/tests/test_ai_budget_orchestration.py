@@ -22,6 +22,8 @@ class AIBudgetOrchestrationTests(unittest.TestCase):
             provider="deepseek",
             model="deepseek-flash",
             request_fingerprint="a" * 64,
+            idempotency_key="test-idempotency-key-0001",
+            reserved_usd=Decimal("0.05"),
         )
 
     def test_reservation_precedes_provider_and_known_cost_is_settled(self):
