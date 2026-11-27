@@ -44,7 +44,10 @@ select
   pg_get_constraintdef(oid) as definition
 from pg_constraint
 where conrelid in (
-  coalesce(to_regclass('public.generation_jobs'), 'pg_class'::regclass),
-  coalesce(to_regclass('public.generation_job_outbox'), 'pg_class'::regclass)
+  select c.oid
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relname in ('generation_jobs','generation_job_outbox')
 )
 order by table_name, conname;
