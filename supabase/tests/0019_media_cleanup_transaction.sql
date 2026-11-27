@@ -52,6 +52,19 @@ begin
     repeat('a',64),8,8
   );
 
+  -- Simulate an authenticated JWT role and prove it cannot set the
+  -- server-managed deletion intent even when SQL privileges are elevated.
+  perform set_config('request.jwt.claim.role','authenticated',true);
+  begin
+    update public.characters
+    set cleanup_operation_id=gen_random_uuid(),cleanup_requested_at=clock_timestamp()
+    where id=v_character and owner_id=v_owner;
+    raise exception 'browser role unexpectedly changed cleanup intent';
+  exception when sqlstate '42501' then
+    null;
+  end;
+  perform set_config('request.jwt.claim.role','service_role',true);
+
   v_request := public.pwa_request_character_media_cleanup(v_owner,v_character,v_operation);
   if (v_request->>'assets_enqueued')::integer <> 1
      or v_request->>'status' <> 'cleanup_pending' then
