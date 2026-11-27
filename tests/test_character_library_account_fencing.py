@@ -191,5 +191,13 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if(actionIsCurrent())messagesFeedback(", loader)
 
 
+    def test_account_switch_invalidates_conversation_render_and_message_requests(self):
+        start = APP.index("const refreshAuthUI = session =>")
+        end = APP.index("authSession = session;", start)
+        auth_transition = APP[start:end]
+        self.assertIn("conversationRenderVersion += 1;", auth_transition)
+        self.assertIn("conversationMessagesRequestVersion += 1;", auth_transition)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
