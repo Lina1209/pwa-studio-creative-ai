@@ -12,7 +12,7 @@ Status: implementation foundation; do not deploy or apply migrations.
 ## Data contract
 The existing migration 0012 schema has `id`, `owner_id`, `name`, `description`, `avatar_url`, `reference_data`, and `created_at`. The API intentionally does not accept avatar URLs or storage paths and returns only `id`, `name`, `description`, `reference_data`, and `created_at`. Image blobs remain in IndexedDB until an explicit, verified backup flow exists.
 
-`reference_data` must be a JSON object, max 24 KiB serialized, max depth 6, max 80 keys per object, max 100 items per array, and max 4,000 characters per string. Name is 1–120 characters; description max 2,000 characters. The database service credential is server-only.
+`reference_data` must be a JSON object, max 24 KiB serialized, max depth 6, max 80 keys per object, max 100 items per array, and max 4,000 characters per string. Name is 1–120 characters; description max 5,000 characters. The database service credential is server-only.
 
 ## Security requirements
 - All requests require a valid authenticated session; guests remain local-only.
@@ -36,7 +36,7 @@ The current browser record shape was audited in `app.js`:
 
 Proposed metadata mapping:
 - `name` → API `name`.
-- `description` → API `description` (the API limit must be aligned with existing local 5,000-character limit before import is enabled).
+- `description` → API `description` (the API limit is aligned with the existing local 5,000-character limit).
 - `kind`, `representation`, `voice`, `passport`, and reference image descriptors → API `reference_data`.
 - `createdAt` stays local provenance unless a reviewed server schema explicitly supports it.
 - local `id` must be preserved in a separate explicit mapping record; never assume a browser UUID is a cloud ID.
