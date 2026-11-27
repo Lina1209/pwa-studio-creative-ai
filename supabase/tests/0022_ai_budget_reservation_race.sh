@@ -16,6 +16,7 @@ update public.ai_budget_control set enforcement_enabled=true,kill_switch_enabled
 SQL
 
 export DISPOSABLE_DATABASE_URL PWA_TEST_OWNER_ID tmp_dir
+pids=()
 for i in $(seq 1 12); do
   (
     request_id="$(printf '%08x-0000-4000-8000-%012x' "$i" "$i")"
@@ -32,8 +33,13 @@ for i in $(seq 1 12); do
       echo unexpected >"$tmp_dir/$i.status"
     fi
   ) &
+  pids+=("$!")
 done
-wait
+# A rejected reservation is an expected non-zero psql result; collect each
+# worker without allowing the shell's errexit mode to abort before assertions.
+for pid in "${pids[@]}"; do
+  wait "$pid" || true
+done
 
 allowed="$(grep -l '^allowed$' "$tmp_dir"/*.status | wc -l | tr -d ' ')"
 rejected="$(grep -l '^rejected$' "$tmp_dir"/*.status | wc -l | tr -d ' ')"
