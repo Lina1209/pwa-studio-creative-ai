@@ -83,10 +83,18 @@ class CharacterReferenceReplacementTests(unittest.TestCase):
             f"{OWNER}/characters/{CHARACTER}/not-a-uuid.png",
             f"{OWNER}/characters/{CHARACTER}/{NEW}.svg",
         ):
-            with self.subTest(path=path), self.assertRaises(ValueError):
-                plan_character_reference_replacement(**inputs(
-                    new_asset={**inputs()["new_asset"], "storage_path": path}
-                ))
+            with self.subTest(path=path):
+                if path.endswith("/not-a-uuid.png"):
+                    with self.assertRaises(HTTPException) as raised:
+                        plan_character_reference_replacement(**inputs(
+                            new_asset={**inputs()["new_asset"], "storage_path": path}
+                        ))
+                    self.assertEqual(raised.exception.status_code, 422)
+                else:
+                    with self.assertRaises(ValueError):
+                        plan_character_reference_replacement(**inputs(
+                            new_asset={**inputs()["new_asset"], "storage_path": path}
+                        ))
 
 
     def test_assets_must_be_explicitly_attached_to_the_character(self):
