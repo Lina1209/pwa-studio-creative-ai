@@ -1,7 +1,7 @@
 from uuid import uuid4
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -14,6 +14,10 @@ from app.services.moderation_service import create_user_report, list_user_report
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self, ensure_target_not_owner
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
+from app.services.media_repository import get_owned_media_asset
+from app.services.media_read import plan_private_media_read
+from app.services.media_signed_url import create_private_media_signed_url, SIGNED_URL_TTL_SECONDS
+from app.services.media_access import media_asset_public_view
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -56,6 +60,33 @@ def health():
         "ai_configured": ai_configured,
         "authentication_configured": bool(settings.supabase_url),
         "usage_telemetry_configured": bool(settings.supabase_url and settings.supabase_service_role_key),
+    }
+
+
+
+
+
+@app.get(f"{settings.api_prefix}/media/{{asset_id}}/access")
+def private_media_access(asset_id: str, response: Response,
+                         user: StudioUser = Depends(get_current_user)):
+    """Return safe metadata and a 60-second URL for the caller's own ready asset."""
+    asset = get_owned_media_asset(settings, asset_id, user.user_id)
+    try:
+        plan = plan_private_media_read(
+            authenticated_owner_id=user.user_id,
+            asset=asset,
+        )
+    except ValueError as exc:
+        # Do not reveal whether another user's asset exists or why it is unavailable.
+        raise HTTPException(status_code=404, detail="Media resource not found.") from exc
+
+    signed_url = create_private_media_signed_url(settings, plan)
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return {
+        "asset": media_asset_public_view(asset),
+        "signed_url": signed_url,
+        "expires_in": SIGNED_URL_TTL_SECONDS,
     }
 
 
