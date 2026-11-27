@@ -7,7 +7,8 @@
 ## Implemented
 
 - Nine curated, locally hosted SVG avatars cover portrait, fantasy, animal, robot, cartoon, space, nature, and abstract categories.
-- The optional `katty-assistant` portrait is included in both frontend catalog and backend allowlist. It does not replace or force a user's own avatar.
+- The optional `katty-assistant` portrait is included in the shared local manifest and backend allowlist. Its `katty-katarina` identity key is reserved as a continuity hint for a future matching Character Library passport; it does not create a database link or replace a user's own avatar.
+- The catalogue metadata is centralized in `profile-avatar-catalog.js`, loaded before `app.js`, and exposes immutable entries plus safe local asset-path lookup. This is a local static manifest, not a user-editable or server-trusted source.
 - Responsive picker in the account cabinet supports category filtering, preview, apply, and reset to the standard avatar.
 - Guests persist selection under a dedicated browser-local key. Signed-in users persist through the authenticated `PATCH /api/community/profile` endpoint.
 - Guest state is not sent to the profile API or reused as an authenticated user's selection.
@@ -19,7 +20,7 @@
 
 ## Verification
 
-Latest branch workflow: [run 46026736506](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/46026736506).
+Latest previously verified full run: [run 46026736506](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/46026736506). A new run is in progress for the shared-catalog refactor; do not treat it as passed until all jobs complete successfully.
 
 All three jobs completed successfully:
 1. `character-backup-journal-browser-tests` — real-browser IndexedDB journal tests and frontend syntax/account-switch fencing.
