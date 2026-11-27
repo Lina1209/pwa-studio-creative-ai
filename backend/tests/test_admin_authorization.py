@@ -45,6 +45,19 @@ class AdminIdentityTests(unittest.TestCase):
     @patch.object(auth, "_jwks_client")
     @patch.object(auth, "get_settings")
     @patch.object(auth.jwt, "decode")
+    def test_configured_owner_uuid_comparison_is_case_insensitive(self, decode, settings, jwks):
+        settings.return_value = SimpleNamespace(
+            supabase_url="https://project.example.supabase.co",
+            owner_user_id=OWNER.upper(), owner_email=None)
+        jwks.return_value.get_signing_key_from_jwt.return_value.key = "test-public-key"
+        decode.return_value = {"sub": OWNER, "email": "owner@example.com"}
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="signed-token")
+        user = get_current_user(credentials)
+        self.assertEqual(user.role, "admin")
+
+    @patch.object(auth, "_jwks_client")
+    @patch.object(auth, "get_settings")
+    @patch.object(auth.jwt, "decode")
     def test_email_cannot_override_configured_owner_uuid(self, decode, settings, jwks):
         settings.return_value = SimpleNamespace(
             supabase_url="https://project.example.supabase.co",
