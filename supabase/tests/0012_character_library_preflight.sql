@@ -57,7 +57,7 @@ WITH checks AS (
     EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename='characters'
-        AND roles @> ARRAY['authenticated']::name[]::name[]
+        AND roles @> ARRAY['authenticated']::name[]
         AND cmd='ALL'
         AND qual ILIKE '%owner_id%auth.uid()%'
         AND with_check ILIKE '%owner_id%auth.uid()%'
