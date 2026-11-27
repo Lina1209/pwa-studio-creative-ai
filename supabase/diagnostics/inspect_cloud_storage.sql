@@ -52,11 +52,7 @@ select
   contype,
   pg_get_constraintdef(oid) as definition
 from pg_constraint
-where conrelid in (
-  'public.projects'::regclass,
-  'public.characters'::regclass,
-  'public.media_assets'::regclass
-)
+where conrelid::regclass::text in ('projects', 'characters', 'media_assets')
 order by table_name::text, conname;
 
 -- 7) Effective table grants for browser-facing roles.
@@ -73,7 +69,7 @@ select
   to_regclass('public.media_assets') as media_assets_table,
   exists (
     select 1 from pg_constraint
-    where conrelid = 'public.media_assets'::regclass
+    where conrelid = to_regclass('public.media_assets')
       and conname = 'media_assets_project_owner_fkey'
       and contype = 'f'
   ) as project_owner_fk_present;
