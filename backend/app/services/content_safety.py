@@ -31,3 +31,9 @@ def check_content(text: str) -> None:
                     "безопасности PWA Studio. Измените запрос на безопасный вариант."
                 ),
             )
+
+
+def check_prompt_content(idea: str, purpose: str, language: str, style: str | None) -> None:
+    """Validate every user-controlled field that is forwarded in a prompt request."""
+    for value in (idea, purpose, language, style or ""):
+        check_content(value)
