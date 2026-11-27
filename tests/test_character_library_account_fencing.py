@@ -324,5 +324,21 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if (contextIsCurrent()) {", sync)
 
 
+    def test_prompt_generation_response_and_cleanup_are_account_fenced(self):
+        start = APP.index('$("#buildPrompt").addEventListener')
+        end = APP.index('$("#copyPrompt").addEventListener', start)
+        handler = APP[start:end]
+        self.assertIn("const requestUserId = authSession.user.id;", handler)
+        self.assertIn("const requestVersion = authContextVersion;", handler)
+        self.assertIn("const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === requestUserId;", handler)
+        self.assertIn("if (!contextIsCurrent()) return;", handler)
+        self.assertIn('if (contextIsCurrent()) $("#promptFeedback").textContent = error.message;', handler)
+        self.assertIn("if (contextIsCurrent()) {", handler)
+        self.assertIn("button.disabled = false;", handler)
+
+    def test_account_logout_uses_shared_fenced_logout_handler(self):
+        self.assertIn('$("#accountLogout").addEventListener("click", () => authLogoutButton.click());', APP)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
