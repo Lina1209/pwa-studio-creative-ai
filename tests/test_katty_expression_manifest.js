@@ -22,7 +22,7 @@ for (const item of manifest.expressions) {
   assert.ok(item.brows && item.eyes && item.mouth && item.cheeks);
   assert.ok(Number.isFinite(item.intensity) && item.intensity >= 0 && item.intensity <= 1);
 }
-for (const phrase of ["зелёные глаза", "веснушки", "кудрявые огненно-рыжие волосы", "фиолетовое худи"]) {
+for (const phrase of ["green eyes", "freckles", "curly fire-red hair", "canonical hoodie"]) {
   assert.ok(manifest.invariants.some(item => item.includes(phrase)), "missing identity invariant: " + phrase);
 }
 assert.equal(manifest.motionPrinciples.status, "guidance_only_no_animation_assets");
