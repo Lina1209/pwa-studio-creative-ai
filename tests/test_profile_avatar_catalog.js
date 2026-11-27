@@ -12,6 +12,9 @@ assert.equal(new Set(catalog.items.map(item => item.id)).size, catalog.items.len
 assert.ok(catalog.items.every(item => item.representation === "2d"));
 for (const item of catalog.items) {
   assert.match(item.assetPath, /^assets\/avatars\/2d\/[a-z0-9-]+\.svg$/);
+  const svg = fs.readFileSync(path.join(__dirname, "..", item.assetPath), "utf8");
+  assert.ok(svg.startsWith("<svg") || svg.startsWith("<?xml"), "catalog SVG must exist: " + item.id);
+  assert.ok(svg.includes("</svg>"), "catalog SVG must close: " + item.id);
   assert.equal(catalog.getById(item.id), item);
 }
 const katty = catalog.getById("katty-assistant");
