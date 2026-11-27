@@ -134,6 +134,31 @@
       } finally { db.close(); }
       check(await api.get(owner, abortedCharacter) === null, "aborted write left a partial journal record");
     });
+    await test("simulated IndexedDB quota failure preserves source image", async () => {
+      const imageId = "quota-fixture-" + uuid();
+      const failedCharacter = uuid();
+      await seedLocalImageFixture(imageId, owner);
+      const before = await readLocalImageFixture(imageId);
+      const originalOpen = indexedDB.open;
+      let observedQuotaError = false;
+      try {
+        indexedDB.open = () => { throw new DOMException("Simulated storage quota exceeded", "QuotaExceededError"); };
+        await rejects(async () => {
+          try {
+            await api.create({...journalInput, localCharacterId: failedCharacter});
+          } catch (error) {
+            observedQuotaError = error?.name === "QuotaExceededError";
+            throw error;
+          }
+        }, "simulated quota failure unexpectedly created a journal");
+      } finally {
+        indexedDB.open = originalOpen;
+      }
+      const after = await readLocalImageFixture(imageId);
+      check(observedQuotaError, "simulated quota failure did not preserve QuotaExceededError");
+      check(JSON.stringify(after) === JSON.stringify(before), "quota failure changed the source image Blob");
+      check(await api.get(owner, failedCharacter) === null, "quota failure left a journal record");
+    });
     await test("owner boundary prevents foreign reads", async () => {
       check(await api.get(otherOwner, localCharacter) === null, "foreign owner read returned a record");
       const rows = await api.list(owner);
