@@ -315,6 +315,7 @@ const movieHistoryStyle = document.createElement("style");
     {id:"forest-elf",name:"Лесная фея",category:"fantasy",group:"Фэнтези"},
     {id:"fox-scout",name:"Лисёнок",category:"animals",group:"Животные"},
     {id:"robo-buddy",name:"Робот-друг",category:"robots",group:"Роботы"},
+    {id:"katty-assistant",name:"Катти · помощница PWA Studio",category:"cartoon",group:"Мультяшные"},
     {id:"comic-star",name:"Комикс-герой",category:"cartoon",group:"Мультяшные"},
     {id:"cosmo-pilot",name:"Космический пилот",category:"space",group:"Космос"},
     {id:"sun-garden",name:"Солнечный сад",category:"nature",group:"Природа"},
