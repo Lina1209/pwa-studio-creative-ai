@@ -133,3 +133,5 @@ Strix — инструмент для динамического тестиро�
 10. Экспериментальные технологии.
 
 **Главный принцип:** берём лучшее из технологий, но создаём собственную экосистему PWA Studio.
+
+- [Generation Jobs contract](GENERATION_JOBS_CONTRACT.md) — inactive job lifecycle, durable queue, cancellation, retry, billing, and go-live gates.
