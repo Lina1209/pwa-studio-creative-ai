@@ -301,7 +301,7 @@ const movieHistoryStyle = document.createElement("style");
     },
     createMovie({ title, story, sourceLabel }) {
       const generation = latestAudioGenerationContext;
-      if (!generation || generation.reply !== String(story || "") ||
+      if (!generation || !String(story || "").trim() ||
           generation.version !== authContextVersion ||
           generation.userId !== (authSession?.user?.id || null)) {
         throw new Error("Результат создан в другом сеансе или аккаунте. Создайте материал заново.");
