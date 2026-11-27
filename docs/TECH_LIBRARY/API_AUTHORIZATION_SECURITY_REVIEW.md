@@ -66,6 +66,14 @@ The messaging service uses a server-side service-role REST client, which bypasse
 
 **Required regression test:** with two users, attempt self-delete using a foreign message UUID and assert no row is updated; verify sender and recipient can each hide only their own view and cannot set the other participant's deletion timestamp.
 
+### AUTHZ-07 — Conversation metadata update must retain participant scope (medium)
+
+The direct-message send flow creates or retrieves a thread using the canonical participant pair, then updates `last_message_at` and `updated_at`. Because the REST helper uses the service-role key, RLS is bypassed; the metadata UPDATE originally filtered only by thread UUID.
+
+**Change on 2026-11-27:** the UPDATE now includes the sending user's membership predicate (`user_a_id = sender_id OR user_b_id = sender_id`) alongside the thread UUID. The authorization boundary is therefore present on the write itself.
+
+**Required regression test:** create two unrelated threads for users A/B and C/D; verify a request as A cannot update C/D's thread metadata even if a foreign thread UUID is supplied or a stale/malicious thread object is passed into the service. Confirm the normal participant send path still updates its own thread.
+
 ## Required isolated test matrix
 
 | Test | Attempt | Expected |
