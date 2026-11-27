@@ -5,6 +5,7 @@ compare-and-swap the character's current reference in the same transaction that
 promotes the new asset, tombstones the old asset, and inserts this cleanup event.
 """
 from dataclasses import dataclass
+from uuid import UUID
 
 from app.services.media_access import ALLOWED_EXTENSIONS, canonical_uuid, require_private_bucket
 from app.services.media_lifecycle import MediaStatus
@@ -33,23 +34,30 @@ def plan_character_reference_replacement(
     """Prepare a CAS-safe reference switch and durable cleanup request."""
     if not isinstance(character, dict):
         raise ValueError("Character record is required.")
-    if character.get("owner_id") != authenticated_owner_id:
+    try:
+        owner_id = str(UUID(str(authenticated_owner_id)))
+        character_owner_id = str(UUID(str(character.get("owner_id"))))
+        character_id = str(UUID(str(character.get("id"))))
+        current_asset_id = str(UUID(str(current_reference_asset_id)))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValueError("Character ownership and reference IDs must be valid UUIDs.") from exc
+    if character_owner_id != owner_id:
         raise ValueError("Character not found.")
     replacement = plan_media_replacement(
-        authenticated_owner_id=authenticated_owner_id,
+        authenticated_owner_id=owner_id,
         old_asset=old_asset,
         new_asset=new_asset,
     )
-    if str(current_reference_asset_id) != replacement.old_asset_id:
+    if current_asset_id != replacement.old_asset_id:
         raise ValueError("Character reference changed; reload before replacing.")
-    if old_asset.get("character_id") not in (None, character.get("id")):
+    if old_asset.get("character_id") != character_id:
         raise ValueError("Previous media asset is not attached to this character.")
-    if new_asset.get("character_id") not in (None, character.get("id")):
-        raise ValueError("Replacement media asset belongs to another character.")
+    if new_asset.get("character_id") != character_id:
+        raise ValueError("Replacement media asset is not attached to this character.")
     old_bucket = require_private_bucket(old_asset.get("bucket"))
     new_bucket = require_private_bucket(new_asset.get("bucket"))
     owner = replacement.owner_id
-    character_id = canonical_uuid(character.get("id"), "character")
+    character_id = canonical_uuid(character_id, "character")
     for row, bucket in ((old_asset, old_bucket), (new_asset, new_bucket)):
         if row.get("bucket") != bucket:
             raise ValueError("Media bucket metadata is invalid.")
@@ -75,7 +83,7 @@ def plan_character_reference_replacement(
         status=OutboxStatus.PENDING,
     )
     return CharacterReferenceReplacementPlan(
-        character_id=str(character["id"]),
+        character_id=character_id,
         expected_current_asset_id=replacement.old_asset_id,
         replacement=replacement,
         cleanup_event=cleanup_event,
