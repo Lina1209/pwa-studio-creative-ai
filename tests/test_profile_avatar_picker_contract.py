@@ -192,5 +192,21 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("assistantConversationIntentVersion += 1;", app[start:end])
 
 
+    def test_ai_companion_new_conversation_creation_is_latest_intent_wins(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index("const startAssistantConversation =")
+        end = app.index('$("#assistantNewChat")', start)
+        creator = app[start:end]
+        self.assertIn("const intentVersion = ++assistantConversationIntentVersion;", creator)
+        self.assertIn("intentVersion !== assistantConversationIntentVersion", creator)
+        submit_start = app.index('$("#assistantForm").addEventListener("submit"')
+        submit_end = app.index("\\n  });", submit_start) + 6
+        submit = app[submit_start:submit_end]
+        self.assertIn("requestConversationId = await startAssistantConversation();", submit)
+        self.assertIn("if (!requestConversationId || !contextIsCurrent()) return;", submit)
+        self.assertIn("const conversationId = requestConversationId;", submit)
+        self.assertNotIn("const conversationId = activeAssistantConversationId;", submit)
+
+
 if __name__ == "__main__":
     unittest.main()
