@@ -91,7 +91,7 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
 
 
     def test_audio_lab_discards_stale_results_and_cleanup_after_account_change(self):
-        audio = (ROOT / "audio-lab.js").read_text(encoding="utf-8")
+        audio = (Path(__file__).resolve().parents[1] / "audio-lab.js").read_text(encoding="utf-8")
         self.assertIn('window.addEventListener("pwa-studio-auth-changed"', audio)
         self.assertIn("audioStoryRequestVersion += 1;", audio)
         self.assertIn("if (requestVersion !== audioStoryRequestVersion) return;", audio)
