@@ -55,6 +55,16 @@ def request_character_media_cleanup(settings: Settings, owner_id: str, character
     required = {"owner_id", "character_id", "operation_id", "assets_enqueued", "status"}
     if not isinstance(result, dict) or not required.issubset(result):
         raise RuntimeError("Character media cleanup reservation returned an invalid result.")
+    if (
+        result.get("owner_id") != owner_id
+        or result.get("character_id") != character_id
+        or result.get("operation_id") != operation_id
+        or isinstance(result.get("assets_enqueued"), bool)
+        or not isinstance(result.get("assets_enqueued"), int)
+        or result["assets_enqueued"] < 0
+        or result.get("status") not in {"ready_to_finalize", "cleanup_pending"}
+    ):
+        raise RuntimeError("Character media cleanup reservation returned mismatched or invalid fields.")
     return result
 
 
