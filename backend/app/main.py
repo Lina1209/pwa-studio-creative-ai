@@ -111,9 +111,13 @@ async def upload_character_reference(
         raise HTTPException(status_code=422, detail="The uploaded image is invalid.") from exc
 
     reservation = reserve_character_reference_upload(settings, plan)
-    if reservation.get("status") == "pending_upload":
+    current_status = reservation.get("status")
+    if current_status == "pending_upload":
         upload_character_reference_object(settings, plan, content)
         reservation = mark_character_reference_object_uploaded(settings, plan)
+        current_status = reservation.get("status")
+    if current_status not in {"object_uploaded", "ready"}:
+        raise HTTPException(status_code=409, detail="This media upload operation is no longer active.")
 
     response.headers["Cache-Control"] = "private, no-store, max-age=0"
     response.headers["Pragma"] = "no-cache"
@@ -126,9 +130,9 @@ async def upload_character_reference(
             "size_bytes": plan.size_bytes,
             "width": plan.width,
             "height": plan.height,
-            "status": reservation.get("status", "object_uploaded"),
+            "status": current_status,
         },
-        "verification": "pending",
+        "verification": "complete" if current_status == "ready" else "pending",
     }
 
 
