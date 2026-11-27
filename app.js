@@ -301,143 +301,6 @@ const movieHistoryStyle = document.createElement("style");
       if (!movieWrite(projects)) throw new Error("Не удалось сохранить проект фильма.");
       activeMovieId = project.id; editingMovieId = project.id;
     
-  // Character Library v1: owner-scoped metadata in localStorage and image blobs in IndexedDB.
-  const characterLibraryDbName = "pwa-studio-character-library-v1";
-  const characterLibraryKey = () => "pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest");
-  let editingCharacterId = null;
-  const openCharacterLibraryDb = () => new Promise((resolve,reject) => {
-    if (!("indexedDB" in window)) { reject(new Error("IndexedDB недоступен в этом браузере.")); return; }
-    const request = indexedDB.open(characterLibraryDbName,1);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images",{keyPath:"id"});
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Не удалось открыть локальное хранилище изображений."));
-  });
-  const readCharacterLibrary = () => {
-    try {
-      const value = JSON.parse(localStorage.getItem(characterLibraryKey()) || "[]");
-      return Array.isArray(value) ? value.filter(item => item && typeof item.id === "string" && typeof item.name === "string").slice(0,100) : [];
-    } catch { return []; }
-  };
-  const saveCharacterImage = async (id,blob,ownerId) => {
-    const db=await openCharacterLibraryDb();
-    try {
-      await new Promise((resolve,reject)=>{
-        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images");
-        store.put({id,ownerId,blob,createdAt:new Date().toISOString()});
-        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("Сохранение изображения отменено."));
-      });
-    } finally { db.close(); }
-  };
-  const getCharacterImage = async (id,ownerId) => {
-    const db=await openCharacterLibraryDb();
-    try {
-      return await new Promise((resolve,reject)=>{
-        const request=db.transaction("images","readonly").objectStore("images").get(id);
-        request.onsuccess=()=>resolve(request.result?.ownerId===ownerId?request.result.blob:null);
-        request.onerror=()=>reject(request.error);
-      });
-    } finally { db.close(); }
-  };
-  const deleteCharacterImage = async (id,ownerId) => {
-    const db=await openCharacterLibraryDb();
-    try {
-      await new Promise((resolve,reject)=>{
-        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);
-        request.onsuccess=()=>{if(request.result?.ownerId===ownerId)store.delete(id);};
-        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
-      });
-    } finally { db.close(); }
-  };
-  const resetCharacterEditor = () => {
-    editingCharacterId=null;
-    ["#characterName","#characterDescription","#characterVoice","#characterFace","#characterBody","#characterWardrobe","#characterPalette"].forEach(id=>$(id).value="");
-    $("#characterKind").value="character";$("#characterRepresentation").value="2d";$("#characterImages").value="";
-    $("#saveCharacter").textContent="＋ Сохранить персонажа";$("#cancelCharacterEdit").hidden=true;
-  };
-  const renderCharacterLibrary = async () => {
-    const list=$("#characterLibraryList");if(!list)return;
-    const ownerId=authSession?.user?.id||"guest";
-    const query=($("#characterSearch")?.value||"").trim().toLocaleLowerCase();
-    const items=readCharacterLibrary().filter(item=>!query||(item.name+" "+item.description).toLocaleLowerCase().includes(query));
-    list.replaceChildren();
-    if(!items.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent=query?"Ничего не найдено.":"Библиотека пока пуста. Добавьте первого персонажа.";list.append(empty);return;}
-    for(const item of items){
-      const card=document.createElement("article");card.className="character-card";
-      const title=document.createElement("h3");title.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;
-      const meta=document.createElement("div");meta.className="character-meta";meta.textContent=(item.representation==="both"?"2D + 3D":item.representation==="3d"?"3D-паспорт":"2D")+" · "+(item.referenceImages?.length||0)+" референсов";
-      const description=document.createElement("p");description.textContent=item.description||"Описание не добавлено.";
-      card.append(title,meta,description);
-      if(item.passport){const passport=document.createElement("p");passport.className="character-meta";passport.textContent=["Лицо: "+(item.passport.face||"—"),"Силуэт: "+(item.passport.body||"—"),"Одежда: "+(item.passport.wardrobe||"—"),"Палитра/эмоции: "+(item.passport.palette||"—")].join(" · ");card.append(passport);}
-      if(item.voice){const voice=document.createElement("p");voice.className="character-meta";voice.textContent="Голос: "+item.voice;card.append(voice);}
-      const gallery=document.createElement("div");gallery.className="character-card-gallery";
-      for(const ref of (item.referenceImages||[]).slice(0,6)){
-        try{
-          const blob=await getCharacterImage(ref.id,ownerId);
-          if(!blob||!card.isConnected)continue;
-          const img=document.createElement("img");img.alt="Референс "+item.name;img.loading="lazy";
-          const url=URL.createObjectURL(blob);img.src=url;img.addEventListener("load",()=>URL.revokeObjectURL(url),{once:true});img.addEventListener("error",()=>URL.revokeObjectURL(url),{once:true});gallery.append(img);
-        }catch(error){console.warn("Character image preview:",error);}
-      }
-      if(gallery.childElementCount)card.append(gallery);
-      const actions=document.createElement("div");actions.className="character-card-actions";
-      const edit=document.createElement("button");edit.type="button";edit.className="secondary-button";edit.textContent="Изменить";
-      edit.addEventListener("click",()=>{
-        editingCharacterId=item.id;$("#characterName").value=item.name;$("#characterDescription").value=item.description||"";
-        $("#characterKind").value=item.kind||"character";$("#characterRepresentation").value=item.representation||"2d";$("#characterVoice").value=item.voice||"";
-        $("#characterFace").value=item.passport?.face||"";$("#characterBody").value=item.passport?.body||"";
-        $("#characterWardrobe").value=item.passport?.wardrobe||"";$("#characterPalette").value=item.passport?.palette||"";
-        $("#characterImages").value="";$("#saveCharacter").textContent="Сохранить изменения";$("#cancelCharacterEdit").hidden=false;
-        $("#characterName").scrollIntoView({behavior:"smooth",block:"center"});
-      });
-      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";
-      remove.addEventListener("click",async()=>{
-        if(!window.confirm("Удалить «"+item.name+"» и его локальные изображения?"))return;
-        const current=readCharacterLibrary(),found=current.find(x=>x.id===item.id);if(!found)return;
-        const next=current.filter(x=>x.id!==item.id);
-        try{
-          localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
-          await Promise.all((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,ownerId)));
-          $("#characterLibraryStatus").textContent="Материал удалён из локальной библиотеки.";
-          renderCharacterLibrary();
-        }catch(error){$("#characterLibraryStatus").textContent="Запись обновлена, но очистка части изображений не завершилась. "+error.message;}
-      });
-      actions.append(edit,remove);card.append(actions);list.append(card);
-    }
-  };
-  $("#saveCharacter")?.addEventListener("click",async()=>{
-    const ownerId=authSession?.user?.id||"guest",name=$("#characterName").value.trim(),description=$("#characterDescription").value.trim();
-    const kind=$("#characterKind").value,representation=$("#characterRepresentation").value,files=Array.from($("#characterImages").files||[]);
-    if(!name||!description){$("#characterLibraryStatus").textContent="Укажите имя и основное описание.";return;}
-    if(!["character","scene"].includes(kind)||!["2d","3d","both"].includes(representation)){return;}
-    const current=readCharacterLibrary(),existing=editingCharacterId?current.find(x=>x.id===editingCharacterId):null;
-    if(editingCharacterId&&!existing){resetCharacterEditor();$("#characterLibraryStatus").textContent="Запись больше не найдена. Обновите библиотеку.";return;}
-    if(!existing&&current.length>=100){$("#characterLibraryStatus").textContent="Достигнут лимит в 100 материалов.";return;}
-    if(files.length+(existing?.referenceImages?.length||0)>6){$("#characterLibraryStatus").textContent="У одного материала может быть не более 6 референсов.";return;}
-    if(files.some(file=>!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>8*1024*1024)){ $("#characterLibraryStatus").textContent="Поддерживаются PNG, JPEG и WebP до 8 МБ каждый.";return; }
-    const id=existing?.id||(crypto.randomUUID?crypto.randomUUID():String(Date.now()));
-    const refs=files.map(file=>({id:id+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)),name:file.name.slice(0,120),type:file.type}));
-    const updated={...(existing||{}),id,name:name.slice(0,80),description:description.slice(0,5000),kind,representation,voice:$("#characterVoice").value.trim().slice(0,500),
-      passport:{face:$("#characterFace").value.trim().slice(0,1200),body:$("#characterBody").value.trim().slice(0,1200),wardrobe:$("#characterWardrobe").value.trim().slice(0,1200),palette:$("#characterPalette").value.trim().slice(0,1200)},
-      referenceImages:[...(existing?.referenceImages||[]),...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
-    const button=$("#saveCharacter");button.disabled=true;
-    try{
-      for(let i=0;i<files.length;i++)await saveCharacterImage(refs[i].id,files[i],ownerId);
-      const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
-      localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
-      resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера.";
-      await renderCharacterLibrary();
-    }catch(error){
-      $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+" Новые изображения не очищались автоматически.";
-    }finally{button.disabled=false;}
-  });
-  $("#cancelCharacterEdit")?.addEventListener("click",()=>{resetCharacterEditor();$("#characterLibraryStatus").textContent="Редактирование отменено.";});
-  $("#characterSearch")?.addEventListener("input",renderCharacterLibrary);
-  window.addEventListener("pwa-studio-auth-changed",()=>{resetCharacterEditor();renderCharacterLibrary();});
-  renderCharacterLibrary();
-
-
   renderMovieProjects();
       if (!authSession?.user) renderGuestSpace();
       navigate("movie");
@@ -2118,6 +1981,142 @@ const movieHistoryStyle = document.createElement("style");
   window.addEventListener("focus",refreshGuestExpiry);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshGuestExpiry();});
   window.addEventListener("pageshow",refreshGuestExpiry);
+
+  // Character Library v1: owner-scoped metadata in localStorage and image blobs in IndexedDB.
+  const characterLibraryDbName = "pwa-studio-character-library-v1";
+  const characterLibraryKey = () => "pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest");
+  let editingCharacterId = null;
+  const openCharacterLibraryDb = () => new Promise((resolve,reject) => {
+    if (!("indexedDB" in window)) { reject(new Error("IndexedDB недоступен в этом браузере.")); return; }
+    const request = indexedDB.open(characterLibraryDbName,1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images",{keyPath:"id"});
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Не удалось открыть локальное хранилище изображений."));
+  });
+  const readCharacterLibrary = () => {
+    try {
+      const value = JSON.parse(localStorage.getItem(characterLibraryKey()) || "[]");
+      return Array.isArray(value) ? value.filter(item => item && typeof item.id === "string" && typeof item.name === "string").slice(0,100) : [];
+    } catch { return []; }
+  };
+  const saveCharacterImage = async (id,blob,ownerId) => {
+    const db=await openCharacterLibraryDb();
+    try {
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images");
+        store.put({id,ownerId,blob,createdAt:new Date().toISOString()});
+        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("Сохранение изображения отменено."));
+      });
+    } finally { db.close(); }
+  };
+  const getCharacterImage = async (id,ownerId) => {
+    const db=await openCharacterLibraryDb();
+    try {
+      return await new Promise((resolve,reject)=>{
+        const request=db.transaction("images","readonly").objectStore("images").get(id);
+        request.onsuccess=()=>resolve(request.result?.ownerId===ownerId?request.result.blob:null);
+        request.onerror=()=>reject(request.error);
+      });
+    } finally { db.close(); }
+  };
+  const deleteCharacterImage = async (id,ownerId) => {
+    const db=await openCharacterLibraryDb();
+    try {
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);
+        request.onsuccess=()=>{if(request.result?.ownerId===ownerId)store.delete(id);};
+        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+      });
+    } finally { db.close(); }
+  };
+  const resetCharacterEditor = () => {
+    editingCharacterId=null;
+    ["#characterName","#characterDescription","#characterVoice","#characterFace","#characterBody","#characterWardrobe","#characterPalette"].forEach(id=>$(id).value="");
+    $("#characterKind").value="character";$("#characterRepresentation").value="2d";$("#characterImages").value="";
+    $("#saveCharacter").textContent="＋ Сохранить персонажа";$("#cancelCharacterEdit").hidden=true;
+  };
+  const renderCharacterLibrary = async () => {
+    const list=$("#characterLibraryList");if(!list)return;
+    const ownerId=authSession?.user?.id||"guest";
+    const query=($("#characterSearch")?.value||"").trim().toLocaleLowerCase();
+    const items=readCharacterLibrary().filter(item=>!query||(item.name+" "+item.description).toLocaleLowerCase().includes(query));
+    list.replaceChildren();
+    if(!items.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent=query?"Ничего не найдено.":"Библиотека пока пуста. Добавьте первого персонажа.";list.append(empty);return;}
+    for(const item of items){
+      const card=document.createElement("article");card.className="character-card";
+      const title=document.createElement("h3");title.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;
+      const meta=document.createElement("div");meta.className="character-meta";meta.textContent=(item.representation==="both"?"2D + 3D":item.representation==="3d"?"3D-паспорт":"2D")+" · "+(item.referenceImages?.length||0)+" референсов";
+      const description=document.createElement("p");description.textContent=item.description||"Описание не добавлено.";
+      card.append(title,meta,description);
+      if(item.passport){const passport=document.createElement("p");passport.className="character-meta";passport.textContent=["Лицо: "+(item.passport.face||"—"),"Силуэт: "+(item.passport.body||"—"),"Одежда: "+(item.passport.wardrobe||"—"),"Палитра/эмоции: "+(item.passport.palette||"—")].join(" · ");card.append(passport);}
+      if(item.voice){const voice=document.createElement("p");voice.className="character-meta";voice.textContent="Голос: "+item.voice;card.append(voice);}
+      const gallery=document.createElement("div");gallery.className="character-card-gallery";
+      for(const ref of (item.referenceImages||[]).slice(0,6)){
+        try{
+          const blob=await getCharacterImage(ref.id,ownerId);
+          if(!blob||!card.isConnected)continue;
+          const img=document.createElement("img");img.alt="Референс "+item.name;img.loading="lazy";
+          const url=URL.createObjectURL(blob);img.src=url;img.addEventListener("load",()=>URL.revokeObjectURL(url),{once:true});img.addEventListener("error",()=>URL.revokeObjectURL(url),{once:true});gallery.append(img);
+        }catch(error){console.warn("Character image preview:",error);}
+      }
+      if(gallery.childElementCount)card.append(gallery);
+      const actions=document.createElement("div");actions.className="character-card-actions";
+      const edit=document.createElement("button");edit.type="button";edit.className="secondary-button";edit.textContent="Изменить";
+      edit.addEventListener("click",()=>{
+        editingCharacterId=item.id;$("#characterName").value=item.name;$("#characterDescription").value=item.description||"";
+        $("#characterKind").value=item.kind||"character";$("#characterRepresentation").value=item.representation||"2d";$("#characterVoice").value=item.voice||"";
+        $("#characterFace").value=item.passport?.face||"";$("#characterBody").value=item.passport?.body||"";
+        $("#characterWardrobe").value=item.passport?.wardrobe||"";$("#characterPalette").value=item.passport?.palette||"";
+        $("#characterImages").value="";$("#saveCharacter").textContent="Сохранить изменения";$("#cancelCharacterEdit").hidden=false;
+        $("#characterName").scrollIntoView({behavior:"smooth",block:"center"});
+      });
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";
+      remove.addEventListener("click",async()=>{
+        if(!window.confirm("Удалить «"+item.name+"» и его локальные изображения?"))return;
+        const current=readCharacterLibrary(),found=current.find(x=>x.id===item.id);if(!found)return;
+        const next=current.filter(x=>x.id!==item.id);
+        try{
+          localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
+          await Promise.all((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,ownerId)));
+          $("#characterLibraryStatus").textContent="Материал удалён из локальной библиотеки.";
+          renderCharacterLibrary();
+        }catch(error){$("#characterLibraryStatus").textContent="Запись обновлена, но очистка части изображений не завершилась. "+error.message;}
+      });
+      actions.append(edit,remove);card.append(actions);list.append(card);
+    }
+  };
+  $("#saveCharacter")?.addEventListener("click",async()=>{
+    const ownerId=authSession?.user?.id||"guest",name=$("#characterName").value.trim(),description=$("#characterDescription").value.trim();
+    const kind=$("#characterKind").value,representation=$("#characterRepresentation").value,files=Array.from($("#characterImages").files||[]);
+    if(!name||!description){$("#characterLibraryStatus").textContent="Укажите имя и основное описание.";return;}
+    if(!["character","scene"].includes(kind)||!["2d","3d","both"].includes(representation)){return;}
+    const current=readCharacterLibrary(),existing=editingCharacterId?current.find(x=>x.id===editingCharacterId):null;
+    if(editingCharacterId&&!existing){resetCharacterEditor();$("#characterLibraryStatus").textContent="Запись больше не найдена. Обновите библиотеку.";return;}
+    if(!existing&&current.length>=100){$("#characterLibraryStatus").textContent="Достигнут лимит в 100 материалов.";return;}
+    if(files.length+(existing?.referenceImages?.length||0)>6){$("#characterLibraryStatus").textContent="У одного материала может быть не более 6 референсов.";return;}
+    if(files.some(file=>!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>8*1024*1024)){ $("#characterLibraryStatus").textContent="Поддерживаются PNG, JPEG и WebP до 8 МБ каждый.";return; }
+    const id=existing?.id||(crypto.randomUUID?crypto.randomUUID():String(Date.now()));
+    const refs=files.map(file=>({id:id+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)),name:file.name.slice(0,120),type:file.type}));
+    const updated={...(existing||{}),id,name:name.slice(0,80),description:description.slice(0,5000),kind,representation,voice:$("#characterVoice").value.trim().slice(0,500),
+      passport:{face:$("#characterFace").value.trim().slice(0,1200),body:$("#characterBody").value.trim().slice(0,1200),wardrobe:$("#characterWardrobe").value.trim().slice(0,1200),palette:$("#characterPalette").value.trim().slice(0,1200)},
+      referenceImages:[...(existing?.referenceImages||[]),...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const button=$("#saveCharacter");button.disabled=true;
+    try{
+      for(let i=0;i<files.length;i++)await saveCharacterImage(refs[i].id,files[i],ownerId);
+      const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
+      localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
+      resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера.";
+      await renderCharacterLibrary();
+    }catch(error){
+      $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+" Новые изображения не очищались автоматически.";
+    }finally{button.disabled=false;}
+  });
+  $("#cancelCharacterEdit")?.addEventListener("click",()=>{resetCharacterEditor();$("#characterLibraryStatus").textContent="Редактирование отменено.";});
+  $("#characterSearch")?.addEventListener("input",renderCharacterLibrary);
+  window.addEventListener("pwa-studio-auth-changed",()=>{resetCharacterEditor();renderCharacterLibrary();});
+  renderCharacterLibrary();
 
   renderMovieProjects();
 
