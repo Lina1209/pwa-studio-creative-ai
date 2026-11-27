@@ -78,5 +78,18 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('assets/characters/katty/expressions/" + id + ".svg', app)
         self.assertNotIn("apiRequest(", app[app.index("const setKattyAssistantExpression"):app.index("const copyAssistantText")])
 
+
+    def test_katty_contextual_states_cover_learning_creativity_support_and_reset(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const kattyContextState", app)
+        self.assertIn('return "curious"', app)
+        self.assertIn('return "focused"', app)
+        self.assertIn('return "empathetic"', app)
+        self.assertIn("const kattyResponseState", app)
+        self.assertIn('setKattyAssistantExpression(kattyContextState(value))', app)
+        self.assertIn('setKattyAssistantExpression(kattyResponseState(value, result.reply))', app)
+        self.assertIn('const clearAssistantMessages = () => {\\n    setKattyAssistantExpression("neutral");', app)
+        self.assertIn('const loadAssistantMessages = async conversationId => {\\n    setKattyAssistantExpression("neutral");', app)
+
 if __name__ == "__main__":
     unittest.main()
