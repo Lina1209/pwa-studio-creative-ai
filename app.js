@@ -1534,7 +1534,7 @@ const movieHistoryStyle = document.createElement("style");
       if(assigned.length){
         const continuity=document.createElement("aside");continuity.className="movie-scene-reference-guidance";
         const title=document.createElement("strong");title.textContent="Визуальные ориентиры для раскадровки";
-        const intro=document.createElement("p");intro.textContent="Учитывайте эти утверждённые референсы при описании кадров. Номера сцен указаны в настройках персонажей.";
+        const intro=document.createElement("p");intro.textContent="Учитывайте эти утверждённые референсы при описании кадров. Номера сцен указаны в настройках персонажей. Это подсказка для автора: файлы ещё не отправляются в видеогенератор.";
         continuity.append(title,intro);
         assigned.forEach(item=>{
           const line=document.createElement("p");const sceneText=Array.isArray(item.sceneNumbers)&&item.sceneNumbers.length?"Сцены "+item.sceneNumbers.join(", "):"Все сцены";
