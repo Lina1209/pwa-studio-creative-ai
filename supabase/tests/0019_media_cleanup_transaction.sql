@@ -19,6 +19,7 @@ select set_config('pwa.test_owner_id', :'PWA_TEST_OWNER_ID', true);
 do $$
 declare
   v_owner uuid := current_setting('pwa.test_owner_id')::uuid;
+  v_foreign_owner uuid := gen_random_uuid();
   v_character uuid := gen_random_uuid();
   v_asset uuid := gen_random_uuid();
   v_busy_character uuid := gen_random_uuid();
@@ -44,8 +45,23 @@ begin
     raise exception 'PWA_TEST_OWNER_ID must identify an existing disposable auth user';
   end if;
 
+  insert into auth.users(id) values (v_foreign_owner);
   insert into public.characters(id,owner_id,name,reference_data)
   values (v_character,v_owner,'Disposable cleanup harness','{}'::jsonb);
+
+  -- A different account cannot reserve cleanup for this character, even when
+  -- it knows the character UUID. The owner marker must remain untouched.
+  begin
+    perform public.pwa_request_character_media_cleanup(
+      v_foreign_owner,v_character,gen_random_uuid()
+    );
+    raise exception 'foreign owner unexpectedly reserved character cleanup';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_character) is not null then
+    raise exception 'foreign-owner attempt changed the cleanup marker';
+  end if;
 
   v_path := v_owner::text || '/characters/' || v_character::text || '/' || v_object::text || '.png';
   insert into public.media_assets(
