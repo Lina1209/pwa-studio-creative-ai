@@ -1,0 +1,106 @@
+"""Owner-scoped server API boundary for character passport metadata."""
+import json
+import httpx
+from fastapi import HTTPException
+from app.core.config import Settings
+from app.services.media_access import canonical_uuid
+
+MAX_REFERENCE_DATA_BYTES = 24 * 1024
+
+def validate_reference_data(value):
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail="reference_data must be a JSON object.")
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="reference_data must contain valid JSON values.") from exc
+    if len(encoded) > MAX_REFERENCE_DATA_BYTES:
+        raise HTTPException(status_code=413, detail="Character passport data exceeds 24 KiB.")
+    def check(node, depth=0):
+        if depth > 6:
+            raise HTTPException(status_code=422, detail="Character passport data is too deeply nested.")
+        if isinstance(node, dict):
+            if len(node) > 80 or any(not isinstance(k, str) or len(k) > 80 for k in node):
+                raise HTTPException(status_code=422, detail="Character passport data contains invalid fields.")
+            for child in node.values(): check(child, depth + 1)
+        elif isinstance(node, list):
+            if len(node) > 100: raise HTTPException(status_code=422, detail="Character passport list is too long.")
+            for child in node: check(child, depth + 1)
+        elif not (node is None or isinstance(node, (str, int, float, bool))):
+            raise HTTPException(status_code=422, detail="Character passport data contains unsupported values.")
+        elif isinstance(node, str) and len(node) > 4000:
+            raise HTTPException(status_code=422, detail="A character passport field is too long.")
+    check(value)
+    return value
+
+def _request(settings, method, params=None, payload=None):
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(status_code=503, detail="Character storage is not configured.")
+    headers = {"apikey": settings.supabase_service_role_key,
+               "Authorization": f"Bearer {settings.supabase_service_role_key}",
+               "Content-Type": "application/json", "Accept": "application/json",
+               "Prefer": "return=representation"}
+    try:
+        response = httpx.request(method, f"{settings.supabase_url.rstrip('/')}/rest/v1/characters",
+                                 headers=headers, params=params, json=payload, timeout=12.0)
+        response.raise_for_status()
+        data = response.json() if response.content else []
+        if not isinstance(data, list):
+            raise HTTPException(status_code=502, detail="Character storage returned an invalid response.")
+        return data
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 409 or (exc.response.status_code == 400 and "23505" in exc.response.text):
+            raise HTTPException(status_code=409, detail="A character with this identifier already exists.") from exc
+        raise HTTPException(status_code=502, detail="Character storage rejected the request.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Character storage is temporarily unavailable.") from exc
+
+def _public(row):
+    if not isinstance(row, dict): raise HTTPException(status_code=502, detail="Character storage returned an invalid record.")
+    return {k: row.get(k) for k in ("id", "name", "description", "reference_data", "created_at")}
+
+def list_owned_characters(settings, owner_id):
+    owner = canonical_uuid(owner_id, "owner")
+    rows = _request(settings, "GET", {"select":"id,name,description,reference_data,created_at",
+        "owner_id":f"eq.{owner}", "order":"created_at.desc", "limit":"100"})
+    return [_public(row) for row in rows]
+
+def create_owned_character(settings, owner_id, name, description, reference_data):
+    owner = canonical_uuid(owner_id, "owner")
+    name = name.strip()
+    if not name or len(name) > 120: raise HTTPException(status_code=422, detail="Character name must contain 1–120 characters.")
+    if description is not None and len(description) > 2000: raise HTTPException(status_code=422, detail="Character description is too long.")
+    data = validate_reference_data(reference_data)
+    rows = _request(settings, "POST", {"select":"id,name,description,reference_data,created_at"},
+                    {"owner_id":owner,"name":name,"description":description.strip() if description else None,"reference_data":data})
+    if not rows: raise HTTPException(status_code=502, detail="Character could not be created.")
+    return _public(rows[0])
+
+def get_owned_character(settings, owner_id, character_id):
+    owner = canonical_uuid(owner_id, "owner")
+    character = canonical_uuid(character_id, "character")
+    rows = _request(settings, "GET", {"select":"id,owner_id,name,description,reference_data,created_at",
+        "id":f"eq.{character}", "owner_id":f"eq.{owner}", "limit":"1"})
+    if not rows: raise HTTPException(status_code=404, detail="Character not found.")
+    if rows[0].get("owner_id") != owner: raise HTTPException(status_code=404, detail="Character not found.")
+    return _public(rows[0])
+
+def update_owned_character(settings, owner_id, character_id, changes):
+    owner = canonical_uuid(owner_id, "owner")
+    character = canonical_uuid(character_id, "character")
+    payload = {}
+    if "name" in changes:
+        value = changes["name"].strip()
+        if not value or len(value) > 120: raise HTTPException(status_code=422, detail="Character name must contain 1–120 characters.")
+        payload["name"] = value
+    if "description" in changes:
+        value = changes["description"]
+        if value is not None and len(value) > 2000: raise HTTPException(status_code=422, detail="Character description is too long.")
+        payload["description"] = value.strip() if value else None
+    if "reference_data" in changes: payload["reference_data"] = validate_reference_data(changes["reference_data"])
+    if not payload: raise HTTPException(status_code=400, detail="No character changes were supplied.")
+    rows = _request(settings, "PATCH", {"select":"id,owner_id,name,description,reference_data,created_at",
+        "id":f"eq.{character}", "owner_id":f"eq.{owner}"}, payload)
+    if not rows: raise HTTPException(status_code=404, detail="Character not found.")
+    if rows[0].get("owner_id") != owner: raise HTTPException(status_code=404, detail="Character not found.")
+    return _public(rows[0])
