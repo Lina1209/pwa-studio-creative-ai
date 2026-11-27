@@ -41,12 +41,27 @@ for pid in "${pids[@]}"; do
   wait "$pid" || true
 done
 
-allowed="$(grep -l '^allowed$' "$tmp_dir"/*.status | wc -l | tr -d ' ')"
-rejected="$(grep -l '^rejected$' "$tmp_dir"/*.status | wc -l | tr -d ' ')"
-unexpected="$(grep -l '^unexpected$' "$tmp_dir"/*.status | wc -l | tr -d ' ')"
+allowed=0
+rejected=0
+unexpected=0
+status_files=0
+for status_file in "$tmp_dir"/*.status; do
+  [[ -f "$status_file" ]] || continue
+  status_files=$((status_files + 1))
+  IFS= read -r state < "$status_file"
+  case "$state" in
+    allowed) allowed=$((allowed + 1)) ;;
+    rejected) rejected=$((rejected + 1)) ;;
+    *) unexpected=$((unexpected + 1)); echo "Unexpected reservation worker status: $state" >&2 ;;
+  esac
+done
 
-if [[ "$allowed" != "3" || "$rejected" != "9" || "$unexpected" != "0" ]]; then
-  echo "AI budget concurrency invariant failed: allowed=$allowed rejected=$rejected unexpected=$unexpected" >&2
+echo "AI budget race results: files=$status_files allowed=$allowed rejected=$rejected unexpected=$unexpected"
+if [[ "$status_files" != "12" || "$allowed" != "3" || "$rejected" != "9" || "$unexpected" != "0" ]]; then
+  echo "AI budget concurrency invariant failed." >&2
+  for error_file in "$tmp_dir"/*.err; do
+    [[ -s "$error_file" ]] && cat "$error_file" >&2
+  done
   exit 1
 fi
 
