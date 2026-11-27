@@ -124,7 +124,11 @@ begin
     end if;
     if v_asset.bucket <> 'studio-media'
        or v_asset.storage_path is null
-       or v_asset.storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp) if another row or another character passport points to this
+       or v_asset.storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)$') then
+      raise exception 'character media object key is invalid' using errcode='23514';
+    end if;
+
+    -- Fail closed if another row or another character passport points to this
     -- exact object. The target character's own passport is being removed.
     if exists (
       select 1 from public.media_assets other
