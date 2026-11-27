@@ -58,3 +58,14 @@ def require_private_bucket(bucket: str) -> str:
     if bucket not in ALLOWED_BUCKETS:
         raise HTTPException(status_code=422, detail="Unsupported media storage bucket.")
     return bucket
+
+PUBLIC_MEDIA_FIELDS = frozenset({
+    "id", "project_id", "character_id", "file_name", "file_type", "created_at",
+})
+
+
+def media_asset_public_view(row: dict) -> dict:
+    """Return an explicit browser-safe allowlist; never expose owner, bucket, path, or metadata."""
+    if not isinstance(row, dict):
+        raise HTTPException(status_code=404, detail="Media resource not found.")
+    return {key: row[key] for key in PUBLIC_MEDIA_FIELDS if key in row}
