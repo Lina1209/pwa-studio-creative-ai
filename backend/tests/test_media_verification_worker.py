@@ -78,6 +78,15 @@ class MediaVerificationWorkerTests(unittest.TestCase):
         retry.assert_called_once()
         self.assertEqual(retry.call_args.args[2], 30)
 
+    @patch("app.workers.media_outbox_worker.retry_media_upload_verification")
+    @patch("app.workers.media_outbox_worker.verify_claimed_media", side_effect=ValueError("invalid claim"))
+    @patch("app.workers.media_outbox_worker.claim_media_upload_verification", return_value=dict(CLAIM, attempts="invalid"))
+    def test_malformed_attempt_counter_still_uses_safe_retry_path(self, claim, verify, retry):
+        retry.return_value = {"event_status": "pending", "asset_status": "object_uploaded"}
+        self.assertTrue(process_one(object()))
+        retry.assert_called_once()
+        self.assertEqual(retry.call_args.args[2], 30)
+
     @patch("app.workers.media_outbox_worker.claim_media_upload_verification", return_value=None)
     def test_empty_queue_returns_without_processing(self, claim):
         self.assertFalse(process_one(object()))
