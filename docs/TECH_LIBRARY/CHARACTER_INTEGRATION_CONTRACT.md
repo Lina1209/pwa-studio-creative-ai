@@ -108,3 +108,19 @@ This is an API foundation, not cloud-library activation. The frontend remains lo
 The authenticated `GET /api/characters/{character_id}/references` endpoint returns the owner’s media records for that character, including each asset’s verification lifecycle state (`pending_upload`, `object_uploaded`, `ready`, `upload_failed`, `cleanup_pending`, or `deleted`) and safe file metadata. The query is filtered by owner, character, and private `studio-media` bucket. The response excludes storage paths, bucket names, internal metadata, owner IDs, and signed URLs, and is marked `private, no-store`.
 
 This gives a future importer a per-image progress/read-back checkpoint. An image is backed up only when its independently verified database status is `ready` and its asset ID is matched to the local reference’s persisted upload mapping. `object_uploaded` is not proof of successful backup. A ready asset can additionally be fetched through the existing authenticated `/api/media/{asset_id}/content` proxy, which rechecks ownership/readiness and validates downloaded image bytes. No local IndexedDB blob may be removed based only on the upload response or status-list result.
+
+
+## 11. Canonical visual identity references (2026-11-27)
+
+The feature branch now includes a versioned, machine-readable Katty/Katarina visual identity manifest at `assets/characters/katty/identity.v1.json`. Its stable key is `katty-katarina`; the profile avatar catalogue entry `katty-assistant` points to that manifest. The manifest records identity-lock traits (face, green eyes, freckles, curly red hair), wardrobe and accessories, palette, allowed expressions/poses, prohibited identity drift, and separate 2D/3D readiness states.
+
+This key is a visual continuity reference only. It is not a user ID, character row ID, owner identifier, or automatic relationship between a profile avatar and a Character Library card. A creator must explicitly choose to use the Katty identity in a future Character Library workflow.
+
+When a Character Library card or project snapshot later adopts a canonical identity:
+- store the stable identity key and manifest version alongside a copy of the resolved visual identity fields;
+- keep any creator-specific additions and permitted variations separate from the canonical identity lock;
+- freeze the resolved identity data in each approved project snapshot;
+- never silently update an approved project when the master manifest changes;
+- keep the profile avatar optional and independent from the creator's selected cast.
+
+The current manifest marks 2D as implemented and 3D as `not_created`. It does not provide a model file, invoke generation, load a renderer, or authorize any external service. A future 3D model must be reviewed against the same identity lock and have an accessible 2D fallback.
