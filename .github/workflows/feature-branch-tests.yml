@@ -96,6 +96,8 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0022_ai_budget_reservations.sql
+      - name: Run concurrent AI budget reservation race harness
+        run: bash supabase/tests/0022_ai_budget_reservation_race.sh
       - name: Run character idempotency transaction harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
