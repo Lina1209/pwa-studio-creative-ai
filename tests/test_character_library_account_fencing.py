@@ -159,5 +159,17 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("generation.userId !== (authSession?.user?.id || null)", bridge)
 
 
+    def test_conversation_profile_updates_are_fenced_to_current_render_and_account(self):
+        start = APP.index("const renderConversations = threads =>")
+        end = APP.index("const loadConversations = async () =>", start)
+        renderer = APP[start:end]
+        self.assertIn("const renderVersion = ++conversationRenderVersion;", renderer)
+        self.assertIn("const contextVersion = authContextVersion;", renderer)
+        self.assertIn("renderVersion!==conversationRenderVersion", renderer)
+        self.assertIn("contextVersion!==authContextVersion", renderer)
+        self.assertIn("authSession?.user?.id!==userId", renderer)
+        self.assertIn("!button.isConnected", renderer)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
