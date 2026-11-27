@@ -609,26 +609,32 @@ const movieHistoryStyle = document.createElement("style");
   const markOneNotificationRead = async (id, button) => {
     const version = authContextVersion, userId = authSession?.user?.id;
     if (!userId) return;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     button.disabled = true;
     try {
       await apiRequest("/api/notifications/" + encodeURIComponent(id) + "/read", {method:"POST"});
-      if (version === authContextVersion && authSession?.user?.id === userId) loadNotifications();
+      if (contextIsCurrent()) loadNotifications();
     } catch (error) {
-      if (version === authContextVersion) notificationFeedback("Не удалось отметить уведомление: " + error.message);
-      button.disabled = false;
+      if (contextIsCurrent()) {
+        notificationFeedback("Не удалось отметить уведомление: " + error.message);
+        button.disabled = false;
+      }
     }
   };
   $("#notificationRefresh")?.addEventListener("click", loadNotifications);
   $("#notificationReadAll")?.addEventListener("click", async event => {
     const button = event.currentTarget, version = authContextVersion, userId = authSession?.user?.id;
     if (!userId) return;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     button.disabled = true;
     try {
       await apiRequest("/api/notifications/read-all", {method:"POST"});
-      if (version === authContextVersion && authSession?.user?.id === userId) loadNotifications();
+      if (contextIsCurrent()) loadNotifications();
     } catch (error) {
-      if (version === authContextVersion) notificationFeedback("Не удалось обновить уведомления: " + error.message);
-      button.disabled = false;
+      if (contextIsCurrent()) {
+        notificationFeedback("Не удалось обновить уведомления: " + error.message);
+        button.disabled = false;
+      }
     }
   });
 
