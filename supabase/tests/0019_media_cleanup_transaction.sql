@@ -23,6 +23,7 @@ declare
   v_asset uuid := gen_random_uuid();
   v_busy_character uuid := gen_random_uuid();
   v_busy_asset uuid := gen_random_uuid();
+  v_unindexed_character uuid := gen_random_uuid();
   v_object uuid := gen_random_uuid();
   v_operation uuid := gen_random_uuid();
   v_token_a uuid := gen_random_uuid();
@@ -99,6 +100,29 @@ begin
       where owner_id=v_owner and asset_id=v_asset
         and operation_id=v_operation and event_type='media_cleanup_requested') <> 1 then
     raise exception 'cleanup reservation created duplicate outbox events';
+  end if;
+
+  -- A private object path embedded in a passport without a matching media
+  -- row is ambiguous; do not delete the character and orphan the object.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (
+    v_unindexed_character,v_owner,'Unindexed path fixture',
+    jsonb_build_object(
+      'reference',
+      v_owner::text || '/characters/' || v_unindexed_character::text || '/' ||
+      gen_random_uuid()::text || '.png'
+    )
+  );
+  begin
+    perform public.pwa_request_character_media_cleanup(
+      v_owner,v_unindexed_character,gen_random_uuid()
+    );
+    raise exception 'cleanup unexpectedly accepted an unindexed passport path';
+  exception when sqlstate '23514' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_unindexed_character) is not null then
+    raise exception 'unindexed passport path rejection did not roll back deletion intent';
   end if;
 
   -- A character with an upload still in flight cannot enter cleanup. The
