@@ -1,4 +1,5 @@
 from uuid import uuid4, uuid5, NAMESPACE_URL
+import hashlib
 import logging
 
 from fastapi import Depends, FastAPI, HTTPException, Response, File, Header, UploadFile
@@ -166,6 +167,19 @@ def private_media_content(asset_id: str,
         file_name=asset.get("file_name") or "image",
         expected_mime_type=asset.get("file_type") or "",
     )
+    # Re-check the reservation fingerprint on read; the background verifier is
+    # not the only integrity boundary used by a future local backup client.
+    digest = hashlib.sha256(image.content).hexdigest()
+    expected_digest = asset.get("content_sha256")
+    if expected_digest and digest != expected_digest:
+        raise HTTPException(status_code=502, detail="Stored image failed integrity validation.")
+    expected_size = asset.get("size_bytes")
+    if expected_size is not None and image.size_bytes != expected_size:
+        raise HTTPException(status_code=502, detail="Stored image failed integrity validation.")
+    for field, actual in (("width", image.width), ("height", image.height)):
+        expected = asset.get(field)
+        if expected is not None and actual != expected:
+            raise HTTPException(status_code=502, detail="Stored image failed integrity validation.")
     return Response(
         content=image.content,
         media_type=image.mime_type,
@@ -173,6 +187,7 @@ def private_media_content(asset_id: str,
             "Cache-Control": "private, no-store, max-age=0",
             "Pragma": "no-cache",
             "X-Content-Type-Options": "nosniff",
+            "X-Content-SHA256": digest,
             "Cross-Origin-Resource-Policy": "same-origin",
             "Content-Security-Policy": "default-src 'none'; sandbox",
             "Content-Disposition": f'inline; filename="{image.safe_filename}"',
