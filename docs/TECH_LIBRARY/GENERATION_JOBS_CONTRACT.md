@@ -295,3 +295,6 @@ The provider-outcome rule above exposed a mismatch in the draft implementation: 
 The inactive Python helper has now been tightened to require an explicit `ProviderSubmissionOutcome` for a retry. Its default is `unknown`; only `definitely_not_submitted` and `definitely_rejected` permit a retry. A generic timeout with an unknown provider outcome is not retryable.
 
 The SQL migration draft 0014 remains a blocking item: before it can be activated, its failure/recovery contract must carry the same provider-outcome evidence and preserve an explicit reconciliation-needed state for `accepted`/`unknown` attempts. The current `p_retryable boolean` must not be trusted as sufficient evidence. Do not wire the helper or SQL into a worker until both layers agree and regression tests pass.
+
+
+The inactive pure-Python helper now models `reconciliation_required` explicitly. A timeout or expired lease with `unknown`/ `accepted` provider outcome enters reconciliation rather than retry or cancellation. A retry after lease expiry requires explicit evidence of `definitely_not_submitted` or `definitely_rejected`; an expired cancellation with an unresolved provider outcome also remains in reconciliation. This helper change does not resolve the SQL migration mismatch: the SQL state constraint/RPCs still need a matching reconciliation state and must remain inactive.
