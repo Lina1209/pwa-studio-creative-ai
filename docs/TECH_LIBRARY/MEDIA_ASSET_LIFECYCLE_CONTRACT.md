@@ -103,3 +103,11 @@ At this revision there is no backend media upload/read/sign/replace/delete route
 - allowlisting of the two private bucket names.
 
 These helpers do not query Supabase, upload/download bytes, or create signed URLs. A future service must still query each row using both the requested ID and the authenticated JWT subject before passing it to the guards. The helper's unit tests are authored in `backend/tests/test_media_access.py`; they have not been executed in this workflow.
+
+## 11. Owner-filtered metadata repository added (not a route)
+
+`backend/app/services/media_repository.py` adds a server-only metadata lookup for a media asset. It filters the media row by both canonical asset UUID and the authenticated owner UUID, then independently checks any linked project and character using the same owner filter. Missing and foreign-linked resources are intentionally indistinguishable (404).
+
+The repository uses the existing server-side Supabase REST pattern and service-role credential; that credential is never returned or accepted from a caller. Table names are fixed in code, and the function accepts no bucket, object path, or signed URL from the client.
+
+This is a repository primitive only. No FastAPI route, upload, download, Storage operation, signed URL, or deletion endpoint has been added. The returned metadata includes `storage_path` for trusted internal follow-up only; a future route must not serialize it to the browser. The new mocked unit tests are in `backend/tests/test_media_repository.py`; they have not been executed.
