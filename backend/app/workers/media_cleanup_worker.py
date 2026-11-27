@@ -34,7 +34,7 @@ def _validate_claim(event: dict) -> None:
     """Validate all DB claim fields before any Storage request."""
     if not isinstance(event, dict):
         raise ValueError("Media cleanup claim must be an object.")
-    for field in ("owner_id", "asset_id", "event_id", "claim_token"):
+    for field in ("owner_id", "asset_id", "character_id", "event_id", "claim_token"):
         try:
             value = str(UUID(str(event.get(field))))
             if value != event.get(field):
@@ -47,7 +47,7 @@ def _validate_claim(event: dict) -> None:
     if not isinstance(path, str) or path.startswith("/") or "\\" in path:
         raise ValueError("Media cleanup claim contains an invalid object key.")
     parts = path.split("/")
-    if len(parts) != 4 or parts[0] != event["owner_id"] or parts[1] != "characters":
+    if len(parts) != 4 or parts[0] != event["owner_id"] or parts[1] != "characters" or parts[2] != event["character_id"]:
         raise ValueError("Media cleanup claim object key is outside the owner's namespace.")
     try:
         UUID(parts[2])
