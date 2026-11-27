@@ -2542,7 +2542,7 @@ const movieHistoryStyle = document.createElement("style");
     }catch(error){
       if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)
         $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+" Новые изображения не очищались автоматически.";
-    }finally{button.disabled=false;}
+    }finally{if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}
   });
   $("#cancelCharacterEdit")?.addEventListener("click",()=>{resetCharacterEditor();$("#characterLibraryStatus").textContent="Редактирование отменено.";});
   $("#characterSearch")?.addEventListener("input",renderCharacterLibrary);
