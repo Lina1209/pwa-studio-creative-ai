@@ -62,7 +62,8 @@ Cleanup must be owner-scoped, idempotent, bounded, and auditable. A cleanup work
 
 - Enforce request body, per-file, and aggregate byte limits server-side before buffering unbounded content.
 - Verify actual file signature and MIME; extension is metadata only.
-- The current branch pins Pillow 13.0.0 and fully decodes PNG/JPEG/WebP; it rejects corrupt/truncated inputs, multi-frame images, dimensions above 8192px per axis, and images above 16 megapixels. Treat this as in-process validation, not an OS sandbox.\n- Before accepting untrusted uploads at scale, move decoding to a separately resource-limited worker/process and add fuzzing/adversarial corpus coverage.
+- The current branch pins Pillow 13.0.0 and fully decodes PNG/JPEG/WebP; it rejects corrupt/truncated inputs, multi-frame images, dimensions above 8192px per axis, and images above 16 megapixels. Treat this as in-process validation, not an OS sandbox.
+- Before accepting untrusted uploads at scale, move decoding to a separately resource-limited worker/process and add fuzzing/adversarial corpus coverage.
 - Normalize provider-bound images to a safe raster format. Keep originals private.
 - Do not send reference bytes to /api/chat. No provider transfer is permitted until the user explicitly confirms the provider and exact selected references.
 
