@@ -58,7 +58,7 @@ class MediaOwnerIsolationContractTests(unittest.TestCase):
         self.assertIn("'studio-exports', 'studio-exports', false", self.storage_sql)
         for action in ("select", "insert", "update", "delete"):
             self.assertIn(f"for {action} to authenticated", self.hardening_sql.lower())
-        self.assertEqual(self.hardening_sql.count("(storage.foldername(name))[1] = (select auth.uid())::text"), 4)
+        self.assertEqual(self.hardening_sql.count("(storage.foldername(name))[1] = (select auth.uid())::text"), 5)
         self.assertEqual(self.hardening_sql.count("bucket_id in ('studio-media', 'studio-exports')"), 4)
 
     def test_diagnostic_inspects_all_effective_policies_and_foreign_keys(self):
