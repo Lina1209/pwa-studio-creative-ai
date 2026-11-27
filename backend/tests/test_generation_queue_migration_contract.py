@@ -11,6 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / "supabase" / "migrations" / "0014_generation_job_queue_rpcs.sql"
 PREFLIGHT = ROOT / "supabase" / "tests" / "0014_generation_job_rpcs_preflight.sql"
+BEHAVIOR = ROOT / "supabase" / "tests" / "0015_generation_job_queue_behavior.sql"
 
 
 class GenerationQueueMigrationContractTests(unittest.TestCase):
@@ -18,6 +19,7 @@ class GenerationQueueMigrationContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.sql = MIGRATION.read_text(encoding="utf-8")
         cls.preflight = PREFLIGHT.read_text(encoding="utf-8")
+        cls.behavior = BEHAVIOR.read_text(encoding="utf-8")
 
     def test_every_definer_function_has_fixed_search_path(self):
         definitions = re.split(r"create or replace function public\.", self.sql, flags=re.I)[1:]
@@ -55,6 +57,19 @@ class GenerationQueueMigrationContractTests(unittest.TestCase):
         self.assertIn("lease_expires_at > now()", self.sql)
         self.assertIn("recover_expired_generation_jobs", self.sql)
         self.assertIn("for update skip locked", self.sql.lower())
+
+    def test_behavior_harness_covers_critical_owner_and_lease_cases(self):
+        self.assertIn("begin;", self.behavior.lower())
+        self.assertIn("rollback;", self.behavior.lower())
+        for phrase in (
+            "cross-owner result asset was accepted",
+            "cross-owner cancellation was not denied",
+            "stale completion was accepted",
+            "expired lease did not enter retry_wait",
+            "duplicate outbox acknowledgement was accepted",
+            "exhausted outbox event was not dead-lettered",
+        ):
+            self.assertIn(phrase, self.behavior)
 
     def test_read_only_preflight_mentions_all_rpc_functions(self):
         names = re.findall(r"create or replace function public\.([a-z_]+)", self.sql, flags=re.I)
