@@ -157,7 +157,8 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         end = app.index("\n  });", start) + 6
         handler = app[start:end]
         self.assertIn("let requestConversationId = null;", handler)
-        self.assertIn("requestConversationId = conversationId;", handler)
+        self.assertIn("requestConversationId = activeAssistantConversationId;", handler)
+        self.assertIn("const conversationId = requestConversationId;", handler)
         self.assertIn("const conversationIsCurrent = () => contextIsCurrent() && activeAssistantConversationId === conversationId;", handler)
         self.assertIn("if (conversationIsCurrent()) {", handler)
         self.assertIn("activeAssistantConversationId === requestConversationId", handler)
@@ -189,7 +190,8 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("activeAssistantConversationId !== conversation.id", history)
         start = app.index("const startAssistantConversation")
         end = app.index('$("#assistantNewChat")', start)
-        self.assertIn("assistantConversationIntentVersion += 1;", app[start:end])
+        self.assertIn("const intentVersion = ++assistantConversationIntentVersion;", app[start:end])
+        self.assertIn("intentVersion !== assistantConversationIntentVersion", app[start:end])
 
 
     def test_ai_companion_new_conversation_creation_is_latest_intent_wins(self):
