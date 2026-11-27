@@ -105,7 +105,7 @@ File: `supabase/migrations/0014_generation_job_queue_rpcs.sql`.
 
 The SQL draft adds backend-only `SECURITY DEFINER` RPCs with a fixed `pg_catalog, public, pg_temp` search path and explicit revokes from `PUBLIC`, `anon`, and `authenticated`:
 - `claim_generation_outbox` atomically claims due outbox events with `FOR UPDATE SKIP LOCKED`, a claim token, worker identity, and a bounded delivery lease.
-- `ack_generation_outbox` acknowledges only the current claim token. `fail_generation_outbox` schedules bounded retries and marks exhausted events dead-lettered; stale claims cannot acknowledge or release a newer claim.
+- `ack_generation_outbox` acknowledges only the current claim token. A dispatcher crash leaves the claim leased for later redelivery; after 20 delivery attempts, the next claim sweep marks the event dead-lettered. Stale claims cannot acknowledge a newer claim.
 - `claim_generation_job` atomically claims one due job, increments attempts, and issues a fresh fencing token/lease.
 - `heartbeat_generation_job`, `complete_generation_job`, and `fail_generation_job` require the current lease token. Retryable failure and retry-outbox insertion occur in one transaction.
 - `request_generation_job_cancel` checks both job id and owner id; backend must derive owner id from the verified bearer token. `finish_generation_job_cancel` only completes the active matching lease.
