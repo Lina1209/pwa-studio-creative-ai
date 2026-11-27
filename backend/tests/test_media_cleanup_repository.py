@@ -102,10 +102,15 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
         self.assertEqual(complete_media_cleanup(settings(), {
             "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT, "claim_token": TOKEN
         })["status"], "deleted")
-        call.return_value = {"event_status": "pending"}
+        call.return_value = {"event_status": "pending", "asset_status": "cleanup_pending"}
         self.assertEqual(retry_media_cleanup(settings(), {
             "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT, "claim_token": TOKEN
         }, 60)["event_status"], "pending")
+        call.return_value = {"event_status": "pending", "asset_status": "deleted"}
+        with self.assertRaisesRegex(RuntimeError, "invalid result"):
+            retry_media_cleanup(settings(), {
+                "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT, "claim_token": TOKEN
+            }, 60)
         call.return_value = {"character_id": CHARACTER, "status": "deleted"}
         self.assertEqual(finalize_character_media_cleanup(settings(), OWNER, CHARACTER)["status"], "deleted")
 
