@@ -192,6 +192,10 @@ begin
     for update
   loop
     if v_asset.status = 'deleted' then
+      -- A legacy deleted row may still carry the restrictive character FK.
+      update public.media_assets
+      set character_id=null,version=version+1
+      where id=v_asset.id and owner_id=p_owner_id and character_id=p_character_id;
       continue;
     end if;
     if v_asset.status not in ('pending_upload','object_uploaded','ready','upload_failed','cleanup_pending') then
