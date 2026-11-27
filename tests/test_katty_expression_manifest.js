@@ -34,7 +34,7 @@ for (const expression of manifest.expressions) {
   assert.equal(expression.assetStatus, "approved_static_artwork");
   assert.ok(expression.asset.startsWith("assets/characters/katty/expressions/"));
   const svg = fs.readFileSync(path.join(root, expression.asset), "utf8");
-  assert.match(svg, /^<svg\\b/);
+  assert.match(svg, /^<svg\b/);
   assert.match(svg, /#45a66d/, "green eyes must remain in " + expression.id);
   assert.match(svg, /#ffd1ad/, "canonical face tone must remain in " + expression.id);
   assert.match(svg, /#e45c2e/, "red hair must remain in " + expression.id);
