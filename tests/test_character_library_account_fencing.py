@@ -38,5 +38,21 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("deleteCharacterImage(ref.id,deleteOwnerId)", APP)
 
 
+    def test_guest_and_authenticated_metadata_use_separate_keys(self):
+        self.assertIn(
+            '"pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest")',
+            APP,
+        )
+
+    def test_indexeddb_image_reads_and_deletes_verify_owner(self):
+        self.assertIn("request.result?.ownerId===ownerId?request.result.blob:null", APP)
+        self.assertIn("if(request.result?.ownerId===ownerId)store.delete(id);", APP)
+
+    def test_auth_identity_change_increments_context_and_notifies_library(self):
+        self.assertIn("authContextVersion += 1;", APP)
+        self.assertIn('window.dispatchEvent(new Event("pwa-studio-auth-changed"));', APP)
+        self.assertIn('window.addEventListener("pwa-studio-auth-changed",()=>{resetCharacterEditor();renderCharacterLibrary();});', APP)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
