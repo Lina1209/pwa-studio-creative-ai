@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException, Response, File, Header, Upl
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.character_api import build_character_router
 from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest, ProfileUpdateRequest)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
@@ -44,6 +45,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
 )
+
+app.include_router(build_character_router(settings), prefix=settings.api_prefix)
 
 
 @app.get("/")
