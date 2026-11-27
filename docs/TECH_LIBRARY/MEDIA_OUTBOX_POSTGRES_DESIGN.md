@@ -125,3 +125,7 @@ No migration, RPC, worker, scheduler, or Storage call is implemented by this doc
 ## 9. Concurrency verification plan
 
 The detailed two-worker, stale-lease, crash-window, fault-injection, and owner-isolation matrix is documented in `docs/TECH_LIBRARY/MEDIA_OUTBOX_CONCURRENCY_TEST_PLAN.md`. The pure-model test suite covers stale worker A versus reclaimed worker B, attempt exhaustion, and stale retry rejection. It does not prove database concurrency or transaction atomicity; those checks require a disposable Supabase project and separate database sessions.
+
+## 10. Character-reference upload composition
+
+The pure preflight composition is implemented in `backend/app/services/media_workflow.py`. It validates the authenticated owner against a server-loaded character row, decodes the image, creates an immutable server-derived object key, and constructs the upload-verification event model bound to the asset ID. The future server must still insert the media row and event atomically before any worker can process it. The composition helper itself performs no writes or Storage calls.
