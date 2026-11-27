@@ -170,3 +170,70 @@ The sequential SQL harness above cannot prove row-lock behavior. Once a disposab
 5. Verify the row is delivered once and cannot be acknowledged again with the consumed token.
 
 Record database version, migration hashes, fixture IDs, both session outputs, and final row state. Do not use production data. This is a test procedure, not evidence that concurrency has already passed.
+
+## External provider acceptance, crash windows, and reconciliation (design-only)
+
+The queue and database cannot create exactly-once execution across an external provider boundary. A timeout is not proof that the provider did not accept the request. The worker MUST NOT blindly retry an attempt whose submission outcome is unknown.
+
+### Per-attempt record
+
+A future implementation should persist a separate generation_job_attempts record for each provider attempt, with:
+- internal attempt UUID, job ID, monotonically increasing attempt number, and unique internal idempotency key;
+- provider and model identifiers from server-side configuration;
+- state: prepared, submitting, accepted, completed, failed, unknown, reconciling, or reconciled;
+- provider request/operation ID when returned; never store API secrets;
+- submitted/accepted/completed timestamps, last checked timestamp, and bounded next reconciliation time;
+- safe error category, provider usage/cost evidence, and result asset ID if committed;
+- a canonical request fingerprint; do not duplicate raw prompts or reference bytes in attempt logs.
+
+Unique constraints should prevent duplicate internal attempt numbers and duplicate attempt idempotency keys per job. Keep provider identifiers scoped by provider/account where necessary.
+
+### Safe submission protocol
+
+1. Create and commit the attempt row in prepared before making the network call.
+2. Change it to submitting with a compare-and-set predicate before sending.
+3. Send a stable provider idempotency key if the provider explicitly supports one. Use the same key only when retrying the exact same provider operation; a new logical attempt gets a new key.
+4. If the provider returns an acceptance response, persist its operation/request ID and accepted state immediately.
+5. If the call times out or the connection drops after submission may have begun, mark the attempt unknown; do not assume failure and do not immediately issue another billable call.
+6. If the process crashes while state is submitting, a recovery sweep treats it as ambiguous and moves it to unknown after a conservative timeout. It must not reset it directly to prepared.
+
+Provider idempotency is provider-specific and must be verified against current official documentation and actual endpoint behavior before relying on it. If unsupported, the system must disclose and control the residual duplicate-cost risk.
+
+### Reconciliation state machine
+
+- unknown → reconciling: a reconciler claims the attempt with a bounded lease and fencing token.
+- reconciling → accepted/completed/failed: provider status or billing evidence conclusively identifies the operation.
+- reconciling → unknown: evidence remains inconclusive; schedule another bounded check and alert after the configured age/attempt threshold.
+- A new provider submission is permitted only after evidence establishes that the prior attempt was not accepted, or after an explicit product policy authorizes a carefully controlled duplicate-risk path.
+- Provider status callbacks/webhooks must be authenticated, signature-checked, replay-protected, and matched to the stored provider request ID and expected account/model. A callback cannot reopen a terminal internal job or override a newer attempt.
+
+### Crash-window handling
+
+| Crash point | Required recovery |
+|---|---|
+| Before attempt row commit | No provider call is allowed; job/outbox transaction can be retried idempotently. |
+| After prepared, before submission | A worker may safely claim the prepared attempt using a lease and compare-and-set. |
+| During submission / after bytes may have left the process | Mark unknown; reconcile before any retry. |
+| Provider accepted, response lost | Query provider by idempotency key or operation lookup if supported; otherwise reconcile billing/support evidence and keep state ambiguous. |
+| Acceptance persisted, before result polling | Resume polling the same provider operation ID; do not submit a second operation. |
+| Result received, before private upload | Re-fetch/poll the same operation where possible; upload idempotently to a deterministic owner/job/attempt object key. |
+| Upload succeeded, DB completion failed | Verify the private object and media row, then retry only the fenced DB completion; do not regenerate. |
+| DB completion succeeded, acknowledgement lost | Read terminal job/attempt state; duplicate completion/ack must be a no-op. |
+
+### Billing and user-credit coordination
+
+- Store provider cost evidence per attempt separately from the user-facing job charge.
+- A provider retry may incur a second provider cost even though the user-facing reservation is still one job reservation. Apply only the approved retry policy; do not silently pass duplicate provider costs to the user.
+- The credit ledger contract governs one reservation and one terminal settlement/release per job. Reconciliation may add auditable provider-cost corrections, but must not create a second user debit.
+- Unknown provider state means the reservation remains held until a defined timeout/escalation policy resolves it. Do not release credits while an accepted billable operation may still be running.
+- A manual resolution must record actor, reason, evidence reference, and compensating ledger operation; never edit or delete historical ledger rows.
+
+### Operational controls and required tests
+
+- Alert on unknown attempts older than the configured service-level threshold, repeated provider lookup failures, cost mismatches, and accepted attempts without a linked job result.
+- Bound reconciliation concurrency, polling frequency, provider API spend, and maximum ambiguity age. Use backoff and jitter.
+- Redact prompts, reference URLs, signed URLs, tokens, and provider secrets from logs and metrics.
+- Test process termination at every crash point in the table, duplicate webhooks, stale reconciliation leases, provider idempotency behavior, provider lookup unavailable, delayed billing records, and repeated result-upload/completion.
+- Use a fake provider in automated tests. Any live-provider contract test requires separate explicit approval, a dedicated low-limit test account, and a known spend ceiling.
+
+This section is architecture guidance only. No attempt table, reconciler, provider adapter, webhook, scheduler, or billing behavior is implemented or active.
