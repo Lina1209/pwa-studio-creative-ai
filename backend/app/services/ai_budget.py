@@ -25,6 +25,12 @@ class AIReservationRequest:
 class AIReservation:
     reservation_id: str
     reserved_usd: Decimal
+    status: str = "reserved"
+    created: bool = True
+
+
+class AIBudgetDuplicateRequest(RuntimeError):
+    """An idempotent reservation already exists; do not call the provider again."""
 
 
 class AIBudgetStore(Protocol):
@@ -64,6 +70,8 @@ def execute_reserved_ai_call(
     network failures can happen after a provider accepted and billed a request.
     """
     reservation = store.reserve(request)
+    if not reservation.created or reservation.status != "reserved":
+        raise AIBudgetDuplicateRequest("AI request was already reserved or processed.")
     try:
         result = provider_call()
     except Exception:
