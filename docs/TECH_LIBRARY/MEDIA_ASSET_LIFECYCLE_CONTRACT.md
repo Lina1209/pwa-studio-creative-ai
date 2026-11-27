@@ -1,4 +1,4 @@
-**Verification update (2026-11-27):** GitHub Actions run 73 passed all 219 backend Python unit/source-contract tests and ran migrations 0005, 0012, 0017, 0018, and 0019 plus both 0019 SQL harnesses against a disposable PostgreSQL 16 instance with minimal Supabase-compatible auth/storage schemas. The transaction harness rolled back successfully; it verified foreign-owner denial, zero-media finalization, retry recovery with a fresh token, and cleanup completion. The two-session claim race confirmed exactly one claimant, lease recovery, stale-token fencing, and finalization. A separate two-sided advisory-lock race confirmed that either a committed external reference blocks cleanup or a committed cleanup intent blocks a later reference write. A 50-event/five-worker stress harness also claimed 50 unique events and completed all 50 tombstones and character finalizations. The CI database is not a full Supabase stack: no real Supabase Auth/RLS JWT session or Storage HTTP DELETE was exercised. No production database, Storage object, deployment, or live secret was touched.
+**Verification update (2026-11-27):** GitHub Actions run 79 passed all 220 backend Python unit/source-contract tests and ran migrations 0005, 0012, 0017, 0018, and 0019 plus both 0019 SQL harnesses against a disposable PostgreSQL 16 instance with minimal Supabase-compatible auth/storage schemas. The transaction harness rolled back successfully; it verified foreign-owner denial, zero-media finalization, retry recovery with a fresh token, and cleanup completion. The two-session claim race confirmed exactly one claimant, lease recovery, stale-token fencing, and finalization. A separate two-sided advisory-lock race confirmed that either a committed external reference blocks cleanup or a committed cleanup intent blocks a later reference write. A 50-event/five-worker stress harness also claimed 50 unique events and completed all 50 tombstones and character finalizations. The CI database is not a full Supabase stack: no real Supabase Auth/RLS JWT session or Storage service was exercised. A local HTTP test server did exercise the actual httpx DELETE client path, including a lost response after simulated deletion followed by an idempotent 404 retry. No production database, Storage object, deployment, or live secret was touched.
 
 # PWA Studio — private media asset lifecycle contract
 
@@ -104,7 +104,7 @@ At this revision, authenticated private-image content proxy and short-lived sign
 - server-structured immutable object-key construction using an allowlisted resource kind and image extension;
 - allowlisting of the two private bucket names.
 
-These helpers do not query Supabase, upload/download bytes, or create signed URLs. A future service must still query each row using both the requested ID and the authenticated JWT subject before passing it to the guards. The helper's unit tests are authored in `backend/tests/test_media_access.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
+These helpers do not query Supabase, upload/download bytes, or create signed URLs. A future service must still query each row using both the requested ID and the authenticated JWT subject before passing it to the guards. The helper's unit tests are authored in `backend/tests/test_media_access.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
 
 ## 11. Owner-filtered metadata repository added (not a route)
 
@@ -112,13 +112,13 @@ These helpers do not query Supabase, upload/download bytes, or create signed URL
 
 The repository uses the existing server-side Supabase REST pattern and service-role credential; that credential is never returned or accepted from a caller. Table names are fixed in code, and the function accepts no bucket, object path, or signed URL from the client.
 
-At the time this repository primitive was introduced, no FastAPI route or Storage operation existed. The later authenticated read/sign routes are documented in sections 21–22. The returned metadata includes `storage_path` for trusted internal follow-up only; routes must not serialize it to the browser. The new mocked unit tests are in `backend/tests/test_media_repository.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
+At the time this repository primitive was introduced, no FastAPI route or Storage operation existed. The later authenticated read/sign routes are documented in sections 21–22. The returned metadata includes `storage_path` for trusted internal follow-up only; routes must not serialize it to the browser. The new mocked unit tests are in `backend/tests/test_media_repository.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
 
 ## 12. Pure lifecycle state machine added (not persistence)
 
 `backend/app/services/media_lifecycle.py` implements the allowed status transitions as pure domain logic. It makes only `ready` assets readable; pending, failed, and cleanup-pending assets remain unavailable. A ready asset must first enter `cleanup_pending` before it can become deleted. Deleted is terminal, and repeating the current status is idempotent.
 
-This does not persist state or coordinate Storage/Postgres. A future implementation must enforce transitions atomically (row lock or compare-and-swap), bind idempotency keys to the authenticated owner, verify object existence and metadata before `ready`, and keep cleanup retries safe. The 10 tests in `backend/tests/test_media_lifecycle.py` passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No migration, endpoint, worker, or Storage operation was added.
+This does not persist state or coordinate Storage/Postgres. A future implementation must enforce transitions atomically (row lock or compare-and-swap), bind idempotency keys to the authenticated owner, verify object existence and metadata before `ready`, and keep cleanup retries safe. The 10 tests in `backend/tests/test_media_lifecycle.py` passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No migration, endpoint, worker, or Storage operation was added.
 
 ## 13. Immutable replacement planner added (not persistence)
 
@@ -126,7 +126,7 @@ This does not persist state or coordinate Storage/Postgres. A future implementat
 
 A future implementation MUST perform the active-pointer switch and both status updates in one database transaction (with row locks or optimistic version checks). The new object must be uploaded under a fresh immutable key before that transaction. If upload or verification fails, the old asset remains ready. If the database transaction fails, the old asset remains the active pointer and the new object is an orphan eligible for owner-scoped cleanup. Cleanup must independently verify that no ready row references the old bucket/path before deletion.
 
-Seven tests are authored in `backend/tests/test_media_replacement.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No Storage call, database write, endpoint, migration, or worker was added.
+Seven tests are authored in `backend/tests/test_media_replacement.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No Storage call, database write, endpoint, migration, or worker was added.
 
 ## 14. Owner-scoped cleanup safety gate added (not a worker)
 
@@ -134,7 +134,7 @@ Seven tests are authored in `backend/tests/test_media_replacement.py`; they pass
 
 The `exact_object_is_referenced` value MUST come from a trusted server-side query over all relevant metadata rows, matching both bucket and exact immutable object key; it must never come from a request parameter or client assertion. The actual worker must re-check references immediately before Storage deletion and use a database lease/lock or equivalent fencing so concurrent replacement cannot race cleanup. After successful Storage deletion, it must persist the `deleted` tombstone idempotently. Storage failure leaves the row `cleanup_pending` for retry.
 
-Seven tests are authored in `backend/tests/test_media_cleanup.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). This is not a cleanup worker, Storage delete call, API route, or database transaction.
+Seven tests are authored in `backend/tests/test_media_cleanup.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). This is not a cleanup worker, Storage delete call, API route, or database transaction.
 
 ## 15. Concurrent mutation guard added (not database concurrency control)
 
@@ -150,13 +150,13 @@ This helper does NOT issue leases, increment counters, lock rows, persist idempo
 
 A lease timeout alone is not proof that an old worker stopped. Fencing is mandatory: every stale worker must be unable to commit even if it wakes after lease expiry. Storage deletion is an external side effect and cannot be rolled back with Postgres; use a durable cleanup job/outbox and idempotent retries, with the object already made unavailable before deletion.
 
-Seven tests are authored in `backend/tests/test_media_concurrency.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No lease table, migration, RPC, transaction, endpoint, worker, or Storage call was added.
+Seven tests are authored in `backend/tests/test_media_concurrency.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No lease table, migration, RPC, transaction, endpoint, worker, or Storage call was added.
 
 ## 16. Durable media outbox lifecycle model added (not persistence)
 
 `backend/app/services/media_outbox.py` defines the pure event lifecycle for future background work: `pending` → `claimed` → `delivered`, with retry back to `pending` or terminal `dead_letter`. Claims require a UUID token and bounded lease; acknowledgement/retry require the matching unexpired token. Expired claims can be recovered, and attempt limits prevent infinite retry loops. Event types are a closed allowlist (`media_cleanup_requested`, `media_upload_verify_requested`); payload design intentionally carries opaque IDs, not bytes, credentials, signed URLs, or client paths.
 
-Ten tests are authored in `backend/tests/test_media_outbox.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No outbox table, database RPC, scheduler, broker, worker, or Storage operation was added.
+Ten tests are authored in `backend/tests/test_media_outbox.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No outbox table, database RPC, scheduler, broker, worker, or Storage operation was added.
 
 ### Required durable implementation before activation
 
@@ -185,7 +185,7 @@ The helper does not write the asset row, insert the outbox event, upload bytes, 
 
 Also tightened cleanup path validation: a deletable object key must have exactly four segments, an allowlisted resource kind and extension, and canonical UUID resource/object segments. Tests were added for malformed keys and for the public metadata projection.
 
-Seven composition tests are authored in `backend/tests/test_media_workflow.py`; tests passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). This is still a planning boundary, not an active upload route or Storage integration.
+Seven composition tests are authored in `backend/tests/test_media_workflow.py`; tests passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). This is still a planning boundary, not an active upload route or Storage integration.
 
 ## 19. Character-reference replacement composition boundary
 
@@ -198,11 +198,11 @@ The result is a plan, not a mutation. The future persistence adapter must, in ON
 4. switch the character's active reference pointer;
 5. insert the unique cleanup outbox event.
 
-If any step fails, all database changes must roll back and the old ready reference remains active. Storage deletion happens later in a worker, after it rechecks exact bucket + object-path references. The cleanup event is not permission to delete immediately. The schema currently has no explicit canonical avatar/reference pointer column, so that column and its ownership FK must be designed before wiring this plan to a route. The seven replacement-workflow tests passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
+If any step fails, all database changes must roll back and the old ready reference remains active. Storage deletion happens later in a worker, after it rechecks exact bucket + object-path references. The cleanup event is not permission to delete immediately. The schema currently has no explicit canonical avatar/reference pointer column, so that column and its ownership FK must be designed before wiring this plan to a route. The seven replacement-workflow tests passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
 
 ### Replacement-boundary hardening follow-up
 
-The replacement composition guard now canonicalizes the authenticated owner, character ID, and current-reference asset ID before comparison. Both old and new media rows must explicitly reference the same character; an absent `character_id` is no longer treated as acceptable for a character-reference replacement. This prevents a generic unattached media row from being promoted through the character replacement path. Three additional unit tests cover absent associations, canonical UUID spellings, and malformed current pointers. These tests passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
+The replacement composition guard now canonicalizes the authenticated owner, character ID, and current-reference asset ID before comparison. Both old and new media rows must explicitly reference the same character; an absent `character_id` is no longer treated as acceptable for a character-reference replacement. This prevents a generic unattached media row from being promoted through the character replacement path. Three additional unit tests cover absent associations, canonical UUID spellings, and malformed current pointers. These tests passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
 
 ## 19. Private read authorization planner added (not a read endpoint)
 
@@ -210,7 +210,7 @@ The replacement composition guard now canonicalizes the authenticated owner, cha
 
 The owner-filtered repository now selects the stored `bucket` and `status` fields needed by this gate. The path and bucket remain server-internal and must never be serialized to the browser. This planner itself does not issue a signed URL or download bytes. The authenticated read/sign routes added later call `get_owned_media_asset` using the verified JWT subject, apply this gate, and only then perform the private Storage operation. Signed URLs must not be logged or persisted.
 
-Six unit tests are authored in `backend/tests/test_media_read.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No Storage request, route, migration, or production change was made.
+Six unit tests are authored in `backend/tests/test_media_read.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No Storage request, route, migration, or production change was made.
 
 ## 20. Short-lived signed URL service added
 
@@ -218,7 +218,7 @@ Six unit tests are authored in `backend/tests/test_media_read.py`; they passed i
 
 At the time this service was added, no FastAPI route invoked it. The authenticated `/access` route described in section 21 now performs that sequence. Never persist, cache, log, or publish the signed URL. Treat it as a bearer capability until expiry.
 
-Four mocked unit tests are authored in `backend/tests/test_media_signed_url.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No live Storage request was made, no endpoint was added, and no production setting or database was changed.
+Four mocked unit tests are authored in `backend/tests/test_media_signed_url.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). No live Storage request was made, no endpoint was added, and no production setting or database was changed.
 
 ## 21. Authenticated private media access route added
 
@@ -252,7 +252,7 @@ The new draft migration 0018_private_media_upload_reservation.sql adds lifecycle
 
 **Important activation boundary:** the route does not mark an asset ready. No durable outbox worker, Storage verification worker, or object_uploaded-to-ready RPC is implemented yet. Until that worker is built and verified, newly uploaded files are not readable through the private read routes. If the Storage upload succeeds but the status RPC fails, the durable pending outbox record is the recovery hook, but automatic recovery is not yet active. If an upload fails after reservation, the pending row/event remains for future reconciliation; do not retry with a different idempotency key blindly.
 
-The draft migration is not applied to any database. The upload route has not been deployed or called against live Supabase. Tests are authored in backend/tests/test_media_storage_upload.py and backend/tests/test_character_reference_upload_route.py, and passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). The browser's former direct Storage write path remains disabled; frontend integration is not yet connected.
+The draft migration is not applied to any database. The upload route has not been deployed or called against live Supabase. Tests are authored in backend/tests/test_media_storage_upload.py and backend/tests/test_character_reference_upload_route.py, and passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). The browser's former direct Storage write path remains disabled; frontend integration is not yet connected.
 
 ## 25. Durable verification worker added (not deployed)
 
@@ -264,7 +264,7 @@ On failure, `pwa_retry_media_upload_verification` fences the retry by token, app
 
 The three worker RPCs are included in draft migration 0018 and granted only to service_role. Browser roles have no direct outbox access. The upload endpoint's CORS allowlist now includes the required Idempotency-Key header.
 
-**Not activated:** migration 0018 remains unapplied; no Render worker service or deployment command has been configured; no live database or Storage calls have been made. Tests are authored in `backend/tests/test_media_verification_worker.py`, and passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15). Database concurrency, rollback, lease-expiry, and worker crash-window tests remain mandatory in a disposable Supabase project before activation.
+**Not activated:** migration 0018 remains unapplied; no Render worker service or deployment command has been configured; no live database or Storage calls have been made. Tests are authored in `backend/tests/test_media_verification_worker.py`, and passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15). Database concurrency, rollback, lease-expiry, and worker crash-window tests remain mandatory in a disposable Supabase project before activation.
 
 ## 26. Disposable database transaction harness and worker runbook
 
@@ -293,7 +293,7 @@ The worker now independently validates every claimed payload before using any fi
 
 The feature branch now includes `backend/app/services/character_media_cleanup.py`, a pure planner for a character's complete media set. It requires a verified owner, an owner-matched character, and server-loaded media rows whose owner and `character_id` all match. It rejects duplicate asset IDs, duplicate immutable object keys, unsupported lifecycle states, and any exact `(bucket, storage_path)` reference supplied by the trusted reference scan. It returns one owner-scoped cleanup plan per object; it does not mutate rows or delete the character.
 
-A narrow Storage primitive now exists in `backend/app/services/media_storage_delete.py`. It accepts only a `MediaCleanupPlan`, revalidates the owner, private bucket, and immutable four-segment object key before making a server-authenticated DELETE request, and treats Storage 404 (already absent) as idempotent success. It never accepts a caller-supplied URL, bucket, or path. Unit tests are authored in `backend/tests/test_character_media_cleanup.py` and `backend/tests/test_media_storage_delete.py`; they passed in the 219-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
+A narrow Storage primitive now exists in `backend/app/services/media_storage_delete.py`. It accepts only a `MediaCleanupPlan`, revalidates the owner, private bucket, and immutable four-segment object key before making a server-authenticated DELETE request, and treats Storage 404 (already absent) as idempotent success. It never accepts a caller-supplied URL, bucket, or path. Unit tests are authored in `backend/tests/test_character_media_cleanup.py` and `backend/tests/test_media_storage_delete.py`; they passed in the 220-test backend unittest run on 2026-11-27 (GitHub Actions run 15).
 
 ### Required persistence sequence before enabling character deletion
 
@@ -327,7 +327,7 @@ The cleanup worker rechecks references at claim time, while advisory-lock trigge
 
 The current request RPC supports character-linked image objects in the private `studio-media` bucket with the canonical `<owner>/characters/<character>/<object>.(png|jpg|webp)` key. Other media types and arbitrary legacy paths fail closed rather than being deleted.
 
-**Not implemented:** no public/API character-delete endpoint is enabled; no UI delete action is wired to these RPCs. The service-role repository exposes reservation/finalization methods for future route integration. Migration 0019 remains a draft. Its Python unit tests and PostgreSQL 16 disposable transaction/two-session race harnesses passed in GitHub Actions run 73 using a minimal Supabase-compatible schema. The actual Supabase Storage DELETE/404/timeout behavior and full two-account Supabase RLS integration matrix remain unverified and are required before activation. The new two-sided advisory-lock race harness also passed, proving that external reference writes and cleanup intent serialize in both orderings on PostgreSQL 16.
+**Not implemented:** no public/API character-delete endpoint is enabled; no UI delete action is wired to these RPCs. The service-role repository exposes reservation/finalization methods for future route integration. Migration 0019 remains a draft. Its Python unit tests and PostgreSQL 16 disposable transaction/two-session race harnesses passed in GitHub Actions run 79 using a minimal Supabase-compatible schema. The actual Supabase Storage DELETE/404/timeout behavior and full two-account Supabase RLS integration matrix remain unverified and are required before activation. The new two-sided advisory-lock race harness also passed, proving that external reference writes and cleanup intent serialize in both orderings on PostgreSQL 16.
 
 The cleanup migration also sets `characters.cleanup_operation_id` / `cleanup_requested_at` as a deletion-intent fence. A database trigger serializes new `media_assets` inserts or character reassociations against the character row lock: an upload reservation that commits first is included in cleanup; a cleanup request that commits first blocks later reservations. Browser roles lose INSERT/UPDATE/DELETE privileges on `media_assets` and DELETE on `characters`; lifecycle writes remain server-managed. This is necessary because the earlier owner-wide RLS policy alone would otherwise allow direct browser writes to forge ready metadata or bypass the cleanup outbox.
 
