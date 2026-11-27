@@ -11,7 +11,7 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 assert.equal(manifest.schemaVersion, 1);
 assert.equal(manifest.identityKey, identity.identityKey);
 assert.equal(manifest.visualIdentityManifest, "assets/characters/katty/identity.v1.json");
-assert.equal(manifest.status, "design_and_expression_tokens_only");
+assert.equal(manifest.status, "static_expression_artwork_available");
 assert.equal(manifest.runtimeStatus, "not_connected");
 assert.equal(manifest.expressions.length, 8);
 const ids = manifest.expressions.map(item => item.id);
@@ -27,9 +27,9 @@ for (const phrase of ["green eyes", "freckles", "curly fire-red hair", "canonica
 }
 assert.equal(manifest.motionPrinciples.status, "guidance_only_no_animation_assets");
 assert.ok(manifest.futureRigRequirements.includes("use the same expression IDs for 2D and 3D mappings"));
-assert.ok(!("asset" in manifest.expressions[0]));
 
-for (const expression of expressions.expressions) {
+
+for (const expression of manifest.expressions) {
   assert.equal(expression.assetType, "static_svg");
   assert.equal(expression.assetStatus, "approved_static_artwork");
   assert.ok(expression.asset.startsWith("assets/characters/katty/expressions/"));
