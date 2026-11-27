@@ -327,3 +327,6 @@ body.light .profile-avatar-option{background:#fff;color:#28223c;border-color:#e4
 
 /* Katty expression preview controls */
 .katty-expression-picker{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}.katty-expression-picker[hidden]{display:none}.katty-expression-title{width:100%;margin:0 0 2px;color:#cfc2e8;font-size:12px}.katty-expression-option{border:1px solid #51436b;background:#211a32;color:#eee5ff;border-radius:999px;padding:7px 11px;font-size:12px;cursor:pointer}.katty-expression-option.is-selected{border-color:#c49aff;background:#49316d;box-shadow:0 0 0 1px #c49aff inset}.katty-expression-option:focus-visible{outline:2px solid #f4d58b;outline-offset:2px}
+
+/* Katty in AI Companion */
+.katty-companion-orb{overflow:hidden;display:grid;place-items:center;background:linear-gradient(145deg,#382653,#171326);border:1px solid rgba(211,178,255,.35)}.katty-companion-orb img{width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit}.katty-companion-orb:focus-within{outline:2px solid #d6b7ff;outline-offset:3px}
