@@ -107,6 +107,35 @@ WITH checks AS (
         AND with_check ILIKE '%foldername%'
     ),
     'INSERT policy restricts bucket studio-media and first folder to auth.uid()'
+,
+  SELECT
+    'studio-media UPDATE policy is owner-folder scoped',
+    EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname='storage' AND tablename='objects'
+        AND cmd='UPDATE'
+        AND roles @> ARRAY['authenticated']::name[]
+        AND qual ILIKE '%studio-media%'
+        AND qual ILIKE '%auth.uid()%'
+        AND qual ILIKE '%foldername%'
+        AND with_check ILIKE '%studio-media%'
+        AND with_check ILIKE '%auth.uid()%'
+        AND with_check ILIKE '%foldername%'
+    ),
+    'authenticated UPDATE policy restricts USING and WITH CHECK to owner folder'
+  UNION ALL
+  SELECT
+    'studio-media DELETE policy is owner-folder scoped',
+    EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname='storage' AND tablename='objects'
+        AND cmd='DELETE'
+        AND roles @> ARRAY['authenticated']::name[]
+        AND qual ILIKE '%studio-media%'
+        AND qual ILIKE '%auth.uid()%'
+        AND qual ILIKE '%foldername%'
+    ),
+    'authenticated DELETE policy restricts bucket studio-media and first folder to auth.uid()'
 )
 SELECT
   CASE WHEN passed THEN 'PASS' ELSE 'FAIL' END AS result,
