@@ -128,5 +128,6 @@ jobs:
         run: |
           node --check profile-avatar-catalog.js
           node --check app.js
+          node tests/test_profile_avatar_catalog.js
           python tests/test_character_library_account_fencing.py
           python tests/test_profile_avatar_picker_contract.py
