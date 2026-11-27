@@ -4,7 +4,6 @@ Run with: python -m app.workers.media_cleanup_worker
 No HTTP listener or public endpoint is exposed.
 """
 import logging
-import re
 import signal
 import time
 from uuid import UUID, uuid4
@@ -62,8 +61,12 @@ def _validate_claim(event: dict) -> None:
         raise ValueError("Media cleanup claim contains an invalid attempt counter.")
     if not isinstance(maximum, int) or maximum != 8:
         raise ValueError("Media cleanup claim contains an invalid retry limit.")
-    if not re.fullmatch(r"[0-9a-f-]{36}", event["claim_token"]):
-        raise ValueError("Media cleanup claim token is malformed.")
+    try:
+        claim_token = str(UUID(event["claim_token"]))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValueError("Media cleanup claim token is malformed.") from exc
+    if claim_token != event["claim_token"]:
+        raise ValueError("Media cleanup claim token is not canonical.")
 
 
 def process_one(settings) -> bool:
