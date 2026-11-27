@@ -127,6 +127,9 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("const historyLoadVersion = ++assistantHistoryLoadVersion;", app)
         self.assertIn("const historyContextIsCurrent = () => historyLoadVersion === assistantHistoryLoadVersion", app)
         self.assertIn("if (historyLoadVersion === assistantHistoryLoadVersion) assistantHistoryBusy = false;", app)
+        self.assertIn("if (!historyContextIsCurrent()) return;", app)
+        self.assertIn(".eq(\"id\", conversation.id).eq(\"user_id\", requestUserId)", app)
+        self.assertIn("if (historyContextIsCurrent()) setAssistantStatus(\"Не удалось открыть диалог:", app)
         load_start = app.index("const loadAssistantMessages =")
         load_end = app.index("\n  };", load_start) + 5
         load_handler = app[load_start:load_end]
