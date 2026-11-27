@@ -37,7 +37,7 @@ The repository currently has no package manifest, 3D model assets, glTF/GLB file
 
 The implementation requirements are documented in `PROFILE_AVATAR_3D_ARCHITECTURE.md`. Real 3D support remains blocked on approved model assets, a reviewed renderer/runtime, mobile performance testing, and accessibility/fallback behavior. No provider or paid generation is selected.
 
-The shared catalogue and Katty identity manifest are covered by `tests/test_profile_avatar_catalog.js`, which validates the catalogue, all local SVG files, identity-key consistency, required canonical traits, and the explicit absence of a 3D model. The latest CI run for these additions is still in progress; do not mark this verification as passed until the workflow completes.
+The shared catalogue and Katty identity manifest are covered by `tests/test_profile_avatar_catalog.js`, which validates the catalogue, all local SVG files, identity-key consistency, required canonical traits, and the explicit absence of a 3D model. Verified successfully on commit `30fb52f1e5e4ae018171a8bfeff364a5d0517a5f`: [GitHub Actions run 46032404766](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/46032404766). All three jobs passed, including the new Node.js runtime checks for the canonical Katty manifest and every local SVG asset. Later commits in this branch updated documentation only.
 
 ## Explicit non-goals
 
