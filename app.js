@@ -58,6 +58,8 @@
       activeMessagePartnerId = null;
       assistantUserId = nextUserId;
       authContextVersion += 1;
+      conversationRenderVersion += 1;
+      conversationMessagesRequestVersion += 1;
       communitySearchRequestVersion += 1;
       communityProfileRequestVersion += 1;
       // Invalidate every in-flight Companion operation at the account boundary.
