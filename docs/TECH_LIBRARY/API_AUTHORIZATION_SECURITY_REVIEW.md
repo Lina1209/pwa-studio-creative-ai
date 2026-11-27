@@ -74,6 +74,18 @@ The direct-message send flow creates or retrieves a thread using the canonical p
 
 **Required regression test:** create two unrelated threads for users A/B and C/D; verify a request as A cannot update C/D's thread metadata even if a foreign thread UUID is supplied or a stale/malicious thread object is passed into the service. Confirm the normal participant send path still updates its own thread.
 
+### AUTHZ-08 — Validate externally supplied record identifiers before service-role filters (medium)
+
+Review of moderation and notification services found that several UUID-shaped path/body identifiers were interpolated into PostgREST filters without canonical UUID parsing. Participant/administrator checks still guard the route, and owner filters were present where applicable, but malformed filter values could reach the privileged REST client and produce inconsistent upstream errors.
+
+**Changes on 2026-11-27:** moderation now canonicalizes report IDs before review, suspension target user IDs before creation, and suspension IDs before revocation. Notification read now canonicalizes notification IDs before its owner-scoped UPDATE. Invalid values return HTTP 422 before any service-role request. The notification UPDATE continues to include both notification ID and authenticated user ID.
+
+**Required regression tests:** invalid/non-UUID values must cause HTTP 422 and make zero outbound requests; valid IDs must retain the authenticated owner filter or admin-only route boundary. Verify a user cannot mark another user's notification as read by supplying its UUID.
+
+### AUTHZ-09 — Service-role moderation writes remain privileged route operations (review note)
+
+Report listing/review and suspension listing/revocation use the service-role client. Their protection depends on the FastAPI `require_admin` dependency on every `/api/admin/*` route. Keep this boundary explicit and add route-level tests asserting unauthenticated and ordinary authenticated users receive 401/403, while the configured administrator can proceed. Do not expose these service functions through a user-facing route without adding an explicit authorization predicate to the database operation itself.
+
 ## Required isolated test matrix
 
 | Test | Attempt | Expected |
