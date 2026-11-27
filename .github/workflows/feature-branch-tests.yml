@@ -81,7 +81,8 @@ jobs:
             supabase/migrations/0018_private_media_upload_reservation.sql \
             supabase/migrations/0019_private_media_cleanup_outbox.sql \
             supabase/migrations/0020_character_local_identity.sql \
-            supabase/migrations/0021_profile_avatar_catalog.sql; do
+            supabase/migrations/0021_profile_avatar_catalog.sql \
+            supabase/migrations/0022_ai_budget_reservations.sql; do
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
@@ -90,6 +91,11 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0021_profile_avatar_catalog.sql
+      - name: Verify AI budget reservation RPCs and ledger
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+            -f supabase/tests/0022_ai_budget_reservations.sql
       - name: Run character idempotency transaction harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
