@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "identityKey": "katty-katarina",
+  "canonicalName": "Катти (Катарина)",
+  "role": "Помощница PWA Studio",
+  "status": "2d_canonical_approved_for_feature_branch; 3d_not_created",
+  "scope": "visual_identity_reference_only",
+  "profileAvatarCatalogId": "katty-assistant",
+  "identityLock": {
+    "presentation": "stylized cartoon girl",
+    "face": "мягкое дружелюбное лицо, крупные выразительные зелёные глаза, маленький аккуратный нос, добрая открытая улыбка",
+    "skin": "светлая тёплая кожа с заметными естественными веснушками на переносице и щеках",
+    "hair": "длинные густые кудрявые огненно-рыжие волосы; объёмные отдельные локоны, тёплые медно-рыжие и золотистые блики",
+    "eyes": "большие ярко-зелёные глаза; зелёный цвет обязателен во всех версиях",
+    "expression": "добрая, живая, уверенная, выразительная улыбка; эмоции могут меняться без изменения базовых черт лица",
+    "silhouette": "дружелюбный мультяшный образ; пропорции лица, причёски и головы остаются узнаваемыми между ракурсами"
+  },
+  "wardrobeLock": {
+    "primary": "фиолетовое худи",
+    "shirt": "чёрная футболка с читаемым логотипом PWA Studio",
+    "accessories": [
+      "крупные наушники",
+      "небольшие звёздные украшения"
+    ],
+    "preserveBranding": true
+  },
+  "palette": {
+    "hair": [
+      "#FFB04A",
+      "#D94C24",
+      "#E45C2E"
+    ],
+    "eyes": [
+      "#45A66D"
+    ],
+    "hoodie": [
+      "#8F67DF",
+      "#9A6DE8"
+    ],
+    "shirt": [
+      "#171624"
+    ],
+    "skin": [
+      "#FFD1AD"
+    ],
+    "accents": [
+      "#FFE58B"
+    ]
+  },
+  "continuityRules": [
+    "Не менять рыжий цвет и кудрявую структуру волос.",
+    "Не менять зелёный цвет глаз.",
+    "Сохранять веснушки, добрую улыбку и дружелюбное выражение.",
+    "Сохранять фиолетовое худи, чёрную футболку с логотипом PWA Studio и наушники.",
+    "Звёздные детали могут менять положение, но остаются частью фирменного образа.",
+    "Не превращать Катти в реалистичного человека, другого персонажа или животное."
+  ],
+  "allowedVariations": {
+    "emotions": [
+      "радость",
+      "восторг",
+      "доброжелательное внимание",
+      "сосредоточенность",
+      "лёгкое удивление",
+      "сочувствие"
+    ],
+    "poses": [
+      "нейтральная",
+      "приветствие рукой",
+      "объясняет",
+      "слушает",
+      "держит творческий инструмент"
+    ],
+    "camera": [
+      "анфас",
+      "три четверти",
+      "профиль",
+      "средний план",
+      "полный рост"
+    ],
+    "wardrobe": "Только дополнительные тематические элементы поверх базового фирменного комплекта; базовый образ должен оставаться узнаваемым."
+  },
+  "representations": {
+    "2d": {
+      "catalogId": "katty-assistant",
+      "asset": "assets/avatars/2d/katty-assistant.svg",
+      "status": "implemented"
+    },
+    "3d": {
+      "asset": null,
+      "status": "not_created",
+      "requirements": [
+        "сохранить идентичность лица и пропорций",
+        "кудрявые рыжие волосы с объёмными локонами",
+        "зелёные глаза и веснушки",
+        "фиолетовое худи и чёрная футболка PWA Studio",
+        "наушники и звёздные украшения",
+        "совместимый 2D fallback"
+      ]
+    }
+  },
+  "usageBoundaries": {
+    "profileAvatar": "optional; never force onto a user",
+    "characterLibrary": "future character passport may reference this identity key after explicit creator choice",
+    "miniMovieStudio": "project must store immutable snapshot; master identity edits must not silently alter approved projects",
+    "generation": "no provider, generation call, or external asset is authorized by this manifest"
+  }
+}
