@@ -1251,8 +1251,15 @@ const movieHistoryStyle = document.createElement("style");
     return data.id;
   };
   $("#assistantNewChat")?.addEventListener("click", async () => {
-    try { await startAssistantConversation(); $("#assistantInput").focus(); }
-    catch (error) { setAssistantStatus("Не удалось создать диалог: " + error.message); }
+    const requestUserId = authSession?.user?.id || null;
+    const requestVersion = authContextVersion;
+    const contextIsCurrent = () => (authSession?.user?.id || null) === requestUserId && authContextVersion === requestVersion;
+    try {
+      const conversationId = await startAssistantConversation();
+      if (conversationId && contextIsCurrent()) $("#assistantInput").focus();
+    } catch (error) {
+      if (contextIsCurrent()) setAssistantStatus("Не удалось создать диалог: " + error.message);
+    }
   });
   $("#assistantForm").addEventListener("submit", async event => {
     event.preventDefault();
