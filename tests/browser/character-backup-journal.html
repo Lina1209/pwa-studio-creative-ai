@@ -53,6 +53,8 @@
     });
     await test("duplicate journal creation is rejected", async () => {
       await rejects(() => api.create(journalInput), "duplicate journal unexpectedly accepted");
+    });    await test("malformed passport fingerprint is rejected", async () => {
+      await rejects(() => api.create({...journalInput, localCharacterId: uuid(), passportFingerprint: "not-a-sha256"}), "malformed passport fingerprint unexpectedly accepted");
     });
     await test("simultaneous duplicate creation has one winner", async () => {
       const racingCharacter = uuid();
@@ -77,6 +79,7 @@
         ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "verified", cloudAssetId: cloudAsset
       }), "local_only to verified unexpectedly accepted");
       await api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state:"reserved"});
+      await rejects(() => api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state:"object_uploaded"}), "reserved to object_uploaded skipped upload_pending");
       await rejects(() => api.transition({
         ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "verified", cloudAssetId: cloudAsset
       }), "reserved to verified unexpectedly accepted");
