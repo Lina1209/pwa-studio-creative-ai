@@ -9,6 +9,8 @@
 - Nine curated, locally hosted SVG avatars cover portrait, fantasy, animal, robot, cartoon, space, nature, and abstract categories.
 - The optional `katty-assistant` portrait is included in the shared local manifest and backend allowlist. Its `katty-katarina` identity key is reserved as a continuity hint for a future matching Character Library passport; it does not create a database link or replace a user's own avatar.
 - The catalogue metadata is centralized in `profile-avatar-catalog.js`, loaded before `app.js`, and exposes immutable entries plus safe local asset-path lookup. This is a local static manifest, not a user-editable or server-trusted source.
+- Katty has a canonical visual identity passport in `assets/characters/katty/identity.v1.json` and a human-readable contract in `KATTY_VISUAL_IDENTITY_PASSPORT.md`. The profile catalogue points to it via the stable `katty-katarina` key. The 2D SVG now includes cheek freckles and PWA shirt branding. The 3D representation is explicitly marked `not_created`.
+- Character Library integration rules now explain how a future card/project can explicitly reference the identity key and freeze the resolved manifest version/traits in project snapshots; no automatic profile-to-character link is created.
 - Responsive picker in the account cabinet supports category filtering, preview, apply, and reset to the standard avatar.
 - Guests persist selection under a dedicated browser-local key. Signed-in users persist through the authenticated `PATCH /api/community/profile` endpoint.
 - Guest state is not sent to the profile API or reused as an authenticated user's selection.
@@ -34,6 +36,8 @@ This is feature-branch CI evidence only. It is not a production deployment or li
 The repository currently has no package manifest, 3D model assets, glTF/GLB files, or identified 3D preview runtime. The 3D picker tab therefore remains disabled and explicitly marked as planned. A 2D image with lighting/shadows must never be represented as a real 3D model.
 
 The implementation requirements are documented in `PROFILE_AVATAR_3D_ARCHITECTURE.md`. Real 3D support remains blocked on approved model assets, a reviewed renderer/runtime, mobile performance testing, and accessibility/fallback behavior. No provider or paid generation is selected.
+
+The shared catalogue and Katty identity manifest are covered by `tests/test_profile_avatar_catalog.js`, which validates the catalogue, all local SVG files, identity-key consistency, required canonical traits, and the explicit absence of a 3D model. The latest CI run for these additions is still in progress; do not mark this verification as passed until the workflow completes.
 
 ## Explicit non-goals
 
