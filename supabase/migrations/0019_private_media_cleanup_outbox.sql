@@ -112,6 +112,35 @@ alter table public.characters
   add column if not exists cleanup_requested_at timestamptz;
 
 
+-- The deletion-intent fence itself is server-managed; a browser must not
+-- set or clear it to deny service or bypass an in-progress cleanup.
+create or replace function public.pwa_guard_character_cleanup_intent()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $
+begin
+  if auth.role() = 'authenticated' then
+    if tg_op = 'INSERT' then
+      if new.cleanup_operation_id is not null or new.cleanup_requested_at is not null then
+        raise exception 'character cleanup intent is server-managed' using errcode='42501';
+      end if;
+    elsif new.cleanup_operation_id is distinct from old.cleanup_operation_id
+       or new.cleanup_requested_at is distinct from old.cleanup_requested_at then
+      raise exception 'character cleanup intent is server-managed' using errcode='42501';
+    end if;
+  end if;
+  return new;
+end;
+$;
+
+drop trigger if exists characters_guard_cleanup_intent on public.characters;
+create trigger characters_guard_cleanup_intent
+before insert or update of cleanup_operation_id, cleanup_requested_at
+on public.characters
+for each row execute function public.pwa_guard_character_cleanup_intent();
+
 -- Serialize media-row creation/association with character deletion intent.
 -- Upload reservation RPCs insert through this trigger, so a reservation that
 -- wins the character row lock is visible to cleanup; cleanup that wins first
