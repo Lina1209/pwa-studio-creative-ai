@@ -125,3 +125,11 @@ This does not persist state or coordinate Storage/Postgres. A future implementat
 A future implementation MUST perform the active-pointer switch and both status updates in one database transaction (with row locks or optimistic version checks). The new object must be uploaded under a fresh immutable key before that transaction. If upload or verification fails, the old asset remains ready. If the database transaction fails, the old asset remains the active pointer and the new object is an orphan eligible for owner-scoped cleanup. Cleanup must independently verify that no ready row references the old bucket/path before deletion.
 
 Seven tests are authored in `backend/tests/test_media_replacement.py`; they have not been executed. No Storage call, database write, endpoint, migration, or worker was added.
+
+## 14. Owner-scoped cleanup safety gate added (not a worker)
+
+`backend/app/services/media_cleanup.py` adds a pure cleanup planner. It accepts only a server-loaded asset record and the result of a server-side exact-reference check. It requires the authenticated owner to match the row, status to be `cleanup_pending`, a bucket from the private allowlist, and a well-formed object key whose first segment is that owner. It refuses deletion while the exact bucket/object key is still referenced.
+
+The `exact_object_is_referenced` value MUST come from a trusted server-side query over all relevant metadata rows, matching both bucket and exact immutable object key; it must never come from a request parameter or client assertion. The actual worker must re-check references immediately before Storage deletion and use a database lease/lock or equivalent fencing so concurrent replacement cannot race cleanup. After successful Storage deletion, it must persist the `deleted` tombstone idempotently. Storage failure leaves the row `cleanup_pending` for retry.
+
+Seven tests are authored in `backend/tests/test_media_cleanup.py`; they have not been executed. This is not a cleanup worker, Storage delete call, API route, or database transaction.
