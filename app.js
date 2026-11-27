@@ -390,7 +390,9 @@ const movieHistoryStyle = document.createElement("style");
       }catch(error){const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Не удалось сохранить гостевой выбор в браузере.";}
       return;
     }
-    const version=authContextVersion;button.disabled=true;
+    const version=authContextVersion;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;
+    button.disabled=true;
     const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Сохраняем аватар…";
     try{
       const saved=await apiRequest("/api/community/profile",{method:"PATCH",body:JSON.stringify({avatar_catalog_id:profileAvatarDraftId,avatar_representation:"2d"})});
@@ -399,7 +401,11 @@ const movieHistoryStyle = document.createElement("style");
       if(feedback)feedback.textContent="✓ Аватар сохранён и будет использоваться в карточке сообщества.";
       const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarSavedId);
       if($("#profileAvatarPreview"))$("#profileAvatarPreview").alt="Текущий аватар профиля: "+(item?.name||"Стандартный");
-    }catch(error){if(version===authContextVersion&&authSession?.user?.id===userId){if(feedback)feedback.textContent="Не удалось сохранить аватар: "+error.message;button.disabled=false;}}
+    }catch(error){if(contextIsCurrent()&&feedback)feedback.textContent="Не удалось сохранить аватар: "+error.message;}
+    finally{
+      // Only the account that started this save may update the shared picker button.
+      if(contextIsCurrent())button.disabled=profileAvatarDraftId===profileAvatarSavedId;
+    }
   });
   const loadCommunityProfile = async () => {
     const version=authContextVersion,userId=authSession?.user?.id;
