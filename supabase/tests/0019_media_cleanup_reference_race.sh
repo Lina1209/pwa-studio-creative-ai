@@ -76,7 +76,7 @@ select set_config('pwa.race.owner', :'owner_id', false);
 select set_config('pwa.race.target', :'target_id', false);
 select set_config('pwa.race.operation', :'operation_id', false);
 select set_config('pwa.race.asset', :'asset_id', false);
-do $
+do $$
 declare v_rejected boolean := false;
 begin
   begin
