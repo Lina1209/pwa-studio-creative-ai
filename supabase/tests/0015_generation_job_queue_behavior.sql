@@ -44,6 +44,12 @@ begin
     (v_asset_a, v_owner_a, 'owner-a-result.png', 'image/png', v_owner_a::text || '/test/owner-a-result.png'),
     (v_asset_b, v_owner_b, 'owner-b-result.png', 'image/png', v_owner_b::text || '/test/owner-b-result.png');
 
+  -- Keep unrelated jobs out of the claim pool so each assertion targets
+  -- exactly the job named in that test section.
+  update public.generation_jobs
+  set next_attempt_at = now() + interval '1 day'
+  where id <> v_job_success;
+
   -- A job cannot be completed using another user's media asset.
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
@@ -64,6 +70,7 @@ begin
   if v_ok then raise exception 'TEST FAILED: stale completion was accepted'; end if;
 
   -- Retryable failure transitions to retry_wait and inserts an outbox event.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_retry;
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
   where j.id = v_job_retry;
@@ -83,6 +90,7 @@ begin
   if v_status <> 'cancelled' then raise exception 'TEST FAILED: queued cancellation failed'; end if;
 
   -- Active cancellation is fenced by the current lease token.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_cancel;
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
   where j.id = v_job_cancel;
@@ -94,6 +102,7 @@ begin
   if v_status <> 'cancelled' then raise exception 'TEST FAILED: cancellation terminal state missing'; end if;
 
   -- Expired worker lease is recovered to retry_wait when attempts remain.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_recovery;
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
   where j.id = v_job_recovery;
