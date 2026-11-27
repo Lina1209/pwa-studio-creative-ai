@@ -99,7 +99,6 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn(".katty-mode-badge", css)
         self.assertIn('badge.textContent = "Режим: " + selected.label', app)
 
-if __name__ == "__main__":
     def test_katty_assistant_modes_are_separate_from_expression_states(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         self.assertIn("const KATTY_ASSISTANT_MODES", app)
@@ -110,5 +109,15 @@ if __name__ == "__main__":
         self.assertIn("image.dataset.assistantMode = mode", app)
         self.assertIn("setKattyAssistantMode(kattyModeForMessage(value))", app)
         self.assertIn("setKattyAssistantExpression(kattyContextState(value))", app)
+
+
+    def test_katty_mode_resets_when_conversation_changes(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        for function_name in ("clearAssistantMessages", "loadAssistantMessages", "startAssistantConversation"):
+            start = app.index("const " + function_name)
+            end = app.index("\n  };", start) + 5
+            self.assertIn('setKattyAssistantMode("companion")', app[start:end])
+
+if __name__ == "__main__":
 
     unittest.main()
