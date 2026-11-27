@@ -350,3 +350,11 @@ The test is committed on the feature branch. Workflow run #90 passed the existin
 Repository-level tests now cover the service-role RPC adapter's exact PostgREST function path, service-role headers, bounded timeout, and sanitized handling of transport and HTTP failures. They assert that upstream response text and service-role credentials are not included in raised error messages.
 
 The preceding CI run #94 completed successfully with 222 backend unit tests and the disposable PostgreSQL integration job. That run included the invalid-claim-before-Storage test. The three new repository-adapter tests in the latest commit still require a subsequent CI run; no pass is claimed for them yet.
+
+## 32. RPC target allowlist and latest CI verification
+
+The cleanup repository adapter now allowlists exactly the five implemented cleanup RPC names before issuing a PostgREST request and rejects non-object payloads locally. This prevents an unexpected function target or malformed payload from reaching the service-role RPC boundary. Unit tests verify both rejections happen before any network call.
+
+GitHub Actions workflow run #102 completed successfully on 2026-11-27: **227 backend unit tests passed**, including the RPC target allowlist and payload-shape tests. The disposable PostgreSQL 16 integration job also passed: the transaction harness rolled back successfully, the two-worker claim/lease/fencing race passed, both orderings of the reference-vs-cleanup race passed, and 50 cleanup events were processed by five concurrent workers. [Workflow run #102](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/46003903431).
+
+These results are limited to Python unit tests and disposable PostgreSQL 16 with a minimal Supabase-compatible bootstrap. They do not establish full Supabase Auth/JWT/RLS behavior or real Supabase Storage DELETE/404/timeout behavior. Migration 0019 remains a feature-branch draft; no production SQL was applied, no Render worker was created or deployed, and character deletion/Storage cleanup remain inactive.
