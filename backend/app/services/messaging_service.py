@@ -89,8 +89,13 @@ def send_message(settings: Settings, sender_id: str, recipient_id: str, body: st
     if not rows:
         raise HTTPException(status_code=502, detail="Message could not be sent.")
     message = rows[0]
+    # Service-role requests bypass RLS: retain participant scope on the
+    # thread update itself, not only on the earlier thread lookup/create.
     _request(settings, "PATCH", "conversation_threads",
-        params={"id": f"eq.{thread['id']}"},
+        params={
+            "id": f"eq.{thread['id']}",
+            "or": f"(user_a_id.eq.{sender_id},user_b_id.eq.{sender_id})",
+        },
         payload={"last_message_at": message["created_at"], "updated_at": message["created_at"]})
     return message
 
