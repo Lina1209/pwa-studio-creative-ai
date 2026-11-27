@@ -24,6 +24,15 @@ declare
   v_asset uuid := gen_random_uuid();
   v_busy_character uuid := gen_random_uuid();
   v_busy_asset uuid := gen_random_uuid();
+  v_retry_character uuid := gen_random_uuid();
+  v_retry_asset uuid := gen_random_uuid();
+  v_retry_object uuid := gen_random_uuid();
+  v_retry_operation uuid := gen_random_uuid();
+  v_retry_token_a uuid := gen_random_uuid();
+  v_retry_token_b uuid := gen_random_uuid();
+  v_retry_claim_a jsonb;
+  v_retry_claim_b jsonb;
+  v_empty_character uuid := gen_random_uuid();
   v_unindexed_character uuid := gen_random_uuid();
   v_referenced_character uuid := gen_random_uuid();
   v_referencing_asset uuid := gen_random_uuid();
@@ -268,7 +277,63 @@ begin
   if v_character_exists then
     raise exception 'character row still exists after finalization';
   end if;
+
+  -- An empty character can be finalized without inventing a media event.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_empty_character,v_owner,'Empty cleanup fixture','{}'::jsonb);
+  v_request := public.pwa_request_character_media_cleanup(
+    v_owner,v_empty_character,gen_random_uuid()
+  );
+  if v_request->>'status' <> 'ready_to_finalize'
+     or (v_request->>'assets_enqueued')::integer <> 0 then
+    raise exception 'empty character cleanup should be immediately finalizable';
+  end if;
+  v_final := public.pwa_finalize_character_media_cleanup(v_owner,v_empty_character);
+  if v_final->>'status' <> 'deleted' then
+    raise exception 'empty character finalization failed';
+  end if;
+
+  -- Exercise a current worker's transient retry, due-time recovery, and a
+  -- second successful claim with a fresh fencing token.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_retry_character,v_owner,'Retry cleanup fixture','{}'::jsonb);
+  v_path := v_owner::text || '/characters/' || v_retry_character::text || '/' ||
+    v_retry_object::text || '.png';
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_retry_asset,v_owner,v_retry_character,'retry.png','image/png','studio-media','ready',
+    v_path,'{}'::jsonb,1,v_retry_operation,128,repeat('f',64),8,8
+  );
+  perform public.pwa_request_character_media_cleanup(
+    v_owner,v_retry_character,v_retry_operation
+  );
+  v_retry_claim_a := public.pwa_claim_media_cleanup(v_retry_token_a,120);
+  if v_retry_claim_a is null or v_retry_claim_a->>'asset_id' <> v_retry_asset::text then
+    raise exception 'retry fixture was not claimed';
+  end if;
+  perform public.pwa_retry_media_cleanup(
+    v_owner,v_retry_asset,(v_retry_claim_a->>'event_id')::uuid,v_retry_token_a,1
+  );
+  update public.media_asset_outbox
+  set available_at=clock_timestamp()
+  where id=(v_retry_claim_a->>'event_id')::uuid and status='pending';
+  v_retry_claim_b := public.pwa_claim_media_cleanup(v_retry_token_b,120);
+  if v_retry_claim_b is null
+     or v_retry_claim_b->>'asset_id' <> v_retry_asset::text
+     or v_retry_claim_b->>'claim_token' <> v_retry_token_b::text
+     or (v_retry_claim_b->>'attempts')::integer <> 2 then
+    raise exception 'retry event was not reclaimed with a fresh token';
+  end if;
+  perform public.pwa_complete_media_cleanup(
+    v_owner,v_retry_asset,(v_retry_claim_b->>'event_id')::uuid,v_retry_token_b
+  );
+  v_final := public.pwa_finalize_character_media_cleanup(v_owner,v_retry_character);
+  if v_final->>'status' <> 'deleted' then
+    raise exception 'retried character cleanup finalization failed';
+  end if;
 end;
-$$;
+$;
 
 rollback;
