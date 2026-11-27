@@ -86,6 +86,20 @@ Review of moderation and notification services found that several UUID-shaped pa
 
 Report listing/review and suspension listing/revocation use the service-role client. Their protection depends on the FastAPI `require_admin` dependency on every `/api/admin/*` route. Keep this boundary explicit and add route-level tests asserting unauthenticated and ordinary authenticated users receive 401/403, while the configured administrator can proceed. Do not expose these service functions through a user-facing route without adding an explicit authorization predicate to the database operation itself.
 
+### AUTHZ-10 — Report target UUID validation and report attribution (medium)
+
+Report creation correctly derives `reporter_user_id` from the verified `StudioUser`, rather than accepting it from the request body. However, the optional `reported_user_id` was previously passed through to a service-role INSERT without UUID canonicalization.
+
+**Change on 2026-11-27:** when a target account is supplied, the service now canonicalizes it as a UUID before issuing the INSERT; malformed values return HTTP 422 without contacting Supabase. Reporter attribution remains server-derived. This does not prove that a target account exists or that the report is actionable; the database foreign key remains the final existence constraint.
+
+**Required regression tests:** omitted target remains valid; valid target is stored; malformed target returns 422 and causes zero outbound requests; a client cannot override the reporter identity.
+
+### AUTHZ-11 — Moderation state changes and audit append are not atomic (high; unresolved)
+
+Source review found that report review, suspension creation, and suspension revocation each perform the privileged state mutation and append to `admin_audit_log` as separate REST requests. If the state mutation succeeds but the audit insert fails (network interruption, privilege/configuration error, or database outage), the action can take effect without its corresponding audit event. Conversely, the API can return an error after the state change has already committed. The migration makes the audit table append-only, but append-only permissions do not make a multi-request workflow transactional.
+
+**Required remediation before relying on the audit trail:** move each state change and its audit insert into a single database transaction, preferably narrowly scoped SECURITY DEFINER RPCs with fixed `search_path`, explicit argument validation, and EXECUTE granted only to `service_role`; call the RPC once from the backend. Add fault-injection tests proving both the state change and audit event roll back together. Do not claim the audit trail is complete until this is implemented and tested. No transaction/RPC change was made in this pass.
+
 ## Required isolated test matrix
 
 | Test | Attempt | Expected |
