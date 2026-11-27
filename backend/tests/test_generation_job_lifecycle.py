@@ -59,12 +59,18 @@ class GenerationJobLifecycleTests(unittest.TestCase):
 
     def test_non_retryable_failure_is_terminal(self):
         running = claim_job(new_job(), NOW)
-        failed = mark_failed(running, NOW, "policy_rejected", False)
+        failed = mark_failed(
+            running, NOW, "policy_rejected", False, 30,
+            ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+        )
         self.assertEqual(failed.status, JobStatus.FAILED)
 
     def test_attempt_limit_prevents_further_retry(self):
         running = claim_job(new_job(max_attempts=1), NOW)
-        failed = mark_failed(running, NOW, "provider_error", True)
+        failed = mark_failed(
+            running, NOW, "provider_rejected", True, 30,
+            ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+        )
         self.assertEqual(failed.status, JobStatus.FAILED)
 
     def test_cancel_queued_job_immediately(self):
