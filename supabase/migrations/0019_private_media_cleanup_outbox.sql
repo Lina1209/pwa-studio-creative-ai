@@ -198,7 +198,13 @@ begin
       where id=v_asset.id and owner_id=p_owner_id and character_id=p_character_id;
       continue;
     end if;
-    if v_asset.status not in ('pending_upload','object_uploaded','ready','upload_failed','cleanup_pending') then
+    if v_asset.status in ('pending_upload','object_uploaded') then
+      -- The upload request or verification worker may still be producing the
+      -- object. Do not race a Storage DELETE against an in-flight upload.
+      raise exception 'character has an upload in progress; retry deletion after it finishes'
+        using errcode='23514';
+    end if;
+    if v_asset.status not in ('ready','upload_failed','cleanup_pending') then
       raise exception 'character media has an unsupported lifecycle state' using errcode='23514';
     end if;
     if v_asset.bucket <> 'studio-media'
