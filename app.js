@@ -1499,12 +1499,13 @@ const movieHistoryStyle = document.createElement("style");
     };
   };
   const scheduleMovieCloudSync = () => {
-    const userId = authSession?.user?.id;
+    const userId = authSession?.user?.id, requestVersion = authContextVersion;
     if (!userId || !supabaseClient) return;
+    const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === userId;
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
       // Never let a queued sync from one account run after switching to guest or another user.
-      if (authSession?.user?.id !== userId) return;
+      if (!contextIsCurrent()) return;
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
@@ -1513,25 +1514,32 @@ const movieHistoryStyle = document.createElement("style");
           const { error: deleteError } = await supabaseClient.from("projects").delete()
             .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
           if (deleteError) throw deleteError;
+          if (!contextIsCurrent()) return;
           writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
         }
+        if (!contextIsCurrent()) return;
         const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
         const rows = localProjects.map(project => movieToCloudRow(project, userId));
         // Persist any UUID normalization before sending rows to Supabase.
+        if (!contextIsCurrent()) return;
         localStorage.setItem("pwa-studio-movie-projects:" + userId, JSON.stringify(localProjects));
-        if (authSession?.user?.id !== userId) return;
+        if (!contextIsCurrent()) return;
         if (rows.length) {
           const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
           if (error) throw error;
+          if (!contextIsCurrent()) return;
         }
+        if (!contextIsCurrent()) return;
         const feedback = $("#movieFeedback");
         if (feedback) feedback.textContent = deletedIds.length
           ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
           : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        if (contextIsCurrent()) {
+          const feedback = $("#movieFeedback");
+          if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        }
       } finally {
         movieCloudState.syncing = false;
         if (movieCloudState.pending) {
