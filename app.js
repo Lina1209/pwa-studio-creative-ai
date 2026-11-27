@@ -692,11 +692,13 @@ const movieHistoryStyle = document.createElement("style");
     panel.hidden=false;
     const version=authContextVersion,userId=authSession.user.id;
     const list=$("#conversationList");
-    if(list)list.replaceChildren(adminNode("div","admin-empty","Загружаем диалоги…"));
+    const requestVersion=list?(Number(list.dataset.requestVersion)||0)+1:1;
+    if(list){list.dataset.requestVersion=String(requestVersion);list.replaceChildren(adminNode("div","admin-empty","Загружаем диалоги…"));}
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&(!list||Number(list.dataset.requestVersion)===requestVersion);
     loadBlockedUsers();
     try{
       const threads=await apiRequest("/api/conversations");
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       renderConversations(Array.isArray(threads)?threads:[]);
       if(activeMessageThreadId && !(threads||[]).some(item=>item.id===activeMessageThreadId)){
         activeMessageThreadId=null;activeMessagePartnerId=null;
@@ -706,7 +708,7 @@ const movieHistoryStyle = document.createElement("style");
       }
       messagesFeedback(threads.length ? "Диалоги загружены. Переписка доступна только её участникам." : "Создайте первый диалог.");
     }catch(error){
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       messagesFeedback("Не удалось загрузить диалоги: "+error.message);
       if(list)list.replaceChildren(adminNode("div","admin-empty","Список диалогов временно недоступен."));
     }
@@ -940,24 +942,26 @@ const movieHistoryStyle = document.createElement("style");
   const adminFeedback = message => { const el = $("#adminFeedback"); if (el) el.textContent = message; };
   const adminNode = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
   const formatAdminDate = value => { if (!value) return "Без срока"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU"); };
+  let adminWorkspaceRequestVersion = 0;
   const loadAdminWorkspace = async () => {
     const reportsList = $("#adminReportsList"), suspensionsList = $("#adminSuspensionsList");
     if (!authSession?.user || !$("#adminPanel") || $("#adminPanel").hidden) return;
+    const version = authContextVersion, userId = authSession.user.id, requestVersion = ++adminWorkspaceRequestVersion;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId && requestVersion === adminWorkspaceRequestVersion;
     adminFeedback("Обновляем данные модерации…");
     if (reportsList) reportsList.replaceChildren(adminNode("div","admin-empty","Загружаем жалобы…"));
     if (suspensionsList) suspensionsList.replaceChildren(adminNode("div","admin-empty","Загружаем ограничения…"));
-    const version = authContextVersion;
     try {
       const [reports, suspensions] = await Promise.all([
         apiRequest("/api/admin/reports"),
         apiRequest("/api/admin/suspensions")
       ]);
-      if (version !== authContextVersion || !authSession?.user) return;
+      if (!contextIsCurrent()) return;
       renderAdminReports(Array.isArray(reports) ? reports : []);
       renderAdminSuspensions(Array.isArray(suspensions) ? suspensions : []);
       adminFeedback("Данные обновлены. Действия модерации записываются в журнал.");
     } catch (error) {
-      if (version !== authContextVersion) return;
+      if (!contextIsCurrent()) return;
       adminFeedback("Не удалось загрузить данные: " + error.message);
       if (reportsList) reportsList.replaceChildren(adminNode("div","admin-empty","Список жалоб временно недоступен."));
       if (suspensionsList) suspensionsList.replaceChildren(adminNode("div","admin-empty","Список ограничений временно недоступен."));
