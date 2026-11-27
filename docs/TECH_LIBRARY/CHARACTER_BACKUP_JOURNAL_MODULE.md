@@ -32,7 +32,7 @@ Owner and character IDs must be UUIDs; guest scope is intentionally unsupported.
 
 ## State safety
 
-The state machine is restrictive: verified, conflict, and terminal_error are terminal. Conflicts cannot be silently retried. A verified transition requires a persisted cloud asset ID. The journal does not itself prove that remote content is valid: a future coordinator must independently perform authenticated status polling, download/read-back, and byte/hash/size/MIME/dimension comparisons before requesting the verified transition.
+The state machine is restrictive: only `object_uploaded` may transition to `verified`; a reserved or merely pending upload cannot be marked verified. Verified, conflict, and terminal_error are terminal. Conflicts cannot be silently retried. A verified transition requires a persisted cloud asset ID. The journal does not itself prove that remote content is valid: a future coordinator must independently perform authenticated status polling, download/read-back, and byte/hash/size/MIME/dimension comparisons before requesting the verified transition.
 
 ## Verification still required
 
@@ -53,6 +53,6 @@ Do not enable an importer, add network orchestration, or remove local source dat
 - Runner: `tests/browser/run_character_backup_journal.py`.
 - CI job: `character-backup-journal-browser-tests` in `.github/workflows/feature-branch-tests.yml`.
 - The runner serves the repository over loopback HTTP and launches a fresh Chromium context. IndexedDB data is isolated to that temporary browser context.
-- Current cases: create/read-back, duplicate creation rejection, owner-scoped get/list, immutable cloud character mapping, illegal state rejection, valid lifecycle through verified, completion criteria, and terminal verified state.
+- Current cases: create/read-back, duplicate creation rejection, concurrent duplicate creation (exactly one winner), owner-scoped get/list, immutable cloud character mapping, rejection of premature verified transitions, valid lifecycle through verified, completion criteria, and terminal verified state.
 
 This suite does not yet simulate process termination mid-transaction, browser restart with a persistent profile, quota exhaustion, simultaneous tabs, account-switch UI behavior, or network recovery. Those remain required before importer integration.
