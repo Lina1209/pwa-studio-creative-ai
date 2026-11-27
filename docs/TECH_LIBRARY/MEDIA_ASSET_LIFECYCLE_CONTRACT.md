@@ -304,7 +304,7 @@ A narrow Storage primitive now exists in `backend/app/services/media_storage_del
 7. Finalize each asset tombstone and acknowledge its outbox event atomically, fenced by the current claim token. Only after every associated asset is terminal and absent/reconciled may a separate owner-scoped transaction delete the character.
 8. If any step fails, keep the character and cleanup-pending tombstones; never cascade-delete metadata before the private objects are reconciled.
 
-**Not implemented yet:** there is no character-delete route, no atomic cleanup-reservation/finalization RPC, no cleanup event claim RPC, and no cleanup worker. Migration 0018 permits the cleanup event type but current claim RPC processes verification events only. The new planner and Storage primitive are foundations, not a working delete feature. Character deletion and cloud cleanup remain disabled until the persistence sequence and disposable multi-session tests exist.
+**Checkpoint note:** this section described the state before migration 0019. The atomic cleanup RPCs and worker are now drafted in section 28. There is still no public character-delete route, no deployed worker, and no executed disposable integration test; deletion remains inactive.
 
 ## 28. Durable character cleanup worker (feature-branch draft)
 
