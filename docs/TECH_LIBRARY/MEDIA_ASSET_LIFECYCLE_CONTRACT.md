@@ -263,3 +263,24 @@ On failure, `pwa_retry_media_upload_verification` fences the retry by token, app
 The three worker RPCs are included in draft migration 0018 and granted only to service_role. Browser roles have no direct outbox access. The upload endpoint's CORS allowlist now includes the required Idempotency-Key header.
 
 **Not activated:** migration 0018 remains unapplied; no Render worker service or deployment command has been configured; no live database or Storage calls have been made. Tests are authored in `backend/tests/test_media_verification_worker.py`, but have not been run. Database concurrency, rollback, lease-expiry, and worker crash-window tests remain mandatory in a disposable Supabase project before activation.
+
+## 26. Disposable database transaction harness and worker runbook
+
+A psql integration harness now exists at `supabase/tests/0018_media_upload_verification_transaction.sql`. It requires only an existing disposable test user and a character owned by that user. It creates all media/event identifiers inside a transaction and rolls everything back. It checks exact reservation idempotency, idempotency-key collision, cross-owner rejection, stale-token rejection, byte-fingerprint mismatch, atomic rollback when outbox acknowledgement is fault-injected, successful ready+delivered completion, no downgrade after a late upload-status call, expired-lease recovery with a fresh token, retry exhaustion, SECURITY DEFINER/fixed search_path, and service_role-only grants.
+
+Run it only after migrations 0005, 0012, 0017, and draft 0018 have been applied to a disposable Supabase project, using psql variables `owner_id` and `character_id`. It does not call Storage and does not replace the separate real-object verification tests. It has not been executed.
+
+### Background worker deployment settings (runbook only; no service created)
+
+For a future dedicated Render Background Worker, use the same repository and the reviewed feature branch only after approval:
+- Root directory: `backend`
+- Build command: `pip install -r requirements.txt`
+- Start command: `python -m app.workers.media_outbox_worker`
+- Required secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- Do not expose an HTTP port or public endpoint.
+- Do not copy the frontend or add a browser-visible service-role key.
+- Keep the worker on a private/background service type; do not repurpose the existing API Web Service.
+- Configure a single instance initially; the database claim RPC supports multiple workers, but concurrency must first pass the disposable multi-session test plan.
+- Add monitoring for process restarts, queue age, dead-letter count, and repeated verification failures without logging object paths, image bytes, signed URLs, or credentials.
+
+The worker is not configured in Render, and no deployment or secret changes have been made. Before activation, verify the exact Render environment-variable names against the backend Settings model and complete the disposable database + private Storage test matrix.
