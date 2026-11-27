@@ -95,3 +95,15 @@ For one character-reference event in a disposable database and private Storage b
 10. Verify that a completed ready asset is not downgraded by the upload request's later object_uploaded RPC response path.
 
 **Not executed:** these are required integration/fault-injection cases. The authored Python worker/repository tests mock all external systems and do not substitute for this database/Storage matrix.
+
+## 9. Executable two-session claim race harness
+
+A disposable-only shell harness is available at `supabase/tests/0018_media_upload_claim_race.sh`. It opens two independent `psql` connections concurrently against one reserved verification event and asserts that exactly one receives the event while the other receives SQL NULL. It then expires the winning lease deterministically, has a second token reclaim the same event, and verifies that the old worker cannot complete or schedule a retry. Finally it checks that the event remains claimed by the fresh token and that the attempt counter is exactly two.
+
+Required environment:
+- `DISPOSABLE_DATABASE_URL`: connection string for a disposable PostgreSQL/Supabase database with migrations 0005, 0012, 0017, and 0018 applied.
+- `PWA_TEST_OWNER_ID`: existing auth user UUID.
+- `PWA_TEST_CHARACTER_ID`: character UUID owned by that user.
+- Local `psql` and Python 3.
+
+Run with `bash supabase/tests/0018_media_upload_claim_race.sh`. The script refuses to run if any other media verification event is pending or claimed, creates one fixture, runs the race, and deletes its own fixture on exit. It does not call Storage. Use a disposable database only; never production. This harness has been authored but not executed.
