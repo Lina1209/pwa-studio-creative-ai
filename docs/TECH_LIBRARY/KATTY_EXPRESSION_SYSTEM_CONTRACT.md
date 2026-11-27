@@ -70,3 +70,8 @@
 - Не подключены генераторы, внешние провайдеры, платные API и новые зависимости.
 - Не изменяются профильные аватары, пользовательские данные или Character Library.
 - Спецификация находится в feature-ветке и не активирована в production.
+
+
+## Static artwork assets
+
+Eight approved static SVG expression portraits now exist under `assets/characters/katty/expressions/` and are mapped from the expression IDs in `expressions.v1.json`. Each portrait preserves the canonical red hair, green eyes, freckles, face tone, PWA Studio shirt, hoodie, headphones, and star accents while varying brows and mouth. These are independent static illustrations: they are not a layered rig, do not animate, and are not yet connected to application runtime. The canonical profile avatar remains the neutral fallback.
