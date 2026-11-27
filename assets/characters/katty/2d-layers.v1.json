@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "identityKey": "katty-katarina",
+  "status": "layer_architecture_specification_only",
+  "runtimeStatus": "not_connected",
+  "baseArtwork": "assets/avatars/2d/katty-assistant.svg",
+  "expressionManifest": "assets/characters/katty/expressions.v1.json",
+  "layerCoordinateSpace": "normalized-0-to-1",
+  "layers": [
+    {"id":"background","label":"Фон","zIndex":0,"motion":"none","required":false,"status":"conceptual"},
+    {"id":"back-hair","label":"Задние локоны","zIndex":10,"motion":"subtle-secondary-sway","required":true,"status":"conceptual"},
+    {"id":"neck-and-body","label":"Шея и корпус","zIndex":20,"motion":"body-follow","required":true,"status":"conceptual"},
+    {"id":"hoodie","label":"Фиолетовое худи","zIndex":30,"motion":"soft-cloth-follow","required":true,"status":"conceptual"},
+    {"id":"shirt-brand","label":"Футболка и логотип PWA Studio","zIndex":35,"motion":"none","required":true,"status":"conceptual"},
+    {"id":"headphones","label":"Наушники","zIndex":40,"motion":"head-follow","required":true,"status":"conceptual"},
+    {"id":"face-base","label":"Основа лица","zIndex":50,"motion":"head-follow","required":true,"status":"conceptual"},
+    {"id":"freckles","label":"Веснушки","zIndex":55,"motion":"face-follow","required":true,"status":"conceptual"},
+    {"id":"eyes-white","label":"Белки глаз","zIndex":60,"motion":"gaze-follow","required":true,"status":"conceptual"},
+    {"id":"irises-and-pupils","label":"Радужки и зрачки","zIndex":65,"motion":"gaze-follow","required":true,"status":"conceptual"},
+    {"id":"eyelids","label":"Веки","zIndex":70,"motion":"blink","required":true,"status":"conceptual"},
+    {"id":"eyebrows","label":"Брови","zIndex":75,"motion":"expression","required":true,"status":"conceptual"},
+    {"id":"nose","label":"Нос","zIndex":80,"motion":"face-follow","required":true,"status":"conceptual"},
+    {"id":"mouth","label":"Рот и формы губ","zIndex":85,"motion":"expression-visemes","required":true,"status":"conceptual"},
+    {"id":"front-hair","label":"Передние локоны","zIndex":90,"motion":"subtle-secondary-sway","required":true,"status":"conceptual"},
+    {"id":"star-accents","label":"Звёздные детали","zIndex":100,"motion":"optional-low-amplitude","required":true,"status":"conceptual"}
+  ],
+  "motionSafety": {
+    "defaultMotion": "static",
+    "reducedMotion": "static",
+    "pauseWhenDocumentHidden": true,
+    "pauseWhenOffscreen": true,
+    "noContinuousIdleLoop": true,
+    "maxHairSwayAmplitude": "subtle",
+    "preserveFaceLandmarks": true
+  },
+  "expressionBindings": {
+    "source": "assets/characters/katty/expressions.v1.json",
+    "status": "planned",
+    "requiredControls": ["eyebrows", "eyelids", "irises-and-pupils", "mouth", "freckles"]
+  },
+  "fallback": {
+    "asset": "assets/avatars/2d/katty-assistant.svg",
+    "mode": "static",
+    "required": true
+  },
+  "implementationBoundary": "This file is an authoring contract only. It does not claim that the SVG is already split into layers or animated."
+}
