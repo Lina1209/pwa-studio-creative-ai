@@ -68,7 +68,7 @@ def health():
 
 
 @app.get(f"{settings.api_prefix}/media/{{asset_id}}/content")
-def private_media_content(asset_id: str, response: Response,
+def private_media_content(asset_id: str,
                           user: StudioUser = Depends(get_current_user)):
     """Proxy one private image; re-check ownership and readiness on every request."""
     asset = get_owned_media_asset(settings, asset_id, user.user_id)
