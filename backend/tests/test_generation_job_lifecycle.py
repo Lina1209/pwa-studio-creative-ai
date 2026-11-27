@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from app.services.generation_job_lifecycle import (
-    GenerationJob, JobStatus, claim_job, mark_failed, mark_succeeded,
+    GenerationJob, JobStatus, ProviderSubmissionOutcome, claim_job, mark_failed, mark_succeeded,
     recover_expired_lease, request_cancel,
 )
 
@@ -28,9 +28,26 @@ class GenerationJobLifecycleTests(unittest.TestCase):
 
     def test_retryable_failure_schedules_bounded_retry(self):
         running = claim_job(new_job(), NOW)
-        waiting = mark_failed(running, NOW, "provider_timeout", True, 45)
+        waiting = mark_failed(
+            running, NOW, "provider_rejected_temporarily", True, 45,
+            ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+        )
         self.assertEqual(waiting.status, JobStatus.RETRY_WAIT)
         self.assertEqual(waiting.next_attempt_at, NOW + timedelta(seconds=45))
+
+    def test_ambiguous_provider_timeout_does_not_retry(self):
+        running = claim_job(new_job(), NOW)
+        unresolved = mark_failed(running, NOW, "provider_timeout", True, 45)
+        self.assertEqual(unresolved.status, JobStatus.FAILED)
+        self.assertIsNone(unresolved.next_attempt_at)
+
+    def test_definitely_unsubmitted_attempt_can_retry(self):
+        running = claim_job(new_job(), NOW)
+        waiting = mark_failed(
+            running, NOW, "connection_failed_before_send", True, 15,
+            ProviderSubmissionOutcome.DEFINITELY_NOT_SUBMITTED,
+        )
+        self.assertEqual(waiting.status, JobStatus.RETRY_WAIT)
 
     def test_non_retryable_failure_is_terminal(self):
         running = claim_job(new_job(), NOW)
