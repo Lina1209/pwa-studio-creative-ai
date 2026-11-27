@@ -98,12 +98,44 @@ begin
   end if;
 
   if not has_function_privilege('service_role',
-       'public.pwa_review_user_report(uuid,uuid,text,text)', 'EXECUTE') then
-    raise exception 'service_role cannot execute report review RPC';
+       'public.pwa_review_user_report(uuid,uuid,text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.pwa_create_user_suspension(uuid,uuid,text,text,timestamp with time zone)', 'EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.pwa_revoke_user_suspension(uuid,uuid)', 'EXECUTE') then
+    raise exception 'service_role is missing EXECUTE on one or more moderation RPCs';
   end if;
   if has_function_privilege('authenticated',
-       'public.pwa_review_user_report(uuid,uuid,text,text)', 'EXECUTE') then
-    raise exception 'authenticated unexpectedly has report review RPC execution';
+       'public.pwa_review_user_report(uuid,uuid,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.pwa_create_user_suspension(uuid,uuid,text,text,timestamp with time zone)', 'EXECUTE')
+     or has_function_privilege('authenticated',
+       'public.pwa_revoke_user_suspension(uuid,uuid)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.pwa_review_user_report(uuid,uuid,text,text)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.pwa_create_user_suspension(uuid,uuid,text,text,timestamp with time zone)', 'EXECUTE')
+     or has_function_privilege('anon',
+       'public.pwa_revoke_user_suspension(uuid,uuid)', 'EXECUTE') then
+    raise exception 'anon/authenticated unexpectedly has EXECUTE on a moderation RPC';
+  end if;
+  if not exists (
+    select 1 from pg_proc p
+    where p.oid = 'public.pwa_review_user_report(uuid,uuid,text,text)'::regprocedure
+      and p.prosecdef
+      and p.proconfig @> array['search_path=pg_catalog, public']
+  ) or not exists (
+    select 1 from pg_proc p
+    where p.oid = 'public.pwa_create_user_suspension(uuid,uuid,text,text,timestamp with time zone)'::regprocedure
+      and p.prosecdef
+      and p.proconfig @> array['search_path=pg_catalog, public']
+  ) or not exists (
+    select 1 from pg_proc p
+    where p.oid = 'public.pwa_revoke_user_suspension(uuid,uuid)'::regprocedure
+      and p.prosecdef
+      and p.proconfig @> array['search_path=pg_catalog, public']
+  ) then
+    raise exception 'A moderation RPC is missing SECURITY DEFINER or the fixed search_path';
   end if;
 end;
 $$;
