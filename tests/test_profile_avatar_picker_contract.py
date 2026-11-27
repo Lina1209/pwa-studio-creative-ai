@@ -163,6 +163,16 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("activeAssistantConversationId === requestConversationId", handler)
         self.assertIn("if (contextIsCurrent()) input.focus();", handler)
 
+    def test_ai_companion_new_chat_action_is_account_fenced(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index('$("#assistantNewChat")?.addEventListener("click"')
+        end = app.index("\n  });", start) + 6
+        handler = app[start:end]
+        self.assertIn("const requestUserId = authSession?.user?.id || null;", handler)
+        self.assertIn("const requestVersion = authContextVersion;", handler)
+        self.assertIn("if (contextIsCurrent()) setAssistantStatus", handler)
+        self.assertIn("if (conversationId && contextIsCurrent())", handler)
+
 
 if __name__ == "__main__":
     unittest.main()
