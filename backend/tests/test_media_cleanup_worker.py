@@ -28,6 +28,26 @@ class MediaCleanupWorkerTests(unittest.TestCase):
     def test_accepts_valid_server_claim(self):
         _validate_claim(claim())
 
+    def test_rejects_noncanonical_or_ambiguous_object_keys(self):
+        bad_paths = [
+            f"/{PATH}",
+            PATH.replace("/", "//", 1),
+            PATH.replace("/", "\\\\", 1),
+            PATH + "?download=1",
+            PATH + "#fragment",
+            PATH.replace(f"/{OBJECT}.png", f"/%2e%2e/{OBJECT}.png"),
+            PATH.replace(f"/{OBJECT}.png", f"/{OBJECT}.png/extra"),
+            PATH.replace(f"/{OBJECT}.png", f"/{OBJECT}.svg"),
+        ]
+        for bad_path in bad_paths:
+            with self.subTest(path=bad_path), self.assertRaises(ValueError):
+                _validate_claim(claim(storage_path=bad_path))
+
+    def test_rejects_non_object_claim_before_field_access(self):
+        for value in (None, [], "claim", 42):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                _validate_claim(value)
+
     def test_rejects_invalid_ids_bucket_path_and_attempts(self):
         bad_claims = [
             claim(owner_id="not-a-uuid"),
