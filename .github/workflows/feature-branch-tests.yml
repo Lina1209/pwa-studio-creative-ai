@@ -86,3 +86,5 @@ jobs:
             -f supabase/tests/0019_media_cleanup_transaction.sql
       - name: Run two-worker claim race harness
         run: bash supabase/tests/0019_media_cleanup_claim_race.sh
+      - name: Run adversarial reference-write race harness
+        run: bash supabase/tests/0019_media_cleanup_reference_race.sh
