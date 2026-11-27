@@ -50,11 +50,34 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         self.assertEqual(body["asset"]["character_id"], CHARACTER)
         self.assertEqual(body["asset"]["status"], "object_uploaded")
         self.assertEqual(body["verification"], "pending")
+        self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
         self.assertNotIn("storage_path", body["asset"])
         self.assertNotIn("bucket", body["asset"])
         self.assertNotIn("owner_id", body["asset"])
         character_lookup.assert_called_once()
         reserve.assert_called_once()
+        upload.assert_called_once()
+        mark.assert_called_once()
+
+    @patch("app.main.mark_character_reference_object_uploaded")
+    @patch("app.main.upload_character_reference_object")
+    @patch("app.main.reserve_character_reference_upload")
+    @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
+    def test_same_idempotency_key_reuses_same_asset_and_does_not_reupload_completed_object(
+        self, lookup, reserve, upload, mark
+    ):
+        reserve.side_effect = [
+            {"id": "asset", "status": "pending_upload"},
+            {"id": "asset", "status": "object_uploaded"},
+        ]
+        mark.return_value = {"id": "asset", "status": "object_uploaded"}
+        headers = {"Idempotency-Key": "test-character-upload-repeat"}
+        files = {"file": ("portrait.png", png_bytes(), "image/png")}
+        first = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, files=files)
+        second = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, files=files)
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 202)
+        self.assertEqual(first.json()["asset"]["id"], second.json()["asset"]["id"])
         upload.assert_called_once()
         mark.assert_called_once()
 
