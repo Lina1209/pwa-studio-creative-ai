@@ -227,7 +227,7 @@ begin
   update public.media_asset_outbox
   set status='dead_letter', claim_token=null, claim_expires_at=null
   where event_type='media_upload_verify_requested'
-    and status='claimed' and claim_expires_at <= now()
+    and status='claimed' and claim_expires_at <= clock_timestamp()
     and attempts >= max_attempts;
 
   update public.media_assets a
@@ -242,8 +242,8 @@ begin
   from public.media_asset_outbox e
   where e.event_type='media_upload_verify_requested'
     and (
-      (e.status='pending' and e.available_at <= now() and e.attempts < e.max_attempts)
-      or (e.status='claimed' and e.claim_expires_at <= now() and e.attempts < e.max_attempts)
+      (e.status='pending' and e.available_at <= clock_timestamp() and e.attempts < e.max_attempts)
+      or (e.status='claimed' and e.claim_expires_at <= clock_timestamp() and e.attempts < e.max_attempts)
     )
   order by e.available_at, e.created_at
   for update skip locked
@@ -255,7 +255,7 @@ begin
 
   update public.media_asset_outbox
   set status='claimed', claim_token=p_claim_token,
-      claim_expires_at=now() + make_interval(secs => p_lease_seconds),
+      claim_expires_at=clock_timestamp() + make_interval(secs => p_lease_seconds),
       attempts=attempts+1
   where id=v_event.id
   returning * into v_event;
@@ -317,7 +317,7 @@ begin
   where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
     and event_type='media_upload_verify_requested'
     and status='claimed' and claim_token=p_claim_token
-    and claim_expires_at > now()
+    and claim_expires_at > clock_timestamp()
   for update;
   if not found then
     raise exception 'media verification claim is stale' using errcode='P0002';
@@ -367,7 +367,7 @@ begin
   select * into v_event from public.media_asset_outbox
   where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
     and status='claimed' and claim_token=p_claim_token
-    and claim_expires_at > now()
+    and claim_expires_at > clock_timestamp()
   for update;
   if not found then
     raise exception 'media verification claim is stale' using errcode='P0002';
@@ -384,7 +384,7 @@ begin
     returning * into v_asset;
   else
     update public.media_asset_outbox
-    set status='pending',available_at=now() + make_interval(secs => p_retry_delay_seconds),
+    set status='pending',available_at=clock_timestamp() + make_interval(secs => p_retry_delay_seconds),
         claim_token=null,claim_expires_at=null
     where id=p_event_id and claim_token=p_claim_token;
     select * into v_asset from public.media_assets
