@@ -18,6 +18,7 @@ from app.services.media_repository import get_owned_media_asset
 from app.services.media_read import plan_private_media_read
 from app.services.media_signed_url import create_private_media_signed_url, SIGNED_URL_TTL_SECONDS
 from app.services.media_access import media_asset_public_view
+from app.services.media_content import download_private_media_image
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -64,6 +65,45 @@ def health():
 
 
 
+
+
+@app.get(f"{settings.api_prefix}/media/{{asset_id}}/content")
+def private_media_content(asset_id: str, response: Response,
+                          user: StudioUser = Depends(get_current_user)):
+    """Proxy one private image; re-check ownership and readiness on every request."""
+    asset = get_owned_media_asset(settings, asset_id, user.user_id)
+    try:
+        plan = plan_private_media_read(
+            authenticated_owner_id=user.user_id,
+            asset=asset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Media resource not found.") from exc
+
+    image = download_private_media_image(
+        settings,
+        plan,
+        file_name=asset.get("file_name") or "image",
+        expected_mime_type=asset.get("file_type") or "",
+    )
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    response.headers["Content-Disposition"] = f'inline; filename="{image.safe_filename}"'
+    return Response(
+        content=image.content,
+        media_type=image.mime_type,
+        headers={
+            "Cache-Control": "private, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Cross-Origin-Resource-Policy": "same-origin",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Content-Disposition": f'inline; filename="{image.safe_filename}"',
+        },
+    )
 
 
 @app.get(f"{settings.api_prefix}/media/{{asset_id}}/access")
