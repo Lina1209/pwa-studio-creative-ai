@@ -89,6 +89,16 @@ class CharacterMediaCleanupTests(unittest.TestCase):
                 referenced_object_keys=set(),
             )
 
+    def test_rejects_in_flight_upload_states(self):
+        for status in ("pending_upload", "object_uploaded"):
+            with self.subTest(status=status), self.assertRaises(ValueError):
+                plan_character_media_cleanup(
+                    authenticated_owner_id=OWNER,
+                    character={"id": CHARACTER, "owner_id": OWNER},
+                    assets=[media(ASSET_A, status=status)],
+                    referenced_object_keys=set(),
+                )
+
     def test_empty_asset_set_is_valid(self):
         result = plan_character_media_cleanup(
             authenticated_owner_id=OWNER,
