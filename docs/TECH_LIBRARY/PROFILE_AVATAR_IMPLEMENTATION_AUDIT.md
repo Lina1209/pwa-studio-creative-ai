@@ -53,7 +53,7 @@ Therefore:
 
 - Additive migration `0021_profile_avatar_catalog.sql` introduces `avatar_catalog_id`, `avatar_representation`, and `avatar_updated_at`; it has not been applied to production.
 - Backend allowlist currently accepts eight published static 2D IDs, derives the owner from the authenticated session, and rejects unknown IDs or 3D selection until real 3D assets exist.
-- Eight locally hosted SVG portraits cover people, fantasy, animals, robots, cartoon, space, nature, and abstract categories.
+- Nine locally hosted SVG portraits cover people, fantasy, animals, robots, cartoon, space, nature, and abstract categories; the optional Katty mascot portrait is included without replacing a user's own selection.
 - The account cabinet has a responsive category filter, 2D collection, preview, apply, and reset-to-standard controls for both guests and signed-in users.
 - Guest selection is stored under a dedicated browser-local key and is never sent to the profile API or reused as an authenticated user's choice.
 - Community search cards and public profile cards render the selected catalog portrait; the account hero, top navigation, and sidebar use the same resolved avatar.
