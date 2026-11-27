@@ -1203,7 +1203,7 @@ const movieHistoryStyle = document.createElement("style");
           assistantConversationIntentVersion += 1;
           try {
             await loadAssistantMessages(conversation.id);
-            if (!historyContextIsCurrent()) return;
+            if (!historyContextIsCurrent() || activeAssistantConversationId !== conversation.id) return;
             renderAssistantHistory();
             setAssistantStatus("");
           } catch (error) {
