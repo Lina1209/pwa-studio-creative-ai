@@ -1223,11 +1223,15 @@ const movieHistoryStyle = document.createElement("style");
           const title = prompt("Название диалога:", conversation.title || "Новый диалог");
           if (title === null || !historyContextIsCurrent()) return;
           const cleanTitle = title.trim().slice(0, 100); if (!cleanTitle) return;
-          const { error: updateError } = await supabaseClient.from("assistant_conversations")
-            .update({ title: cleanTitle }).eq("id", conversation.id).eq("user_id", requestUserId);
-          if (!historyContextIsCurrent()) return;
-          if (updateError) setAssistantStatus("Не удалось переименовать: " + updateError.message);
-          else { setAssistantStatus("Название сохранено."); renderAssistantHistory(); }
+          try {
+            const { error: updateError } = await supabaseClient.from("assistant_conversations")
+              .update({ title: cleanTitle }).eq("id", conversation.id).eq("user_id", requestUserId);
+            if (!historyContextIsCurrent()) return;
+            if (updateError) setAssistantStatus("Не удалось переименовать: " + updateError.message);
+            else { setAssistantStatus("Название сохранено."); renderAssistantHistory(); }
+          } catch (error) {
+            if (historyContextIsCurrent()) setAssistantStatus("Не удалось переименовать: " + error.message);
+          }
         });
         row.append(open, rename); assistantHistoryList.appendChild(row);
       });
