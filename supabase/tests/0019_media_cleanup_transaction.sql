@@ -334,6 +334,6 @@ begin
     raise exception 'retried character cleanup finalization failed';
   end if;
 end;
-$;
+$$;
 
 rollback;
