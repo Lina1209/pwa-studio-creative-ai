@@ -338,3 +338,9 @@ A character deletion request also fails closed if any associated asset is `pendi
 A worker fault-injection test now models the critical distributed-transaction window: the first worker's Storage DELETE succeeds, but its database completion response is lost; its retry RPC is also unavailable, so the event remains leased until expiry. A second worker then claims the same event with a fresh fencing token, repeats the immutable-key DELETE (Storage's already-absent/404 response is idempotent success), and completes the tombstone with the fresh token.
 
 The test is authored in `backend/tests/test_media_cleanup_worker.py`. It has been committed on the feature branch; CI execution is pending. It is a mocked worker-orchestration test and does not simulate a real process kill, real Supabase Storage, or an actual lease timeout. The separate local HTTP test covers the real httpx client against a local mock server, but not Supabase itself. The intended guarantee remains at-least-once Storage deletion with fenced, exactly-once database acknowledgement.
+
+## 30. Worker claim validation before Storage access
+
+A worker unit test now supplies a server claim with an unsupported bucket and verifies that no Storage DELETE or database completion is attempted; the worker only attempts the fenced retry/dead-letter path. This complements the valid-claim path and confirms that claim validation is a hard boundary before the external side effect.
+
+The test is committed on the feature branch. Workflow run #90 passed the existing backend suite and disposable PostgreSQL cleanup integration harness, but it was triggered by the preceding documentation commit and therefore does **not** include this latest test commit. A fresh CI run is still required to verify the added test.
