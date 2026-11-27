@@ -21,6 +21,7 @@
   let activeMessagePartnerId = null;
   let conversationsCache = [];
   let conversationRenderVersion = 0;
+  let conversationMessagesRequestVersion = 0;
   let communitySearchRequestVersion = 0;
   let communityProfileRequestVersion = 0;
   const setAuthMessage = (message, isError = false) => {
@@ -709,13 +710,14 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   const loadConversationMessages = async (threadId) => {
-    const version=authContextVersion,userId=authSession?.user?.id;
+    const version=authContextVersion,userId=authSession?.user?.id,requestVersion=++conversationMessagesRequestVersion;
     if(!userId||!threadId)return;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessageThreadId===threadId&&requestVersion===conversationMessagesRequestVersion;
     const list=$("#directMessageList");
     if(list)list.replaceChildren(adminNode("div","admin-empty","Загружаем сообщения…"));
     try{
       const messages=await apiRequest("/api/conversations/"+encodeURIComponent(threadId)+"/messages");
-      if(version!==authContextVersion||authSession?.user?.id!==userId||activeMessageThreadId!==threadId)return;
+      if(!contextIsCurrent())return;
       list.replaceChildren();
       if(!messages.length)list.append(adminNode("div","admin-empty","Пока нет сообщений. Напишите первым."));
       messages.forEach(message=>{
@@ -729,14 +731,18 @@ const movieHistoryStyle = document.createElement("style");
           edit.addEventListener("click",async()=>{
             const next=window.prompt("Изменить сообщение:",message.body||"");
             if(next===null||!next.trim()||next.trim()===message.body)return;
-            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"PATCH",body:JSON.stringify({body:next.trim()})});loadConversationMessages(threadId);}
-            catch(error){messagesFeedback("Не удалось изменить сообщение: "+error.message);}
+            const actionVersion=authContextVersion,actionUserId=userId,actionThreadId=threadId;
+            const actionIsCurrent=()=>actionVersion===authContextVersion&&authSession?.user?.id===actionUserId&&activeMessageThreadId===actionThreadId;
+            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"PATCH",body:JSON.stringify({body:next.trim()})});if(actionIsCurrent())loadConversationMessages(threadId);}
+            catch(error){if(actionIsCurrent())messagesFeedback("Не удалось изменить сообщение: "+error.message);}
           });
           const remove=adminNode("button","message-action is-danger","Удалить у себя");remove.type="button";
           remove.addEventListener("click",async()=>{
             if(!window.confirm("Скрыть это сообщение только в вашей переписке? У собеседника оно останется."))return;
-            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"DELETE"});loadConversationMessages(threadId);}
-            catch(error){messagesFeedback("Не удалось удалить сообщение: "+error.message);}
+            const actionVersion=authContextVersion,actionUserId=userId,actionThreadId=threadId;
+            const actionIsCurrent=()=>actionVersion===authContextVersion&&authSession?.user?.id===actionUserId&&activeMessageThreadId===actionThreadId;
+            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"DELETE"});if(actionIsCurrent())loadConversationMessages(threadId);}
+            catch(error){if(actionIsCurrent())messagesFeedback("Не удалось удалить сообщение: "+error.message);}
           });
           actions.append(edit,remove);item.append(actions);
         }
@@ -744,9 +750,9 @@ const movieHistoryStyle = document.createElement("style");
       });
       list.scrollTop=list.scrollHeight;
       await apiRequest("/api/conversations/"+encodeURIComponent(threadId)+"/read",{method:"POST"});
-      if(version===authContextVersion&&authSession?.user?.id===userId)loadConversations();
+      if(contextIsCurrent())loadConversations();
     }catch(error){
-      if(version===authContextVersion&&authSession?.user?.id===userId)messagesFeedback("Не удалось загрузить переписку: "+error.message);
+      if(contextIsCurrent())messagesFeedback("Не удалось загрузить переписку: "+error.message);
     }
   };
   const openConversation = (threadId,partnerId) => {
