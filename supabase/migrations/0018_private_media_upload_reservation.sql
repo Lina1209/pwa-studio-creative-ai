@@ -131,6 +131,7 @@ begin
   if not found or v_existing.operation_id is distinct from p_operation_id
      or v_existing.character_id is distinct from p_character_id
      or v_existing.storage_path is distinct from p_storage_path
+     or v_existing.bucket is distinct from p_bucket
      or v_existing.file_name is distinct from p_file_name
      or v_existing.file_type is distinct from p_file_type
      or v_existing.size_bytes is distinct from p_size_bytes
