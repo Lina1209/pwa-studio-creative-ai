@@ -184,3 +184,16 @@ The helper does not write the asset row, insert the outbox event, upload bytes, 
 Also tightened cleanup path validation: a deletable object key must have exactly four segments, an allowlisted resource kind and extension, and canonical UUID resource/object segments. Tests were added for malformed keys and for the public metadata projection.
 
 Seven composition tests are authored in `backend/tests/test_media_workflow.py`; tests have not been executed. This is still a planning boundary, not an active upload route or Storage integration.
+
+## 19. Character-reference replacement composition boundary
+
+Added `backend/app/services/media_replacement_workflow.py`. It composes the immutable replacement planner with the character ownership check, current-reference precondition, private-bucket allowlist, and strict validation that both old and new server-stored object keys belong to the same owner and character. It creates a cleanup outbox event bound only to the superseded asset.
+
+The result is a plan, not a mutation. The future persistence adapter must, in ONE Postgres transaction and under a row lock or equivalent compare-and-swap:
+1. verify the character still points to the expected old asset;
+2. promote the verified new asset to `ready`;
+3. move the old asset to `cleanup_pending`;
+4. switch the character's active reference pointer;
+5. insert the unique cleanup outbox event.
+
+If any step fails, all database changes must roll back and the old ready reference remains active. Storage deletion happens later in a worker, after it rechecks exact bucket + object-path references. The cleanup event is not permission to delete immediately. The schema currently has no explicit canonical avatar/reference pointer column, so that column and its ownership FK must be designed before wiring this plan to a route. The seven replacement-workflow tests are authored but have not been executed.
