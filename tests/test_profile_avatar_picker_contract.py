@@ -120,6 +120,22 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("setKattyAssistantExpression(kattyContextState(prompt))", handler)
         self.assertIn('$("#assistantInput").value = prompt', handler)
 
+    def test_async_conversation_loading_does_not_overwrite_new_katty_state(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        clear_start = app.index("const clearAssistantMessages =")
+        clear_end = app.index("\n  };", clear_start) + 5
+        clear_handler = app[clear_start:clear_end]
+        self.assertIn("options.preserveKattyState", clear_handler)
+        load_start = app.index("const loadAssistantMessages =")
+        load_end = app.index("\n  };", load_start) + 5
+        load_handler = app[load_start:load_end]
+        self.assertIn('setKattyAssistantMode("companion")', load_handler)
+        self.assertIn('clearAssistantMessages({ preserveKattyState: true })', load_handler)
+        start_start = app.index("const startAssistantConversation =")
+        start_end = app.index("\n  };", start_start) + 5
+        start_handler = app[start_start:start_end]
+        self.assertIn('setKattyAssistantMode("companion")', start_handler)
+        self.assertIn('clearAssistantMessages({ preserveKattyState: true })', start_handler)
     def test_katty_mode_resets_when_conversation_changes(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         for function_name in ("clearAssistantMessages", "loadAssistantMessages", "startAssistantConversation"):
