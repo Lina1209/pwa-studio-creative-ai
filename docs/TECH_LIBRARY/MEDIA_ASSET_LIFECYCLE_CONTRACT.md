@@ -197,3 +197,7 @@ The result is a plan, not a mutation. The future persistence adapter must, in ON
 5. insert the unique cleanup outbox event.
 
 If any step fails, all database changes must roll back and the old ready reference remains active. Storage deletion happens later in a worker, after it rechecks exact bucket + object-path references. The cleanup event is not permission to delete immediately. The schema currently has no explicit canonical avatar/reference pointer column, so that column and its ownership FK must be designed before wiring this plan to a route. The seven replacement-workflow tests are authored but have not been executed.
+
+### Replacement-boundary hardening follow-up
+
+The replacement composition guard now canonicalizes the authenticated owner, character ID, and current-reference asset ID before comparison. Both old and new media rows must explicitly reference the same character; an absent `character_id` is no longer treated as acceptable for a character-reference replacement. This prevents a generic unattached media row from being promoted through the character replacement path. Three additional unit tests cover absent associations, canonical UUID spellings, and malformed current pointers. These tests are authored only and have not been executed.
