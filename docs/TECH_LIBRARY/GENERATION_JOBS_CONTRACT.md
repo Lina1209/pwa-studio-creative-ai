@@ -286,3 +286,12 @@ Before activation:
 - Dead-lettering must alert an operator and have an auditable replay path; silently stranded generation jobs are unacceptable.
 
 These findings are review requirements, not implementation claims. No SQL was applied and no worker/provider behavior is active.
+
+
+## Review finding: current retry interfaces are too permissive
+
+The provider-outcome rule above exposed a mismatch in the draft implementation: the pure-Python lifecycle helper previously treated `retryable=True` as sufficient to retry a `provider_timeout`, while the SQL RPC accepts only a boolean `p_retryable`. Neither interface alone records evidence that the external provider definitely did not accept the request.
+
+The inactive Python helper has now been tightened to require an explicit `ProviderSubmissionOutcome` for a retry. Its default is `unknown`; only `definitely_not_submitted` and `definitely_rejected` permit a retry. A generic timeout with an unknown provider outcome is not retryable.
+
+The SQL migration draft 0014 remains a blocking item: before it can be activated, its failure/recovery contract must carry the same provider-outcome evidence and preserve an explicit reconciliation-needed state for `accepted`/`unknown` attempts. The current `p_retryable boolean` must not be trusted as sufficient evidence. Do not wire the helper or SQL into a worker until both layers agree and regression tests pass.
