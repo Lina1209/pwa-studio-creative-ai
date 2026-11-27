@@ -2087,6 +2087,24 @@ const movieHistoryStyle = document.createElement("style");
       actions.append(edit,remove);card.append(actions);list.append(card);
     }
   };
+  $("#characterKittyPreset")?.addEventListener("click",()=>{
+    if(editingCharacterId && !window.confirm("Заменить текущие поля карточки данными стартового паспорта Катти? Сохранённая запись изменится только после нажатия «Сохранить изменения»."))return;
+    editingCharacterId=null;
+    $("#characterName").value="Катти";
+    $("#characterKind").value="character";
+    $("#characterRepresentation").value="both";
+    $("#characterDescription").value="Добрая, выразительная мультяшная девушка с веснушками, большими зелёными глазами и длинными кудрявыми огненно-рыжими волосами. У неё тёплая улыбка, фиолетовое худи, чёрная футболка с логотипом PWA Studio, большие наушники и украшения со звёздами.";
+    $("#characterFace").value="Большие зелёные глаза, заметные веснушки, добрая выразительная улыбка, длинные кудрявые огненно-рыжие волосы.";
+    $("#characterBody").value="Стилизованный дружелюбный мультяшный образ. Точные пропорции и силуэт уточняются по утверждённым референсам.";
+    $("#characterWardrobe").value="Фиолетовое худи, чёрная футболка с логотипом PWA Studio, большие наушники, украшения со звёздами.";
+    $("#characterPalette").value="Огненно-рыжий, фиолетовый и чёрный; зелёные глаза. Эмоции: доброжелательность, любопытство, воодушевление.";
+    $("#characterVoice").value="";
+    $("#characterImages").value="";
+    $("#saveCharacter").textContent="＋ Сохранить персонажа";
+    $("#cancelCharacterEdit").hidden=false;
+    $("#characterLibraryStatus").textContent="Стартовый паспорт Катти заполнен. Добавьте утверждённые изображения-референсы и нажмите «Сохранить персонажа».";
+    $("#characterName").scrollIntoView({behavior:"smooth",block:"center"});
+  });
   $("#saveCharacter")?.addEventListener("click",async()=>{
     const ownerId=authSession?.user?.id||"guest",name=$("#characterName").value.trim(),description=$("#characterDescription").value.trim();
     const kind=$("#characterKind").value,representation=$("#characterRepresentation").value,files=Array.from($("#characterImages").files||[]);
