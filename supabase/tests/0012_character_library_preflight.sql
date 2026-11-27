@@ -90,6 +90,7 @@ WITH checks AS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='storage' AND tablename='objects'
         AND cmd='SELECT'
+        AND roles @> ARRAY['authenticated']::name[]
         AND qual ILIKE '%studio-media%'
         AND qual ILIKE '%auth.uid()%'
         AND qual ILIKE '%foldername%'
@@ -102,6 +103,7 @@ WITH checks AS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='storage' AND tablename='objects'
         AND cmd='INSERT'
+        AND roles @> ARRAY['authenticated']::name[]
         AND with_check ILIKE '%studio-media%'
         AND with_check ILIKE '%auth.uid()%'
         AND with_check ILIKE '%foldername%'
@@ -136,6 +138,20 @@ WITH checks AS (
         AND qual ILIKE '%foldername%'
     ),
     'authenticated DELETE policy restricts bucket studio-media and first folder to auth.uid()'
+  UNION ALL
+  SELECT
+    'no public/anon studio-media read policy',
+    NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname='storage' AND tablename='objects'
+        AND cmd IN ('SELECT', 'ALL')
+        AND (roles @> ARRAY['public']::name[] OR roles @> ARRAY['anon']::name[])
+        AND (
+          qual IS NULL
+          OR qual ILIKE '%studio-media%'
+        )
+    ),
+    'No PUBLIC/anon SELECT or ALL policy can expose studio-media objects'
 )
 SELECT
   CASE WHEN passed THEN 'PASS' ELSE 'FAIL' END AS result,
