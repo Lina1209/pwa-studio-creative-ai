@@ -31,6 +31,12 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
             APP,
         )
 
+    def test_stale_save_cannot_unlock_new_account_editor(self):
+        self.assertIn(
+            'finally{if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}',
+            APP,
+        )
+
     def test_delete_uses_captured_owner_and_storage_key(self):
         self.assertIn("const deleteOwnerId=ownerId;", APP)
         self.assertIn("const deleteStorageKey=characterLibraryKey();", APP)
