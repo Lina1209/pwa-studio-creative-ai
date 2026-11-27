@@ -41,13 +41,14 @@ class CharacterApiRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     @patch("app.character_api.create_owned_character", return_value={
-        "id": CHARACTER, "name": "Hero", "description": None,
+        "id": CHARACTER, "source_local_id": "44444444-4444-4444-8444-444444444444", "name": "Hero", "description": None,
         "reference_data": {}, "created_at": "2026-11-27T00:00:00Z"
     })
     def test_create_binds_authenticated_owner(self, create):
-        response = self.client.post("/api/characters", json={"name": "Hero", "reference_data": {}})
+        response = self.client.post("/api/characters", json={"source_local_id": "44444444-4444-4444-8444-444444444444", "name": "Hero", "reference_data": {}})
         self.assertEqual(response.status_code, 201)
         self.assertEqual(create.call_args.args[1], OWNER)
+        self.assertEqual(create.call_args.args[2], "44444444-4444-4444-8444-444444444444")
 
     @patch("app.character_api.update_owned_character", return_value={"id": CHARACTER, "name": "Hero", "description": "x" * 5000, "reference_data": {}, "created_at": "now"})
     def test_patch_accepts_5000_character_description(self, update):
