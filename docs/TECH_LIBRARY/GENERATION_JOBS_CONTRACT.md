@@ -125,3 +125,4 @@ These functions are schema proposals only. No function has been executed or gran
 - Test max attempts, retry delay, invalid parameters, expired lease boundaries, and all table CHECK constraints on a disposable Supabase project.
 
 Operational caution: outbox dispatch is at-least-once, not exactly-once. The worker must be idempotent. The database lease fences state writes, but cannot undo an external provider call that was already accepted; provider-side idempotency and billing reconciliation remain mandatory.
+- `complete_generation_job` additionally requires the result `media_assets` row to have the same owner as the job; backend must still ensure the private object upload succeeded before creating that row.
