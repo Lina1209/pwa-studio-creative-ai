@@ -172,3 +172,29 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CharacterReferenceStatusRouteTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.client = TestClient(app)
+    def setUp(self):
+        app.dependency_overrides[get_current_user] = lambda: StudioUser(user_id=OWNER, email="creator@example.test", role="creator")
+    def tearDown(self): app.dependency_overrides.clear()
+
+    @patch("app.main.list_owned_character_media_assets", return_value=[{"id": "33333333-3333-4333-8333-333333333333", "character_id": CHARACTER, "file_name": "hero.png", "file_type": "image/png", "status": "object_uploaded", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now"}])
+    @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
+    def test_status_list_is_owner_checked_private_and_no_store(self, character, assets):
+        response = self.client.get(f"/api/characters/{CHARACTER}/references")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["status"], "object_uploaded")
+        self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
+        for hidden in ("storage_path", "bucket", "owner_id"): self.assertNotIn(hidden, response.text)
+        character.assert_called_once(); assets.assert_called_once()
+        self.assertEqual(assets.call_args.args[2], OWNER)
+
+    @patch("app.main.list_owned_character_media_assets")
+    @patch("app.main.get_owned_character_for_media_upload", side_effect=HTTPException(status_code=404, detail="Character not found."))
+    def test_foreign_character_cannot_list_upload_states(self, character, assets):
+        response = self.client.get(f"/api/characters/{CHARACTER}/references")
+        self.assertEqual(response.status_code, 404)
+        assets.assert_not_called()
