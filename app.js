@@ -326,6 +326,15 @@ const movieHistoryStyle = document.createElement("style");
     const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===id)||PROFILE_AVATAR_CATALOG[0];
     return "assets/avatars/2d/"+item.id+".svg";
   };
+  const applyProfileAvatarChrome=id=>{
+    const src=profileAvatarPath(id);
+    ["#accountAvatar","#topAvatar",".profile .avatar"].forEach(selector=>{
+      const node=$(selector);if(!node)return;
+      const img=document.createElement("img");img.src=src;img.alt="Аватар профиля";img.loading="lazy";
+      img.onerror=()=>{node.replaceChildren();node.textContent="✦";};
+      node.replaceChildren(img);
+    });
+  };
   const profileAvatarNode=(profile,large=false)=>{
     const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profile.avatar_catalog_id);
     const node=document.createElement("div");
@@ -379,7 +388,7 @@ const movieHistoryStyle = document.createElement("style");
       const profile=await apiRequest("/api/community/profile");
       if(version!==authContextVersion||authSession?.user?.id!==userId)return;
       profileAvatarSavedId=PROFILE_AVATAR_CATALOG.some(item=>item.id===profile.avatar_catalog_id)?profile.avatar_catalog_id:PROFILE_AVATAR_DEFAULT;
-      profileAvatarDraftId=profileAvatarSavedId;profileAvatarCategory="all";renderProfileAvatarPicker();
+      profileAvatarDraftId=profileAvatarSavedId;profileAvatarCategory="all";renderProfileAvatarPicker();applyProfileAvatarChrome(profileAvatarSavedId);
       $("#communityDisplayName").value=profile.display_name||"";
       $("#communityUsername").value=profile.username||"";
       $("#communityBio").value=profile.bio||"";
