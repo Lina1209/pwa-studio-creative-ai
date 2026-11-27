@@ -115,5 +115,42 @@ class PrivateMediaRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
 
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.get_owned_media_asset", return_value={**owned_ready_asset(), "size_bytes": 20})
+    def test_readback_rejects_size_mismatch(self, get_asset, download):
+        download.return_value = ValidatedReference(
+            content=b"validated-png-bytes", mime_type="image/png",
+            safe_filename="portrait.png", size_bytes=19,
+            width=1, height=1, frame_count=1,
+        )
+        response = self.client.get(f"/api/media/{ASSET}/content")
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["detail"], "Stored image failed integrity validation.")
+
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.get_owned_media_asset", return_value={**owned_ready_asset(), "width": 2})
+    def test_readback_rejects_width_mismatch(self, get_asset, download):
+        download.return_value = ValidatedReference(
+            content=b"validated-png-bytes", mime_type="image/png",
+            safe_filename="portrait.png", size_bytes=19,
+            width=1, height=1, frame_count=1,
+        )
+        response = self.client.get(f"/api/media/{ASSET}/content")
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["detail"], "Stored image failed integrity validation.")
+
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.get_owned_media_asset", return_value={**owned_ready_asset(), "height": 2})
+    def test_readback_rejects_height_mismatch(self, get_asset, download):
+        download.return_value = ValidatedReference(
+            content=b"validated-png-bytes", mime_type="image/png",
+            safe_filename="portrait.png", size_bytes=19,
+            width=1, height=1, frame_count=1,
+        )
+        response = self.client.get(f"/api/media/{ASSET}/content")
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["detail"], "Stored image failed integrity validation.")
+
+
 if __name__ == "__main__":
     unittest.main()
