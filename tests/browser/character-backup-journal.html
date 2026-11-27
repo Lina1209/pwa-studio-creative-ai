@@ -110,6 +110,28 @@
       check(results.filter(item => item.status === "rejected").length === 1, "concurrent duplicate was not rejected");
       check(!!(await api.get(owner, racingCharacter)), "winning concurrent journal was not persisted");
     });
+    await test("late IndexedDB success closes connection after blocked upgrade", async () => {
+      const originalOpen = indexedDB.open;
+      let lateConnectionClosed = false;
+      const failedCharacter = uuid();
+      try {
+        indexedDB.open = () => {
+          const fakeDb = { close: () => { lateConnectionClosed = true; } };
+          const request = { result: fakeDb, error: null };
+          setTimeout(() => request.onblocked && request.onblocked(), 0);
+          setTimeout(() => request.onsuccess && request.onsuccess(), 10);
+          return request;
+        };
+        await rejects(
+          () => api.create({...journalInput, localCharacterId: failedCharacter}),
+          "blocked IndexedDB upgrade unexpectedly succeeded"
+        );
+      } finally {
+        indexedDB.open = originalOpen;
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+      check(lateConnectionClosed, "late IndexedDB connection remained open after blocked upgrade");
+    });
     await test("aborted IndexedDB write leaves no partial journal", async () => {
       const abortedCharacter = uuid();
       const abortedId = owner + ":" + abortedCharacter;
