@@ -20,6 +20,7 @@
     }
     return;
   }
+  if (params.has("worker")) { document.documentElement.dataset.workerReady = "true"; output.textContent = "Ready for cross-tab IndexedDB tests"; return; }
   const uuid = () => crypto.randomUUID();
   const sha = "a".repeat(64);
   const check = (condition, message) => { if (!condition) throw new Error(message); };
