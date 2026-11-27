@@ -25,3 +25,21 @@ The existing migration 0012 schema has `id`, `owner_id`, `name`, `description`, 
 
 ## Integration gate
 The UI must not call these endpoints until route registration, automated tests, disposable Supabase tests, and a local-to-cloud mapping/import design are complete. Never delete local IndexedDB records as part of a failed or partial cloud operation.
+
+
+## Local v1 → cloud payload mapping (design only; not wired)
+
+The current browser record shape was audited in `app.js`:
+- top-level: `id` (browser UUID), `name`, `description`, `kind`, `representation`, `voice`, `passport` (`face/body/wardrobe/palette`), `referenceImages[]` (`id/name/type`), `createdAt`, `updatedAt`.
+- binary image Blobs are in IndexedDB database `pwa-studio-character-library-v1`, object store `images`, keyed by reference id and tagged with ownerId.
+- records are in localStorage key `pwa-studio-character-library-v1:<auth user UUID>` (or `:guest`).
+
+Proposed metadata mapping:
+- `name` → API `name`.
+- `description` → API `description` (the API limit must be aligned with existing local 5,000-character limit before import is enabled).
+- `kind`, `representation`, `voice`, `passport`, and reference image descriptors → API `reference_data`.
+- `createdAt` stays local provenance unless a reviewed server schema explicitly supports it.
+- local `id` must be preserved in a separate explicit mapping record; never assume a browser UUID is a cloud ID.
+- image blobs are uploaded only through the authenticated server upload route after cloud character creation; no Blob/base64 data is placed in `reference_data`.
+
+A safe importer still needs durable idempotency across interrupted requests, an explicit local↔cloud ID mapping, per-image upload state, a read-back verification step, and a non-destructive backup/rollback procedure. Current API POST does not yet provide a durable idempotency key or caller-selected ID; retries can create duplicates. Therefore do not implement automatic retries or frontend import yet. Guest records remain local-only. Existing records and image blobs must never be deleted as part of import.
