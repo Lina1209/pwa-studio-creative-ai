@@ -1062,7 +1062,7 @@ const movieHistoryStyle = document.createElement("style");
     const [id, label] = KATTY_ASSISTANT_EXPRESSIONS[state] || KATTY_ASSISTANT_EXPRESSIONS.neutral;
     if (image) { image.src = "assets/characters/katty/expressions/" + id + ".svg"; image.alt = label; }
   };
-  const kattySupportSignal = message => /\\b(груст|тоск|страш|тревож|устал|плохо|боль|одинок|пережива|расстро|сложно)\\w*/i.test(String(message || ""));
+  const kattySupportSignal = message => /(груст|тоск|страш|тревож|устал|плохо|боль|одинок|пережива|расстро|сложно)/i.test(String(message || ""));
 
   const copyAssistantText = async (content, button) => {
     try {
