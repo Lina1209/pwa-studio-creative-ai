@@ -1,6 +1,7 @@
 """Service-role RPC boundary for durable media verification work."""
+import hashlib
+
 import httpx
-from fastapi import HTTPException
 
 from app.core.config import Settings
 
@@ -52,7 +53,7 @@ def complete_media_upload_verification(settings: Settings, event: dict, verified
         "p_asset_id": event["asset_id"],
         "p_event_id": event["event_id"],
         "p_claim_token": event["claim_token"],
-        "p_content_sha256": verified.content_sha256,
+        "p_content_sha256": hashlib.sha256(verified.content).hexdigest(),
         "p_size_bytes": verified.size_bytes,
         "p_file_type": verified.mime_type,
         "p_width": verified.width,
