@@ -71,3 +71,23 @@ def get_owned_media_asset(settings: Settings, asset_id: str, authenticated_owner
         require_same_owner(owner, characters[0] if characters else None)
 
     return row
+
+
+def list_owned_character_media_assets(settings: Settings, character_id: str, authenticated_owner_id: str) -> list[dict]:
+    """Return upload/verification state for one owner character without exposing Storage paths."""
+    character = canonical_uuid(character_id, "character")
+    owner = canonical_uuid(authenticated_owner_id, "owner")
+    rows = _rest_get(settings, "media_assets", {
+        "select": "id,owner_id,character_id,file_name,file_type,status,size_bytes,width,height,created_at",
+        "owner_id": f"eq.{owner}", "character_id": f"eq.{character}",
+        "bucket": "eq.studio-media", "order": "created_at.asc", "limit": "100",
+    })
+    allowed_statuses = {"pending_upload", "object_uploaded", "ready", "upload_failed", "cleanup_pending", "deleted"}
+    result = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("owner_id") != owner or row.get("character_id") != character:
+            raise HTTPException(status_code=404, detail="Media resource not found.")
+        if row.get("status") not in allowed_statuses:
+            raise HTTPException(status_code=502, detail="Media metadata returned an invalid status.")
+        result.append({key: row.get(key) for key in ("id", "character_id", "file_name", "file_type", "status", "size_bytes", "width", "height", "created_at")})
+    return result
