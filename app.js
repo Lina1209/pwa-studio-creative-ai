@@ -12,6 +12,7 @@
   let authSession = null;
   let authContextVersion = 0;
   let activeAssistantConversationId = null;
+  let assistantConversationLoadVersion = 0;
   let assistantHistoryBusy = false;
   let assistantUserId = null;
   let activeMessageThreadId = null;
@@ -1152,6 +1153,7 @@ const movieHistoryStyle = document.createElement("style");
     if (suggestions) suggestions.hidden = false;
   };
   const loadAssistantMessages = async conversationId => {
+    const loadVersion = ++assistantConversationLoadVersion;
     setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (!supabaseClient || !authSession?.user || !conversationId) return;
@@ -1161,7 +1163,8 @@ const movieHistoryStyle = document.createElement("style");
       .select("id,role,content,created_at").eq("conversation_id", conversationId)
       .eq("user_id", requestUserId).order("created_at", { ascending: true });
     if (error) throw error;
-    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+    if (loadVersion !== assistantConversationLoadVersion ||
+        authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
     clearAssistantMessages({ preserveKattyState: true });
     (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
     activeAssistantConversationId = conversationId;
