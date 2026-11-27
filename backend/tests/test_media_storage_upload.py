@@ -58,6 +58,16 @@ class MediaStorageUploadTests(unittest.TestCase):
         post.assert_not_called()
 
     @patch("app.services.media_storage_upload.httpx.post")
+    def test_rejects_same_size_bytes_with_different_digest(self, post):
+        plan, content = upload_plan()
+        altered = bytes([content[0] ^ 1]) + content[1:]
+        self.assertEqual(len(altered), len(content))
+        with self.assertRaises(HTTPException) as caught:
+            upload_character_reference_object(settings(), plan, altered)
+        self.assertEqual(caught.exception.status_code, 400)
+        post.assert_not_called()
+
+    @patch("app.services.media_storage_upload.httpx.post")
     def test_duplicate_object_is_conflict_and_never_overwritten(self, post):
         plan, content = upload_plan()
         post.return_value = Mock(status_code=409)
