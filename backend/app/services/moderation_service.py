@@ -78,30 +78,23 @@ def list_user_reports(settings: Settings):
 
 def review_user_report(settings: Settings, report_id: str, moderator_id: str, payload):
     report_id = _validated_uuid(report_id, "report")
-    rows = _request(settings, "PATCH", "user_reports",
-        params={"id": f"eq.{report_id}", "select": "id,status,created_at,reporter_user_id"},
-        payload={"status": payload.status, "moderator_note": payload.moderator_note,
-                 "reviewed_by": moderator_id, "reviewed_at": datetime.now(timezone.utc).isoformat()})
-    if not rows:
+    result = _request(settings, "POST", "rpc/pwa_review_user_report",
+        payload={"p_report_id": report_id, "p_moderator_id": moderator_id,
+                 "p_status": payload.status, "p_moderator_note": payload.moderator_note})
+    if not result:
         raise HTTPException(status_code=404, detail="Report not found.")
-    _write_audit(settings, moderator_id, "report.reviewed", "report", report_id,
-                 {"status": payload.status})
-    return rows[0]
+    return result
 
 
 def create_suspension(settings: Settings, moderator_id: str, payload):
     target_user_id = _validated_uuid(payload.user_id, "user")
-    rows = _request(settings, "POST", "user_suspensions",
-        params={"select": "id,user_id,reason,scope,expires_at,created_at"},
-        payload={"user_id": target_user_id, "reason": payload.reason,
-                 "scope": payload.scope, "created_by": moderator_id,
-                 "expires_at": payload.expires_at})
-    if not rows:
+    result = _request(settings, "POST", "rpc/pwa_create_user_suspension",
+        payload={"p_user_id": target_user_id, "p_moderator_id": moderator_id,
+                 "p_reason": payload.reason, "p_scope": payload.scope,
+                 "p_expires_at": payload.expires_at})
+    if not result:
         raise HTTPException(status_code=502, detail="The restriction could not be created.")
-    row = rows[0]
-    _write_audit(settings, moderator_id, "user.suspended", "suspension", row["id"],
-                 {"user_id": target_user_id, "scope": payload.scope})
-    return row
+    return result
 
 
 def list_suspensions(settings: Settings):
@@ -112,23 +105,11 @@ def list_suspensions(settings: Settings):
 
 def revoke_suspension(settings: Settings, moderator_id: str, suspension_id: str):
     suspension_id = _validated_uuid(suspension_id, "suspension")
-    rows = _request(settings, "PATCH", "user_suspensions",
-        params={"id": f"eq.{suspension_id}", "revoked_at": "is.null",
-                "select": "id,user_id,scope"},
-        payload={"revoked_at": datetime.now(timezone.utc).isoformat(), "revoked_by": moderator_id})
-    if not rows:
+    result = _request(settings, "POST", "rpc/pwa_revoke_user_suspension",
+        payload={"p_suspension_id": suspension_id, "p_moderator_id": moderator_id})
+    if not result:
         raise HTTPException(status_code=404, detail="Active restriction not found.")
-    _write_audit(settings, moderator_id, "user.suspension_revoked", "suspension", suspension_id,
-                 {"user_id": rows[0]["user_id"], "scope": rows[0]["scope"]})
     return {"success": True, "id": suspension_id}
-
-
-def _write_audit(settings: Settings, actor_id: str, action: str, entity_type: str,
-                 entity_id: str, metadata: dict):
-    _request(settings, "POST", "admin_audit_log",
-        payload={"actor_user_id": actor_id, "action": action,
-                 "entity_type": entity_type, "entity_id": entity_id,
-                 "metadata": metadata})
 
 
 def ensure_user_not_suspended(settings: Settings, user_id: str, scope: str):
