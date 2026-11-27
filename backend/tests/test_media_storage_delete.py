@@ -1,5 +1,8 @@
 """Tests for the private Storage delete primitive."""
 import unittest
+import socket
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
@@ -65,6 +68,56 @@ class MediaStorageDeleteTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as raised:
             delete_private_media_object(settings(), plan())
         self.assertEqual(raised.exception.status_code, 502)
+
+    def test_connection_drop_after_delete_is_safe_to_retry_as_404(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_DELETE(self):
+                self.server.calls += 1
+                self.server.last_path = self.path
+                self.server.last_authorization = self.headers.get("Authorization")
+                if self.server.calls == 1:
+                    # Simulate Storage committing the delete and the response
+                    # being lost before the client receives confirmation.
+                    self.server.object_exists = False
+                    try:
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    self.connection.close()
+                    return
+                self.send_response(404)
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.calls = 0
+        server.object_exists = True
+        server.last_path = None
+        server.last_authorization = None
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        local_settings = Settings(
+            supabase_url=f"http://127.0.0.1:{server.server_port}",
+            supabase_service_role_key="server-secret",
+        )
+        try:
+            with self.assertRaises(HTTPException) as raised:
+                delete_private_media_object(local_settings, plan())
+            self.assertEqual(raised.exception.status_code, 503)
+            self.assertIsNone(delete_private_media_object(local_settings, plan()))
+            self.assertFalse(server.object_exists)
+            self.assertEqual(server.calls, 2)
+            self.assertEqual(
+                server.last_path,
+                f"/storage/v1/object/studio-media/{PATH}",
+            )
+            self.assertEqual(server.last_authorization, "Bearer server-secret")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     @patch("app.services.media_storage_delete.httpx.delete")
     def test_requires_server_credentials(self, delete):
