@@ -1454,6 +1454,55 @@ const movieHistoryStyle = document.createElement("style");
       const textarea=document.createElement("textarea"); textarea.rows=(key==="story"||key==="storyboard")?7:6; textarea.maxLength=30000; textarea.placeholder=placeholder; textarea.style.cssText="display:block;width:100%;min-height:150px;padding:13px;border:1px solid rgba(166,154,187,.35);border-radius:9px;background:#0f0e1d;color:#eee9fa;font:inherit;font-size:14px;line-height:1.55;resize:vertical;visibility:visible;opacity:1;";
       textarea.value=project[key]||(key==="story"?project.idea||"":""); inputs[key]=textarea; wrap.append(label,textarea); form.append(wrap);
     });
+    let selectedLibrarySnapshots=Array.isArray(project.characterLibrarySnapshots)?project.characterLibrarySnapshots.map(item=>({...item})).filter(item=>item&&typeof item.id==="string"):[];
+    if(stage.key==="characters"){
+      const libraryItems=readCharacterLibrary();
+      const picker=document.createElement("section");picker.className="movie-character-picker movie-stage-field";
+      const pickerTitle=document.createElement("strong");pickerTitle.textContent="Персонажи из вашей библиотеки";
+      const pickerNote=document.createElement("p");pickerNote.className="movie-stage-note";pickerNote.textContent=libraryItems.length?"Выберите сохранённых персонажей или локации. В фильм попадёт снимок их паспорта; мастер-карточка останется независимой.":"В библиотеке пока нет карточек. Можно продолжить с текстовым описанием или сначала добавить персонажа в Prompt Studio.";
+      picker.append(pickerTitle,pickerNote);
+      if(libraryItems.length){
+        const select=document.createElement("select");select.multiple=true;select.size=Math.min(5,Math.max(2,libraryItems.length));select.setAttribute("aria-label","Выберите персонажей и локации из библиотеки");select.style.cssText="width:100%;min-height:100px;padding:10px;border-radius:9px;background:#0f0e1d;color:#eee9fa;border:1px solid rgba(166,154,187,.35);";
+        libraryItems.forEach(item=>{const option=document.createElement("option");option.value=item.id;option.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name+(selectedLibrarySnapshots.some(saved=>saved.id===item.id)?" · уже добавлен":"");select.append(option);});
+        const add=document.createElement("button");add.type="button";add.className="secondary-button";add.textContent="＋ Добавить выбранных в фильм";
+        const selectedStatus=document.createElement("p");selectedStatus.className="movie-stage-note";selectedStatus.setAttribute("role","status");
+        add.addEventListener("click",()=>{
+          const chosen=libraryItems.filter(item=>Array.from(select.selectedOptions).some(option=>option.value===item.id));
+          if(!chosen.length){selectedStatus.textContent="Сначала выберите хотя бы одну карточку.";return;}
+          const added=[];
+          chosen.forEach(item=>{
+            if(selectedLibrarySnapshots.some(saved=>saved.id===item.id))return;
+            const snapshot={id:item.id,name:item.name,kind:item.kind||"character",representation:item.representation||"2d",description:item.description||"",voice:item.voice||"",passport:item.passport||{},referenceImages:(item.referenceImages||[]).map(ref=>({name:ref.name||"",type:ref.type||"",storagePath:ref.storagePath||null}))};
+            selectedLibrarySnapshots.push(snapshot);added.push(snapshot);
+          });
+          if(!added.length){selectedStatus.textContent="Выбранные карточки уже добавлены.";return;}
+          const identityText=added.map(item=>[
+            (item.kind==="scene"?"ЛОКАЦИЯ":"ПЕРСОНАЖ")+": "+item.name,
+            "Тип представления: "+(item.representation==="both"?"2D + 3D":item.representation==="3d"?"3D-паспорт":"2D"),
+            "Описание: "+item.description,
+            "Лицо и профиль: "+(item.passport.face||"—"),
+            "Силуэт: "+(item.passport.body||"—"),
+            "Одежда и аксессуары: "+(item.passport.wardrobe||"—"),
+            "Палитра и эмоции: "+(item.passport.palette||"—"),
+            "Голос: "+(item.voice||"—"),
+            "Референсы: "+(item.referenceImages.length?item.referenceImages.map(ref=>ref.name).join(", "):"не указаны")
+          ].join("\n")).join("\n\n");
+          const currentText=inputs.characters.value.trim();
+          inputs.characters.value=(currentText?currentText+"\n\n":"")+identityText;
+          inputs.characters.dispatchEvent(new Event("input",{bubbles:true}));
+          selectedStatus.textContent="Добавлено в снимок фильма: "+added.map(item=>item.name).join(", ")+". Нажмите «Сохранить черновик» или завершите этап.";
+        });
+        picker.append(select,add,selectedStatus);
+      }
+      const linked=document.createElement("div");linked.className="movie-character-linked";
+      const refreshLinked=()=>{
+        linked.replaceChildren();
+        if(!selectedLibrarySnapshots.length){const empty=document.createElement("p");empty.className="movie-stage-note";empty.textContent="К этому фильму пока не привязаны карточки из библиотеки.";linked.append(empty);return;}
+        const caption=document.createElement("p");caption.className="movie-stage-note";caption.textContent="Снимки паспортов, которые будут сохранены вместе с фильмом:";linked.append(caption);
+        selectedLibrarySnapshots.forEach(item=>{const row=document.createElement("div");row.className="movie-character-linked-row";const name=document.createElement("span");name.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать из фильма";remove.addEventListener("click",()=>{selectedLibrarySnapshots=selectedLibrarySnapshots.filter(saved=>saved.id!==item.id);refreshLinked();});row.append(name,remove);linked.append(row);});
+      };
+      refreshLinked();picker.append(linked);form.append(picker);
+    }
     let showTitlesControl=null;
     if(stage.key==="edit"){
       const titlesWrap=document.createElement("label");
@@ -1593,6 +1642,7 @@ const movieHistoryStyle = document.createElement("style");
         if(index<0){draftStatus.textContent="Не удалось найти этот фильм. Вернитесь к проекту и откройте этап снова.";return;}
         const current=latest[index]; addMovieVersion(current);
         stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+        if(stage.key==="characters")current.characterLibrarySnapshots=selectedLibrarySnapshots.map(item=>({...item}));
         if(stage.key==="edit"&&showTitlesControl)current.showTitles=showTitlesControl.checked;
         if(stage.key==="story" && current.story) current.idea=current.story;
         current.updatedAt=new Date().toISOString();
@@ -1614,6 +1664,7 @@ const movieHistoryStyle = document.createElement("style");
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
       const current=latest[index]; addMovieVersion(current);
       stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+      if(stage.key==="characters")current.characterLibrarySnapshots=selectedLibrarySnapshots.map(item=>({...item}));
       if(stage.key==="edit"&&showTitlesControl)current.showTitles=showTitlesControl.checked;
       current.completedSteps=(Array.isArray(current.completedSteps)?current.completedSteps:[]).filter(key=>movieStages.findIndex(item=>item.key===key)<=stageIndex);
       if(!current.completedSteps.includes(stage.key))current.completedSteps.push(stage.key);
