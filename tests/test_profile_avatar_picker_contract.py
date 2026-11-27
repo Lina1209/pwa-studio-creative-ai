@@ -14,6 +14,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('id:"forest-elf"', app)
         self.assertIn('id:"fox-scout"', app)
         self.assertIn('id:"robo-buddy"', app)
+        self.assertIn('id:"katty-assistant"', app)
         self.assertIn('id:"comic-star"', app)
         self.assertIn('id:"cosmo-pilot"', app)
         self.assertIn('id:"sun-garden"', app)
@@ -44,7 +45,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
 
     def test_all_catalog_assets_exist_and_are_svg(self):
         ids = [
-            "portrait-violet", "forest-elf", "fox-scout", "robo-buddy",
+            "portrait-violet", "forest-elf", "fox-scout", "robo-buddy", "katty-assistant",
             "comic-star", "cosmo-pilot", "sun-garden", "prism-orbit",
         ]
         for avatar_id in ids:
