@@ -110,3 +110,17 @@ Required safeguards:
 ## Activation rule
 
 This document is not authorization to implement or activate billing. Before implementation, obtain explicit product approval for credit pricing, reservation size, retry charging policy, refund/expiry rules, and guest/admin treatment. Then build and test the ledger independently before connecting it to generation jobs. Until then, all credit fields remain inert placeholders.
+
+
+## Additional hold/release rules for unresolved provider outcomes
+
+A local timeout, worker crash, expired lease, or user cancellation is not proof that provider work stopped or was not billed. Therefore:
+
+- Keep the job's credit reservation intact while any provider attempt is `submitting`, `accepted`, `unknown`, or `reconciling`. Do not release credits merely because the local job lease expired or the user cancelled the UI request.
+- A cancelled job may still incur provider cost. If the provider confirms completion or billable usage after cancellation, suppress publication as requested but record the verified provider cost and apply the disclosed settlement policy. Cancellation is not a free refund guarantee.
+- Release the reservation only after evidence establishes that no provider work was accepted and no billable usage occurred, or after a provider terminal failure with verified zero billable usage.
+- If usage is confirmed but the final result is unavailable or suppressed, still account for verified usage. Do not fabricate a result asset or silently erase the cost.
+- If provider status/billing evidence remains unavailable, leave the reservation in a durable reconciliation hold, surface an appropriate pending status to the user, and alert operations. Never settle or release based solely on elapsed time.
+- Every reconciliation decision must record its evidence source, timestamp, provider operation identifier (if available), decision, and operator/system actor in an append-only audit trail. Do not store credentials or raw sensitive provider payloads.
+
+This is a safety contract only. No wallet, ledger, reservation, reconciliation worker, or billing code is active.
