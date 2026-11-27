@@ -171,5 +171,25 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("!button.isConnected", renderer)
 
 
+    def test_conversation_message_loads_are_latest_request_and_account_only(self):
+        start = APP.index("const loadConversationMessages = async (threadId) =>")
+        end = APP.index("const openConversation = (threadId,partnerId)", start)
+        loader = APP[start:end]
+        self.assertIn("requestVersion=++conversationMessagesRequestVersion", loader)
+        self.assertIn("const contextIsCurrent=()=>", loader)
+        self.assertIn("requestVersion===conversationMessagesRequestVersion", loader)
+        self.assertIn("if(!contextIsCurrent())return;", loader)
+        self.assertIn("if(contextIsCurrent())loadConversations();", loader)
+
+    def test_message_edit_and_delete_actions_are_account_and_thread_fenced(self):
+        start = APP.index("const loadConversationMessages = async (threadId) =>")
+        end = APP.index("const openConversation = (threadId,partnerId)", start)
+        loader = APP[start:end]
+        self.assertEqual(loader.count("const actionIsCurrent=()=>"), 2)
+        self.assertIn("activeMessageThreadId===actionThreadId", loader)
+        self.assertIn("if(actionIsCurrent())loadConversationMessages(threadId);", loader)
+        self.assertIn("if(actionIsCurrent())messagesFeedback(", loader)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
