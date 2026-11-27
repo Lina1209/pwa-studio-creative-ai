@@ -16,7 +16,7 @@ PATH = f"{OWNER}/characters/{CHARACTER}/{OBJECT}.png"
 
 def claim(**changes):
     values = {
-        "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT,
+        "owner_id": OWNER, "asset_id": ASSET, "character_id": CHARACTER, "event_id": EVENT,
         "claim_token": TOKEN, "bucket": "studio-media",
         "storage_path": PATH, "attempts": 1, "max_attempts": 8,
     }
@@ -34,6 +34,7 @@ class MediaCleanupWorkerTests(unittest.TestCase):
             claim(bucket="public"),
             claim(storage_path=f"{OWNER}/../{OBJECT}.png"),
             claim(storage_path=f"{OWNER}/characters/{CHARACTER}/../../bad.png"),
+            claim(storage_path=f"{OWNER}/characters/{ASSET}/{OBJECT}.png"),
             claim(attempts=0),
             claim(max_attempts=9),
         ]
