@@ -16,8 +16,8 @@
   ]);
   const NEXT = {
     local_only: new Set(["reserved", "retryable_error", "conflict", "terminal_error"]),
-    reserved: new Set(["upload_pending", "object_uploaded", "verified", "retryable_error", "conflict", "terminal_error"]),
-    upload_pending: new Set(["reserved", "object_uploaded", "verified", "retryable_error", "conflict", "terminal_error"]),
+    reserved: new Set(["upload_pending", "object_uploaded", "retryable_error", "conflict", "terminal_error"]),
+    upload_pending: new Set(["reserved", "object_uploaded", "retryable_error", "conflict", "terminal_error"]),
     object_uploaded: new Set(["upload_pending", "verified", "retryable_error", "conflict", "terminal_error"]),
     retryable_error: new Set(["reserved", "upload_pending", "object_uploaded", "retryable_error", "conflict", "terminal_error"]),
     conflict: new Set(),
