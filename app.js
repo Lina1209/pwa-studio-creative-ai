@@ -876,18 +876,19 @@ const movieHistoryStyle = document.createElement("style");
     const recipient=$("#messageRecipientId").value.trim(),body=$("#messageFirstText").value.trim();
     if(!recipient||!body)return;
     const version=authContextVersion,userId=authSession.user.id;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;
     button.disabled=true;messagesFeedback("Открываем защищённый диалог…");
     try{
       const sent=await apiRequest("/api/conversations/"+encodeURIComponent(recipient)+"/messages",{method:"POST",body:JSON.stringify({body})});
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       form.reset();activeMessageThreadId=sent.thread_id;activeMessagePartnerId=recipient;
       await loadMessageProfile(recipient);
       $("#conversationTitle").textContent="Диалог с "+messageDisplayName(recipient);
       $("#directMessageForm").hidden=false;
       await loadConversations();await loadConversationMessages(activeMessageThreadId);
       messagesFeedback("Первое сообщение отправлено.");
-    }catch(error){if(version===authContextVersion)messagesFeedback("Не удалось начать диалог: "+error.message);}
-    finally{button.disabled=false;}
+    }catch(error){if(contextIsCurrent())messagesFeedback("Не удалось начать диалог: "+error.message);}
+    finally{if(contextIsCurrent())button.disabled=false;}
   });
   $("#directMessageForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
@@ -1013,14 +1014,17 @@ const movieHistoryStyle = document.createElement("style");
   $("#adminSuspensionForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
     const button=$("#adminSuspensionForm button[type=submit]");
+    if(!authSession?.user)return;
+    const requestVersion=authContextVersion,adminUserId=authSession.user.id;
+    const contextIsCurrent=()=>requestVersion===authContextVersion&&authSession?.user?.id===adminUserId;
     const userId=$("#suspensionUserId").value.trim(), reason=$("#suspensionReason").value.trim(), expiry=$("#suspensionExpiry").value;
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)){adminFeedback("Проверьте UUID пользователя — нужен полный идентификатор Supabase Auth.");return;}
     if(authSession?.user?.id===userId){adminFeedback("Нельзя ограничить собственный аккаунт.");return;}
     const payload={user_id:userId,reason,scope:$("#suspensionScope").value,expires_at:expiry?new Date(expiry).toISOString():null};
     button.disabled=true;
-    try{await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});$("#adminSuspensionForm").reset();adminFeedback("Ограничение создано и записано в журнал.");await loadAdminWorkspace();}
-    catch(error){adminFeedback("Не удалось создать ограничение: "+error.message);}
-    finally{button.disabled=false;}
+    try{await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});if(!contextIsCurrent())return;$("#adminSuspensionForm").reset();adminFeedback("Ограничение создано и записано в журнал.");await loadAdminWorkspace();}
+    catch(error){if(contextIsCurrent())adminFeedback("Не удалось создать ограничение: "+error.message);}
+    finally{if(contextIsCurrent())button.disabled=false;}
   });
   if (authSession?.user) setTimeout(loadAccountRole, 0);
   const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
