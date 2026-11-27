@@ -72,6 +72,10 @@ def validate_reference_batch(items: list[ValidatedReference]) -> list[ValidatedR
         raise ValueError("Select at least one reference image.")
     if len(items) > MAX_REFERENCES_PER_SCENE:
         raise ValueError("No more than 6 reference images may be used for one scene.")
+    if any(not isinstance(item, ValidatedReference) for item in items):
+        raise ValueError("Every batch item must be a validated reference image.")
+    if any(item.size_bytes != len(item.content) for item in items):
+        raise ValueError("Reference image size metadata is inconsistent.")
     if sum(item.size_bytes for item in items) > MAX_BATCH_BYTES:
         raise ValueError("The combined reference images exceed 24 MiB.")
     return items
