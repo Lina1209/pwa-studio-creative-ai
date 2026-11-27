@@ -1472,7 +1472,7 @@ const movieHistoryStyle = document.createElement("style");
           const added=[];
           chosen.forEach(item=>{
             if(selectedLibrarySnapshots.some(saved=>saved.id===item.id))return;
-            const snapshot={id:item.id,name:item.name,kind:item.kind||"character",representation:item.representation||"2d",description:item.description||"",voice:item.voice||"",passport:item.passport||{},referenceImages:(item.referenceImages||[]).map(ref=>({name:ref.name||"",type:ref.type||""}))};
+            const snapshot={id:item.id,name:item.name,kind:item.kind||"character",representation:item.representation||"2d",description:item.description||"",voice:item.voice||"",passport:item.passport||{},referenceImages:(item.referenceImages||[]).map(ref=>({id:ref.id,name:ref.name||"",type:ref.type||""}))};
             selectedLibrarySnapshots.push(snapshot);added.push(snapshot);
           });
           if(!added.length){selectedStatus.textContent="Выбранные карточки уже добавлены.";return;}
@@ -1500,8 +1500,32 @@ const movieHistoryStyle = document.createElement("style");
       const refreshLinked=()=>{
         linked.replaceChildren();
         if(!selectedLibrarySnapshots.length){const empty=document.createElement("p");empty.className="movie-stage-note";empty.textContent="К этому фильму пока не привязаны карточки из библиотеки.";linked.append(empty);return;}
-        const caption=document.createElement("p");caption.className="movie-stage-note";caption.textContent="Снимки паспортов, которые будут сохранены вместе с фильмом:";linked.append(caption);
-        selectedLibrarySnapshots.forEach(item=>{const row=document.createElement("div");row.className="movie-character-linked-row";const name=document.createElement("span");name.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать из фильма";remove.addEventListener("click",()=>{selectedLibrarySnapshots=selectedLibrarySnapshots.filter(saved=>saved.id!==item.id);const startMarker="[[PWA_LIBRARY_ITEM:"+item.id+"]]",endMarker="[[/PWA_LIBRARY_ITEM:"+item.id+"]]",parts=inputs.characters.value.split(startMarker);if(parts.length>1){const rest=parts.slice(1).map(part=>{const endAt=part.indexOf(endMarker);return endAt>=0?part.slice(endAt+endMarker.length):part;}).join("");inputs.characters.value=parts[0]+rest;inputs.characters.dispatchEvent(new Event("input",{bubbles:true}));}refreshLinked();});row.append(name,remove);linked.append(row);});
+        const caption=document.createElement("p");caption.className="movie-stage-note";caption.textContent="Снимки паспортов и выбранные референсы для будущих сцен:";linked.append(caption);
+        selectedLibrarySnapshots.forEach(item=>{
+          const card=document.createElement("section");card.className="movie-character-reference-card";
+          const row=document.createElement("div");row.className="movie-character-linked-row";
+          const name=document.createElement("strong");name.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;
+          const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать из фильма";
+          remove.addEventListener("click",()=>{selectedLibrarySnapshots=selectedLibrarySnapshots.filter(saved=>saved.id!==item.id);const startMarker="[[PWA_LIBRARY_ITEM:"+item.id+"]]",endMarker="[[/PWA_LIBRARY_ITEM:"+item.id+"]]",parts=inputs.characters.value.split(startMarker);if(parts.length>1){const rest=parts.slice(1).map(part=>{const endAt=part.indexOf(endMarker);return endAt>=0?part.slice(endAt+endMarker.length):part;}).join("");inputs.characters.value=parts[0]+rest;inputs.characters.dispatchEvent(new Event("input",{bubbles:true}));}refreshLinked();});
+          row.append(name,remove);card.append(row);
+          const referenceList=document.createElement("div");referenceList.className="movie-character-reference-list";
+          const refs=(item.referenceImages||[]).filter(ref=>ref.id);
+          if(refs.length){
+            const hint=document.createElement("p");hint.className="movie-stage-note";hint.textContent="Отметьте изображения, которые нужно использовать как визуальные ориентиры. Файлы остаются в вашей библиотеке.";referenceList.append(hint);
+            refs.forEach(ref=>{
+              const label=document.createElement("label");label.className="movie-character-reference-option";
+              const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=(item.selectedReferenceIds||[]).includes(ref.id);
+              checkbox.addEventListener("change",()=>{item.selectedReferenceIds=Array.isArray(item.selectedReferenceIds)?item.selectedReferenceIds:[];item.selectedReferenceIds=checkbox.checked?[...new Set([...item.selectedReferenceIds,ref.id])]:item.selectedReferenceIds.filter(id=>id!==ref.id);});
+              const textLabel=document.createElement("span");textLabel.textContent=ref.name||"Референс";
+              label.append(checkbox,textLabel);referenceList.append(label);
+            });
+          }else{const empty=document.createElement("p");empty.className="movie-stage-note";empty.textContent="У этой карточки пока нет изображений-референсов.";referenceList.append(empty);}
+          const sceneLabel=document.createElement("label");sceneLabel.className="movie-character-scene-assignment";
+          const sceneCaption=document.createElement("span");sceneCaption.textContent="Номера сцен для этого образа (например: 1, 2, 4):";
+          const sceneInput=document.createElement("input");sceneInput.type="text";sceneInput.maxLength=80;sceneInput.placeholder="Все сцены — оставьте пустым";sceneInput.value=Array.isArray(item.sceneNumbers)?item.sceneNumbers.join(", "):"";
+          sceneInput.addEventListener("input",()=>{item.sceneNumbers=[...new Set(sceneInput.value.split(/[;,\\s]+/).map(value=>Number(value)).filter(value=>Number.isInteger(value)&&value>0&&value<=999))];});
+          sceneLabel.append(sceneCaption,sceneInput);referenceList.append(sceneLabel);card.append(referenceList);linked.append(card);
+        });
       };
       refreshLinked();picker.append(linked);form.append(picker);
     }
