@@ -60,6 +60,40 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         mark.assert_called_once()
 
     @patch("app.main.mark_character_reference_object_uploaded")
+    @patch("app.main.upload_character_reference_object", side_effect=HTTPException(status_code=503, detail="storage unavailable"))
+    @patch("app.main.reserve_character_reference_upload", side_effect=lambda _settings, plan: {"id": plan.asset_id, "status": "pending_upload"})
+    @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
+    def test_storage_failure_leaves_durable_reservation_for_verifier_recovery(
+        self, character_lookup, reserve, upload, mark
+    ):
+        response = self.client.post(
+            f"/api/characters/{CHARACTER}/references",
+            headers={"Idempotency-Key": "test-character-upload-storage-failure"},
+            files={"file": ("portrait.png", png_bytes(), "image/png")},
+        )
+        self.assertEqual(response.status_code, 503)
+        reserve.assert_called_once()
+        upload.assert_called_once()
+        mark.assert_not_called()
+
+    @patch("app.main.mark_character_reference_object_uploaded")
+    @patch("app.main.upload_character_reference_object", side_effect=HTTPException(status_code=409, detail="object already exists"))
+    @patch("app.main.reserve_character_reference_upload", return_value={"id": "asset", "status": "pending_upload"})
+    @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
+    def test_existing_object_conflict_does_not_mark_upload_and_keeps_verification_event(
+        self, character_lookup, reserve, upload, mark
+    ):
+        response = self.client.post(
+            f"/api/characters/{CHARACTER}/references",
+            headers={"Idempotency-Key": "test-character-upload-object-exists"},
+            files={"file": ("portrait.png", png_bytes(), "image/png")},
+        )
+        self.assertEqual(response.status_code, 409)
+        reserve.assert_called_once()
+        upload.assert_called_once()
+        mark.assert_not_called()
+
+    @patch("app.main.mark_character_reference_object_uploaded")
     @patch("app.main.upload_character_reference_object")
     @patch("app.main.reserve_character_reference_upload")
     @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
