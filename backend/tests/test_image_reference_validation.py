@@ -1,25 +1,55 @@
 import unittest
+from dataclasses import replace
+from io import BytesIO
+
+from PIL import Image
 
 from app.services.image_reference_validation import (
     MAX_REFERENCE_BYTES,
+    MAX_IMAGE_WIDTH,
     validate_reference_batch,
     validate_reference_image,
 )
 
 
+def make_image(fmt="PNG", size=(16, 12), frames=1):
+    output = BytesIO()
+    images = [Image.new("RGB", size, (20 + index, 40, 60)) for index in range(frames)]
+    if frames > 1:
+        images[0].save(output, format=fmt, save_all=True, append_images=images[1:], duration=100, loop=0)
+    else:
+        images[0].save(output, format=fmt)
+    return output.getvalue()
+
+
 class ImageReferenceValidationTests(unittest.TestCase):
-    def test_accepts_png_by_signature(self):
-        result = validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x" * 20, "../../portrait.png", "image/png")
+    def test_accepts_fully_decoded_png_and_sanitizes_filename(self):
+        result = validate_reference_image(make_image(), "../../portrait.png", "image/png")
         self.assertEqual(result.mime_type, "image/png")
         self.assertEqual(result.safe_filename, "portrait.png")
+        self.assertEqual((result.width, result.height, result.frame_count), (16, 12, 1))
 
-    def test_accepts_webp_by_container_signature(self):
-        data = b"RIFF" + (20).to_bytes(4, "little") + b"WEBP" + b"x" * 8
-        self.assertEqual(validate_reference_image(data, "ref.webp").mime_type, "image/webp")
+    def test_accepts_jpeg_and_webp_by_actual_container(self):
+        for fmt, mime, filename in (
+            ("JPEG", "image/jpeg", "photo.jpg"),
+            ("WEBP", "image/webp", "photo.webp"),
+        ):
+            with self.subTest(fmt=fmt):
+                result = validate_reference_image(make_image(fmt), filename, mime)
+                self.assertEqual(result.mime_type, mime)
+
+    def test_rejects_signature_only_fake_png(self):
+        with self.assertRaises(ValueError):
+            validate_reference_image(b"\\x89PNG\\r\\n\\x1a\\n" + b"x" * 20, "fake.png")
+
+    def test_rejects_truncated_image(self):
+        valid = make_image()
+        with self.assertRaises(ValueError):
+            validate_reference_image(valid[:24], "truncated.png")
 
     def test_rejects_mime_spoofing(self):
         with self.assertRaises(ValueError):
-            validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x", "fake.jpg", "image/jpeg")
+            validate_reference_image(make_image(), "fake.jpg", "image/jpeg")
 
     def test_rejects_unknown_and_empty(self):
         for data in (b"", b"GIF89a" + b"x" * 20, b"not-an-image"):
@@ -28,10 +58,20 @@ class ImageReferenceValidationTests(unittest.TestCase):
 
     def test_rejects_oversized_file(self):
         with self.assertRaises(ValueError):
-            validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x" * MAX_REFERENCE_BYTES, "large.png")
+            validate_reference_image(b"\\x89PNG\\r\\n\\x1a\\n" + b"x" * MAX_REFERENCE_BYTES, "large.png")
+
+    def test_rejects_excessive_dimensions(self):
+        data = make_image(size=(MAX_IMAGE_WIDTH + 1, 1))
+        with self.assertRaises(ValueError):
+            validate_reference_image(data, "wide.png")
+
+    def test_rejects_animated_webp(self):
+        data = make_image("WEBP", frames=2)
+        with self.assertRaises(ValueError):
+            validate_reference_image(data, "animated.webp")
 
     def test_rejects_too_many_references(self):
-        one = validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x", "one.png")
+        one = validate_reference_image(make_image(), "one.png")
         with self.assertRaises(ValueError):
             validate_reference_batch([one] * 7)
 
@@ -42,14 +82,12 @@ class ImageReferenceValidationTests(unittest.TestCase):
             validate_reference_batch([object()])
 
     def test_rejects_inconsistent_reference_size_metadata(self):
-        from dataclasses import replace
-
-        one = validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x", "one.png")
+        one = validate_reference_image(make_image(), "one.png")
         with self.assertRaises(ValueError):
             validate_reference_batch([replace(one, size_bytes=999)])
 
     def test_accepts_bounded_batch(self):
-        one = validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x", "one.png")
+        one = validate_reference_image(make_image(), "one.png")
         self.assertEqual(len(validate_reference_batch([one, one])), 2)
 
 
