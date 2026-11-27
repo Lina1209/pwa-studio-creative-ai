@@ -6,7 +6,7 @@ object path. Never pass a client-supplied path into this planner.
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.services.media_access import ALLOWED_BUCKETS
+from app.services.media_access import ALLOWED_BUCKETS, ALLOWED_EXTENSIONS, ALLOWED_RESOURCE_KINDS
 from app.services.media_lifecycle import MediaStatus
 
 
@@ -49,10 +49,20 @@ def plan_media_cleanup(
     if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
         raise ValueError("Invalid server-stored media object key.")
     segments = path.split("/")
-    if len(segments) < 4 or any(part in ("", ".", "..") for part in segments):
+    if len(segments) != 4 or any(part in ("", ".", "..") for part in segments):
         raise ValueError("Invalid server-stored media object key.")
     if segments[0] != owner:
         raise ValueError("Media object key owner mismatch.")
+    if segments[1] not in ALLOWED_RESOURCE_KINDS:
+        raise ValueError("Unsupported media resource kind in object key.")
+    _uuid(segments[2], "object resource")
+    filename = segments[3]
+    if filename.count(".") != 1:
+        raise ValueError("Invalid media object filename.")
+    object_id, extension = filename.rsplit(".", 1)
+    _uuid(object_id, "storage object")
+    if extension.lower() not in ALLOWED_EXTENSIONS:
+        raise ValueError("Unsupported media object extension.")
     if exact_object_is_referenced:
         raise ValueError("Media object is still referenced and cannot be deleted.")
     return MediaCleanupPlan(
