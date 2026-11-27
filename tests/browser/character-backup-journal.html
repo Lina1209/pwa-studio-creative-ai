@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Character backup journal browser tests</title></head>
+<body>
+<pre id="results">Running…</pre>
+<script src="../../character-backup-journal.js"></script>
+<script>
+(async () => {
+  const output = document.getElementById("results");
+  const passed = [];
+  const uuid = () => crypto.randomUUID();
+  const sha = "a".repeat(64);
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const rejects = async (fn, message) => {
+    let rejected = false;
+    try { await fn(); } catch { rejected = true; }
+    check(rejected, message);
+  };
+  const test = async (name, fn) => {
+    await fn(); passed.push(name);
+  };
+  try {
+    const api = window.PWACharacterBackupJournal;
+    check(!!api, "journal module did not load");
+    const owner = uuid(), otherOwner = uuid(), localCharacter = uuid();
+    const localRef = "local-ref-" + uuid();
+    const cloudCharacter = uuid(), cloudAsset = uuid();
+    const journalInput = {
+      ownerId: owner, localCharacterId: localCharacter, passportFingerprint: sha,
+      references: [{
+        localReferenceId: localRef, sha256: sha, sizeBytes: 1024,
+        mimeType: "image/png", fileName: "reference.png", idempotencyKey: "idem-" + uuid()
+      }]
+    };
+
+    await test("create persists and reads back journal", async () => {
+      const created = await api.create(journalInput);
+      check(created.ownerId === owner && created.references.length === 1, "journal fields mismatch");
+      const read = await api.get(owner, localCharacter);
+      check(JSON.stringify(read) === JSON.stringify(created), "journal read-back mismatch");
+    });
+    await test("duplicate journal creation is rejected", async () => {
+      await rejects(() => api.create(journalInput), "duplicate journal unexpectedly accepted");
+    });
+    await test("owner boundary prevents foreign reads", async () => {
+      check(await api.get(otherOwner, localCharacter) === null, "foreign owner read returned a record");
+      const rows = await api.list(owner);
+      check(rows.length === 1 && rows[0].ownerId === owner, "owner list leaked or omitted journal");
+      check((await api.list(otherOwner)).length === 0, "foreign list leaked a journal");
+    });
+    await test("cloud character mapping is immutable", async () => {
+      await api.setCloudCharacter(owner, localCharacter, cloudCharacter);
+      await rejects(() => api.setCloudCharacter(owner, localCharacter, uuid()), "cloud mapping replacement unexpectedly accepted");
+    });
+    await test("illegal state transition is rejected", async () => {
+      await rejects(() => api.transition({
+        ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "verified", cloudAssetId: cloudAsset
+      }), "local_only to verified unexpectedly accepted");
+    });
+    await test("valid lifecycle reaches verified only with cloud asset mapping", async () => {
+      for (const state of ["reserved", "upload_pending", "object_uploaded"]) {
+        await api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state});
+      }
+      await api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state:"verified", cloudAssetId:cloudAsset});
+      const row = await api.get(owner, localCharacter);
+      const status = api.completionStatus(row);
+      check(status.complete && status.verifiedReferences === 1 && status.totalReferences === 1, "completion criteria mismatch");
+    });
+    await test("verified state is terminal", async () => {
+      await rejects(() => api.transition({
+        ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "retryable_error"
+      }), "verified state was allowed to move backwards");
+    });
+    output.textContent = "PASS " + passed.length + " tests\n" + passed.map(x => "✓ " + x).join("\n");
+    document.documentElement.dataset.testResult = "passed";
+  } catch (error) {
+    output.textContent = "FAIL after " + passed.length + " tests\n" + passed.map(x => "✓ " + x).join("\n") + "\n" + (error.stack || error);
+    document.documentElement.dataset.testResult = "failed";
+  }
+})();
+</script>
+</body></html>
