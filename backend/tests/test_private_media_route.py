@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.auth import StudioUser, get_current_user
+from app.services.image_reference_validation import ValidatedReference
 
 OWNER = "11111111-1111-4111-8111-111111111111"
 ASSET = "22222222-2222-4222-8222-222222222222"
@@ -56,6 +57,30 @@ class PrivateMediaRouteTests(unittest.TestCase):
         self.assertNotIn("metadata", body["asset"])
         self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
         sign.assert_called_once()
+
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.get_owned_media_asset", return_value=owned_ready_asset())
+    def test_authenticated_image_proxy_returns_no_store_verified_image(self, get_asset, download):
+        download.return_value = ValidatedReference(
+            content=b"validated-png-bytes", mime_type="image/png",
+            safe_filename="portrait.png", size_bytes=19,
+            width=1, height=1, frame_count=1,
+        )
+        response = self.client.get(f"/api/media/{ASSET}/content")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"validated-png-bytes")
+        self.assertEqual(response.headers["content-type"], "image/png")
+        self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["cross-origin-resource-policy"], "same-origin")
+        download.assert_called_once()
+
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.get_owned_media_asset", return_value={**owned_ready_asset(), "status": "deleted"})
+    def test_deleted_asset_is_denied_before_storage_download(self, get_asset, download):
+        response = self.client.get(f"/api/media/{ASSET}/content")
+        self.assertEqual(response.status_code, 404)
+        download.assert_not_called()
 
     @patch("app.main.create_private_media_signed_url")
     @patch("app.main.get_owned_media_asset", side_effect=HTTPException(status_code=404, detail="Media resource not found."))
