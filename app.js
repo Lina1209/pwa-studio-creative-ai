@@ -1042,8 +1042,11 @@ const movieHistoryStyle = document.createElement("style");
     }
   });
 
-  $$("[data-assist]").forEach(btn => btn.addEventListener("click", () => {
-    $("#assistantInput").value = btn.dataset.assist;
+  $("[data-assist]").forEach(btn => btn.addEventListener("click", () => {
+    const prompt = btn.dataset.assist || "";
+    $("#assistantInput").value = prompt;
+    setKattyAssistantMode(kattyModeForMessage(prompt));
+    setKattyAssistantExpression(kattyContextState(prompt));
     $("#assistantInput").focus();
   }));
   // AI Companion cloud history. Supabase RLS restricts every row to its owner.
