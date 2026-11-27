@@ -57,6 +57,8 @@ def plan_character_media_cleanup(
         seen_assets.add(asset_id)
 
         bucket, path = asset.get("bucket"), asset.get("storage_path")
+        if not isinstance(bucket, str) or not isinstance(path, str):
+            raise ValueError("Character media object key is invalid.")
         object_key = (bucket, path)
         if object_key in seen_objects:
             raise ValueError("Duplicate object key in character media records.")
