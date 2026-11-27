@@ -11,6 +11,19 @@
 --      and acknowledges the event atomically.
 --   5) finalize RPC deletes the character only after all child assets are detached.
 
+-- Character media objects must be deleted only by the fenced service-role
+-- cleanup worker. The earlier owner-folder DELETE policy would let a browser
+-- remove a ready object without tombstoning its media_assets row or recording
+-- an outbox event. Keep direct owner deletion for exports only.
+drop policy if exists "Users delete own studio media" on storage.objects;
+drop policy if exists "Users delete own studio exports" on storage.objects;
+create policy "Users delete own studio exports" on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'studio-exports'
+    and (storage.foldername(name))[1] = (select auth.uid())::text
+  );
+
 -- Media lifecycle metadata is server-managed. Browser roles may read their
 -- own rows, but may not forge ready assets, bypass cleanup, or delete metadata
 -- while a private object may still exist. Cloud-sync writes go through the
