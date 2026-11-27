@@ -20,7 +20,7 @@ create table if not exists public.ai_budget_policies (
   scope_key text not null,
   period_start timestamptz not null,
   period_end timestamptz not null,
-  limit_usd numeric(20,10) not null check (limit_usd >= 0),
+  limit_usd numeric(20,10) not null check (limit_usd >= 0 and limit_usd::text not in ('NaN','Infinity','-Infinity')),
   enabled boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -117,7 +117,7 @@ begin
   if p_request_id is null or p_user_id is null
      or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 160
      or p_request_fingerprint is null or p_request_fingerprint !~ '^[a-f0-9]{64}$'
-     or p_endpoint not in ('chat','prompts')
+     or p_endpoint is null or p_endpoint not in ('chat','prompts')
      or p_provider is null or length(p_provider) not between 1 and 80
      or p_model is null or length(p_model) not between 1 and 160
      or p_reserved_usd is null or p_reserved_usd <= 0
