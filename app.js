@@ -236,10 +236,23 @@ const movieHistoryStyle = document.createElement("style");
   const authLogoutButton = document.createElement("button");
   authLogoutButton.type = "button"; authLogoutButton.id = "profileLogout"; authLogoutButton.className = "auth-link"; authLogoutButton.textContent = "Выйти из аккаунта"; authLogoutButton.hidden = true;
   authLogoutButton.addEventListener("click", async () => {
-    if (!supabaseClient) return;
-    const {error} = await supabaseClient.auth.signOut();
-    if (error) setAuthMessage(error.message, true);
-    else { authGate.hidden = true; setAuthMessage(""); refreshAuthUI(null); }
+    if (!supabaseClient || !authSession?.user) return;
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
+    const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === requestUserId;
+    authLogoutButton.disabled = true;
+    try {
+      const {error} = await supabaseClient.auth.signOut();
+      // Supabase's auth-state event normally performs the transition. Never let
+      // a late logout response clear or overwrite a newer account's UI.
+      if (!contextIsCurrent()) return;
+      if (error) setAuthMessage(error.message, true);
+      else { authGate.hidden = true; setAuthMessage(""); refreshAuthUI(null); }
+    } catch (error) {
+      if (contextIsCurrent()) setAuthMessage(error.message || "Не удалось выйти из аккаунта.", true);
+    } finally {
+      if (contextIsCurrent()) authLogoutButton.disabled = false;
+    }
   });
   const profileBlock = $(".profile");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
