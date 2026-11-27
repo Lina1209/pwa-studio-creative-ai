@@ -198,6 +198,15 @@
     const resultBox = document.querySelector("#audioStoryResult");
     const resultText = document.querySelector("#audioStoryResultText");
     let selectedFile = null, previewUrl = null, recognition = null, latestResult = "";
+    let audioStoryRequestVersion = 0;
+    window.addEventListener("pwa-studio-auth-changed", () => {
+      audioStoryRequestVersion += 1;
+      latestResult = "";
+      resultText.value = "";
+      resultBox.hidden = true;
+      generate.disabled = false;
+      status.textContent = "Аккаунт изменился. Создайте материал заново в текущем сеансе.";
+    });
     input.addEventListener("change", () => {
       const file = input.files?.[0]; if (!file) return;
       if (!file.type.startsWith("audio/") || file.size > 25*1024*1024) {
@@ -238,12 +247,14 @@
       if(!transcript.value.trim()){status.textContent="Сначала добавьте расшифровку или описание аудио.";transcript.focus();return;}
       if(!window.PWAStudioAudioBridge){status.textContent="Модуль студии ещё загружается. Обновите страницу через минуту.";return;}
       generate.disabled=true;status.textContent="Studio AI создаёт материал…";
+      const requestVersion = audioStoryRequestVersion;
       try{
-        latestResult=await window.PWAStudioAudioBridge.generate({transcript:transcript.value,outputType:document.querySelector("#audioStoryOutput").value,language:document.querySelector("#audioStoryLanguage").value,sourceKind:document.querySelector("#audioStorySource").value,fileName:selectedFile?.name||""});
-        resultText.value=latestResult;resultBox.hidden=false;status.textContent="✓ Материал создан. Проверьте его перед сохранением.";
+        const generated = await window.PWAStudioAudioBridge.generate({transcript:transcript.value,outputType:document.querySelector("#audioStoryOutput").value,language:document.querySelector("#audioStoryLanguage").value,sourceKind:document.querySelector("#audioStorySource").value,fileName:selectedFile?.name||""});
+        if (requestVersion !== audioStoryRequestVersion) return;
+        latestResult=generated;resultText.value=latestResult;resultBox.hidden=false;status.textContent="✓ Материал создан. Проверьте его перед сохранением.";
         resultBox.scrollIntoView({behavior:"smooth",block:"start"});
-      }catch(error){status.textContent="Не удалось создать материал: "+error.message}
-      finally{generate.disabled=false;}
+      }catch(error){if(requestVersion===audioStoryRequestVersion)status.textContent="Не удалось создать материал: "+error.message}
+      finally{if(requestVersion===audioStoryRequestVersion)generate.disabled=false;}
     });
     document.querySelector("#audioStoryCopy").addEventListener("click",async()=>{
       try{await navigator.clipboard.writeText(latestResult);document.querySelector("#audioStoryResultStatus").textContent="Скопировано ✓";}
