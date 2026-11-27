@@ -52,7 +52,7 @@ def claim_media_cleanup(settings: Settings, claim_token: str, lease_seconds: int
     if result is None:
         return None
     required = {
-        "event_id", "owner_id", "asset_id", "claim_token", "bucket",
+        "event_id", "owner_id", "asset_id", "character_id", "claim_token", "bucket",
         "storage_path", "attempts", "max_attempts",
     }
     if not required.issubset(result):
