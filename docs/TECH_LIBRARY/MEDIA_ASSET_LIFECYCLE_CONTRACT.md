@@ -1,4 +1,4 @@
-**Verification update (2026-11-27):** GitHub Actions run 15 completed successfully: all 214 backend Python unit/source-contract tests passed, and `bash -n` passed for `supabase/tests/0019_media_cleanup_claim_race.sh`. This did not execute the PostgreSQL transaction/race harnesses or contact Supabase Storage; no live database, Storage, deployment, or production operation was performed.
+**Verification update (2026-11-27):** GitHub Actions run 21 passed all 214 backend Python unit/source-contract tests and ran migrations 0005, 0012, 0017, 0018, and 0019 plus both 0019 SQL harnesses against a disposable PostgreSQL 16 instance with minimal Supabase-compatible auth/storage schemas. The transaction harness rolled back successfully; the two-session race confirmed exactly one claimant, lease recovery, stale-token fencing, and finalization. The CI database is not a full Supabase stack: no real Supabase Auth/RLS JWT session or Storage HTTP DELETE was exercised. No production database, Storage object, deployment, or live secret was touched.
 
 # PWA Studio — private media asset lifecycle contract
 
@@ -306,7 +306,7 @@ A narrow Storage primitive now exists in `backend/app/services/media_storage_del
 7. Finalize each asset tombstone and acknowledge its outbox event atomically, fenced by the current claim token. Only after every associated asset is terminal and absent/reconciled may a separate owner-scoped transaction delete the character.
 8. If any step fails, keep the character and cleanup-pending tombstones; never cascade-delete metadata before the private objects are reconciled.
 
-**Checkpoint note:** this section described the state before migration 0019. The atomic cleanup RPCs and worker are now drafted in section 28. There is still no public character-delete route, no deployed worker, and no executed disposable integration test; deletion remains inactive.
+**Checkpoint note:** this section described the state before migration 0019. The atomic cleanup RPCs and worker are now drafted in section 28. There is still no public character-delete route or deployed worker. The disposable PostgreSQL 16 migration/transaction/race integration checks have now passed in CI, but no real Supabase Storage operation or full two-account Supabase RLS test has been run; deletion remains inactive.
 
 ## 28. Durable character cleanup worker (feature-branch draft)
 
@@ -327,7 +327,7 @@ The cleanup worker rechecks references at claim time, while advisory-lock trigge
 
 The current request RPC supports character-linked image objects in the private `studio-media` bucket with the canonical `<owner>/characters/<character>/<object>.(png|jpg|webp)` key. Other media types and arbitrary legacy paths fail closed rather than being deleted.
 
-**Not implemented:** no public/API character-delete endpoint is enabled; no UI delete action is wired to these RPCs. The service-role repository exposes reservation/finalization methods for future route integration. Migration 0019 remains a draft. Its Python unit tests passed in the 214-test backend suite, but the PostgreSQL transaction and two-session race harnesses remain unexecuted and must pass on a disposable database before activation.
+**Not implemented:** no public/API character-delete endpoint is enabled; no UI delete action is wired to these RPCs. The service-role repository exposes reservation/finalization methods for future route integration. Migration 0019 remains a draft. Its Python unit tests and PostgreSQL 16 disposable transaction/two-session race harnesses passed in GitHub Actions run 21 using a minimal Supabase-compatible schema. The actual Supabase Storage DELETE/404/timeout behavior and full two-account Supabase RLS integration matrix remain unverified and are required before activation.
 
 The cleanup migration also sets `characters.cleanup_operation_id` / `cleanup_requested_at` as a deletion-intent fence. A database trigger serializes new `media_assets` inserts or character reassociations against the character row lock: an upload reservation that commits first is included in cleanup; a cleanup request that commits first blocks later reservations. Browser roles lose INSERT/UPDATE/DELETE privileges on `media_assets` and DELETE on `characters`; lifecycle writes remain server-managed. This is necessary because the earlier owner-wide RLS policy alone would otherwise allow direct browser writes to forge ready metadata or bypass the cleanup outbox.
 
