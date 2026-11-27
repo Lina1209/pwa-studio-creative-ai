@@ -7,6 +7,7 @@ from PIL import Image
 from app.services.image_reference_validation import (
     MAX_REFERENCE_BYTES,
     MAX_IMAGE_WIDTH,
+    MAX_IMAGE_PIXELS,
     validate_reference_batch,
     validate_reference_image,
 )
@@ -64,6 +65,12 @@ class ImageReferenceValidationTests(unittest.TestCase):
         data = make_image(size=(MAX_IMAGE_WIDTH + 1, 1))
         with self.assertRaises(ValueError):
             validate_reference_image(data, "wide.png")
+
+    def test_rejects_excessive_pixel_count(self):
+        data = make_image(size=(4000, 4001))
+        self.assertGreater(4000 * 4001, MAX_IMAGE_PIXELS)
+        with self.assertRaises(ValueError):
+            validate_reference_image(data, "pixels.png")
 
     def test_rejects_animated_webp(self):
         data = make_image("WEBP", frames=2)
