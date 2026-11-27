@@ -25,7 +25,14 @@
       "mouth": "small natural smile",
       "cheeks": "relaxed",
       "intensity": 0.25,
-      "use": ["default", "idle", "listening"]
+      "use": [
+        "default",
+        "idle",
+        "listening"
+      ],
+      "asset": "assets/characters/katty/expressions/neutral-warm.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     },
     {
       "id": "joy",
@@ -35,7 +42,14 @@
       "mouth": "open or closed cheerful smile",
       "cheeks": "lifted",
       "intensity": 0.7,
-      "use": ["welcome", "success", "friendly response"]
+      "use": [
+        "welcome",
+        "success",
+        "friendly response"
+      ],
+      "asset": "assets/characters/katty/expressions/joy.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     },
     {
       "id": "delight",
@@ -45,7 +59,13 @@
       "mouth": "broad open smile",
       "cheeks": "lifted",
       "intensity": 1,
-      "use": ["creative reveal", "celebration"]
+      "use": [
+        "creative reveal",
+        "celebration"
+      ],
+      "asset": "assets/characters/katty/expressions/delight.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     },
     {
       "id": "curious",
@@ -55,7 +75,13 @@
       "mouth": "small thoughtful smile",
       "cheeks": "relaxed",
       "intensity": 0.45,
-      "use": ["question", "idea exploration"]
+      "use": [
+        "question",
+        "idea exploration"
+      ],
+      "asset": "assets/characters/katty/expressions/curious.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     },
     {
       "id": "focused",
@@ -65,7 +91,14 @@
       "mouth": "closed neutral line",
       "cheeks": "relaxed",
       "intensity": 0.5,
-      "use": ["explaining", "working", "problem solving"]
+      "use": [
+        "explaining",
+        "working",
+        "problem solving"
+      ],
+      "asset": "assets/characters/katty/expressions/focused.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     },
     {
       "id": "surprised",
@@ -75,7 +108,13 @@
       "mouth": "small rounded opening",
       "cheeks": "relaxed",
       "intensity": 0.55,
-      "use": ["unexpected discovery", "playful reaction"]
+      "use": [
+        "unexpected discovery",
+        "playful reaction"
+      ],
+      "asset": "assets/characters/katty/expressions/surprised.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     },
     {
       "id": "empathetic",
@@ -85,7 +124,13 @@
       "mouth": "gentle closed smile",
       "cheeks": "relaxed",
       "intensity": 0.4,
-      "use": ["support", "careful listening"]
+      "use": [
+        "support",
+        "careful listening"
+      ],
+      "asset": "assets/characters/katty/expressions/empathetic.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     },
     {
       "id": "thinking",
@@ -95,7 +140,13 @@
       "mouth": "subtle thoughtful expression",
       "cheeks": "relaxed",
       "intensity": 0.35,
-      "use": ["planning", "considering options"]
+      "use": [
+        "planning",
+        "considering options"
+      ],
+      "asset": "assets/characters/katty/expressions/thinking.svg",
+      "assetType": "static_svg",
+      "assetStatus": "approved_static_artwork"
     }
   ],
   "motionPrinciples": {
