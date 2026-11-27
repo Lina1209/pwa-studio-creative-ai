@@ -11,6 +11,23 @@ APP = (Path(__file__).resolve().parents[1] / "app.js").read_text(encoding="utf-8
 
 
 class CharacterLibraryAccountFencingTests(unittest.TestCase):
+    def test_community_search_results_are_latest_request_only(self):
+        search_start = APP.index("const searchCommunity = async")
+        search_end = APP.index("const openCommunityProfile = async", search_start)
+        search = APP[search_start:search_end]
+        self.assertIn("const requestVersion=++communitySearchRequestVersion;", search)
+        self.assertIn("requestVersion!==communitySearchRequestVersion", search)
+        self.assertIn("authSession?.user?.id===userId", search)
+
+    def test_community_profile_view_is_latest_request_and_account_only(self):
+        profile_start = APP.index("const openCommunityProfile = async")
+        profile_end = APP.index('$("#communitySearchButton")', profile_start)
+        profile = APP[profile_start:profile_end]
+        self.assertIn("const requestVersion=++communityProfileRequestVersion;", profile)
+        self.assertIn("requestVersion!==communityProfileRequestVersion", profile)
+        self.assertIn("version!==authContextVersion", profile)
+        self.assertIn("authSession?.user?.id!==userId", profile)
+
     def test_logout_response_is_fenced_to_originating_account(self):
         logout_start = APP.index('authLogoutButton.addEventListener("click"')
         logout_end = APP.index('\n  });', logout_start) + 6
