@@ -1,6 +1,8 @@
 -- PWA Studio Character Library: read-only post-migration verification.
 -- Run ONLY in a disposable Supabase test project after applying migration 0012.
 -- This script does not insert, update, or delete data.
+-- Storage policy names are intentionally not hard-coded: installations may use
+-- different policy labels, so the checks inspect the actual policy expressions.
 
 WITH checks AS (
   SELECT
@@ -20,8 +22,8 @@ WITH checks AS (
       WHERE c.conrelid='public.media_assets'::regclass
         AND c.confrelid='public.characters'::regclass
         AND c.contype='f'
-        AND pg_get_constraintdef(c.oid) ILIKE
-          'FOREIGN KEY (character_id, owner_id) REFERENCES characters(id, owner_id)%'
+        AND replace(pg_get_constraintdef(c.oid),'public.','') ILIKE
+          'FOREIGN KEY (character_id, owner_id) REFERENCES characters (id, owner_id)%'
     ),
     'FK (character_id, owner_id) -> characters(id, owner_id)'
   UNION ALL
@@ -31,7 +33,7 @@ WITH checks AS (
       SELECT 1 FROM pg_constraint c
       WHERE c.conrelid='public.characters'::regclass
         AND c.contype='u'
-        AND pg_get_constraintdef(c.oid) ILIKE 'UNIQUE (id, owner_id)%'
+        AND replace(pg_get_constraintdef(c.oid),'public.','') ILIKE 'UNIQUE (id, owner_id)%'
     ),
     'UNIQUE (id, owner_id)'
   UNION ALL
@@ -42,12 +44,12 @@ WITH checks AS (
   UNION ALL
   SELECT
     'characters RLS enabled',
-    (SELECT relrowsecurity FROM pg_class WHERE oid='public.characters'::regclass),
+    COALESCE((SELECT relrowsecurity FROM pg_class WHERE oid='public.characters'::regclass),false),
     'pg_class.relrowsecurity = true'
   UNION ALL
   SELECT
     'media_assets RLS enabled',
-    (SELECT relrowsecurity FROM pg_class WHERE oid='public.media_assets'::regclass),
+    COALESCE((SELECT relrowsecurity FROM pg_class WHERE oid='public.media_assets'::regclass),false),
     'pg_class.relrowsecurity = true'
   UNION ALL
   SELECT
@@ -55,22 +57,24 @@ WITH checks AS (
     EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename='characters'
-        AND policyname='characters_owner'
+        AND roles @> ARRAY['authenticated']
+        AND cmd='ALL'
         AND qual ILIKE '%owner_id%auth.uid()%'
         AND with_check ILIKE '%owner_id%auth.uid()%'
     ),
-    'characters_owner USING and WITH CHECK owner_id = auth.uid()'
+    'authenticated ALL policy with owner_id = auth.uid() in USING and WITH CHECK'
   UNION ALL
   SELECT
     'media_assets owner policy exists',
     EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename='media_assets'
-        AND policyname='media_assets_owner'
+        AND roles @> ARRAY['authenticated']
+        AND cmd='ALL'
         AND qual ILIKE '%owner_id%auth.uid()%'
         AND with_check ILIKE '%owner_id%auth.uid()%'
     ),
-    'media_assets_owner USING and WITH CHECK owner_id = auth.uid()'
+    'authenticated ALL policy with owner_id = auth.uid() in USING and WITH CHECK'
   UNION ALL
   SELECT
     'studio-media bucket is private',
@@ -81,26 +85,28 @@ WITH checks AS (
     'storage.buckets: id=studio-media, public=false'
   UNION ALL
   SELECT
-    'studio-media SELECT policy exists',
+    'studio-media SELECT policy is owner-folder scoped',
     EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='storage' AND tablename='objects'
-        AND policyname='Users read own studio media'
+        AND cmd='SELECT'
         AND qual ILIKE '%studio-media%'
         AND qual ILIKE '%auth.uid()%'
+        AND qual ILIKE '%foldername%'
     ),
-    'Users read own studio media, scoped by bucket and auth.uid()'
+    'SELECT policy restricts bucket studio-media and first folder to auth.uid()'
   UNION ALL
   SELECT
-    'studio-media INSERT policy exists',
+    'studio-media INSERT policy is owner-folder scoped',
     EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='storage' AND tablename='objects'
-        AND policyname='Users upload own studio media'
+        AND cmd='INSERT'
         AND with_check ILIKE '%studio-media%'
         AND with_check ILIKE '%auth.uid()%'
+        AND with_check ILIKE '%foldername%'
     ),
-    'Users upload own studio media, scoped by bucket and auth.uid()'
+    'INSERT policy restricts bucket studio-media and first folder to auth.uid()'
 )
 SELECT
   CASE WHEN passed THEN 'PASS' ELSE 'FAIL' END AS result,
