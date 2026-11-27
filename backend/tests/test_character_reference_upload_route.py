@@ -170,9 +170,6 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CharacterReferenceStatusRouteTests(unittest.TestCase):
     @classmethod
@@ -198,3 +195,6 @@ class CharacterReferenceStatusRouteTests(unittest.TestCase):
         response = self.client.get(f"/api/characters/{CHARACTER}/references")
         self.assertEqual(response.status_code, 404)
         assets.assert_not_called()
+
+if __name__ == "__main__":
+    unittest.main()
