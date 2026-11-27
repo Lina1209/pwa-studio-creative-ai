@@ -33,7 +33,7 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
     @patch("app.services.media_cleanup_repository._call")
     def test_claim_validates_required_payload(self, call):
         event = {
-            "owner_id": OWNER, "asset_id": ASSET, "event_id": EVENT,
+            "owner_id": OWNER, "asset_id": ASSET, "character_id": CHARACTER, "event_id": EVENT,
             "claim_token": TOKEN, "bucket": "studio-media",
             "storage_path": f"{OWNER}/characters/{CHARACTER}/{ASSET}.png",
             "attempts": 1, "max_attempts": 8,
