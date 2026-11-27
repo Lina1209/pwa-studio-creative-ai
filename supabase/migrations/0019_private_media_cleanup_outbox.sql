@@ -24,25 +24,37 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $$
+as $
+declare
+  v_asset record;
 begin
-  if exists (
-    select 1
+  -- Serialize passport-pointer writes with cleanup reservation by exact object.
+  for v_asset in
+    select a.bucket,a.storage_path
     from public.media_assets a
     where a.owner_id = new.owner_id
-      and a.status in ('cleanup_pending','deleted')
       and a.storage_path is not null
       and (
         position(a.storage_path in coalesce(new.reference_data::text,'')) > 0
         or position(a.storage_path in coalesce(new.avatar_url,'')) > 0
       )
-  ) then
-    raise exception 'character passport references media that is being removed'
-      using errcode='23514';
-  end if;
+  loop
+    perform pg_advisory_xact_lock(hashtextextended(
+      new.owner_id::text || ':' || v_asset.bucket || ':' || v_asset.storage_path, 0
+    ));
+    if exists (
+      select 1 from public.media_assets a
+      where a.owner_id=new.owner_id and a.bucket=v_asset.bucket
+        and a.storage_path=v_asset.storage_path
+        and a.status in ('cleanup_pending','deleted')
+    ) then
+      raise exception 'character passport references media that is being removed'
+        using errcode='23514';
+    end if;
+  end loop;
   return new;
 end;
-$$;
+$;
 
 drop trigger if exists characters_guard_cleanup_reference on public.characters;
 create trigger characters_guard_cleanup_reference
@@ -58,16 +70,21 @@ security definer
 set search_path = pg_catalog, public
 as $
 begin
-  if new.bucket is not null and new.storage_path is not null and exists (
-    select 1 from public.media_assets pending
-    where pending.id <> new.id
-      and pending.owner_id = new.owner_id
-      and pending.bucket = new.bucket
-      and pending.storage_path = new.storage_path
-      and pending.status in ('cleanup_pending','deleted')
-  ) then
-    raise exception 'media object is already being removed'
-      using errcode='23514';
+  if new.bucket is not null and new.storage_path is not null then
+    perform pg_advisory_xact_lock(hashtextextended(
+      new.owner_id::text || ':' || new.bucket || ':' || new.storage_path, 0
+    ));
+    if exists (
+      select 1 from public.media_assets pending
+      where pending.id <> new.id
+        and pending.owner_id = new.owner_id
+        and pending.bucket = new.bucket
+        and pending.storage_path = new.storage_path
+        and pending.status in ('cleanup_pending','deleted')
+    ) then
+      raise exception 'media object is already being removed'
+        using errcode='23514';
+    end if;
   end if;
   return new;
 end;
@@ -127,6 +144,12 @@ begin
        or v_asset.storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)$') then
       raise exception 'character media object key is invalid' using errcode='23514';
     end if;
+
+    -- Serialize reference creation against this cleanup reservation. Both
+    -- metadata triggers acquire the same transaction-scoped advisory lock.
+    perform pg_advisory_xact_lock(hashtextextended(
+      p_owner_id::text || ':' || v_asset.bucket || ':' || v_asset.storage_path, 0
+    ));
 
     -- Fail closed if another row or another character passport points to this
     -- exact object. The target character's own passport is being removed.
