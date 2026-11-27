@@ -313,6 +313,12 @@ const movieHistoryStyle = document.createElement("style");
   const PROFILE_AVATAR_CATALOG = globalThis.PWAProfileAvatarCatalog.items;
   const PROFILE_AVATAR_DEFAULT="portrait-violet";
   let profileAvatarSavedId=PROFILE_AVATAR_DEFAULT,profileAvatarDraftId=PROFILE_AVATAR_DEFAULT,profileAvatarCategory="all";
+  const KATTY_EXPRESSIONS=[
+    ["neutral-warm","Спокойствие"],["joy","Радость"],["delight","Восторг"],["curious","Любопытство"],
+    ["focused","Работа"],["surprised","Удивление"],["empathetic","Поддержка"],["thinking","Размышление"]
+  ];
+  let kattyExpressionDraft="neutral-warm";
+
   const profileAvatarPath=id=>{
     return globalThis.PWAProfileAvatarCatalog.getAssetPath(id);
   };
@@ -339,7 +345,9 @@ const movieHistoryStyle = document.createElement("style");
   const renderProfileAvatarPicker=()=>{
     const grid=$("#profileAvatarGrid"),categories=$("#profileAvatarCategories"),preview=$("#profileAvatarPreview"),apply=$("#profileAvatarApply");
     if(!grid||!categories)return;
-    if(preview){preview.src=profileAvatarPath(profileAvatarDraftId);const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarDraftId);preview.alt="Предпросмотр аватара: "+(item?.name||"Стандартный");}
+    if(preview){const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarDraftId);const isKatty=profileAvatarDraftId==="katty-assistant";preview.src=isKatty?"assets/characters/katty/expressions/"+kattyExpressionDraft+".svg":profileAvatarPath(profileAvatarDraftId);preview.alt=isKatty?"Катти: "+(KATTY_EXPRESSIONS.find(([id])=>id===kattyExpressionDraft)?.[1]||"Спокойствие"):"Предпросмотр аватара: "+(item?.name||"Стандартный");}
+    const expressionPicker=$("#kattyExpressionPicker");
+    if(expressionPicker){expressionPicker.hidden=profileAvatarDraftId!=="katty-assistant";expressionPicker.replaceChildren();if(profileAvatarDraftId==="katty-assistant"){const title=document.createElement("p");title.className="katty-expression-title";title.textContent="Выражение Катти · только предпросмотр";expressionPicker.append(title);KATTY_EXPRESSIONS.forEach(([id,label])=>{const button=document.createElement("button");button.type="button";button.className="katty-expression-option"+(kattyExpressionDraft===id?" is-selected":"");button.textContent=label;button.setAttribute("aria-pressed",String(kattyExpressionDraft===id));button.addEventListener("click",()=>{kattyExpressionDraft=id;renderProfileAvatarPicker();});expressionPicker.append(button);});}}
     categories.replaceChildren();
     const groups=[["all","Все"],...Array.from(new Map(PROFILE_AVATAR_CATALOG.map(item=>[item.category,[item.category,item.group]])).values())];
     groups.forEach(([id,label])=>{const button=document.createElement("button");button.className="profile-avatar-category";button.textContent=label;button.type="button";button.classList.toggle("is-active",profileAvatarCategory===id);button.setAttribute("aria-pressed",String(profileAvatarCategory===id));button.addEventListener("click",()=>{profileAvatarCategory=id;renderProfileAvatarPicker();});categories.append(button);});
@@ -348,7 +356,7 @@ const movieHistoryStyle = document.createElement("style");
       const button=document.createElement("button");button.type="button";button.className="profile-avatar-option"+(profileAvatarDraftId===item.id?" is-selected":"");button.setAttribute("aria-pressed",String(profileAvatarDraftId===item.id));button.setAttribute("aria-label",item.name);
       const img=document.createElement("img");img.src=profileAvatarPath(item.id);img.alt="";img.loading="lazy";
       const label=document.createElement("span");label.textContent=item.name;button.append(img,label);
-      button.addEventListener("click",()=>{profileAvatarDraftId=item.id;renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран образ «"+item.name+"». Нажмите «Применить аватар», чтобы сохранить.";});
+      button.addEventListener("click",()=>{profileAvatarDraftId=item.id;if(item.id!=="katty-assistant")kattyExpressionDraft="neutral-warm";renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран образ «"+item.name+"». Нажмите «Применить аватар», чтобы сохранить.";});
       grid.append(button);
     });
     if(apply)apply.disabled=profileAvatarDraftId===profileAvatarSavedId;
