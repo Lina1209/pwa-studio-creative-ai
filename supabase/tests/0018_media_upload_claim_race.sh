@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Two independent psql sessions race to claim exactly one media verification event.
-# DISPOSABLE DATABASE ONLY. Requires psql, Python 3, and an isolated queue.
+# Two independent psql sessions race to claim one media verification event,
+# then the winning lease expires and a second worker reclaims it.
+# DISPOSABLE DATABASE ONLY. Requires psql and Python 3.
 set -euo pipefail
 
 : "${DISPOSABLE_DATABASE_URL:?Set DISPOSABLE_DATABASE_URL to a disposable Supabase/Postgres database}"
@@ -32,7 +33,7 @@ SQL
 }
 trap cleanup EXIT
 
-# Never race against unrelated queue entries.
+# Require an isolated queue so the two sessions can only race for our fixture.
 psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 <<'SQL'
 do $$
 begin
@@ -61,12 +62,14 @@ select public.pwa_reserve_character_reference_upload(
 SQL
 CREATED=1
 
-# Separate database connections; launch both before waiting for either result.
-psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -v token="$TOKEN_A" \
-  -c "select public.pwa_claim_media_upload_verification(:'token',120)::text" >"$OUT_A" &
+# Launch both independent database sessions before waiting for either.
+psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -v token="$TOKEN_A" >"$OUT_A" <<'SQL' &
+select public.pwa_claim_media_upload_verification(:'token',120)::text;
+SQL
 PID_A=$!
-psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -v token="$TOKEN_B" \
-  -c "select public.pwa_claim_media_upload_verification(:'token',120)::text" >"$OUT_B" &
+psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -v token="$TOKEN_B" >"$OUT_B" <<'SQL' &
+select public.pwa_claim_media_upload_verification(:'token',120)::text;
+SQL
 PID_B=$!
 wait "$PID_A"
 wait "$PID_B"
@@ -98,28 +101,98 @@ if claim.get("claim_token") not in {token_a, token_b}:
 if results.count(None) != 1:
     raise SystemExit(f"FAIL: losing worker should receive SQL NULL: {results!r}")
 print("PASS: exactly one of two concurrent workers claimed the event")
-print(f"Winning fencing token: {claim['claim_token']}")
 PY
 
-# Confirm one persisted claim and exactly one increment of attempts.
-psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -v event_id="$EVENT_ID" <<'SQL'
+WINNER_TOKEN="$(psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 \
+  -v event_id="$EVENT_ID" <<'SQL'
+select claim_token::text from public.media_asset_outbox where id=:'event_id';
+SQL
+)"
+NEXT_TOKEN="$(uuid)"
+
+# Force expiry deterministically, without sleeping or changing the system clock.
+psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -v event_id="$EVENT_ID" <<'SQL'
+update public.media_asset_outbox
+set claim_expires_at=clock_timestamp() - interval '1 second'
+where id=:'event_id' and status='claimed';
+SQL
+
+NEXT_RESULT="$(psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -v token="$NEXT_TOKEN" <<'SQL'
+select public.pwa_claim_media_upload_verification(:'token',120)::text;
+SQL
+)"
+python3 - "$NEXT_RESULT" "$NEXT_TOKEN" "$EVENT_ID" <<'PY'
+import json, sys
+result = json.loads(sys.argv[1])
+if not isinstance(result, dict) or result.get("event_id") != sys.argv[3] or result.get("claim_token") != sys.argv[2]:
+    raise SystemExit(f"FAIL: expired event was not reclaimed with a fresh token: {result!r}")
+print("PASS: expired lease was reclaimed with a new fencing token")
+PY
+
+# The previous worker's token must be unable to complete OR schedule a retry.
+psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
+  -v owner_id="$PWA_TEST_OWNER_ID" -v asset_id="$ASSET_ID" \
+  -v event_id="$EVENT_ID" -v stale_token="$WINNER_TOKEN" <<'SQL'
+select set_config('pwa.test.owner_id', :'owner_id', false);
+select set_config('pwa.test.asset_id', :'asset_id', false);
 select set_config('pwa.test.event_id', :'event_id', false);
-do $
+select set_config('pwa.test.stale_token', :'stale_token', false);
+do $$
 declare
-  v_count integer;
-  v_attempts integer;
-  v_status text;
+  v_rejected integer := 0;
 begin
-  select count(*), max(attempts), max(status)
-    into v_count, v_attempts, v_status
-  from public.media_asset_outbox
-  where id=current_setting('pwa.test.event_id', true)::uuid;
-  if v_count <> 1 or v_attempts <> 1 or v_status <> 'claimed' then
-    raise exception 'Expected one persisted claim with attempts=1; got count %, attempts %, status %',
-      v_count, v_attempts, v_status;
+  begin
+    perform public.pwa_retry_media_upload_verification(
+      current_setting('pwa.test.owner_id')::uuid,
+      current_setting('pwa.test.asset_id')::uuid,
+      current_setting('pwa.test.event_id')::uuid,
+      current_setting('pwa.test.stale_token')::uuid,1
+    );
+  exception when sqlstate 'P0002' then
+    v_rejected := v_rejected + 1;
+  end;
+  begin
+    perform public.pwa_complete_media_upload_verification(
+      current_setting('pwa.test.owner_id')::uuid,
+      current_setting('pwa.test.asset_id')::uuid,
+      current_setting('pwa.test.event_id')::uuid,
+      current_setting('pwa.test.stale_token')::uuid,
+      'b4b10f9c372171371977a874d1530fb2e6b6d0270f11b0b1b693b26e058c9a6d',
+      27,'image/png',3,3
+    );
+  exception when sqlstate 'P0002' then
+    v_rejected := v_rejected + 1;
+  end;
+  if v_rejected <> 2 then
+    raise exception 'Stale worker token was not rejected by both fenced RPCs';
   end if;
 end;
 $$;
 SQL
 
-echo "PASS: persisted event has one active claim and attempts=1"
+# Confirm the fresh worker still owns the sole active claim and attempts=2.
+psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 \
+  -v event_id="$EVENT_ID" -v next_token="$NEXT_TOKEN" <<'SQL'
+select set_config('pwa.test.event_id', :'event_id', false);
+select set_config('pwa.test.next_token', :'next_token', false);
+do $$
+declare
+  v_count integer;
+  v_attempts integer;
+  v_status text;
+  v_token uuid;
+begin
+  select count(*), max(attempts), max(status), max(claim_token)
+    into v_count, v_attempts, v_status, v_token
+  from public.media_asset_outbox
+  where id=current_setting('pwa.test.event_id')::uuid;
+  if v_count <> 1 or v_attempts <> 2 or v_status <> 'claimed'
+     or v_token <> current_setting('pwa.test.next_token')::uuid then
+    raise exception 'Unexpected final claim state: count %, attempts %, status %, token %',
+      v_count, v_attempts, v_status, v_token;
+  end if;
+end;
+$$;
+SQL
+
+echo "PASS: two-worker claim race, lease recovery, and stale-token fencing"
