@@ -13,6 +13,7 @@
   let authContextVersion = 0;
   let activeAssistantConversationId = null;
   let assistantConversationLoadVersion = 0;
+  let assistantConversationIntentVersion = 0;
   let assistantHistoryLoadVersion = 0;
   let assistantHistoryBusy = false;
   let assistantUserId = null;
@@ -1155,6 +1156,7 @@ const movieHistoryStyle = document.createElement("style");
   };
   const loadAssistantMessages = async conversationId => {
     const loadVersion = ++assistantConversationLoadVersion;
+    const intentVersion = assistantConversationIntentVersion;
     setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (!supabaseClient || !authSession?.user || !conversationId) return;
@@ -1165,6 +1167,7 @@ const movieHistoryStyle = document.createElement("style");
       .eq("user_id", requestUserId).order("created_at", { ascending: true });
     if (error) throw error;
     if (loadVersion !== assistantConversationLoadVersion ||
+        intentVersion !== assistantConversationIntentVersion ||
         authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
     clearAssistantMessages({ preserveKattyState: true });
     (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
@@ -1197,6 +1200,7 @@ const movieHistoryStyle = document.createElement("style");
         open.title = open.textContent; open.setAttribute("aria-current", conversation.id === activeAssistantConversationId ? "true" : "false");
         open.addEventListener("click", async () => {
           if (!historyContextIsCurrent()) return;
+          assistantConversationIntentVersion += 1;
           try {
             await loadAssistantMessages(conversation.id);
             if (!historyContextIsCurrent()) return;
@@ -1235,6 +1239,7 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   const startAssistantConversation = async () => {
+    assistantConversationIntentVersion += 1;
     setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
