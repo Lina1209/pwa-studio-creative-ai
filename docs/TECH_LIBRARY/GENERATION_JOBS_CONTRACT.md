@@ -298,3 +298,17 @@ The SQL migration draft 0014 remains a blocking item: before it can be activated
 
 
 The inactive pure-Python helper now models `reconciliation_required` explicitly. A timeout or expired lease with `unknown`/ `accepted` provider outcome enters reconciliation rather than retry or cancellation. A retry after lease expiry requires explicit evidence of `definitely_not_submitted` or `definitely_rejected`; an expired cancellation with an unresolved provider outcome also remains in reconciliation. This helper change does not resolve the SQL migration mismatch: the SQL state constraint/RPCs still need a matching reconciliation state and must remain inactive.
+
+
+## State and persistence compatibility blocker (review update)
+
+The inactive provider-neutral Python lifecycle helper now includes `reconciliation_required`. It enters that state when a provider outcome is `unknown` or `accepted` after a timeout, worker lease expiry, or cancellation race. It permits ordinary retry only when there is conclusive evidence of `definitely_not_submitted` or `definitely_rejected`. A provider completion observed after cancellation suppresses publication but still requires usage/cost reconciliation.
+
+The current SQL draft does NOT yet match this behavior:
+- Migration 0013's status CHECK constraint does not include `reconciliation_required`.
+- Migration 0014's `fail_generation_job` accepts only a boolean `p_retryable`, with no provider-submission outcome evidence or reconciliation transition.
+- `recover_expired_generation_jobs` automatically retries expired processing jobs and marks expired cancellations as cancelled.
+- `finish_generation_job_cancel` can mark a cancellation terminal without proving the provider stopped or accounting for billable usage.
+- No per-attempt persistence table or reconciliation RPC/worker is implemented.
+
+This is a deliberate activation blocker. Do not patch/apply these SQL drafts piecemeal: first design a coherent additive per-attempt schema, reconciliation state transitions, fencing/lease rules, cancellation confirmation semantics, and credit-hold behavior; then validate the complete migration set on a disposable database with concurrency and crash-window tests. No production migration was run.
