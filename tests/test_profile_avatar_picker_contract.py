@@ -194,6 +194,19 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("intentVersion !== assistantConversationIntentVersion", app[start:end])
 
 
+    def test_ai_companion_stale_submit_cannot_unlock_new_account_ui(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index('$("#assistantForm").addEventListener("submit"')
+        end = app.index("\n  });", start) + 6
+        handler = app[start:end]
+        finally_start = handler.rindex("} finally {")
+        finally_block = handler[finally_start:]
+        self.assertIn("if (contextIsCurrent()) {", finally_block)
+        self.assertIn("button.disabled = false; input.disabled = false;", finally_block)
+        self.assertIn("input.focus();", finally_block)
+        self.assertNotIn("button.disabled = false; input.disabled = false;\n      if", finally_block)
+
+
     def test_ai_companion_new_conversation_creation_is_latest_intent_wins(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         start = app.index("const startAssistantConversation =")
