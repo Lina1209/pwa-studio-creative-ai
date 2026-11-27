@@ -15,12 +15,12 @@
 -- own rows, but may not forge ready assets, bypass cleanup, or delete metadata
 -- while a private object may still exist. Cloud-sync writes go through the
 -- authenticated API and service-role RPCs.
-revoke insert, update, delete on public.media_assets from anon, authenticated;
+revoke insert, update, delete on public.media_assets from public, anon, authenticated;
 grant select on public.media_assets to authenticated, service_role;
 grant select on public.characters to service_role;
 
 -- Keep character deletion behind the fenced cleanup/finalization RPC sequence.
-revoke delete on public.characters from anon, authenticated;
+revoke delete on public.characters from public, anon, authenticated;
 
 create index if not exists media_asset_outbox_cleanup_pending_idx
   on public.media_asset_outbox(available_at, created_at)
