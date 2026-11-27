@@ -58,7 +58,7 @@ def get_current_user(
     owner_user_id = (settings.owner_user_id or "").strip()
     if owner_user_id:
         # A configured immutable Supabase UUID takes precedence over mutable email.
-        role = "admin" if user_id == owner_user_id else "creator"
+        role = "admin" if user_id.lower() == owner_user_id.lower() else "creator"
     else:
         # Backward compatibility only. Set OWNER_USER_ID in production to avoid
         # relying on an email claim for administrator identity.
