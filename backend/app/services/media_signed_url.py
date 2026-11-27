@@ -48,7 +48,13 @@ def create_private_media_signed_url(settings: Settings, plan: MediaReadPlan) -> 
     if not isinstance(payload, dict):
         raise HTTPException(status_code=502, detail="Private media service returned an invalid response.")
     signed_path = payload.get("signedURL")
-    if (not isinstance(signed_path, str) or not signed_path.startswith("/")\n            or signed_path.startswith("//") or "\\\\" in signed_path\n            or not signed_path.startswith(("/object/sign/", "/storage/v1/object/sign/"))):
+    if (
+        not isinstance(signed_path, str)
+        or not signed_path.startswith("/")
+        or signed_path.startswith("//")
+        or "\\" in signed_path
+        or not signed_path.startswith(("/object/sign/", "/storage/v1/object/sign/"))
+    ):
         raise HTTPException(status_code=502, detail="Private media service returned an invalid access link.")
 
     # Supabase returns a relative Storage path. Keep the host pinned to our configured project.
