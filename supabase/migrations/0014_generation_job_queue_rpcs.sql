@@ -32,7 +32,7 @@ begin
     where o.delivered_at is null and o.dead_lettered_at is null
       and o.available_at <= now() and o.delivery_attempts < 20
       and (o.claimed_at is null or o.claimed_at < now() - make_interval(secs => p_lease_seconds))
-    order by o.available_at, o.id for update skip locked limit p_batch_size
+    order by o.available_at, o.id limit p_batch_size for update skip locked
   ), claimed as (
     update public.generation_job_outbox o
     set claimed_at = now(), claimed_by = p_worker_id, claim_token = gen_random_uuid(),
@@ -76,7 +76,7 @@ begin
   where j.status in ('queued','retry_wait')
     and (j.next_attempt_at is null or j.next_attempt_at <= now())
     and j.attempt_count < j.max_attempts
-  order by j.created_at, j.id for update skip locked limit 1;
+  order by j.created_at, j.id limit 1 for update skip locked;
   if v_job_id is null then return; end if;
   return query update public.generation_jobs j
   set status = 'processing', worker_id = p_worker_id, attempt_count = j.attempt_count + 1,
@@ -193,7 +193,7 @@ begin
   end if;
   for v_job in select * from public.generation_jobs
     where status in ('processing','cancel_requested') and lease_expires_at <= now()
-    order by lease_expires_at, id for update skip locked limit p_batch_size
+    order by lease_expires_at, id limit p_batch_size for update skip locked
   loop
     if v_job.status = 'cancel_requested' then
       update public.generation_jobs set status = 'cancelled', result_asset_id = null, completed_at = now(),
