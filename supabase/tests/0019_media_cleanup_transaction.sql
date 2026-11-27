@@ -125,6 +125,21 @@ begin
     raise exception 'owner-scoped studio-exports deletion policy is missing';
   end if;
 
+  if exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and cmd='UPDATE' and coalesce(qual,'') ilike '%studio-media%'
+  ) then
+    raise exception 'a direct Storage UPDATE policy still exposes studio-media';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and policyname='Users update own studio exports' and cmd='UPDATE'
+  ) then
+    raise exception 'owner-scoped studio-exports update policy is missing';
+  end if;
+
   -- The browser role cannot forge, update, or delete server-managed media rows.
   if has_table_privilege('authenticated','public.media_assets','INSERT')
      or has_table_privilege('authenticated','public.media_assets','UPDATE')
