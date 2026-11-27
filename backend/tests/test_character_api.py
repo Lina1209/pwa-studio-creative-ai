@@ -1,7 +1,7 @@
 """HTTP tests for the authenticated character passport API routes."""
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
+from app.core.config import Settings
 from fastapi.testclient import TestClient
 from app.main import app
 from app.services.auth import StudioUser, get_current_user
@@ -49,7 +49,7 @@ class CharacterApiRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(create.call_args.args[1], OWNER)
 
-    @patch("app.services.auth.get_settings", return_value=SimpleNamespace(supabase_url="https://example.supabase.co", owner_user_id="", owner_email=""))
+    @patch("app.services.auth.get_settings", return_value=Settings(supabase_url="https://example.supabase.co"))
     def test_guest_without_session_is_rejected(self, _settings):
         app.dependency_overrides.clear()
         response = self.client.get("/api/characters")
