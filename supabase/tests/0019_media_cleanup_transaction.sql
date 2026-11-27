@@ -33,6 +33,13 @@ declare
   v_retry_claim_a jsonb;
   v_retry_claim_b jsonb;
   v_empty_character uuid := gen_random_uuid();
+  v_dead_character uuid := gen_random_uuid();
+  v_dead_asset uuid := gen_random_uuid();
+  v_dead_object uuid := gen_random_uuid();
+  v_dead_operation uuid := gen_random_uuid();
+  v_dead_token uuid := gen_random_uuid();
+  v_dead_claim jsonb;
+  v_retry_result jsonb;
   v_unindexed_character uuid := gen_random_uuid();
   v_referenced_character uuid := gen_random_uuid();
   v_referencing_asset uuid := gen_random_uuid();
@@ -333,7 +340,47 @@ begin
   if v_final->>'status' <> 'deleted' then
     raise exception 'retried character cleanup finalization failed';
   end if;
+
+  -- Exhausted retries move the event to dead-letter but must retain both the
+  -- cleanup-pending tombstone and the character for operator recovery.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_dead_character,v_owner,'Dead-letter cleanup fixture','{}'::jsonb);
+  v_path := v_owner::text || '/characters/' || v_dead_character::text || '/' ||
+    v_dead_object::text || '.png';
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_dead_asset,v_owner,v_dead_character,'dead.png','image/png','studio-media','ready',
+    v_path,'{}'::jsonb,1,v_dead_operation,128,repeat('9',64),8,8
+  );
+  perform public.pwa_request_character_media_cleanup(
+    v_owner,v_dead_character,v_dead_operation
+  );
+  update public.media_asset_outbox
+  set max_attempts=1
+  where asset_id=v_dead_asset and event_type='media_cleanup_requested';
+  v_dead_claim := public.pwa_claim_media_cleanup(v_dead_token,120);
+  if v_dead_claim is null or v_dead_claim->>'asset_id' <> v_dead_asset::text
+     or (v_dead_claim->>'attempts')::integer <> 1 then
+    raise exception 'dead-letter fixture was not claimed at its retry limit';
+  end if;
+  v_retry_result := public.pwa_retry_media_cleanup(
+    v_owner,v_dead_asset,(v_dead_claim->>'event_id')::uuid,v_dead_token,30
+  );
+  if v_retry_result->>'event_status' <> 'dead_letter'
+     or (select status from public.media_asset_outbox where id=(v_dead_claim->>'event_id')::uuid) <> 'dead_letter'
+     or (select status from public.media_assets where id=v_dead_asset) <> 'cleanup_pending'
+     or not exists (select 1 from public.characters where id=v_dead_character) then
+    raise exception 'dead-letter cleanup did not preserve the character and tombstone';
+  end if;
+  begin
+    perform public.pwa_finalize_character_media_cleanup(v_owner,v_dead_character);
+    raise exception 'dead-letter character unexpectedly finalized';
+  exception when sqlstate '23514' then
+    null;
+  end;
 end;
-$$;
+$;
 
 rollback;
