@@ -91,6 +91,14 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("const clearAssistantMessages = () => {", app)
         self.assertIn("const loadAssistantMessages = async conversationId => {", app)
 
+    def test_katty_mode_is_visible_to_user(self):
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        css = (ROOT / "styles.css").read_text(encoding="utf-8")
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="kattyAssistantModeLabel"', html)
+        self.assertIn(".katty-mode-badge", css)
+        self.assertIn('badge.textContent = "Режим: " + selected.label', app)
+
 if __name__ == "__main__":
     def test_katty_assistant_modes_are_separate_from_expression_states(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
