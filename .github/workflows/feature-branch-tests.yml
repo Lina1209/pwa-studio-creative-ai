@@ -75,14 +75,21 @@ jobs:
         run: |
           for migration in \
             supabase/migrations/0005_cloud_projects_and_storage.sql \
+            supabase/migrations/0009_user_profiles.sql \
             supabase/migrations/0012_character_library_media_links.sql \
             supabase/migrations/0017_owner_scoped_media_associations.sql \
             supabase/migrations/0018_private_media_upload_reservation.sql \
             supabase/migrations/0019_private_media_cleanup_outbox.sql \
-            supabase/migrations/0020_character_local_identity.sql; do
+            supabase/migrations/0020_character_local_identity.sql \
+            supabase/migrations/0021_profile_avatar_catalog.sql; do
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
+      - name: Verify profile avatar catalog migration and defaults
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+            -f supabase/tests/0021_profile_avatar_catalog.sql
       - name: Run character idempotency transaction harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
@@ -121,3 +128,4 @@ jobs:
         run: |
           node --check app.js
           python tests/test_character_library_account_fencing.py
+          python tests/test_profile_avatar_picker_contract.py
