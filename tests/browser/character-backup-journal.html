@@ -31,6 +31,46 @@
   const test = async (name, fn) => {
     await fn(); passed.push(name);
   };
+  const readLocalImageFixture = async (id) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("pwa-studio-character-library-v1", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images", {keyPath:"id"});
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction("images", "readonly");
+        const request = tx.objectStore("images").get(id);
+        request.onsuccess = async () => {
+          const row = request.result;
+          resolve(row ? {id:row.id, ownerId:row.ownerId, type:row.blob.type, bytes:Array.from(new Uint8Array(await row.blob.arrayBuffer()))} : null);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    } finally { db.close(); }
+  };
+  const seedLocalImageFixture = async (id, ownerId) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("pwa-studio-character-library-v1", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images", {keyPath:"id"});
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("images", "readwrite");
+        tx.objectStore("images").put({id, ownerId, blob:new Blob(["original-local-image"], {type:"image/png"}), createdAt:"test-fixture"});
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error("Local image fixture write aborted"));
+      });
+    } finally { db.close(); }
+  };
   try {
     const api = window.PWACharacterBackupJournal;
     check(!!api, "journal module did not load");
@@ -45,11 +85,16 @@
       }]
     };
 
-    await test("create persists and reads back journal", async () => {
+    await test("create persists journal without changing local image Blob", async () => {
+      const imageId = "local-image-fixture-" + uuid();
+      await seedLocalImageFixture(imageId, owner);
+      const before = await readLocalImageFixture(imageId);
       const created = await api.create(journalInput);
       check(created.ownerId === owner && created.references.length === 1, "journal fields mismatch");
       const read = await api.get(owner, localCharacter);
       check(JSON.stringify(read) === JSON.stringify(created), "journal read-back mismatch");
+      const after = await readLocalImageFixture(imageId);
+      check(JSON.stringify(after) === JSON.stringify(before), "journal operation changed the source image Blob");
     });
     await test("duplicate journal creation is rejected", async () => {
       await rejects(() => api.create(journalInput), "duplicate journal unexpectedly accepted");
