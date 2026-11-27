@@ -39,7 +39,7 @@ The state machine is restrictive: only `object_uploaded` may transition to `veri
 This commit adds the isolated persistence primitive only. It does not claim browser acceptance tests passed. Before wiring it into the UI, add automated real-browser tests using disposable browser storage for:
 - IndexedDB durability after reload and browser restart;
 - owner separation and account switching;
-- duplicate creation and simultaneous tabs;
+- duplicate creation within one tab and racing creation from two independent browser tabs;
 - quota failure and transaction abort;
 - invalid/forbidden state transitions and immutable mappings;
 - lost network response and offline recovery in the future coordinator;
@@ -53,6 +53,6 @@ Do not enable an importer, add network orchestration, or remove local source dat
 - Runner: `tests/browser/run_character_backup_journal.py`.
 - CI job: `character-backup-journal-browser-tests` in `.github/workflows/feature-branch-tests.yml`.
 - The runner serves the repository over loopback HTTP and launches a fresh Chromium context. IndexedDB data is isolated to that temporary browser context.
-- Current cases: create/read-back, duplicate creation rejection, concurrent duplicate creation (exactly one winner), owner-scoped get/list, immutable cloud character mapping, rejection of premature verified transitions, valid lifecycle through verified, completion criteria, and terminal verified state.
+- Current cases: create/read-back while asserting an existing local image Blob remains byte-for-byte unchanged, duplicate creation rejection, concurrent duplicate creation in one tab and across two independent tabs (exactly one winner), owner-scoped get/list, immutable cloud character mapping, malformed passport fingerprint rejection, rejection of skipped upload states and premature verified transitions, valid lifecycle through verified, completion criteria, and terminal verified state. The runner also reopens the same persistent Chromium profile and verifies journal recovery after browser restart.
 
-This suite does not yet simulate process termination mid-transaction, browser restart with a persistent profile, quota exhaustion, simultaneous tabs, account-switch UI behavior, or network recovery. Those remain required before importer integration.
+This suite does not yet simulate process termination mid-transaction, quota exhaustion, account-switch UI behavior, or network recovery. Those remain required before importer integration.
