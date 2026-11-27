@@ -273,6 +273,7 @@ const movieHistoryStyle = document.createElement("style");
   };
 
   // Shared bridge for Audio → Story. Uses the existing authenticated AI endpoint and movie storage.
+  let latestAudioGenerationContext = null;
   window.PWAStudioAudioBridge = {
     async generate({ transcript, outputType, language, sourceKind, fileName }) {
       const clean = String(transcript || "").trim();
@@ -289,10 +290,22 @@ const movieHistoryStyle = document.createElement("style");
         "Если исходник короткий или неясный, развей его творчески и отметь придуманные детали как художественные.",
         "\nМатериал пользователя:\n" + clean
       ].join("\n");
+      const requestUserId = authSession?.user?.id || null;
+      const requestVersion = authContextVersion;
       const result = await apiRequest("/api/chat", { method:"POST", body:JSON.stringify({message:prompt,history:[]}) });
+      if (requestVersion !== authContextVersion || (authSession?.user?.id || null) !== requestUserId) {
+        throw new Error("Аккаунт изменился во время создания материала. Повторите запрос в текущем аккаунте.");
+      }
+      latestAudioGenerationContext = { userId:requestUserId, version:requestVersion, reply:result.reply };
       return result.reply;
     },
     createMovie({ title, story, sourceLabel }) {
+      const generation = latestAudioGenerationContext;
+      if (!generation || generation.reply !== String(story || "") ||
+          generation.version !== authContextVersion ||
+          generation.userId !== (authSession?.user?.id || null)) {
+        throw new Error("Результат создан в другом сеансе или аккаунте. Создайте материал заново.");
+      }
       const name = String(title || "История из аудио").trim().slice(0,90) || "История из аудио";
       const text = String(story || "").trim();
       if (!text) throw new Error("Сценарий пуст.");
