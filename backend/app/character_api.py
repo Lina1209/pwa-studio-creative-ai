@@ -15,7 +15,7 @@ class CharacterCreate(BaseModel):
 class CharacterPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    description: str | None = Field(default=None, max_length=2000)
+    description: str | None = Field(default=None, max_length=5000)
     reference_data: dict | None = None
 
 def build_character_router(settings):
