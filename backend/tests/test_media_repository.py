@@ -76,9 +76,6 @@ class MediaRepositoryTests(unittest.TestCase):
         get.assert_not_called()
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CharacterMediaAssetListTests(unittest.TestCase):
     def setUp(self):
@@ -112,3 +109,6 @@ class CharacterMediaAssetListTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught: media_repository.list_owned_character_media_assets(self.settings, "../other", OWNER)
         self.assertEqual(caught.exception.status_code, 422)
         get.assert_not_called()
+
+if __name__ == "__main__":
+    unittest.main()
