@@ -9,7 +9,9 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
     def test_picker_has_real_curated_2d_catalog_and_explicit_3d_unavailable_state(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         html = (ROOT / "index.html").read_text(encoding="utf-8")
-        self.assertIn('const PROFILE_AVATAR_CATALOG = [', app)
+        catalog = (ROOT / "profile-avatar-catalog.js").read_text(encoding="utf-8")
+        self.assertIn('const PROFILE_AVATAR_CATALOG = globalThis.PWAProfileAvatarCatalog.items;', app)
+        self.assertIn('profile-avatar-catalog.js?v=20261127-1', html)
         self.assertIn('id:"portrait-violet"', app)
         self.assertIn('id:"forest-elf"', app)
         self.assertIn('id:"fox-scout"', app)
@@ -21,7 +23,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('id:"prism-orbit"', app)
         self.assertIn('id="profileAvatarTab3d"', html)
         self.assertIn('disabled aria-disabled="true"', html)
-        self.assertIn('assets/avatars/2d/', app)
+        self.assertIn('assets/avatars/2d/', catalog)
 
     def test_avatar_persistence_is_fenced_to_current_authenticated_account(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
