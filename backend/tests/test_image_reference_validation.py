@@ -15,7 +15,9 @@ from app.services.image_reference_validation import (
 
 def make_image(fmt="PNG", size=(16, 12), frames=1):
     output = BytesIO()
-    images = [Image.new("RGB", size, (20 + index, 40, 60)) for index in range(frames)]
+    # Keep frames visibly distinct after lossy WebP encoding; otherwise the
+    # encoder may optimize near-identical frames into a single still image.
+    images = [Image.new("RGB", size, (20 + 100 * index, 40, 60)) for index in range(frames)]
     if frames > 1:
         images[0].save(output, format=fmt, save_all=True, append_images=images[1:], duration=100, loop=0)
     else:
