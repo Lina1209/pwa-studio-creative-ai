@@ -52,7 +52,6 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
             self.assertTrue(path.is_file(), "Missing catalog asset: " + avatar_id)
             self.assertIn("<svg", path.read_text(encoding="utf-8")[:200])
 
-
     def test_katty_expression_preview_is_temporary_and_only_shown_for_katty(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         html = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -66,7 +65,6 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("kattyExpressionDraft=id;renderProfileAvatarPicker();", app)
         self.assertNotIn("avatar_expression", app)
 
-
     def test_ai_companion_uses_katty_static_expressions_for_conversation_states(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         html = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -78,7 +76,6 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('assets/characters/katty/expressions/" + id + ".svg', app)
         self.assertNotIn("apiRequest(", app[app.index("const setKattyAssistantExpression"):app.index("const copyAssistantText")])
 
-
     def test_katty_contextual_states_cover_learning_creativity_support_and_reset(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         self.assertIn("const kattyContextState", app)
@@ -86,9 +83,9 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('return "focused"', app)
         self.assertIn('return "empathetic"', app)
         self.assertIn("const kattyResponseState", app)
-        self.assertIn('setKattyAssistantExpression(kattyContextState(value))', app)
-        self.assertIn('setKattyAssistantExpression(kattyResponseState(value, result.reply))', app)
-        self.assertIn("const clearAssistantMessages = () => {", app)
+        self.assertIn("setKattyAssistantExpression(kattyContextState(value))", app)
+        self.assertIn("setKattyAssistantExpression(kattyResponseState(value, result.reply))", app)
+        self.assertIn("const clearAssistantMessages = (options = {}) => {", app)
         self.assertIn("const loadAssistantMessages = async conversationId => {", app)
 
     def test_katty_mode_is_visible_to_user(self):
@@ -109,7 +106,6 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("image.dataset.assistantMode = mode", app)
         self.assertIn("setKattyAssistantMode(kattyModeForMessage(value))", app)
         self.assertIn("setKattyAssistantExpression(kattyContextState(value))", app)
-
 
     def test_katty_mode_previews_prompt_suggestions(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
@@ -136,6 +132,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         start_handler = app[start_start:start_end]
         self.assertIn('setKattyAssistantMode("companion")', start_handler)
         self.assertIn('clearAssistantMessages({ preserveKattyState: true })', start_handler)
+
     def test_katty_mode_resets_when_conversation_changes(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         for function_name in ("clearAssistantMessages", "loadAssistantMessages", "startAssistantConversation"):
@@ -143,6 +140,6 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
             end = app.index("\n  };", start) + 5
             self.assertIn('setKattyAssistantMode("companion")', app[start:end])
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     unittest.main()
