@@ -4,6 +4,7 @@ Call only after an atomic media-row + outbox reservation has committed. This
 module never accepts a bucket/path from the browser and never marks an asset
 ready; a separate verifier must confirm the stored object first.
 """
+import hashlib
 import httpx
 from fastapi import HTTPException
 
@@ -19,8 +20,9 @@ def upload_character_reference_object(
     """Upload validated bytes to the immutable server-planned private object key."""
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Private media storage is not configured.")
-    if not isinstance(content, bytes) or len(content) != plan.size_bytes:
-        raise HTTPException(status_code=400, detail="Image upload does not match its validated size.")
+    if (not isinstance(content, bytes) or len(content) != plan.size_bytes
+            or hashlib.sha256(content).hexdigest() != plan.content_sha256):
+        raise HTTPException(status_code=400, detail="Image upload does not match its validated fingerprint.")
     endpoint = (
         f"{settings.supabase_url.rstrip('/')}/storage/v1/object/"
         f"{plan.bucket}/{plan.storage_path}"
