@@ -194,6 +194,19 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("intentVersion !== assistantConversationIntentVersion", app[start:end])
 
 
+    def test_ai_companion_auth_change_invalidates_all_inflight_operations(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index("const refreshAuthUI = session =>")
+        end = app.index("authSession = session;", start)
+        boundary = app[start:end]
+        self.assertIn("authContextVersion += 1;", boundary)
+        self.assertIn("assistantConversationLoadVersion += 1;", boundary)
+        self.assertIn("assistantConversationIntentVersion += 1;", boundary)
+        self.assertIn("assistantHistoryLoadVersion += 1;", boundary)
+        self.assertIn("assistantHistoryBusy = false;", boundary)
+        self.assertLess(boundary.index("assistantConversationIntentVersion += 1;"), boundary.index("activeAssistantConversationId = null;"))
+
+
     def test_ai_companion_stale_submit_cannot_unlock_new_account_ui(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         start = app.index('$("#assistantForm").addEventListener("submit"')
