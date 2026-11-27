@@ -35,6 +35,19 @@ class ImageReferenceValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_reference_batch([one] * 7)
 
+    def test_rejects_empty_or_unvalidated_batch_items(self):
+        with self.assertRaises(ValueError):
+            validate_reference_batch([])
+        with self.assertRaises(ValueError):
+            validate_reference_batch([object()])
+
+    def test_rejects_inconsistent_reference_size_metadata(self):
+        from dataclasses import replace
+
+        one = validate_reference_image(b"\\x89PNG\\r\\n\\x1a\\n" + b"x", "one.png")
+        with self.assertRaises(ValueError):
+            validate_reference_batch([replace(one, size_bytes=999)])
+
     def test_accepts_bounded_batch(self):
         one = validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x", "one.png")
         self.assertEqual(len(validate_reference_batch([one, one])), 2)
