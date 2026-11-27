@@ -286,3 +286,22 @@ For a future dedicated Render Background Worker, use the same repository and the
 The worker is not configured in Render, and no deployment or secret changes have been made. Before activation, verify the exact Render environment-variable names against the backend Settings model and complete the disposable database + private Storage test matrix.
 
 The worker now independently validates every claimed payload before using any field in a Storage request: canonical UUID identifiers, the exact `studio-media` bucket, the four-segment owner/characters/resource/object key shape, MIME-to-extension agreement, safe metadata bounds, SHA-256 syntax, and the fixed eight-attempt policy. Invalid or tampered database claim data fails closed before network access. This is defense in depth in addition to the service-role-only claim RPC and the reservation RPC's own checks.
+
+## 27. Character deletion and private-object cleanup preparation
+
+The feature branch now includes `backend/app/services/character_media_cleanup.py`, a pure planner for a character's complete media set. It requires a verified owner, an owner-matched character, and server-loaded media rows whose owner and `character_id` all match. It rejects duplicate asset IDs, duplicate immutable object keys, unsupported lifecycle states, and any exact `(bucket, storage_path)` reference supplied by the trusted reference scan. It returns one owner-scoped cleanup plan per object; it does not mutate rows or delete the character.
+
+A narrow Storage primitive now exists in `backend/app/services/media_storage_delete.py`. It accepts only a `MediaCleanupPlan`, revalidates the owner, private bucket, and immutable four-segment object key before making a server-authenticated DELETE request, and treats Storage 404 (already absent) as idempotent success. It never accepts a caller-supplied URL, bucket, or path. Unit tests are authored in `backend/tests/test_character_media_cleanup.py` and `backend/tests/test_media_storage_delete.py`; they have not been executed.
+
+### Required persistence sequence before enabling character deletion
+
+1. In one server-side database transaction, lock the character row by both character ID and verified owner ID.
+2. Load the complete associated media set (not a client-supplied subset), and discover all exact references by bucket + immutable object key across media metadata and character passport fields.
+3. If any object is referenced elsewhere, abort the deletion plan; do not delete it.
+4. Atomically transition each eligible asset to `cleanup_pending` and enqueue one `media_cleanup_requested` event per object with owner-scoped idempotency. Do not delete the character yet.
+5. A cleanup worker claims each event with a database lease and fencing token. It reloads the asset by owner + asset ID, repeats the exact-reference check immediately before the Storage side effect, and calls the narrow Storage delete primitive.
+6. Treat Storage 404 as already deleted. For ambiguous network failures, leave the event retryable and reconcile object existence; never infer success from a timeout.
+7. Finalize each asset tombstone and acknowledge its outbox event atomically, fenced by the current claim token. Only after every associated asset is terminal and absent/reconciled may a separate owner-scoped transaction delete the character.
+8. If any step fails, keep the character and cleanup-pending tombstones; never cascade-delete metadata before the private objects are reconciled.
+
+**Not implemented yet:** there is no character-delete route, no atomic cleanup-reservation/finalization RPC, no cleanup event claim RPC, and no cleanup worker. Migration 0018 permits the cleanup event type but current claim RPC processes verification events only. The new planner and Storage primitive are foundations, not a working delete feature. Character deletion and cloud cleanup remain disabled until the persistence sequence and disposable multi-session tests exist.
