@@ -127,3 +127,11 @@ These functions are schema proposals only. No function has been executed or gran
 Operational caution: outbox dispatch is at-least-once, not exactly-once. The worker must be idempotent. The database lease fences state writes, but cannot undo an external provider call that was already accepted; provider-side idempotency and billing reconciliation remain mandatory.
 - `complete_generation_job` additionally requires the result `media_assets` row to have the same owner as the job and a non-null storage path; backend must still verify the private object upload succeeded before creating that row.
 \n## Static source guardrails\n\n`backend/tests/test_generation_queue_migration_contract.py` checks the draft's fixed SECURITY DEFINER search paths, explicit function grants/revokes, PostgreSQL `LIMIT ... FOR UPDATE SKIP LOCKED` ordering, result-asset owner/storage-path check, fencing predicates, and preflight coverage. These are source-contract tests only; they are not a PostgreSQL parser or substitute for isolated Supabase concurrency tests. They have not yet been executed in CI.\n
+
+## Disposable behavior test (not executed)
+- Added `supabase/tests/0015_generation_job_queue_behavior.sql`.
+- It is intended for a disposable LOCAL Supabase database only, after migrations 0012, 0013, and 0014 have been applied locally.
+- The script creates two temporary Auth users and fixture rows inside a transaction, exercises owner isolation, stale completion, retry/outbox insertion, queued and active cancellation, lease recovery, outbox claim/ack, and dead-lettering, then rolls everything back.
+- It is sequential and does not prove concurrent claim behavior. A separate multi-session test is still required for actual race testing.
+- The script has NOT been executed. This repository currently has no checked-in Supabase local config or CI workflow visible in the feature branch, so do not infer a runnable local stack from the presence of this SQL file.
+- Never run this script or the draft migrations against production.
