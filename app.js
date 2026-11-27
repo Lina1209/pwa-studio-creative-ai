@@ -767,16 +767,17 @@ const movieHistoryStyle = document.createElement("style");
   $("#blockConversationUser")?.addEventListener("click",async()=>{
     if(!activeMessagePartnerId||!authSession?.user)return;
     if(!window.confirm("Заблокировать пользователя? Он не сможет отправлять вам сообщения, и вы не сможете писать ему."))return;
-    const button=$("#blockConversationUser"),version=authContextVersion;
+    const button=$("#blockConversationUser"),version=authContextVersion,userId=authSession.user.id,partnerId=activeMessagePartnerId,threadId=activeMessageThreadId;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessagePartnerId===partnerId&&activeMessageThreadId===threadId;
     button.disabled=true;
     try{
-      await apiRequest("/api/blocks",{method:"POST",body:JSON.stringify({user_id:activeMessagePartnerId})});
-      if(version!==authContextVersion)return;
+      await apiRequest("/api/blocks",{method:"POST",body:JSON.stringify({user_id:partnerId})});
+      if(!contextIsCurrent())return;
       $("#directMessageForm").hidden=true;
       messagesFeedback("Пользователь заблокирован. Переписка сохранена, новые сообщения между вами недоступны.");
       button.textContent="Заблокирован";
       loadBlockedUsers();
-    }catch(error){messagesFeedback("Не удалось заблокировать пользователя: "+error.message);button.disabled=false;}
+    }catch(error){if(contextIsCurrent()){messagesFeedback("Не удалось заблокировать пользователя: "+error.message);button.disabled=false;}}
   });
 
   const blockedUsersStyle=document.createElement("style");
@@ -785,10 +786,12 @@ const movieHistoryStyle = document.createElement("style");
   const loadBlockedUsers = async () => {
     const list=$("#blockedUsersList"); if(!list||!authSession?.user)return;
     list.replaceChildren(adminNode("div","admin-empty","Загружаем список блокировок…"));
-    const version=authContextVersion,userId=authSession.user.id;
+    const version=authContextVersion,userId=authSession.user.id,requestVersion=(Number(list.dataset.requestVersion)||0)+1;
+    list.dataset.requestVersion=String(requestVersion);
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&Number(list.dataset.requestVersion)===requestVersion;
     try{
       const rows=await apiRequest("/api/blocks");
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       list.replaceChildren();
       if(!Array.isArray(rows)||!rows.length){list.append(adminNode("div","admin-empty","Вы никого не заблокировали."));return;}
       const selectedIds=new Set();
@@ -811,6 +814,7 @@ const movieHistoryStyle = document.createElement("style");
         button.disabled=true;
         try{
           await apiRequest("/api/blocks",{method:"DELETE",body:JSON.stringify({user_id:row.blocked_id})});
+          if(!contextIsCurrent())return false;
           item.remove();selectedIds.delete(row.blocked_id);
           if(activeMessagePartnerId===row.blocked_id){
             const blockButton=$("#blockConversationUser");
@@ -818,14 +822,14 @@ const movieHistoryStyle = document.createElement("style");
             $("#directMessageForm").hidden=false;
           }
           return true;
-        }catch(error){button.disabled=false;throw error;}
+        }catch(error){if(contextIsCurrent())button.disabled=false;throw error;}
       };
       const items=new Map();
       rows.forEach(row=>{
         const item=adminNode("div","blocked-user-item");
         const choice=document.createElement("input");choice.type="checkbox";choice.setAttribute("aria-label","Выбрать пользователя "+String(row.blocked_id||"").slice(0,8));
         const label=adminNode("span","",messageDisplayName(row.blocked_id));
-        loadMessageProfile(row.blocked_id).then(()=>{if(item.isConnected)label.textContent=messageDisplayName(row.blocked_id);});
+        loadMessageProfile(row.blocked_id).then(()=>{if(contextIsCurrent()&&item.isConnected)label.textContent=messageDisplayName(row.blocked_id);});
         const button=adminNode("button","secondary-button","Разблокировать");button.type="button";
         choice.addEventListener("change",()=>{if(choice.checked)selectedIds.add(row.blocked_id);else selectedIds.delete(row.blocked_id);updateSelection();});
         button.addEventListener("click",async()=>{
@@ -850,17 +854,19 @@ const movieHistoryStyle = document.createElement("style");
         bulkButton.disabled=true;selectAll.disabled=true;
         let success=0;const failures=[];
         for(const row of targets){
+          if(!contextIsCurrent())return;
           const entry=items.get(row.blocked_id);if(!entry)continue;
           try{await unblockOne(row,entry.item,entry.button);success++;}
           catch(error){failures.push(String(row.blocked_id).slice(0,8)+": "+error.message);}
         }
+        if(!contextIsCurrent())return;
         if(!list.querySelector(".blocked-user-item"))list.replaceChildren(adminNode("div","admin-empty","Вы никого не заблокировали."));
         else{selectAll.disabled=false;updateSelection();}
         if(failures.length)messagesFeedback("Разблокировано: "+success+". Не удалось: "+failures.length+". "+failures.join("; "));
         else messagesFeedback("Успешно разблокировано пользователей: "+success+".");
       });
       updateSelection();
-    }catch(error){if(version===authContextVersion)list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить блокировки: "+error.message));}
+    }catch(error){if(contextIsCurrent())list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить блокировки: "+error.message));}
   };
   $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();loadBlockedUsers();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
   $("#newConversationForm")?.addEventListener("submit",async event=>{
@@ -906,7 +912,8 @@ const movieHistoryStyle = document.createElement("style");
     if (!authSession?.user) { setAuthMode("login"); authGate.hidden = false; reportFeedback("Сначала войдите в аккаунт, чтобы отправить обращение."); return; }
     const form = event.currentTarget;
     const button = form.querySelector('button[type="submit"]');
-    const version = authContextVersion;
+    const version = authContextVersion, userId = authSession.user.id;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     const description = $("#reportDescription").value.trim();
     if (description.length < 10) { reportFeedback("Добавьте немного больше подробностей (не менее 10 символов)."); return; }
     const payload = {
@@ -919,13 +926,13 @@ const movieHistoryStyle = document.createElement("style");
     reportFeedback("Отправляем обращение защищённым соединением…");
     try {
       const result = await apiRequest("/api/reports", { method: "POST", body: JSON.stringify(payload) });
-      if (version !== authContextVersion) return;
+      if (!contextIsCurrent()) return;
       form.reset();
       reportFeedback("✓ Обращение принято. Номер: " + result.id + ". Статус: " + (result.status || "new") + ". Спасибо, что помогаете поддерживать безопасную среду.");
     } catch (error) {
-      if (version === authContextVersion) reportFeedback("Не удалось отправить обращение: " + error.message);
+      if (contextIsCurrent()) reportFeedback("Не удалось отправить обращение: " + error.message);
     } finally {
-      button.disabled = false;
+      if (contextIsCurrent()) button.disabled = false;
     }
   });
 
