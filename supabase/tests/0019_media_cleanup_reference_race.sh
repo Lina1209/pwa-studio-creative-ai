@@ -75,7 +75,8 @@ psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
 select set_config('pwa.race.owner', :'owner_id', false);
 select set_config('pwa.race.target', :'target_id', false);
 select set_config('pwa.race.operation', :'operation_id', false);
-do $$
+select set_config('pwa.race.asset', :'asset_id', false);
+do $
 declare v_rejected boolean := false;
 begin
   begin
@@ -96,7 +97,7 @@ do $$
 declare v_target uuid := current_setting('pwa.race.target')::uuid;
 begin
   if (select cleanup_operation_id from public.characters where id=v_target) is not null
-     or (select status from public.media_assets where id=:'asset_id') <> 'ready' then
+     or (select status from public.media_assets where id=current_setting('pwa.race.asset')::uuid) <> 'ready' then
     raise exception 'rejected cleanup left a deletion marker or changed the media state';
   end if;
 end;
