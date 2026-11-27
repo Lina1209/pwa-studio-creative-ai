@@ -228,11 +228,14 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         creator = app[start:end]
         self.assertIn("const intentVersion = ++assistantConversationIntentVersion;", creator)
         self.assertIn("intentVersion !== assistantConversationIntentVersion", creator)
+        self.assertIn("activeAssistantConversationId !== data.id) return null;", creator)
+        self.assertIn("await renderAssistantHistory();", creator)
         submit_start = app.index('$("#assistantForm").addEventListener("submit"')
         submit_end = app.index("\n  });", submit_start) + 6
         submit = app[submit_start:submit_end]
         self.assertIn("requestConversationId = await startAssistantConversation();", submit)
-        self.assertIn("if (!requestConversationId || !contextIsCurrent()) return;", submit)
+        self.assertIn("if (!requestConversationId || !contextIsCurrent() ||", submit)
+        self.assertIn("activeAssistantConversationId !== requestConversationId) return;", submit)
         self.assertIn("const conversationId = requestConversationId;", submit)
         self.assertNotIn("const conversationId = activeAssistantConversationId;", submit)
 
