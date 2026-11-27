@@ -1140,9 +1140,11 @@ const movieHistoryStyle = document.createElement("style");
     const suggestions = document.querySelector(".assistant-panel .suggestion-row");
     if (suggestions) suggestions.hidden = true;
   };
-  const clearAssistantMessages = () => {
-    setKattyAssistantMode("companion");
-    setKattyAssistantExpression("neutral");
+  const clearAssistantMessages = (options = {}) => {
+    if (!options.preserveKattyState) {
+      setKattyAssistantMode("companion");
+      setKattyAssistantExpression("neutral");
+    }
     if (assistantMessages) assistantMessages.replaceChildren();
     const welcome = document.querySelector(".assistant-welcome");
     if (welcome) welcome.hidden = false;
@@ -1160,7 +1162,7 @@ const movieHistoryStyle = document.createElement("style");
       .eq("user_id", requestUserId).order("created_at", { ascending: true });
     if (error) throw error;
     if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
-    clearAssistantMessages();
+    clearAssistantMessages({ preserveKattyState: true });
     (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
     activeAssistantConversationId = conversationId;
   };
@@ -1220,7 +1222,7 @@ const movieHistoryStyle = document.createElement("style");
     const { data, error } = await supabaseClient.from("assistant_conversations")
       .insert({ user_id: authSession.user.id, title: "Новый диалог" }).select("id").single();
     if (error) throw error;
-    activeAssistantConversationId = data.id; clearAssistantMessages();
+    activeAssistantConversationId = data.id; clearAssistantMessages({ preserveKattyState: true });
     await renderAssistantHistory();
     setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
   };
