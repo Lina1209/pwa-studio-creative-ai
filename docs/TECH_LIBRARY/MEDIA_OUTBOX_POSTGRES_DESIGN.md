@@ -121,3 +121,7 @@ If Storage returns an ambiguous outcome, reconcile object existence before retry
 10. Verify no browser role can read or write the outbox.
 
 No migration, RPC, worker, scheduler, or Storage call is implemented by this document.
+
+## 9. Concurrency verification plan
+
+The detailed two-worker, stale-lease, crash-window, fault-injection, and owner-isolation matrix is documented in `docs/TECH_LIBRARY/MEDIA_OUTBOX_CONCURRENCY_TEST_PLAN.md`. The pure-model test suite covers stale worker A versus reclaimed worker B, attempt exhaustion, and stale retry rejection. It does not prove database concurrency or transaction atomicity; those checks require a disposable Supabase project and separate database sessions.
