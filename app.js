@@ -2199,6 +2199,7 @@ const movieHistoryStyle = document.createElement("style");
   const renderCharacterLibrary = async () => {
     const list=$("#characterLibraryList");if(!list)return;
     const ownerId=authSession?.user?.id||"guest";
+    const contextVersion=authContextVersion;
     const query=($("#characterSearch")?.value||"").trim().toLocaleLowerCase();
     const items=readCharacterLibrary().filter(item=>!query||(item.name+" "+item.description).toLocaleLowerCase().includes(query));
     list.replaceChildren();
@@ -2215,11 +2216,13 @@ const movieHistoryStyle = document.createElement("style");
       for(const ref of (item.referenceImages||[]).slice(0,6)){
         try{
           const blob=await getCharacterImage(ref.id,ownerId);
+          if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)return;
           if(!blob||!card.isConnected)continue;
           const img=document.createElement("img");img.alt="Референс "+item.name;img.loading="lazy";
           const url=URL.createObjectURL(blob);img.src=url;img.addEventListener("load",()=>URL.revokeObjectURL(url),{once:true});img.addEventListener("error",()=>URL.revokeObjectURL(url),{once:true});gallery.append(img);
         }catch(error){console.warn("Character image preview:",error);}
       }
+      if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)return;
       if(gallery.childElementCount)card.append(gallery);
       const actions=document.createElement("div");actions.className="character-card-actions";
       const edit=document.createElement("button");edit.type="button";edit.className="secondary-button";edit.textContent="Изменить";
@@ -2234,15 +2237,23 @@ const movieHistoryStyle = document.createElement("style");
       });
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";
       remove.addEventListener("click",async()=>{
+        const deleteContextVersion=authContextVersion;
+        const deleteOwnerId=ownerId;
+        const deleteStorageKey=characterLibraryKey();
         if(!window.confirm("Удалить «"+item.name+"» и его локальные изображения?"))return;
+        if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==deleteOwnerId)return;
         const current=readCharacterLibrary(),found=current.find(x=>x.id===item.id);if(!found)return;
         const next=current.filter(x=>x.id!==item.id);
         try{
-          localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
-          await Promise.all((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,ownerId)));
+          localStorage.setItem(deleteStorageKey,JSON.stringify(next));
+          await Promise.all((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)));
+          if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==deleteOwnerId)return;
           $("#characterLibraryStatus").textContent="Материал удалён из локальной библиотеки.";
           renderCharacterLibrary();
-        }catch(error){$("#characterLibraryStatus").textContent="Запись обновлена, но очистка части изображений не завершилась. "+error.message;}
+        }catch(error){
+          if(deleteContextVersion===authContextVersion&&(authSession?.user?.id||"guest")===deleteOwnerId)
+            $("#characterLibraryStatus").textContent="Запись обновлена, но очистка части изображений не завершилась. "+error.message;
+        }
       });
       actions.append(edit,remove);card.append(actions);list.append(card);
     }
@@ -2268,7 +2279,8 @@ const movieHistoryStyle = document.createElement("style");
     $("#characterName").scrollIntoView({behavior:"smooth",block:"center"});
   });
   $("#saveCharacter")?.addEventListener("click",async()=>{
-    const ownerId=authSession?.user?.id||"guest",name=$("#characterName").value.trim(),description=$("#characterDescription").value.trim();
+    const ownerId=authSession?.user?.id||"guest",contextVersion=authContextVersion,storageKey=characterLibraryKey();
+    const name=$("#characterName").value.trim(),description=$("#characterDescription").value.trim();
     const kind=$("#characterKind").value,representation=$("#characterRepresentation").value,files=Array.from($("#characterImages").files||[]);
     if(!name||!description){$("#characterLibraryStatus").textContent="Укажите имя и основное описание.";return;}
     if(!["character","scene"].includes(kind)||!["2d","3d","both"].includes(representation)){return;}
@@ -2285,18 +2297,26 @@ const movieHistoryStyle = document.createElement("style");
       referenceImages:[...retainedReferences,...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
     const button=$("#saveCharacter");button.disabled=true;
     try{
-      for(let i=0;i<files.length;i++)await saveCharacterImage(refs[i].id,files[i],ownerId);
+      for(let i=0;i<files.length;i++){
+        if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
+          throw new Error("Аккаунт изменился во время сохранения. Повторите действие в текущем аккаунте.");
+        await saveCharacterImage(refs[i].id,files[i],ownerId);
+      }
+      if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
+        throw new Error("Аккаунт изменился во время сохранения. Локальная карточка не была записана в другой аккаунт.");
       const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
-      localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
+      localStorage.setItem(storageKey,JSON.stringify(next));
       let cleanupWarning="";
       if(existing&&removedCharacterReferenceIds.size){
         try{await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));}
         catch(cleanupError){cleanupWarning=" Карточка сохранена, но часть старых файлов не удалось очистить: "+cleanupError.message;}
       }
+      if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)return;
       resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера."+cleanupWarning;
       await renderCharacterLibrary();
     }catch(error){
-      $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+" Новые изображения не очищались автоматически.";
+      if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)
+        $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+" Новые изображения не очищались автоматически.";
     }finally{button.disabled=false;}
   });
   $("#cancelCharacterEdit")?.addEventListener("click",()=>{resetCharacterEditor();$("#characterLibraryStatus").textContent="Редактирование отменено.";});
