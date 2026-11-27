@@ -19,6 +19,8 @@ class AIReservationRequest:
     provider: str
     model: str
     request_fingerprint: str
+    idempotency_key: str
+    reserved_usd: Decimal
 
 
 @dataclass(frozen=True)
