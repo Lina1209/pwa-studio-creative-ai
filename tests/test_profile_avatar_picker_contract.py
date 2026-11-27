@@ -186,6 +186,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         history = app[history_start:history_end]
         self.assertIn('open.addEventListener("click", async () => {', history)
         self.assertIn("assistantConversationIntentVersion += 1;", history)
+        self.assertIn("activeAssistantConversationId !== conversation.id", history)
         start = app.index("const startAssistantConversation")
         end = app.index('$("#assistantNewChat")', start)
         self.assertIn("assistantConversationIntentVersion += 1;", app[start:end])
