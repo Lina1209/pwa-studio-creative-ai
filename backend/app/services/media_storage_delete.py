@@ -8,7 +8,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.core.config import Settings
-from app.services.media_cleanup import MediaCleanupPlan
+from app.services.media_cleanup import MediaCleanupPlan, plan_media_cleanup
 
 
 def delete_private_media_object(settings: Settings, plan: MediaCleanupPlan) -> None:
@@ -17,6 +17,19 @@ def delete_private_media_object(settings: Settings, plan: MediaCleanupPlan) -> N
         raise HTTPException(status_code=503, detail="Private media storage is not configured.")
     if not isinstance(plan, MediaCleanupPlan):
         raise ValueError("A trusted media cleanup plan is required.")
+    checked = plan_media_cleanup(
+        authenticated_owner_id=plan.owner_id,
+        asset={
+            "id": plan.asset_id,
+            "owner_id": plan.owner_id,
+            "status": "cleanup_pending",
+            "bucket": plan.bucket,
+            "storage_path": plan.storage_path,
+        },
+        exact_object_is_referenced=False,
+    )
+    if checked != plan:
+        raise ValueError("Media cleanup plan failed integrity validation.")
     endpoint = (
         f"{settings.supabase_url.rstrip('/')}/storage/v1/object/"
         f"{plan.bucket}/{plan.storage_path}"
