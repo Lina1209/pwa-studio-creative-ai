@@ -55,6 +55,10 @@
       await rejects(() => api.transition({
         ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "verified", cloudAssetId: cloudAsset
       }), "local_only to verified unexpectedly accepted");
+      await api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state:"reserved"});
+      await rejects(() => api.transition({
+        ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "verified", cloudAssetId: cloudAsset
+      }), "reserved to verified unexpectedly accepted");
     });
     await test("valid lifecycle reaches verified only with cloud asset mapping", async () => {
       for (const state of ["reserved", "upload_pending", "object_uploaded"]) {
