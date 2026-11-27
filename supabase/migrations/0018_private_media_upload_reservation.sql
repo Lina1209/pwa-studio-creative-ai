@@ -247,8 +247,8 @@ begin
       or (e.status='claimed' and e.claim_expires_at <= clock_timestamp() and e.attempts < e.max_attempts)
     )
   order by e.available_at, e.created_at
-  for update skip locked
-  limit 1;
+  limit 1
+  for update skip locked;
 
   if not found then
     return null;
