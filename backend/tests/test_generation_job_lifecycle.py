@@ -38,8 +38,16 @@ class GenerationJobLifecycleTests(unittest.TestCase):
     def test_ambiguous_provider_timeout_does_not_retry(self):
         running = claim_job(new_job(), NOW)
         unresolved = mark_failed(running, NOW, "provider_timeout", True, 45)
-        self.assertEqual(unresolved.status, JobStatus.FAILED)
+        self.assertEqual(unresolved.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(unresolved.next_attempt_at)
+
+    def test_accepted_provider_attempt_requires_reconciliation(self):
+        running = claim_job(new_job(), NOW)
+        unresolved = mark_failed(
+            running, NOW, "provider_response_lost", True, 45,
+            ProviderSubmissionOutcome.ACCEPTED,
+        )
+        self.assertEqual(unresolved.status, JobStatus.RECONCILIATION_REQUIRED)
 
     def test_definitely_unsubmitted_attempt_can_retry(self):
         running = claim_job(new_job(), NOW)
@@ -76,9 +84,18 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mark_succeeded(running, "")
 
-    def test_expired_lease_is_recovered_for_retry(self):
+    def test_expired_lease_with_unknown_provider_outcome_requires_reconciliation(self):
         running = claim_job(new_job(), NOW, lease_seconds=10)
         recovered = recover_expired_lease(running, NOW + timedelta(seconds=11))
+        self.assertEqual(recovered.status, JobStatus.RECONCILIATION_REQUIRED)
+        self.assertEqual(recovered.error_code, "provider_outcome_unknown")
+
+    def test_expired_lease_before_submission_can_be_retried(self):
+        running = claim_job(new_job(), NOW, lease_seconds=10)
+        recovered = recover_expired_lease(
+            running, NOW + timedelta(seconds=11),
+            ProviderSubmissionOutcome.DEFINITELY_NOT_SUBMITTED,
+        )
         self.assertEqual(recovered.status, JobStatus.RETRY_WAIT)
         self.assertEqual(recovered.error_code, "worker_lease_expired")
 
@@ -86,7 +103,7 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         running = claim_job(new_job(), NOW, lease_seconds=10)
         requested = request_cancel(running, NOW)
         recovered = recover_expired_lease(requested, NOW + timedelta(seconds=11))
-        self.assertEqual(recovered.status, JobStatus.CANCELLED)
+        self.assertEqual(recovered.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(recovered.result_asset_id)
 
     def test_rejects_naive_timestamps_and_invalid_limits(self):
