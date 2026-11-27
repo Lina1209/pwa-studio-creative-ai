@@ -45,13 +45,32 @@
     if (!globalThis.indexedDB) return Promise.reject(new Error("IndexedDB is unavailable."));
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
+      let settled = false;
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
       };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error("Could not open backup journal."));
-      request.onblocked = () => reject(new Error("Backup journal upgrade is blocked by another tab."));
+      request.onsuccess = () => {
+        const db = request.result;
+        // An upgrade may be unblocked after onblocked has already rejected this
+        // operation. Close the late connection so it cannot pin a stale schema.
+        if (settled) {
+          db.close();
+          return;
+        }
+        settled = true;
+        resolve(db);
+      };
+      request.onerror = () => {
+        if (settled) return;
+        settled = true;
+        reject(request.error || new Error("Could not open backup journal."));
+      };
+      request.onblocked = () => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("Backup journal upgrade is blocked by another tab."));
+      };
     });
   }
 
