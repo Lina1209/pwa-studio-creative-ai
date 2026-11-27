@@ -182,8 +182,11 @@ declare
   v_status text;
   v_token uuid;
 begin
-  select count(*), max(attempts), max(status), max(claim_token)
-    into v_count, v_attempts, v_status, v_token
+  select count(*), max(attempts), max(status)
+    into v_count, v_attempts, v_status
+  from public.media_asset_outbox
+  where id=current_setting('pwa.test.event_id')::uuid;
+  select claim_token into v_token
   from public.media_asset_outbox
   where id=current_setting('pwa.test.event_id')::uuid;
   if v_count <> 1 or v_attempts <> 2 or v_status <> 'claimed'
