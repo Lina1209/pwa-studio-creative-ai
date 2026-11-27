@@ -220,7 +220,7 @@ declare
   v_event public.media_asset_outbox%rowtype;
   v_asset public.media_assets%rowtype;
 begin
-  if p_claim_token is null or p_lease_seconds < 10 or p_lease_seconds > 900 then
+  if p_claim_token is null or p_lease_seconds is null or p_lease_seconds < 10 or p_lease_seconds > 900 then
     raise exception 'invalid media outbox claim' using errcode='22023';
   end if;
 
@@ -361,12 +361,14 @@ declare
   v_event public.media_asset_outbox%rowtype;
   v_asset public.media_assets%rowtype;
 begin
-  if p_retry_delay_seconds < 1 or p_retry_delay_seconds > 86400 then
+  if p_owner_id is null or p_asset_id is null or p_event_id is null or p_claim_token is null
+     or p_retry_delay_seconds is null or p_retry_delay_seconds < 1 or p_retry_delay_seconds > 86400 then
     raise exception 'invalid media verification retry delay' using errcode='22023';
   end if;
 
   select * into v_event from public.media_asset_outbox
   where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
+    and event_type='media_upload_verify_requested'
     and status='claimed' and claim_token=p_claim_token
     and claim_expires_at > clock_timestamp()
   for update;
@@ -377,7 +379,8 @@ begin
   if v_event.attempts >= v_event.max_attempts then
     update public.media_asset_outbox
     set status='dead_letter',claim_token=null,claim_expires_at=null
-    where id=p_event_id and claim_token=p_claim_token;
+    where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
+      and event_type='media_upload_verify_requested' and claim_token=p_claim_token;
     update public.media_assets
     set status='upload_failed',version=version+1
     where id=p_asset_id and owner_id=p_owner_id
@@ -387,7 +390,8 @@ begin
     update public.media_asset_outbox
     set status='pending',available_at=clock_timestamp() + make_interval(secs => p_retry_delay_seconds),
         claim_token=null,claim_expires_at=null
-    where id=p_event_id and claim_token=p_claim_token;
+    where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
+        and event_type='media_upload_verify_requested' and claim_token=p_claim_token;
     select * into v_asset from public.media_assets
     where id=p_asset_id and owner_id=p_owner_id;
   end if;
