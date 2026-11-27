@@ -94,11 +94,15 @@ Report creation correctly derives `reporter_user_id` from the verified `StudioUs
 
 **Required regression tests:** omitted target remains valid; valid target is stored; malformed target returns 422 and causes zero outbound requests; a client cannot override the reporter identity.
 
-### AUTHZ-11 — Moderation state changes and audit append are not atomic (high; unresolved)
+### AUTHZ-11 — Atomic moderation state change and audit append (high; implemented in source, verification pending)
 
-Source review found that report review, suspension creation, and suspension revocation each perform the privileged state mutation and append to `admin_audit_log` as separate REST requests. If the state mutation succeeds but the audit insert fails (network interruption, privilege/configuration error, or database outage), the action can take effect without its corresponding audit event. Conversely, the API can return an error after the state change has already committed. The migration makes the audit table append-only, but append-only permissions do not make a multi-request workflow transactional.
+The former implementation performed each privileged state mutation and audit insert as separate REST requests, allowing a successful moderation action to lack its audit event if the second request failed.
 
-**Required remediation before relying on the audit trail:** move each state change and its audit insert into a single database transaction, preferably narrowly scoped SECURITY DEFINER RPCs with fixed `search_path`, explicit argument validation, and EXECUTE granted only to `service_role`; call the RPC once from the backend. Add fault-injection tests proving both the state change and audit event roll back together. Do not claim the audit trail is complete until this is implemented and tested. No transaction/RPC change was made in this pass.
+**Source remediation on 2026-11-27:** migration `0016_moderation_atomic_audit.sql` defines three narrowly scoped `SECURITY DEFINER` RPCs: `pwa_review_user_report`, `pwa_create_user_suspension`, and `pwa_revoke_user_suspension`. Each updates/inserts the moderation record and inserts the matching `admin_audit_log` event in the same PostgreSQL transaction. A failure in the audit insert therefore rolls back the state change. Functions use a fixed `search_path = pg_catalog, public`; EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to `service_role`. The backend now invokes exactly one RPC per moderation mutation and no longer performs a separate audit REST write.
+
+**Tests added:** `backend/tests/test_moderation_atomic_audit.py` checks that service calls use one RPC and do not issue a second audit request. `supabase/tests/0016_moderation_atomic_audit_rollback.sql` adds disposable-database fault injection: it forces the audit insert to fail and asserts report review, suspension creation, and suspension revocation all roll back. The SQL test requires pre-created disposable test users, a pending report, and an active suspension, and is intended for psql only.
+
+**Verification status:** neither test suite nor migration has been executed. The source change is not proof of database behavior until migration 0016 is applied and the rollback test passes in a disposable Supabase project. Do not apply to production or claim the audit trail has been verified.
 
 ## Required isolated test matrix
 
