@@ -226,6 +226,7 @@
       fileStatus.textContent = "Выбран файл: " + file.name + ". Он не загружается на сервер.";
     });
     transcript.addEventListener("input",()=>count.textContent=transcript.value.length+" / 12000");
+    resultText.addEventListener("input",()=>{latestResult=resultText.value;});
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const dictate = document.querySelector("#audioStoryDictate");
     const stop = document.querySelector("#audioStoryDictateStop");
