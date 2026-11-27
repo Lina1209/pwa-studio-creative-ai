@@ -129,3 +129,11 @@ The detailed two-worker, stale-lease, crash-window, fault-injection, and owner-i
 ## 10. Character-reference upload composition
 
 The pure preflight composition is implemented in `backend/app/services/media_workflow.py`. It validates the authenticated owner against a server-loaded character row, decodes the image, creates an immutable server-derived object key, and constructs the upload-verification event model bound to the asset ID. The future server must still insert the media row and event atomically before any worker can process it. The composition helper itself performs no writes or Storage calls.
+
+## 11. Draft migration and upload reservation now exist on the feature branch
+
+Draft migration 0018_private_media_upload_reservation.sql now adds the media lifecycle columns, a private media_asset_outbox table, and two service-role-only SECURITY DEFINER RPCs. The reservation RPC inserts the pending media row and verification event in one transaction. It validates the owner/character association, fixed private bucket, server-derived object-key shape, bounded image metadata, SHA-256 digest, and owner-scoped idempotency fingerprint. The second RPC conditionally advances pending_upload to object_uploaded.
+
+The authenticated API route and server-only Storage upload primitive are also present on the feature branch. They have not been deployed, the migration has not been applied, and no database/Storage call has been made against a live project. The outbox claim/ack/retry SQL RPCs and actual verification worker remain unimplemented. Therefore object_uploaded is not ready: the asset remains unreadable until a future worker independently verifies the stored object and conditionally marks it ready.
+
+This is a draft implementation boundary, not a claim of database-level verification. Required disposable-database rollback, idempotency, owner-isolation, and multi-session concurrency tests remain outstanding.
