@@ -17,7 +17,9 @@ where n.nspname = 'public'
     'complete_generation_job',
     'fail_generation_job',
     'request_generation_job_cancel',
-    'finish_generation_job_cancel'
+    'finish_generation_job_cancel',
+    'recover_expired_generation_jobs',
+    'fail_generation_outbox'
   )
 order by p.proname;
 
