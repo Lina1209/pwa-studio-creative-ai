@@ -43,11 +43,12 @@ class MediaAssetLifecycleContractTests(unittest.TestCase):
         self.assertIn("delete:", self.contract)
         self.assertIn("repeated requests must be idempotent", self.contract)
 
-    def test_no_active_media_lifecycle_routes_are_claimed(self):
-        self.assertNotIn("/media/upload", self.main)
-        self.assertNotIn("/media/sign", self.main)
-        self.assertNotIn("/media/delete", self.main)
-        self.assertIn("there is no backend media upload", self.contract)
+    def test_active_media_routes_are_present_but_character_delete_is_not(self):
+        self.assertIn("/characters/{{character_id}}/references", self.main)
+        self.assertIn("/media/{{asset_id}}/content", self.main)
+        self.assertIn("/media/{{asset_id}}/access", self.main)
+        self.assertNotIn("@app.delete(f\"{settings.api_prefix}/characters/", self.main)
+        self.assertIn("server-side character-reference upload route added", self.contract)
 
     def test_two_account_acceptance_matrix_covers_both_buckets(self):
         self.assertIn("two disposable auth accounts a and b", self.contract)
