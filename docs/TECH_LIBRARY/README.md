@@ -140,5 +140,6 @@ Strix — инструмент для динамического тестиро�
 
 ## Security review records
 
+- [API authentication and object-authorization review](API_AUTHORIZATION_SECURITY_REVIEW.md) — JWT validation, admin identity, owner-scoped object access, Storage policies, and isolated two-user tests. Status: source review only; cloud/API handoff remains NO-GO.
 - [Reference asset security review](REFERENCE_ASSET_SECURITY_REVIEW.md) — local-first references, file validation limits, owner isolation, private Storage, upload compensation, and generation/chat boundary. Status: source review only; cloud/provider handoff remains NO-GO.
 - [Provider attempt and reconciliation contract](GENERATION_PROVIDER_RECONCILIATION_CONTRACT.md) — durable provider attempts, ambiguous outcomes, cancellation races, reconciliation leases, audit evidence, and credit holds. Status: design only; no worker or billing activation.
