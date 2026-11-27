@@ -73,3 +73,18 @@ The model may vary scene action, pose and camera, but should not reinterpret ide
 
 ## Not implemented yet
 The local picker and passport snapshot are implemented in the feature branch only. The following are still not implemented: database join table, cloud relationship and cross-device loading, attaching actual reference image blobs to a project/scene, signed preview URLs, actual image upload to a video/image generation provider, automatic prompt assembly/enforcement across generation routes, explicit passport refresh with diff, cloud restore, and bidirectional sync. Scene number assignments currently provide storyboard author guidance only; they do not yet trigger rendering or pass image files to a model. The picker has not passed browser E2E or Supabase integration tests. The proposed SQL remains design-only and must not be run until separately reviewed and tested.
+
+## 9. Private reference-upload API status (2026-11-27)
+
+The authenticated server endpoint `POST /api/characters/{character_id}/references` is implemented as a server-only upload path. It requires an authenticated owner and an existing owner-matched row in `public.characters`; it validates the image bytes and MIME type, caps the body at 8 MiB, derives immutable object identifiers and the Storage path on the server, reserves the `media_assets` row plus verification outbox event atomically, uploads with the server-only Storage credential, and leaves readiness to the independent verification worker. The browser cannot choose the bucket or object path.
+
+The local Character Library currently does **not** create or load `public.characters` rows. It stores passport metadata in owner-scoped localStorage and image blobs in IndexedDB. Therefore the upload endpoint is not yet callable from the current library UI: a local character UUID is not proof that a corresponding server character row exists. Do not wire the upload button directly to this endpoint until authenticated character create/read/update/list APIs and an explicit local-to-cloud mapping/sync design are implemented and tested.
+
+Failure behavior:
+- A failure before reservation creates no object and no media row.
+- A failure after reservation leaves a durable pending reservation and verification outbox event; the verifier can reconcile an object that reached Storage despite a lost HTTP response.
+- A duplicate-object response is not treated as proof of success. The worker must independently verify the exact reserved object and fingerprint before marking the asset ready.
+- Repeated requests use the same idempotency key and deterministic server-derived IDs; changed bytes under the same key must conflict rather than overwrite.
+- Local IndexedDB images remain the source of truth until explicit cloud backup succeeds. No local image is deleted by a cloud upload attempt.
+
+Migration 0019 draft removes authenticated direct INSERT/UPDATE/DELETE access to `studio-media`; only owner-scoped export uploads remain available directly to browser clients. The private character upload endpoint uses the server credential after reservation. This migration remains draft-only and has not been applied to any live database.
