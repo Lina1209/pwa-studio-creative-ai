@@ -27,7 +27,6 @@ class CharacterApiRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), [])
         self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
-        list_rows.assert_called_once_with(patch("unused"), OWNER) if False else None
 
     def test_client_cannot_supply_owner_id_on_create(self):
         response = self.client.post("/api/characters", json={
