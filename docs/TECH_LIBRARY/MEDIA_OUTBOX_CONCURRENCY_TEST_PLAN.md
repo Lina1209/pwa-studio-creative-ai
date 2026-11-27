@@ -1,6 +1,6 @@
 # PWA Studio — media outbox concurrency and crash-recovery test plan
 
-**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 43 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
+**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 58 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
 **Target:** disposable PostgreSQL/Supabase project matching the reviewed migration chain.
 **Never run this plan against production.**
 
@@ -120,7 +120,7 @@ Remaining release-gate cases:
 - Passport or another media row references an object: refuse cleanup; never delete the referenced object.
 - User B submits A's character, asset, or Storage path: no cross-owner lookup or DELETE.
 - Storage DELETE succeeds, returns 404, times out after possible success, or returns a permanent error: reconcile and retry without premature tombstoning.
-- A new reference races with cleanup intent: exactly one operation wins under the database serialization guards. Reference triggers and the cleanup reservation acquire per-object advisory locks in deterministic bucket/path order to reduce lock-order inversion risk when rows contain multiple references.
+- A new reference races with cleanup intent: exactly one operation wins under the database serialization guards. Reference triggers and the cleanup reservation acquire per-object advisory locks in deterministic bucket/path order to reduce lock-order inversion risk when rows contain multiple references. The two-sided race is now executable in `supabase/tests/0019_media_cleanup_reference_race.sh` and passed in CI: (A) the reference writer holds the lock first, then cleanup waits and refuses deletion; (B) cleanup intent commits first, then the new reference write is rejected.
 - A dead-letter event remains recoverable by an operator; the character must not be finalized while any associated media row remains.
 - Final character deletion succeeds only after every child media row is detached and confirmed absent.
 
@@ -145,14 +145,16 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
 
 The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet. The Storage delete unit tests also cover mocked 200/404, timeout, permanent rejection, invalid path/bucket, and missing credentials; these mocks do not verify a real Supabase Storage deployment.
 
+A second race harness, `supabase/tests/0019_media_cleanup_reference_race.sh`, tests both serialisation outcomes for passport writes versus cleanup intent. It passed in GitHub Actions run 58: a reference transaction that acquires the advisory lock first causes cleanup to wait and reject; when cleanup commits first, a later passport pointer update is rejected. Neither case contacts Storage.
+
 The two-session race harness is `supabase/tests/0019_media_cleanup_claim_race.sh`. It creates one disposable character and ready image, requests cleanup, launches two independent `psql` sessions, and asserts exactly one claim. It then expires the lease, reclaims with a new token, verifies that the stale token cannot retry or complete, completes using the fresh token, and finalizes the character. It does not contact Storage.
 
 Run only after migrations 0005, 0012, 0017, 0018, and 0019 are applied to a disposable database:
 ```bash
 DISPOSABLE_DATABASE_URL="..." PWA_TEST_OWNER_ID="..." bash supabase/tests/0019_media_cleanup_claim_race.sh
 ```
-The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 43 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
+The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 58 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
 
-Still required before activation: run the full Supabase two-account RLS/Storage matrix; test actual Storage DELETE success/404/timeout-after-delete; run an adversarial reference-write-vs-cleanup race; test batches of many events and workers; and exercise dead-letter/operator recovery. The foreign-owner cleanup reservation check is now covered by the passing SQL transaction harness. Never run these harnesses against production.
+Still required before activation: run the full Supabase two-account RLS/Storage matrix; test actual Storage DELETE success/404/timeout-after-delete; test batches of many events and workers; and exercise dead-letter/operator recovery. The foreign-owner cleanup reservation check is now covered by the passing SQL transaction harness. Never run these harnesses against production.
 
 The 0019 SQL harness passed in CI and verifies that authenticated browser roles have no direct media metadata INSERT/UPDATE/DELETE or character DELETE privilege, cannot forge the server-managed cleanup marker, and that late character-reference upload reservations are rejected after cleanup intent is committed. It also checks foreign-owner denial, refusal of an unindexed private path, external metadata references, and rollback when an upload is still in flight. The migration scans media metadata and other character passports for surviving references. These are PostgreSQL integration checks on the disposable compatibility schema, not live Supabase RLS/Storage tests.
