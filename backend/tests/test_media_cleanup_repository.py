@@ -44,6 +44,18 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
             claim_media_cleanup(settings(), TOKEN)
 
     @patch("app.services.media_cleanup_repository._call")
+    def test_claim_rejects_mismatched_fencing_token(self, call):
+        event = {
+            "owner_id": OWNER, "asset_id": ASSET, "character_id": CHARACTER, "event_id": EVENT,
+            "claim_token": "77777777-7777-4777-8777-777777777777", "bucket": "studio-media",
+            "storage_path": f"{OWNER}/characters/{CHARACTER}/{ASSET}.png",
+            "attempts": 1, "max_attempts": 8,
+        }
+        call.return_value = event
+        with self.assertRaisesRegex(RuntimeError, "mismatched fencing token"):
+            claim_media_cleanup(settings(), TOKEN)
+
+    @patch("app.services.media_cleanup_repository._call")
     def test_claim_validates_required_payload(self, call):
         event = {
             "owner_id": OWNER, "asset_id": ASSET, "character_id": CHARACTER, "event_id": EVENT,
