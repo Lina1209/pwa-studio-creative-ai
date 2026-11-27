@@ -209,3 +209,11 @@ The replacement composition guard now canonicalizes the authenticated owner, cha
 The owner-filtered repository now selects the stored `bucket` and `status` fields needed by this gate. The path and bucket remain server-internal and must never be serialized to the browser. This planner does not issue a signed URL, download bytes, or create a route. A future endpoint must first call `get_owned_media_asset` using the verified JWT subject, then apply this gate, and only then perform a short-lived private Storage operation. Signed URLs must not be logged or persisted.
 
 Six unit tests are authored in `backend/tests/test_media_read.py`; they have not been executed. No Storage request, route, migration, or production change was made.
+
+## 20. Short-lived signed URL service added (not exposed by an API route)
+
+`backend/app/services/media_signed_url.py` adds a server-only function that requests a Supabase Storage signed URL with a fixed 60-second expiry. It accepts only a `MediaReadPlan` produced after the owner-filtered metadata lookup and read-eligibility gate; it does not accept bucket, object path, or expiry from browser input. The Supabase service-role credential remains in the server request. The returned URL is accepted only as a relative Storage signing path and is pinned to the configured Supabase project host. Storage errors are converted to generic responses without relaying provider details.
+
+This is callable service code, but there is still no FastAPI route invoking it, so the browser cannot request or receive signed links yet. A future route must authenticate with the verified JWT, call `get_owned_media_asset`, call `plan_private_media_read`, then call `create_private_media_signed_url`; return only the short-lived URL and safe display metadata. Never persist, cache, log, or publish the signed URL. Treat it as a bearer capability until expiry.
+
+Four mocked unit tests are authored in `backend/tests/test_media_signed_url.py`; they have not been executed. No live Storage request was made, no endpoint was added, and no production setting or database was changed.
