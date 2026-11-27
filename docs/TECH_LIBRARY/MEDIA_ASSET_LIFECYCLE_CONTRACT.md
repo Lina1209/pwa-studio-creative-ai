@@ -91,3 +91,15 @@ Use two disposable Auth accounts A and B, and exercise both buckets separately:
 ## 9. Current implementation boundary
 
 At this revision there is no backend media upload/read/sign/replace/delete route, no Storage lifecycle service, and no cleanup worker. `image_reference_validation.py` now performs full bounded Pillow decoding, but does not normalize images, strip EXIF, or isolate decoding in a separate OS-limited worker. Migration 0017 is a draft schema hardening change, not a deployed policy. This contract must not be interpreted as an implemented upload or cloud-backup feature.
+
+## 10. Backend guard primitives added (not an endpoint)
+
+`backend/app/services/media_access.py` now provides small reusable guards for the future route layer:
+
+- canonical UUID parsing for untrusted resource selectors;
+- uniform 404 behavior for absent and foreign-owned rows;
+- same-owner validation for project/character associations;
+- server-structured immutable object-key construction using an allowlisted resource kind and image extension;
+- allowlisting of the two private bucket names.
+
+These helpers do not query Supabase, upload/download bytes, or create signed URLs. A future service must still query each row using both the requested ID and the authenticated JWT subject before passing it to the guards. The helper's unit tests are authored in `backend/tests/test_media_access.py`; they have not been executed in this workflow.
