@@ -122,20 +122,21 @@ def process_one(settings) -> bool:
         complete_media_upload_verification(settings, event, verified)
         logger.info("Verified private media asset %s", event["asset_id"])
     except Exception as exc:
-        attempt = int(event.get("attempts", 1))
+        raw_attempt = event.get("attempts", 1)
+        attempt = raw_attempt if isinstance(raw_attempt, int) and not isinstance(raw_attempt, bool) and raw_attempt > 0 else 1
         delay = min(MAX_RETRY_DELAY_SECONDS, 30 * (2 ** max(0, attempt - 1)))
         try:
             outcome = retry_media_upload_verification(settings, event, delay)
             logger.warning(
                 "Private media verification deferred for asset %s (attempt %s, outcome %s, error %s)",
-                event["asset_id"], attempt, outcome.get("event_status"), type(exc).__name__,
+                event.get("asset_id", "unknown"), attempt, outcome.get("event_status"), type(exc).__name__,
             )
         except Exception as retry_exc:
             # The lease expires and the database claim RPC recovers it; never clear a
             # claim locally or acknowledge work whose outcome is uncertain.
             logger.error(
                 "Could not schedule media verification retry for asset %s (%s)",
-                event["asset_id"], type(retry_exc).__name__,
+                event.get("asset_id", "unknown"), type(retry_exc).__name__,
             )
     return True
 
