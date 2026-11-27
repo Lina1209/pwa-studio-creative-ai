@@ -16,10 +16,10 @@
   ]);
   const NEXT = {
     local_only: new Set(["reserved", "retryable_error", "conflict", "terminal_error"]),
-    reserved: new Set(["upload_pending", "object_uploaded", "retryable_error", "conflict", "terminal_error"]),
+    reserved: new Set(["upload_pending", "retryable_error", "conflict", "terminal_error"]),
     upload_pending: new Set(["reserved", "object_uploaded", "retryable_error", "conflict", "terminal_error"]),
     object_uploaded: new Set(["upload_pending", "verified", "retryable_error", "conflict", "terminal_error"]),
-    retryable_error: new Set(["reserved", "upload_pending", "object_uploaded", "retryable_error", "conflict", "terminal_error"]),
+    retryable_error: new Set(["reserved", "upload_pending", "retryable_error", "conflict", "terminal_error"]),
     conflict: new Set(),
     terminal_error: new Set(),
     verified: new Set()
@@ -119,10 +119,12 @@
     if (!Array.isArray(input.references) || input.references.length > 6) fail("Invalid reference list.");
     const references = input.references.map(normalizeReference);
     const now = new Date().toISOString();
+    const passportFingerprint = requiredString(input.passportFingerprint, "passport fingerprint", 64).toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(passportFingerprint)) fail("Invalid passport fingerprint.");
     const record = {
       id: keyFor(ownerId, localCharacterId), protocolVersion: PROTOCOL_VERSION,
       ownerId, localCharacterId, cloudCharacterId: null,
-      passportFingerprint: requiredString(input.passportFingerprint, "passport fingerprint", 64),
+      passportFingerprint,
       references, createdAt: now, updatedAt: now
     };
     assertRecord(record);
