@@ -441,15 +441,18 @@ const movieHistoryStyle = document.createElement("style");
       if(contextIsCurrent())button.disabled=profileAvatarDraftId===profileAvatarSavedId;
     }
   });
+  let communityProfileRequestVersion = 0;
   const loadCommunityProfile = async () => {
+    const requestVersion=++communityProfileRequestVersion;
     const version=authContextVersion,userId=authSession?.user?.id;
+    const contextIsCurrent=()=>requestVersion===communityProfileRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId;
     const panel=$("#communityPanel");
     if(!panel)return;
     panel.hidden=!userId;
     if(!userId){initializeGuestProfileAvatar();return;}
     try{
       const profile=await apiRequest("/api/community/profile");
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       profileAvatarSavedId=PROFILE_AVATAR_CATALOG.some(item=>item.id===profile.avatar_catalog_id)?profile.avatar_catalog_id:PROFILE_AVATAR_DEFAULT;
       profileAvatarDraftId=profileAvatarSavedId;profileAvatarCategory="all";renderProfileAvatarPicker();applyProfileAvatarChrome(profileAvatarSavedId);
       $("#communityDisplayName").value=profile.display_name||"";
@@ -458,7 +461,7 @@ const movieHistoryStyle = document.createElement("style");
       $("#communityPublic").checked=profile.visibility==="public";
       $("#communityListed").checked=!!profile.show_in_directory;
       communityFeedback("Профиль загружен. Управляйте публичностью в настройках ниже.");
-    }catch(error){if(version===authContextVersion)communityFeedback("Не удалось загрузить профиль: "+error.message);}
+    }catch(error){if(contextIsCurrent())communityFeedback("Не удалось загрузить профиль: "+error.message);}
   };
   $("#communityProfileForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
@@ -590,22 +593,25 @@ const movieHistoryStyle = document.createElement("style");
       list.append(card);
     });
   };
+  let notificationLoadRequestVersion = 0;
   const loadNotifications = async () => {
+    const requestVersion=++notificationLoadRequestVersion;
     const panel = $("#notificationPanel");
     if (!panel) return;
     if (!authSession?.user) { panel.hidden = true; return; }
     panel.hidden = false;
     const version = authContextVersion, userId = authSession.user.id;
+    const contextIsCurrent=()=>requestVersion===notificationLoadRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId;
     notificationFeedback("Проверяем новые сообщения…");
     const list = $("#notificationList");
     if (list) list.replaceChildren(adminNode("div","admin-empty","Загружаем уведомления…"));
     try {
       const items = await apiRequest("/api/notifications");
-      if (version !== authContextVersion || authSession?.user?.id !== userId) return;
+      if (!contextIsCurrent()) return;
       renderNotifications(items);
       notificationFeedback(items.length ? "Уведомления синхронизированы с вашим аккаунтом." : "Новых сообщений пока нет.");
     } catch (error) {
-      if (version !== authContextVersion || authSession?.user?.id !== userId) return;
+      if (!contextIsCurrent()) return;
       notificationFeedback("Не удалось загрузить уведомления: " + error.message);
       if (list) list.replaceChildren(adminNode("div","admin-empty","Центр уведомлений временно недоступен."));
     }
