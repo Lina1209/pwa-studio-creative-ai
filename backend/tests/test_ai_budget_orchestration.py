@@ -60,6 +60,15 @@ class AIBudgetOrchestrationTests(unittest.TestCase):
         )
         self.store.settle.assert_not_called()
 
+    def test_provider_exception_is_preserved_if_unknown_marking_fails(self):
+        failure = TimeoutError("provider timeout")
+        self.store.mark_unknown.side_effect = RuntimeError("database unavailable")
+        with self.assertRaises(TimeoutError) as raised:
+            execute_reserved_ai_call(
+                self.store, self.request, Mock(side_effect=failure), cost_getter=lambda _: None
+            )
+        self.assertIs(raised.exception, failure)
+
     def test_reservation_failure_prevents_provider_call(self):
         self.store.reserve.side_effect = RuntimeError("budget unavailable")
         provider = Mock()
