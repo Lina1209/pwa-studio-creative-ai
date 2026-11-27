@@ -62,7 +62,7 @@ Cleanup must be owner-scoped, idempotent, bounded, and auditable. A cleanup work
 
 - Enforce request body, per-file, and aggregate byte limits server-side before buffering unbounded content.
 - Verify actual file signature and MIME; extension is metadata only.
-- Decode accepted images using a maintained, pinned decoder in a resource-bounded path. Enforce dimensions, total pixels, frame count, decoded-memory budget, and reject truncated/corrupt/decompression-bomb inputs.
+- The current branch pins Pillow 13.0.0 and fully decodes PNG/JPEG/WebP; it rejects corrupt/truncated inputs, multi-frame images, dimensions above 8192px per axis, and images above 16 megapixels. Treat this as in-process validation, not an OS sandbox.\n- Before accepting untrusted uploads at scale, move decoding to a separately resource-limited worker/process and add fuzzing/adversarial corpus coverage.
 - Normalize provider-bound images to a safe raster format. Keep originals private.
 - Do not send reference bytes to /api/chat. No provider transfer is permitted until the user explicitly confirms the provider and exact selected references.
 
@@ -89,4 +89,4 @@ Use two disposable Auth accounts A and B, and exercise both buckets separately:
 
 ## 9. Current implementation boundary
 
-At this revision there is no backend media upload/read/sign/replace/delete route, no Storage lifecycle service, and no cleanup worker. `image_reference_validation.py` checks byte signatures and basic sizes only; it does not decode images. Migration 0017 is a draft schema hardening change, not a deployed policy. This contract must not be interpreted as implemented functionality.
+At this revision there is no backend media upload/read/sign/replace/delete route, no Storage lifecycle service, and no cleanup worker. `image_reference_validation.py` now performs full bounded Pillow decoding, but does not normalize images, strip EXIF, or isolate decoding in a separate OS-limited worker. Migration 0017 is a draft schema hardening change, not a deployed policy. This contract must not be interpreted as an implemented upload or cloud-backup feature.
