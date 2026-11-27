@@ -20,6 +20,8 @@
   let activeMessageThreadId = null;
   let activeMessagePartnerId = null;
   let conversationsCache = [];
+  let communitySearchRequestVersion = 0;
+  let communityProfileRequestVersion = 0;
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -54,6 +56,8 @@
       activeMessagePartnerId = null;
       assistantUserId = nextUserId;
       authContextVersion += 1;
+      communitySearchRequestVersion += 1;
+      communityProfileRequestVersion += 1;
       // Invalidate every in-flight Companion operation at the account boundary.
       assistantConversationLoadVersion += 1;
       assistantConversationIntentVersion += 1;
@@ -503,6 +507,7 @@ const movieHistoryStyle = document.createElement("style");
     });
   };
   const searchCommunity = async () => {
+    const requestVersion=++communitySearchRequestVersion;
     if(!authSession?.user)return;
     const q=$("#communitySearchInput").value.trim();
     if(q.length<2){$("#communityResults").replaceChildren(adminNode("div","admin-empty","Введите не менее 2 символов."));return;}
@@ -510,18 +515,19 @@ const movieHistoryStyle = document.createElement("style");
     $("#communityResults").replaceChildren(adminNode("div","admin-empty","Ищем авторов…"));
     try{
       const profiles=await apiRequest("/api/community/users?q="+encodeURIComponent(q));
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(requestVersion!==communitySearchRequestVersion||version!==authContextVersion||authSession?.user?.id!==userId)return;
       renderCommunityResults(profiles);
-    }catch(error){if(version===authContextVersion)$("#communityResults").replaceChildren(adminNode("div","admin-empty","Поиск недоступен: "+error.message));}
+    }catch(error){if(requestVersion===communitySearchRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId)$("#communityResults").replaceChildren(adminNode("div","admin-empty","Поиск недоступен: "+error.message));}
   };
   const openCommunityProfile = async profileUserId => {
+    const requestVersion=++communityProfileRequestVersion;
     const version=authContextVersion,userId=authSession?.user?.id;
     if(!userId)return;
     const box=$("#communityPublicProfile");
     box.hidden=false;box.replaceChildren(adminNode("div","admin-empty","Загружаем карточку автора…"));
     try{
       const profile=await apiRequest("/api/community/profiles/"+encodeURIComponent(profileUserId));
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(requestVersion!==communityProfileRequestVersion||version!==authContextVersion||authSession?.user?.id!==userId)return;
       box.replaceChildren();
       const head=adminNode("div","community-profile-card");
       head.append(profileAvatarNode(profile,true));
@@ -546,7 +552,7 @@ const movieHistoryStyle = document.createElement("style");
         $("#reportDescription").focus();
       });
       actions.append(message,report);box.append(actions);
-    }catch(error){if(version===authContextVersion)box.replaceChildren(adminNode("div","admin-empty","Карточка недоступна: "+error.message));}
+    }catch(error){if(requestVersion===communityProfileRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId)box.replaceChildren(adminNode("div","admin-empty","Карточка недоступна: "+error.message));}
   };
   $("#communitySearchButton")?.addEventListener("click",searchCommunity);
   $("#communitySearchInput")?.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();searchCommunity();}});
