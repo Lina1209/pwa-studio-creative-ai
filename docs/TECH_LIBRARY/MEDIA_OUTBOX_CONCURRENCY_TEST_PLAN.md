@@ -78,3 +78,20 @@ With disposable users A and B:
 `backend/tests/test_media_outbox.py` now includes stale-token rejection after worker B reclaims an expired worker A lease, acceptance of only worker B's token, exhausted-attempt handling, and rejection of stale retries. These tests exercise the pure Python model only; they do not establish PostgreSQL locking, transaction atomicity, RLS, or Storage correctness.
 
 **Execution status:** tests are authored but not executed. Database concurrency and fault-injection tests remain pending until a disposable Supabase project and exact migration baseline are available.
+
+## 8. Media upload verification worker (migration 0018 draft)
+
+For one character-reference event in a disposable database and private Storage bucket:
+
+1. Commit a pending_upload media row and its verification event through the reservation RPC.
+2. Upload a valid object but intentionally leave the row pending_upload. Claim and verify it; assert the worker can advance it directly to ready after matching SHA-256, size, MIME, width, and height.
+3. Repeat with object_uploaded status. Assert the same final ready + delivered outcome.
+4. Mutate one byte, truncate the object, change MIME metadata, or alter dimensions. Assert no ready transition occurs; retry remains bounded and the final state is upload_failed + dead_letter.
+5. Delete the object before verification. Assert a transient 404 is retried with backoff and never becomes ready.
+6. Let worker A's lease expire during verification; let worker B reclaim with a fresh token. Assert A cannot complete or retry and B alone can commit.
+7. Race two claim RPCs against one event. Assert FOR UPDATE SKIP LOCKED yields exactly one active claim.
+8. Fail the completion transaction between the media update and outbox acknowledgement. Assert both changes roll back.
+9. Simulate a crash after byte verification but before completion. Assert a later worker can safely repeat the download and complete exactly once.
+10. Verify that a completed ready asset is not downgraded by the upload request's later object_uploaded RPC response path.
+
+**Not executed:** these are required integration/fault-injection cases. The authored Python worker/repository tests mock all external systems and do not substitute for this database/Storage matrix.
