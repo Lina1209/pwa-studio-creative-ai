@@ -1064,7 +1064,7 @@ const movieHistoryStyle = document.createElement("style");
   $(".profile").addEventListener("click", () => navigate("account"));
   $("#topAvatar")?.addEventListener("click", () => navigate("account"));
   $("#accountLogin").addEventListener("click", () => setAuthMode("login"));
-  $("#accountLogout").addEventListener("click", async () => { if (supabaseClient) await supabaseClient.auth.signOut(); });
+  $("#accountLogout").addEventListener("click", () => authLogoutButton.click());
   $("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   document.addEventListener("click", event => {
     if (window.innerWidth <= 720 && !event.target.closest("#sidebar") && !event.target.closest("#mobileMenu")) $("#sidebar").classList.remove("open");
@@ -1116,6 +1116,9 @@ const movieHistoryStyle = document.createElement("style");
       return;
     }
     const button = $("#buildPrompt");
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
+    const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === requestUserId;
     button.disabled = true;
     button.textContent = "✦ AI готовит промт…";
     $("#promptFeedback").textContent = "Отправляем запрос на backend. Ключ AI-провайдера остаётся на сервере.";
@@ -1124,13 +1127,16 @@ const movieHistoryStyle = document.createElement("style");
         method: "POST",
         body: JSON.stringify({ idea, purpose: $("#promptType").value, language: $("#promptLanguage").value, style: "Cinematic, coherent, detailed" })
       });
+      if (!contextIsCurrent()) return;
       $("#promptOutput").textContent = result.prompt;
       $("#promptFeedback").textContent = "Готово: ответ получен от " + result.provider + " · " + result.model + ".";
     } catch (error) {
-      $("#promptFeedback").textContent = error.message;
+      if (contextIsCurrent()) $("#promptFeedback").textContent = error.message;
     } finally {
-      button.disabled = false;
-      button.textContent = "✦ Сформировать промт";
+      if (contextIsCurrent()) {
+        button.disabled = false;
+        button.textContent = "✦ Сформировать промт";
+      }
     }
   });
 
