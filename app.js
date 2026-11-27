@@ -974,6 +974,8 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   const renderAdminReports = reports => {
+    const renderVersion=authContextVersion,renderUserId=authSession?.user?.id;
+    const contextIsCurrent=()=>renderVersion===authContextVersion&&authSession?.user?.id===renderUserId;
     const list = $("#adminReportsList"); if (!list) return;
     $("#adminReportCount").textContent = String(reports.length);
     list.replaceChildren();
@@ -994,14 +996,18 @@ const movieHistoryStyle = document.createElement("style");
       status.value=["reviewing","resolved","rejected"].includes(report.status)?report.status:"reviewing";
       const save=adminNode("button","secondary-button","Сохранить решение");save.type="button";
       save.addEventListener("click",async()=>{
+        if(!contextIsCurrent())return;
         save.disabled=true;
-        try { await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})}); adminFeedback("Решение по жалобе сохранено."); await loadAdminWorkspace(); }
-        catch(error){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}
+        try { await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})}); if(!contextIsCurrent())return;adminFeedback("Решение по жалобе сохранено."); await loadAdminWorkspace(); }
+        catch(error){if(contextIsCurrent()){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}}
+        finally{if(contextIsCurrent())save.disabled=false;}
       });
       actions.append(status,save); card.append(note,actions); list.append(card);
     });
   };
   const renderAdminSuspensions = suspensions => {
+    const renderVersion=authContextVersion,renderUserId=authSession?.user?.id;
+    const contextIsCurrent=()=>renderVersion===authContextVersion&&authSession?.user?.id===renderUserId;
     const list=$("#adminSuspensionsList");if(!list)return;
     $("#adminSuspensionCount").textContent=String(suspensions.length);
     list.replaceChildren();
@@ -1014,7 +1020,7 @@ const movieHistoryStyle = document.createElement("style");
       card.append(head,adminNode("p","admin-item-meta","Пользователь: "+item.user_id),adminNode("p","admin-item-text",item.reason||"Причина не указана"),adminNode("p","admin-item-meta","Создано: "+formatAdminDate(item.created_at)+" · До: "+formatAdminDate(item.expires_at)));
       if(!item.revoked_at && (!item.expires_at || new Date(item.expires_at)>new Date())){
         const revoke=adminNode("button","secondary-button","Отменить ограничение");revoke.type="button";
-        revoke.addEventListener("click",async()=>{if(!confirm("Отменить это ограничение доступа?"))return;revoke.disabled=true;try{await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});adminFeedback("Ограничение отменено.");await loadAdminWorkspace();}catch(error){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}});
+        revoke.addEventListener("click",async()=>{if(!contextIsCurrent()||!confirm("Отменить это ограничение доступа?"))return;revoke.disabled=true;try{await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});if(!contextIsCurrent())return;adminFeedback("Ограничение отменено.");await loadAdminWorkspace();}catch(error){if(contextIsCurrent()){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}}finally{if(contextIsCurrent())revoke.disabled=false;}});
         card.append(revoke);
       }
       list.append(card);
