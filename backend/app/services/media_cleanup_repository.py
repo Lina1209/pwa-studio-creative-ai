@@ -63,6 +63,14 @@ def request_character_media_cleanup(settings: Settings, owner_id: str, character
         or not isinstance(result.get("assets_enqueued"), int)
         or result["assets_enqueued"] < 0
         or result.get("status") not in {"ready_to_finalize", "cleanup_pending"}
+        or (
+            result["assets_enqueued"] == 0
+            and result["status"] != "ready_to_finalize"
+        )
+        or (
+            result["assets_enqueued"] > 0
+            and result["status"] != "cleanup_pending"
+        )
     ):
         raise RuntimeError("Character media cleanup reservation returned mismatched or invalid fields.")
     return result
