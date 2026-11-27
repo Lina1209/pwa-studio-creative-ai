@@ -72,8 +72,11 @@ paths, tokens, asset_id = sys.argv[1:3], set(sys.argv[3:5]), sys.argv[5]
 results = []
 for path in paths:
     raw = pathlib.Path(path).read_text().strip()
+    # psql prints SQL NULL as an empty line with -qAt; that is the expected
+    # losing worker result, not a missing execution result.
     if not raw:
-        raise SystemExit("FAIL: a claim session returned no SQL result")
+        results.append(None)
+        continue
     try:
         results.append(json.loads(raw))
     except json.JSONDecodeError as exc:
