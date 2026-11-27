@@ -94,6 +94,37 @@ class AdminRouteGuardTests(unittest.TestCase):
             response = client.request(method, path, json={} if method in {"PATCH", "POST"} else None)
             self.assertEqual(response.status_code, 403, f"{method} {path} was not forbidden")
 
+    @patch("app.main.create_notification")
+    @patch("app.main.review_user_report", return_value={
+        "id": "33333333-3333-4333-8333-333333333333",
+        "status": "resolved",
+        "created_at": "2026-11-27T00:00:00Z",
+        "reporter_user_id": CREATOR,
+    })
+    def test_report_review_uses_authenticated_admin_not_request_identity(self, review, notification):
+        client = self._client_as(StudioUser(OWNER, None, "admin"))
+        response = client.patch(
+            "/api/admin/reports/33333333-3333-4333-8333-333333333333",
+            json={"status": "resolved", "moderator_note": "Reviewed"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(review.call_args.args[2], OWNER)
+        self.assertEqual(review.call_args.args[3].status, "resolved")
+
+    @patch("app.main.ensure_target_not_owner")
+    @patch("app.main.create_suspension", return_value={
+        "id": "44444444-4444-4444-8444-444444444444",
+        "user_id": CREATOR, "reason": "Repeated abuse", "scope": "community",
+        "expires_at": None, "created_at": "2026-11-27T00:00:00Z",
+    })
+    def test_suspension_uses_authenticated_admin_not_request_identity(self, create, target_guard):
+        client = self._client_as(StudioUser(OWNER, None, "admin"))
+        response = client.post("/api/admin/suspensions", json={
+            "user_id": CREATOR, "reason": "Repeated abuse", "scope": "community",
+        })
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(create.call_args.args[1], OWNER)
+
     @patch("app.main.list_user_reports", return_value=[])
     @patch("app.main.list_suspensions", return_value=[])
     def test_admin_can_reach_read_only_admin_routes(self, suspensions, reports):
