@@ -24,6 +24,10 @@ declare
   v_busy_character uuid := gen_random_uuid();
   v_busy_asset uuid := gen_random_uuid();
   v_unindexed_character uuid := gen_random_uuid();
+  v_referenced_character uuid := gen_random_uuid();
+  v_referencing_asset uuid := gen_random_uuid();
+  v_referenced_asset uuid := gen_random_uuid();
+  v_referenced_path text;
   v_object uuid := gen_random_uuid();
   v_operation uuid := gen_random_uuid();
   v_token_a uuid := gen_random_uuid();
@@ -123,6 +127,44 @@ begin
   end;
   if (select cleanup_operation_id from public.characters where id=v_unindexed_character) is not null then
     raise exception 'unindexed passport path rejection did not roll back deletion intent';
+  end if;
+
+  -- A different media row's JSON metadata is also a live reference.
+  -- Cleanup must fail closed rather than deleting an object still referenced
+  -- outside the character's own passport.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_referenced_character,v_owner,'Metadata reference fixture','{}'::jsonb);
+  v_referenced_path := v_owner::text || '/characters/' || v_referenced_character::text || '/' ||
+    gen_random_uuid()::text || '.png';
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_referenced_asset,v_owner,v_referenced_character,'target.png','image/png',
+    'studio-media','ready',v_referenced_path,'{}'::jsonb,1,gen_random_uuid(),
+    128,repeat('d',64),8,8
+  );
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_referencing_asset,v_owner,null,'pointer.json','application/json',
+    'studio-media','ready',
+    v_owner::text || '/misc/' || gen_random_uuid()::text || '.png',
+    jsonb_build_object('linked_object',v_referenced_path),1,gen_random_uuid(),
+    128,repeat('e',64),8,8
+  );
+  begin
+    perform public.pwa_request_character_media_cleanup(
+      v_owner,v_referenced_character,gen_random_uuid()
+    );
+    raise exception 'cleanup unexpectedly accepted an external metadata reference';
+  exception when sqlstate '23514' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_referenced_character) is not null
+     or (select status from public.media_assets where id=v_referenced_asset) <> 'ready' then
+    raise exception 'metadata-reference rejection did not roll back cleanup reservation';
   end if;
 
   -- A character with an upload still in flight cannot enter cleanup. The
