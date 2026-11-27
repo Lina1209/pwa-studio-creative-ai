@@ -135,3 +135,9 @@ Operational caution: outbox dispatch is at-least-once, not exactly-once. The wor
 - It is sequential and does not prove concurrent claim behavior. A separate multi-session test is still required for actual race testing.
 - The script has NOT been executed. This repository currently has no checked-in Supabase local config or CI workflow visible in the feature branch, so do not infer a runnable local stack from the presence of this SQL file.
 - Never run this script or the draft migrations against production.
+
+### Local test-runner blockers discovered during review
+- The feature branch does not contain `supabase/config.toml`, so the Supabase CLI local stack is not configured in-repository.
+- Two historical migration files share the same numeric version prefix: `0005_cloud_projects_and_storage.sql` and `0005_moderation_admin.sql`. A CLI migration runner that treats the prefix as the migration version may reject this history as duplicated.
+- These historical files were deliberately not renamed or reordered: doing so without knowing the connected project's applied migration history could create drift or re-apply risk.
+- Before a local `supabase db reset` can be used as a trustworthy validation path, the migration history needs a reviewed, non-destructive versioning plan and a local config. Until then, the SQL behavior harness is prepared but not runnable through the repository's standard Supabase CLI workflow.
