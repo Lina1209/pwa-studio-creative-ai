@@ -228,6 +228,22 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if(contextIsCurrent())button.disabled=false;", block_actions)
         self.assertIn("if(!contextIsCurrent())return;", block_actions)
 
+    def test_new_conversation_form_cleanup_is_account_fenced(self):
+        start = APP.index('$("#newConversationForm")?.addEventListener')
+        end = APP.index('$("#directMessageForm")?.addEventListener', start)
+        form = APP[start:end]
+        self.assertIn("const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;", form)
+        self.assertIn("if(!contextIsCurrent())return;", form)
+        self.assertIn("finally{if(contextIsCurrent())button.disabled=false;}", form)
+
+    def test_admin_suspension_form_cleanup_is_account_fenced(self):
+        start = APP.index('$("#adminSuspensionForm")?.addEventListener')
+        end = APP.index("if (authSession?.user) setTimeout(loadAccountRole", start)
+        form = APP[start:end]
+        self.assertIn("const contextIsCurrent=()=>requestVersion===authContextVersion&&authSession?.user?.id===adminUserId;", form)
+        self.assertIn("if(!contextIsCurrent())return;", form)
+        self.assertIn("finally{if(contextIsCurrent())button.disabled=false;}", form)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
