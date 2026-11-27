@@ -32,4 +32,5 @@ jobs:
         working-directory: backend
         run: python -m unittest discover -s tests -v
       - name: Check media cleanup race harness syntax
+        if: always()
         run: bash -n supabase/tests/0019_media_cleanup_claim_race.sh
