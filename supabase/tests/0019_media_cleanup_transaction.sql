@@ -21,6 +21,8 @@ declare
   v_owner uuid := current_setting('pwa.test_owner_id')::uuid;
   v_character uuid := gen_random_uuid();
   v_asset uuid := gen_random_uuid();
+  v_busy_character uuid := gen_random_uuid();
+  v_busy_asset uuid := gen_random_uuid();
   v_object uuid := gen_random_uuid();
   v_operation uuid := gen_random_uuid();
   v_token_a uuid := gen_random_uuid();
@@ -84,6 +86,29 @@ begin
       where owner_id=v_owner and asset_id=v_asset
         and operation_id=v_operation and event_type='media_cleanup_requested') <> 1 then
     raise exception 'cleanup reservation created duplicate outbox events';
+  end if;
+
+  -- A character with an upload still in flight cannot enter cleanup. The
+  -- failed reservation must roll back its deletion-intent marker.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_busy_character,v_owner,'Busy upload fixture','{}'::jsonb);
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_busy_asset,v_owner,v_busy_character,'busy.png','image/png','studio-media','pending_upload',
+    v_owner::text || '/characters/' || v_busy_character::text || '/' || gen_random_uuid()::text || '.png',
+    '{}'::jsonb,1,gen_random_uuid(),128,repeat('c',64),8,8
+  );
+  begin
+    perform public.pwa_request_character_media_cleanup(v_owner,v_busy_character,gen_random_uuid());
+    raise exception 'cleanup unexpectedly raced an in-flight upload';
+  exception when sqlstate '23514' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_busy_character) is not null
+     or (select status from public.media_assets where id=v_busy_asset) <> 'pending_upload' then
+    raise exception 'failed in-flight-upload cleanup reservation did not roll back';
   end if;
 
   v_claim_a := public.pwa_claim_media_cleanup(v_token_a,120);
