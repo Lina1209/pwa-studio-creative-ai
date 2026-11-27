@@ -2080,6 +2080,7 @@ const movieHistoryStyle = document.createElement("style");
   const characterLibraryDbName = "pwa-studio-character-library-v1";
   const characterLibraryKey = () => "pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest");
   let editingCharacterId = null;
+  let removedCharacterReferenceIds = new Set();
   const openCharacterLibraryDb = () => new Promise((resolve,reject) => {
     if (!("indexedDB" in window)) { reject(new Error("IndexedDB недоступен в этом браузере.")); return; }
     const request = indexedDB.open(characterLibraryDbName,1);
@@ -2127,9 +2128,25 @@ const movieHistoryStyle = document.createElement("style");
   };
   const resetCharacterEditor = () => {
     editingCharacterId=null;
+    removedCharacterReferenceIds=new Set();
+    const refsPanel=$("#characterReferenceEditor");if(refsPanel)refsPanel.replaceChildren();
     ["#characterName","#characterDescription","#characterVoice","#characterFace","#characterBody","#characterWardrobe","#characterPalette"].forEach(id=>$(id).value="");
     $("#characterKind").value="character";$("#characterRepresentation").value="2d";$("#characterImages").value="";
     $("#saveCharacter").textContent="＋ Сохранить персонажа";$("#cancelCharacterEdit").hidden=true;
+  };
+  const renderCharacterReferenceEditor = item => {
+    const panel=$("#characterReferenceEditor");if(!panel)return;
+    panel.replaceChildren();
+    const refs=(item.referenceImages||[]).filter(ref=>!removedCharacterReferenceIds.has(ref.id));
+    if(!refs.length){const note=document.createElement("p");note.className="helper-text";note.textContent="Сохранённых референсов пока нет.";panel.append(note);return;}
+    const heading=document.createElement("p");heading.className="helper-text";heading.textContent="Сохранённые референсы. Удаление вступит в силу после сохранения карточки.";panel.append(heading);
+    refs.forEach(ref=>{
+      const row=document.createElement("div");row.className="character-reference-row";
+      const label=document.createElement("span");label.textContent=ref.name||"Изображение";
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать";
+      remove.addEventListener("click",()=>{removedCharacterReferenceIds.add(ref.id);renderCharacterReferenceEditor(item);});
+      row.append(label,remove);panel.append(row);
+    });
   };
   const renderCharacterLibrary = async () => {
     const list=$("#characterLibraryList");if(!list)return;
@@ -2159,11 +2176,12 @@ const movieHistoryStyle = document.createElement("style");
       const actions=document.createElement("div");actions.className="character-card-actions";
       const edit=document.createElement("button");edit.type="button";edit.className="secondary-button";edit.textContent="Изменить";
       edit.addEventListener("click",()=>{
-        editingCharacterId=item.id;$("#characterName").value=item.name;$("#characterDescription").value=item.description||"";
+        editingCharacterId=item.id;removedCharacterReferenceIds=new Set();$("#characterName").value=item.name;$("#characterDescription").value=item.description||"";
         $("#characterKind").value=item.kind||"character";$("#characterRepresentation").value=item.representation||"2d";$("#characterVoice").value=item.voice||"";
         $("#characterFace").value=item.passport?.face||"";$("#characterBody").value=item.passport?.body||"";
         $("#characterWardrobe").value=item.passport?.wardrobe||"";$("#characterPalette").value=item.passport?.palette||"";
         $("#characterImages").value="";$("#saveCharacter").textContent="Сохранить изменения";$("#cancelCharacterEdit").hidden=false;
+        renderCharacterReferenceEditor(item);
         $("#characterName").scrollIntoView({behavior:"smooth",block:"center"});
       });
       const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";
@@ -2207,18 +2225,22 @@ const movieHistoryStyle = document.createElement("style");
     const current=readCharacterLibrary(),existing=editingCharacterId?current.find(x=>x.id===editingCharacterId):null;
     if(editingCharacterId&&!existing){resetCharacterEditor();$("#characterLibraryStatus").textContent="Запись больше не найдена. Обновите библиотеку.";return;}
     if(!existing&&current.length>=100){$("#characterLibraryStatus").textContent="Достигнут лимит в 100 материалов.";return;}
-    if(files.length+(existing?.referenceImages?.length||0)>6){$("#characterLibraryStatus").textContent="У одного материала может быть не более 6 референсов.";return;}
+    const retainedReferences=(existing?.referenceImages||[]).filter(ref=>!removedCharacterReferenceIds.has(ref.id));
+    if(files.length+retainedReferences.length>6){$("#characterLibraryStatus").textContent="У одного материала может быть не более 6 референсов.";return;}
     if(files.some(file=>!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>8*1024*1024)){ $("#characterLibraryStatus").textContent="Поддерживаются PNG, JPEG и WebP до 8 МБ каждый.";return; }
     const id=existing?.id||makeCharacterUuid();
     const refs=files.map(file=>({id:id+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)),name:file.name.slice(0,120),type:file.type}));
     const updated={...(existing||{}),id,name:name.slice(0,80),description:description.slice(0,5000),kind,representation,voice:$("#characterVoice").value.trim().slice(0,500),
       passport:{face:$("#characterFace").value.trim().slice(0,1200),body:$("#characterBody").value.trim().slice(0,1200),wardrobe:$("#characterWardrobe").value.trim().slice(0,1200),palette:$("#characterPalette").value.trim().slice(0,1200)},
-      referenceImages:[...(existing?.referenceImages||[]),...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+      referenceImages:[...retainedReferences,...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
     const button=$("#saveCharacter");button.disabled=true;
     try{
       for(let i=0;i<files.length;i++)await saveCharacterImage(refs[i].id,files[i],ownerId);
       const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
       localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
+      if(existing&&removedCharacterReferenceIds.size){
+        await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));
+      }
       resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера.";
       await renderCharacterLibrary();
     }catch(error){
