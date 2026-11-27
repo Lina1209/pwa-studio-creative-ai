@@ -123,6 +123,10 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         clear_handler = app[clear_start:clear_end]
         self.assertIn("options.preserveKattyState", clear_handler)
         self.assertIn("let assistantConversationLoadVersion = 0;", app)
+        self.assertIn("let assistantHistoryLoadVersion = 0;", app)
+        self.assertIn("const historyLoadVersion = ++assistantHistoryLoadVersion;", app)
+        self.assertIn("const historyContextIsCurrent = () => historyLoadVersion === assistantHistoryLoadVersion", app)
+        self.assertIn("if (historyLoadVersion === assistantHistoryLoadVersion) assistantHistoryBusy = false;", app)
         load_start = app.index("const loadAssistantMessages =")
         load_end = app.index("\n  };", load_start) + 5
         load_handler = app[load_start:load_end]
@@ -133,6 +137,9 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         start_handler = app[start_start:start_end]
         self.assertIn('setKattyAssistantMode("companion")', start_handler)
         self.assertIn('clearAssistantMessages({ preserveKattyState: true })', start_handler)
+        self.assertIn("const requestUserId = authSession.user.id;", start_handler)
+        self.assertIn("authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion", start_handler)
+        self.assertIn("return data.id;", start_handler)
 
     def test_katty_mode_resets_when_conversation_changes(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
