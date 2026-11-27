@@ -57,5 +57,8 @@ def create_private_media_signed_url(settings: Settings, plan: MediaReadPlan) -> 
     ):
         raise HTTPException(status_code=502, detail="Private media service returned an invalid access link.")
 
-    # Supabase returns a relative Storage path. Keep the host pinned to our configured project.
+    # Supabase Storage may return a path relative to /storage/v1; normalize it.
+    if signed_path.startswith("/object/sign/"):
+        signed_path = f"/storage/v1{signed_path}"
+    # Keep the host pinned to our configured project.
     return f"{settings.supabase_url.rstrip('/')}{signed_path}"
