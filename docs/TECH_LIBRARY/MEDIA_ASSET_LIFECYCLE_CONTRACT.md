@@ -201,3 +201,11 @@ If any step fails, all database changes must roll back and the old ready referen
 ### Replacement-boundary hardening follow-up
 
 The replacement composition guard now canonicalizes the authenticated owner, character ID, and current-reference asset ID before comparison. Both old and new media rows must explicitly reference the same character; an absent `character_id` is no longer treated as acceptable for a character-reference replacement. This prevents a generic unattached media row from being promoted through the character replacement path. Three additional unit tests cover absent associations, canonical UUID spellings, and malformed current pointers. These tests are authored only and have not been executed.
+
+## 19. Private read authorization planner added (not a read endpoint)
+
+`backend/app/services/media_read.py` adds a pure eligibility gate for future private-media reads. It requires the verified owner to match the stored asset owner, the asset status to be exactly `ready`, an allowlisted private bucket, and a server-stored immutable object key whose owner/resource/object UUIDs and extension satisfy the key contract. It rejects pending, uploaded-but-not-ready, failed, cleanup-pending, and deleted assets.
+
+The owner-filtered repository now selects the stored `bucket` and `status` fields needed by this gate. The path and bucket remain server-internal and must never be serialized to the browser. This planner does not issue a signed URL, download bytes, or create a route. A future endpoint must first call `get_owned_media_asset` using the verified JWT subject, then apply this gate, and only then perform a short-lived private Storage operation. Signed URLs must not be logged or persisted.
+
+Six unit tests are authored in `backend/tests/test_media_read.py`; they have not been executed. No Storage request, route, migration, or production change was made.
