@@ -100,3 +100,28 @@ Important limitations / review notes:
 - The request_payload schema and retention policy still require a field allowlist; prompts and references may contain personal data. Never put secrets, signed URLs, or raw provider credentials in it.
 - Credit reservation/settlement fields are placeholders only. Do not debit users until a separate atomic credit ledger and reconciliation flow is designed and tested.
 - Migration is additive but still requires review against the live schema, a backup, and isolated Supabase tests before any manual application. The preflight SQL is read-only; it is not a migration test.
+## Draft atomic queue RPCs (migration 0014; not applied)
+File: `supabase/migrations/0014_generation_job_queue_rpcs.sql`.
+
+The SQL draft adds backend-only `SECURITY DEFINER` RPCs with a fixed `pg_catalog, public, pg_temp` search path and explicit revokes from `PUBLIC`, `anon`, and `authenticated`:
+- `claim_generation_outbox` atomically claims due outbox events with `FOR UPDATE SKIP LOCKED`, a claim token, worker identity, and a bounded delivery lease.
+- `ack_generation_outbox` acknowledges only the current claim token. `fail_generation_outbox` schedules bounded retries and marks exhausted events dead-lettered; stale claims cannot acknowledge or release a newer claim.
+- `claim_generation_job` atomically claims one due job, increments attempts, and issues a fresh fencing token/lease.
+- `heartbeat_generation_job`, `complete_generation_job`, and `fail_generation_job` require the current lease token. Retryable failure and retry-outbox insertion occur in one transaction.
+- `request_generation_job_cancel` checks both job id and owner id; backend must derive owner id from the verified bearer token. `finish_generation_job_cancel` only completes the active matching lease.
+- `recover_expired_generation_jobs` uses row locks with `SKIP LOCKED`; it finishes expired cancellations, retries jobs with attempts remaining, and fails exhausted jobs.
+
+These functions are schema proposals only. No function has been executed or granted in the connected Supabase project. The read-only catalogue check is `supabase/tests/0014_generation_job_rpcs_preflight.sql`.
+
+## Required isolated integration tests before use
+- Run concurrent claimers against a seeded queue; assert each job has exactly one live lease token.
+- Deliver the same outbox event more than once; assert worker processing remains idempotent and output/charges are not duplicated.
+- Expire a lease, reclaim it, then submit completion/failure from the old token; assert the stale operation returns false/stale and changes nothing.
+- Race cancellation against completion and retry; assert exactly one terminal state and no late result publication.
+- Crash an outbox dispatcher after publish but before ack; verify redelivery is safe. Crash before publish; verify lease expiry permits reclaim.
+- Force outbox delivery attempts to the limit; verify explicit dead-letter state and operational alerting.
+- Verify anon/authenticated cannot execute any privileged RPC; service_role can execute only from the backend, never from a browser.
+- Verify user A cannot cancel user B's job even when a valid job UUID is known.
+- Test max attempts, retry delay, invalid parameters, expired lease boundaries, and all table CHECK constraints on a disposable Supabase project.
+
+Operational caution: outbox dispatch is at-least-once, not exactly-once. The worker must be idempotent. The database lease fences state writes, but cannot undo an external provider call that was already accepted; provider-side idempotency and billing reconciliation remain mandatory.
