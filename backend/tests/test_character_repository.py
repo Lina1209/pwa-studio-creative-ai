@@ -69,6 +69,23 @@ class CharacterRepositoryTests(unittest.TestCase):
         self.assertEqual(kwargs["params"]["owner_id"], f"eq.{OWNER}")
         self.assertEqual(kwargs["json"], {"name": "New"})
 
+    @patch("app.services.character_repository.httpx.request")
+    def test_patch_accepts_local_ui_description_limit(self, request):
+        description = "x" * 5000
+        request.return_value = Mock(content=b"[]", json=lambda: [])
+        with self.assertRaises(HTTPException) as caught:
+            update_owned_character(self.settings, OWNER, CHARACTER, {"description": description})
+        # Empty PostgREST response is a not-found result, not a validation failure.
+        self.assertEqual(caught.exception.status_code, 404)
+        self.assertEqual(request.call_args.kwargs["json"]["description"], description)
+
+    @patch("app.services.character_repository.httpx.request")
+    def test_patch_rejects_description_above_local_ui_limit(self, request):
+        with self.assertRaises(HTTPException) as caught:
+            update_owned_character(self.settings, OWNER, CHARACTER, {"description": "x" * 5001})
+        self.assertEqual(caught.exception.status_code, 422)
+        request.assert_not_called()
+
     def test_invalid_ids_rejected_before_database_call(self):
         with self.assertRaises(HTTPException) as caught:
             list_owned_characters(self.settings, "not-a-uuid")
