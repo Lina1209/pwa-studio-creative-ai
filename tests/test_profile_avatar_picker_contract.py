@@ -122,6 +122,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         clear_end = app.index("\n  };", clear_start) + 5
         clear_handler = app[clear_start:clear_end]
         self.assertIn("options.preserveKattyState", clear_handler)
+        self.assertIn("let assistantConversationLoadVersion = 0;", app)
         load_start = app.index("const loadAssistantMessages =")
         load_end = app.index("\n  };", load_start) + 5
         load_handler = app[load_start:load_end]
