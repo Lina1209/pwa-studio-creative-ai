@@ -6,7 +6,7 @@
 
 ## Executive result
 
-The current design keeps character references local-first and sends text-only continuity information to /api/chat. The inspected backend has no image/video generation route. The reference validator checks basic file signatures, declared MIME consistency, per-file byte limit, count, and aggregate batch size. The draft character schema uses owner-scoped RLS and a composite owner-safe character/media foreign key.
+The current design keeps character references local-first and sends text-only continuity information to /api/chat. The inspected backend has no image/video generation route. The reference validator now checks file signatures, declared MIME consistency, per-file and aggregate byte limits, then fully decodes PNG/JPEG/WebP with pinned Pillow 13.0.0. It rejects corrupt/truncated files, animated images, dimensions above 8192px, and images above 16 megapixels. The draft character schema uses owner-scoped RLS and a composite owner-safe character/media foreign key.
 
 This is useful groundwork, but it is not yet a secure external image-upload pipeline. Do not tell users their reference images are sent to an AI model. Do not activate cloud backup or provider handoff based only on these source checks.
 
@@ -19,7 +19,7 @@ This is useful groundwork, but it is not yet a secure external image-upload pipe
 5. The reference batch validator now rejects empty lists, more than six references, non-ValidatedReference entries, inconsistent size metadata, and batches above 24 MiB.
 6. Migration 0012's draft has RLS enabled on characters and media_assets, authenticated owner-only policies, and a composite FK (character_id, owner_id) -> characters(id, owner_id). This protects relational association ownership when the migration is correctly applied.
 7. Migration 0012 does not itself create or prove the private Storage bucket's object policies. The separate preflight checks bucket/policy conditions and must be run only in a disposable test project.
-8. The installed backend requirements do not currently include an image decoder such as Pillow. The present validator therefore cannot claim dimension, pixel-count, decompression-bomb, or full decode validation.
+8. The backend now pins Pillow 13.0.0 (Python 3.12 runtime) and the validator performs full decode with 8192px per-axis and 16-megapixel limits, one frame maximum, and decompression-bomb warnings treated as errors. This is bounded validation in the API process, not a separate sandbox or OS-level memory/time isolation.
 
 ## Findings and required action
 
@@ -59,7 +59,7 @@ Database rows and Storage object writes do not share one transaction. Design an 
 
 ### SEC-REF-05 — Reference validation bounds need decoder-aware tests (high)
 
-The validator now hardens batch object/type and size-metadata checks. This is only a small input-contract improvement; it does not close SEC-REF-01. Keep byte and count limits server-enforced even if the browser already enforces them.
+The validator enforces batch object/type and size metadata, plus per-file/aggregate bytes and decoded dimensions/pixels/frame count. Keep all limits server-enforced even if the browser already enforces them. Isolation and normalization remain outstanding.
 
 ### SEC-REF-06 — Generation and chat boundaries must remain separate (critical)
 
