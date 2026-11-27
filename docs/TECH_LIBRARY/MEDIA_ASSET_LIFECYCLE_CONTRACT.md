@@ -386,3 +386,6 @@ Scope caveat: PostgreSQL integration uses a disposable PostgreSQL 16 database wi
 Follow-up audit item: direct authenticated INSERT remains owner-folder scoped for the broader `studio-media` bucket to preserve existing media workflows. Character-library uploads are still expected to use the service-side reservation and verification RPCs; before narrowing that INSERT policy, trace every existing frontend/backend media upload flow and add compatibility tests. Do not claim the whole bucket is protected from arbitrary orphan uploads yet.
 
 Migration remains DRAFT ONLY. No production SQL, Supabase Storage, Render deployment, merge, or main-branch change was performed.
+
+
+Read-back integrity is checked again by the authenticated image proxy: when a stored media row has a reserved SHA-256, byte size, width, or height, the downloaded image must match those values or the endpoint returns an integrity error. Successful responses include `X-Content-SHA256` so a future local backup client can compare the verified cloud bytes to its IndexedDB blob. The response remains private/no-store; the header is not a substitute for the independent verifier or owner checks.
