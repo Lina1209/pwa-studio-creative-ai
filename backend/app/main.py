@@ -12,6 +12,7 @@ from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
 from app.services.content_safety import check_content
 from app.services.usage_service import record_ai_usage
+from app.services.ai_rate_limit import enforce_ai_rate_limit
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self, ensure_target_not_owner
@@ -385,6 +386,7 @@ def unsuspend_user(payload: SuspensionRevokeRequest, user: StudioUser = Depends(
 @app.post(f"{settings.api_prefix}/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
     ensure_user_not_suspended(settings, user.user_id, "assistant")
+    enforce_ai_rate_limit(user.user_id)
     check_content(payload.message)
     for turn in payload.history:
         check_content(turn.content)
@@ -418,6 +420,7 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
 @app.post(f"{settings.api_prefix}/prompts", response_model=PromptResponse)
 def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
     ensure_user_not_suspended(settings, user.user_id, "assistant")
+    enforce_ai_rate_limit(user.user_id)
     check_content(payload.idea)
     system = (
         "You are an expert prompt engineer for creative AI tools. "
