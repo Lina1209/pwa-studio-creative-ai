@@ -69,7 +69,7 @@ def create_owned_character(settings, owner_id, name, description, reference_data
     owner = canonical_uuid(owner_id, "owner")
     name = name.strip()
     if not name or len(name) > 120: raise HTTPException(status_code=422, detail="Character name must contain 1–120 characters.")
-    if description is not None and len(description) > 2000: raise HTTPException(status_code=422, detail="Character description is too long.")
+    if description is not None and len(description) > 5000: raise HTTPException(status_code=422, detail="Character description exceeds 5,000 characters.")
     data = validate_reference_data(reference_data)
     rows = _request(settings, "POST", {"select":"id,name,description,reference_data,created_at"},
                     {"owner_id":owner,"name":name,"description":description.strip() if description else None,"reference_data":data})
