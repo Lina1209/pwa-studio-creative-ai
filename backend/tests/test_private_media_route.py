@@ -3,6 +3,7 @@
 All repository and Storage boundaries are mocked; no network calls are made.
 """
 import unittest
+import hashlib
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -27,6 +28,8 @@ def owned_ready_asset():
         "status": "ready", "bucket": "studio-media",
         "storage_path": f"{OWNER}/characters/{RESOURCE}/{OBJECT}.png",
         "metadata": {"must_not_leak": True},
+        "content_sha256": hashlib.sha256(b"validated-png-bytes").hexdigest(),
+        "size_bytes": 19, "width": 1, "height": 1,
     }
 
 
@@ -73,8 +76,16 @@ class PrivateMediaRouteTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "image/png")
         self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["x-content-sha256"], hashlib.sha256(b"validated-png-bytes").hexdigest())
         self.assertEqual(response.headers["cross-origin-resource-policy"], "same-origin")
         download.assert_called_once()
+
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.get_owned_media_asset", return_value={**owned_ready_asset(), "content_sha256": "0" * 64})
+    def test_readback_rejects_content_that_does_not_match_reserved_fingerprint(self, get_asset, download):
+        download.return_value = ValidatedReference(content=b"validated-png-bytes", mime_type="image/png", safe_filename="portrait.png", size_bytes=19, width=1, height=1, frame_count=1)
+        response = self.client.get(f"/api/media/{ASSET}/content")
+        self.assertEqual(response.status_code, 502)
 
     @patch("app.main.download_private_media_image")
     @patch("app.main.get_owned_media_asset", return_value={**owned_ready_asset(), "status": "deleted"})
