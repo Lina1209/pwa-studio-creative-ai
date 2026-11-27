@@ -1239,7 +1239,7 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   const startAssistantConversation = async () => {
-    assistantConversationIntentVersion += 1;
+    const intentVersion = ++assistantConversationIntentVersion;
     setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
@@ -1248,7 +1248,8 @@ const movieHistoryStyle = document.createElement("style");
     const { data, error } = await supabaseClient.from("assistant_conversations")
       .insert({ user_id: requestUserId, title: "Новый диалог" }).select("id").single();
     if (error) throw error;
-    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return null;
+    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion ||
+        intentVersion !== assistantConversationIntentVersion) return null;
     activeAssistantConversationId = data.id; clearAssistantMessages({ preserveKattyState: true });
     await renderAssistantHistory();
     if (authSession?.user?.id === requestUserId && authContextVersion === requestVersion)
@@ -1278,10 +1279,14 @@ const movieHistoryStyle = document.createElement("style");
     const contextIsCurrent = () => authSession?.user?.id === requestUserId && authContextVersion === requestVersion;
     let requestConversationId = null;
     try {
-      if (!activeAssistantConversationId) await startAssistantConversation();
+      if (!activeAssistantConversationId) {
+        requestConversationId = await startAssistantConversation();
+        if (!requestConversationId || !contextIsCurrent()) return;
+      } else {
+        requestConversationId = activeAssistantConversationId;
+      }
       if (!contextIsCurrent()) return;
-      const conversationId = activeAssistantConversationId;
-      requestConversationId = conversationId;
+      const conversationId = requestConversationId;
       const conversationIsCurrent = () => contextIsCurrent() && activeAssistantConversationId === conversationId;
       const { data: previousMessages, error: historyError } = await supabaseClient.from("assistant_messages")
         .select("role,content").eq("conversation_id", conversationId)
