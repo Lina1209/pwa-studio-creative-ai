@@ -1,6 +1,6 @@
 # PWA Studio — media outbox concurrency and crash-recovery test plan
 
-**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 33 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
+**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 43 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
 **Target:** disposable PostgreSQL/Supabase project matching the reviewed migration chain.
 **Never run this plan against production.**
 
@@ -77,6 +77,8 @@ With disposable users A and B:
 
 `backend/tests/test_media_outbox.py` now includes stale-token rejection after worker B reclaims an expired worker A lease, acceptance of only worker B's token, exhausted-attempt handling, and rejection of stale retries. These tests exercise the pure Python model only; they do not establish PostgreSQL locking, transaction atomicity, RLS, or Storage correctness.
 
+Static SQL guardrails in `backend/tests/test_media_cleanup_sql_contract.py` also pass, checking globally sorted advisory-lock acquisition, cleanup ordering, browser privilege revocations, and service-role-only RPC grants.
+
 **Execution status:** the pure Python tests and the 0019 disposable PostgreSQL transaction/race harnesses have executed successfully in GitHub Actions. The CI database is PostgreSQL 16 with stubbed Supabase auth/storage schemas; it verifies PostgreSQL migrations, row locks, RPCs, and independent-session claim behavior, but not Supabase Auth, Storage service, actual RLS JWT integration, or object deletion. The broader 50-event/5-worker race and transaction fault-injection cases remain pending.
 
 ## 8. Media upload verification worker (migration 0018 draft)
@@ -149,7 +151,7 @@ Run only after migrations 0005, 0012, 0017, 0018, and 0019 are applied to a disp
 ```bash
 DISPOSABLE_DATABASE_URL="..." PWA_TEST_OWNER_ID="..." bash supabase/tests/0019_media_cleanup_claim_race.sh
 ```
-The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 33 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
+The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 43 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
 
 Still required before activation: run the full Supabase two-account RLS/Storage matrix; test actual Storage DELETE success/404/timeout-after-delete; run an adversarial reference-write-vs-cleanup race; test batches of many events and workers; and exercise dead-letter/operator recovery. The foreign-owner cleanup reservation check is now covered by the passing SQL transaction harness. Never run these harnesses against production.
 
