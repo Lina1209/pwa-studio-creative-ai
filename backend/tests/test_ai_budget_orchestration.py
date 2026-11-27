@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import Mock, call
 
 from app.services.ai_budget import (
+    AIBudgetDuplicateRequest,
     AIBudgetSettlementError,
     AIReservation,
     AIReservationRequest,
@@ -68,6 +69,28 @@ class AIBudgetOrchestrationTests(unittest.TestCase):
                 self.store, self.request, Mock(side_effect=failure), cost_getter=lambda _: None
             )
         self.assertIs(raised.exception, failure)
+
+    def test_duplicate_or_preexisting_reservation_never_calls_provider_again(self):
+        self.store.reserve.return_value = AIReservation(
+            "reservation-1", Decimal("0.05"), status="reserved", created=False
+        )
+        provider = Mock()
+        with self.assertRaises(AIBudgetDuplicateRequest):
+            execute_reserved_ai_call(
+                self.store, self.request, provider, cost_getter=lambda _: None
+            )
+        provider.assert_not_called()
+
+    def test_settled_reservation_never_calls_provider_again(self):
+        self.store.reserve.return_value = AIReservation(
+            "reservation-1", Decimal("0.05"), status="settled", created=False
+        )
+        provider = Mock()
+        with self.assertRaises(AIBudgetDuplicateRequest):
+            execute_reserved_ai_call(
+                self.store, self.request, provider, cost_getter=lambda _: None
+            )
+        provider.assert_not_called()
 
     def test_reservation_failure_prevents_provider_call(self):
         self.store.reserve.side_effect = RuntimeError("budget unavailable")
