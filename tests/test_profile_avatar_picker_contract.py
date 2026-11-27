@@ -53,5 +53,18 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
             self.assertIn("<svg", path.read_text(encoding="utf-8")[:200])
 
 
+    def test_katty_expression_preview_is_temporary_and_only_shown_for_katty(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="kattyExpressionPicker"', html)
+        self.assertIn('hidden aria-label="Выражения Катти"', html)
+        self.assertIn("const KATTY_EXPRESSIONS=", app)
+        for expression_id in ("neutral-warm", "joy", "delight", "curious", "focused", "surprised", "empathetic", "thinking"):
+            self.assertIn('["' + expression_id + '"', app)
+        self.assertIn('expressionPicker.hidden=profileAvatarDraftId!=="katty-assistant"', app)
+        self.assertIn('assets/characters/katty/expressions/"+kattyExpressionDraft+".svg', app)
+        self.assertIn("kattyExpressionDraft=id;renderProfileAvatarPicker();", app)
+        self.assertNotIn("avatar_expression", app)
+
 if __name__ == "__main__":
     unittest.main()
