@@ -310,22 +310,11 @@ const movieHistoryStyle = document.createElement("style");
   };
 
 
-  const PROFILE_AVATAR_CATALOG = [
-    {id:"portrait-violet",name:"Лавандовый портрет",category:"people",group:"Люди"},
-    {id:"forest-elf",name:"Лесная фея",category:"fantasy",group:"Фэнтези"},
-    {id:"fox-scout",name:"Лисёнок",category:"animals",group:"Животные"},
-    {id:"robo-buddy",name:"Робот-друг",category:"robots",group:"Роботы"},
-    {id:"katty-assistant",name:"Катти · помощница PWA Studio",category:"cartoon",group:"Мультяшные"},
-    {id:"comic-star",name:"Комикс-герой",category:"cartoon",group:"Мультяшные"},
-    {id:"cosmo-pilot",name:"Космический пилот",category:"space",group:"Космос"},
-    {id:"sun-garden",name:"Солнечный сад",category:"nature",group:"Природа"},
-    {id:"prism-orbit",name:"Призма",category:"abstract",group:"Абстракция"}
-  ];
+  const PROFILE_AVATAR_CATALOG = globalThis.PWAProfileAvatarCatalog.items;
   const PROFILE_AVATAR_DEFAULT="portrait-violet";
   let profileAvatarSavedId=PROFILE_AVATAR_DEFAULT,profileAvatarDraftId=PROFILE_AVATAR_DEFAULT,profileAvatarCategory="all";
   const profileAvatarPath=id=>{
-    const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===id)||PROFILE_AVATAR_CATALOG[0];
-    return "assets/avatars/2d/"+item.id+".svg";
+    return globalThis.PWAProfileAvatarCatalog.getAssetPath(id);
   };
   const applyProfileAvatarChrome=id=>{
     const src=profileAvatarPath(id);
