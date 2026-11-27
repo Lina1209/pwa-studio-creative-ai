@@ -1,3 +1,5 @@
+> **Status correction (2026-11-27):** This is a future disposable-project test plan, not evidence that cloud backup is currently available. The Character Library UI still stores cards in localStorage and image blobs in IndexedDB. It does not yet create or restore cloud character records. CL-02 and the statements below describing an implemented manual one-way backup are aspirational/outdated and must not be treated as executable steps until the frontend import/mapping flow is implemented. The new authenticated metadata API is in the feature branch; route and repository CI verification is in progress. Do not test against production or delete local data.
+
 # Character Library cloud-backup test plan
 
 This plan is for an isolated Supabase project only. Do not use the production project for the first run.
@@ -47,6 +49,6 @@ This plan is for an isolated Supabase project only. Do not use the production pr
 - A failed backup never removes local data.
 
 ## Known limitations outside this test
-- The feature currently provides manual one-way local-to-cloud backup only.
+- The feature currently remains local-first; cloud restore and backup UI are not yet implemented.
 - Cloud restore, bidirectional sync, remote deletion/tombstones, conflict resolution, and automatic guest-to-account migration are not implemented.
 - The 3D option is passport metadata only; it does not create a 3D model or animation.
