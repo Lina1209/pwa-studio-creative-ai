@@ -2020,6 +2020,14 @@ const movieHistoryStyle = document.createElement("style");
           passport:item.passport||{},
           referenceImages:[]
         };
+        // Create the parent row first so the media_assets.character_id FK is satisfied.
+        // ignoreDuplicates avoids overwriting an existing cloud passport if a later upload fails.
+        const parentRow={
+          id:item.id,owner_id:user.id,name:item.name,description:item.description||"",
+          avatar_url:null,reference_data:{kind:passport.kind,representation:passport.representation,voice:passport.voice,passport:passport.passport}
+        };
+        const {error:parentError}=await supabaseClient.from("characters").upsert(parentRow,{onConflict:"id",ignoreDuplicates:true});
+        if(parentError)throw parentError;
         for(const ref of refs){
           if(!ref || typeof ref.id!=="string")continue;
           const path=user.id+"/characters/"+item.id+"/"+ref.id;
