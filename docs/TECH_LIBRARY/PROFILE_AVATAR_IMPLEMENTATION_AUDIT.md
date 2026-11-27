@@ -2,7 +2,7 @@
 
 **Date:** 27 November 2026  
 **Branch:** `feature/character-library-foundation`  
-**Status:** source audit completed; implementation not yet activated.
+**Status:** initial 2D profile picker implemented in the feature branch; database migration is draft-only and not applied to any live database. CI verification is pending.
 
 ## Existing profile model
 
@@ -49,14 +49,24 @@ Therefore:
 - Standard catalog avatars should be free and local/static; no image-generation calls or paid provider calls are implied.
 - Custom upload and generated avatars remain future, separately consented features.
 
-## Next safe implementation sequence
+## Implemented in the feature branch
 
-1. Add an additive profile-avatar catalog migration and backend allowlist validation, with tests; do not execute it against production.
-2. Add a small curated static 2D catalog with stable IDs, descriptive labels, and accessible alternatives.
-3. Add a mobile-friendly picker to the existing profile surfaces, with preview/apply/reset and a fallback.
-4. Render the selected avatar consistently in account, community cards, sidebar, and top bar.
-5. Add browser tests for guest separation, account switching, invalid catalog IDs, and persistence/readback.
-6. Add real 3D support only after approved model assets and a real preview runtime are available.
+- Additive migration `0021_profile_avatar_catalog.sql` introduces `avatar_catalog_id`, `avatar_representation`, and `avatar_updated_at`; it has not been applied to production.
+- Backend allowlist currently accepts eight published static 2D IDs, derives the owner from the authenticated session, and rejects unknown IDs or 3D selection until real 3D assets exist.
+- Eight locally hosted SVG portraits cover people, fantasy, animals, robots, cartoon, space, nature, and abstract categories.
+- The community profile editor has a responsive category filter, 2D collection, preview, apply, and reset-to-standard controls.
+- Community search cards and public profile cards render the selected catalog portrait.
+- Public profile projections expose only catalog ID and representation, not private `avatar_path` storage paths.
+- Selection requests are fenced by authenticated user ID and auth-context version.
+- Backend, SQL migration, and frontend source-contract tests were added; latest CI result is pending.
+
+## Remaining safe implementation sequence
+
+1. Verify the new backend, SQL, and frontend contract tests in GitHub Actions; fix failures before proceeding.
+2. Add the same catalog to any additional account/profile surfaces discovered in the UI audit, without duplicating persisted state.
+3. Add guest-only local selection if guest profile UI is exposed; never reuse a signed-in user's choice.
+4. Render the same resolved avatar in sidebar/top bar if those surfaces have a stable profile component.
+5. Add real 3D support only after approved model assets and a real preview runtime are available.
 
 ## Explicit non-goals
 
