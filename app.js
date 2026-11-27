@@ -1063,6 +1063,20 @@ const movieHistoryStyle = document.createElement("style");
     if (image) { image.src = "assets/characters/katty/expressions/" + id + ".svg"; image.alt = label; }
   };
   const kattySupportSignal = message => /(груст|тоск|страш|тревож|устал|плохо|боль|одинок|пережива|расстро|сложно)/i.test(String(message || ""));
+  const kattyContextState = message => {
+    const value = String(message || "");
+    if (kattySupportSignal(value)) return "empathetic";
+    if (/(объясни|научи|обуч|урок|как работает|разберём|изучи|изучить)/i.test(value)) return "curious";
+    if (/(сценар|рассказ|истори|песн|стих|иде|придум|творч|фантаз)/i.test(value)) return "focused";
+    if (/(поздрав|спасибо|получилось|готово|ура|здорово)/i.test(value)) return "joy";
+    return "thinking";
+  };
+  const kattyResponseState = (prompt, reply) => {
+    if (kattySupportSignal(prompt)) return "empathetic";
+    if (/(вот план|шаг первый|давайте разберём|объяснение|пример)/i.test(reply)) return "curious";
+    if (/(сценар|персонаж|куплет|припев|рассказ|концепци)/i.test(reply)) return "focused";
+    return "joy";
+  };
 
   const copyAssistantText = async (content, button) => {
     try {
@@ -1104,6 +1118,7 @@ const movieHistoryStyle = document.createElement("style");
     if (suggestions) suggestions.hidden = true;
   };
   const clearAssistantMessages = () => {
+    setKattyAssistantExpression("neutral");
     if (assistantMessages) assistantMessages.replaceChildren();
     const welcome = document.querySelector(".assistant-welcome");
     if (welcome) welcome.hidden = false;
@@ -1111,6 +1126,7 @@ const movieHistoryStyle = document.createElement("style");
     if (suggestions) suggestions.hidden = false;
   };
   const loadAssistantMessages = async conversationId => {
+    setKattyAssistantExpression("neutral");
     if (!supabaseClient || !authSession?.user || !conversationId) return;
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
@@ -1190,7 +1206,7 @@ const movieHistoryStyle = document.createElement("style");
     event.preventDefault();
     const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
-    setKattyAssistantExpression(kattySupportSignal(value) ? "empathetic" : "thinking");
+    setKattyAssistantExpression(kattyContextState(value));
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
@@ -1226,7 +1242,7 @@ const movieHistoryStyle = document.createElement("style");
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
       if (!contextIsCurrent()) return;
-      renderAssistantMessage("assistant", result.reply); setKattyAssistantExpression(kattySupportSignal(value) ? "empathetic" : "joy"); await renderAssistantHistory();
+      renderAssistantMessage("assistant", result.reply); setKattyAssistantExpression(kattyResponseState(value, result.reply)); await renderAssistantHistory();
     } catch (error) { setKattyAssistantExpression("neutral"); setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
     finally { button.disabled = false; input.disabled = false; input.focus(); }
   });
