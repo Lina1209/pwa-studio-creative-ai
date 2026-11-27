@@ -6,6 +6,8 @@ loading the asset and its linked resources through the owner-filtered repository
 from dataclasses import dataclass
 from uuid import UUID
 
+from fastapi import HTTPException
+
 from app.services.media_access import (
     ALLOWED_EXTENSIONS,
     ALLOWED_RESOURCE_KINDS,
@@ -43,11 +45,11 @@ def plan_private_media_read(*, authenticated_owner_id: str, asset: dict) -> Medi
     bucket = asset.get("bucket")
     try:
         require_private_bucket(bucket)
-    except Exception as exc:
+    except HTTPException as exc:
         raise ValueError("Unsupported private media bucket.") from exc
 
     path = asset.get("storage_path")
-    if not isinstance(path, str) or not path or path.startswith("/") or "\\\\" in path:
+    if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
         raise ValueError("Invalid server-stored media object key.")
     segments = path.split("/")
     if len(segments) != 4 or any(part in ("", ".", "..") for part in segments):
