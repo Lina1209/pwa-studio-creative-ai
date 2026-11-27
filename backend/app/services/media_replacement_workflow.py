@@ -6,7 +6,7 @@ promotes the new asset, tombstones the old asset, and inserts this cleanup event
 """
 from dataclasses import dataclass
 
-from app.services.media_access import require_private_bucket
+from app.services.media_access import ALLOWED_EXTENSIONS, canonical_uuid, require_private_bucket
 from app.services.media_lifecycle import MediaStatus
 from app.services.media_outbox import MediaOutboxEvent, OutboxStatus
 from app.services.media_replacement import ReplacementPlan, plan_media_replacement
@@ -48,11 +48,24 @@ def plan_character_reference_replacement(
         raise ValueError("Replacement media asset belongs to another character.")
     old_bucket = require_private_bucket(old_asset.get("bucket"))
     new_bucket = require_private_bucket(new_asset.get("bucket"))
+    owner = replacement.owner_id
+    character_id = canonical_uuid(character.get("id"), "character")
     for row, bucket in ((old_asset, old_bucket), (new_asset, new_bucket)):
         if row.get("bucket") != bucket:
             raise ValueError("Media bucket metadata is invalid.")
-        if not isinstance(row.get("storage_path"), str) or not row["storage_path"]:
+        path = row.get("storage_path")
+        if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
             raise ValueError("Server-stored media object key is required.")
+        segments = path.split("/")
+        if len(segments) != 4 or segments[:3] != [owner, "characters", character_id]:
+            raise ValueError("Media object key does not belong to this character.")
+        filename = segments[3]
+        if filename.count(".") != 1:
+            raise ValueError("Invalid media object filename.")
+        object_id, extension = filename.rsplit(".", 1)
+        canonical_uuid(object_id, "storage object")
+        if extension.lower() not in ALLOWED_EXTENSIONS:
+            raise ValueError("Unsupported media object extension.")
     cleanup_event = MediaOutboxEvent(
         id=cleanup_event_id,
         owner_id=replacement.owner_id,
