@@ -81,6 +81,21 @@ class MediaCleanupWorkerTests(unittest.TestCase):
     @patch("app.workers.media_cleanup_worker.delete_private_media_object")
     @patch("app.workers.media_cleanup_worker.complete_media_cleanup")
     @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
+    def test_invalid_server_claim_never_reaches_storage(
+        self, claim_rpc, complete, delete, retry
+    ):
+        claim_rpc.return_value = claim(bucket="unexpected-bucket")
+        retry.return_value = {"event_status": "dead_letter"}
+        self.assertTrue(process_one(object()))
+        delete.assert_not_called()
+        complete.assert_not_called()
+        retry.assert_called_once()
+
+
+    @patch("app.workers.media_cleanup_worker.retry_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.delete_private_media_object")
+    @patch("app.workers.media_cleanup_worker.complete_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
     def test_expired_lease_reclaims_after_storage_delete_and_lost_ack(
         self, claim_rpc, complete, delete, retry
     ):
