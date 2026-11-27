@@ -49,6 +49,16 @@ class CharacterApiRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(create.call_args.args[1], OWNER)
 
+    @patch("app.character_api.update_owned_character", return_value={"id": CHARACTER, "name": "Hero", "description": "x" * 5000, "reference_data": {}, "created_at": "now"})
+    def test_patch_accepts_5000_character_description(self, update):
+        response = self.client.patch(f"/api/characters/{CHARACTER}", json={"description": "x" * 5000})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(update.call_args.args[3]["description"]), 5000)
+
+    def test_patch_rejects_description_above_local_limit(self):
+        response = self.client.patch(f"/api/characters/{CHARACTER}", json={"description": "x" * 5001})
+        self.assertEqual(response.status_code, 422)
+
     @patch("app.services.auth.get_settings", return_value=Settings(supabase_url="https://example.supabase.co"))
     def test_guest_without_session_is_rejected(self, _settings):
         app.dependency_overrides.clear()
