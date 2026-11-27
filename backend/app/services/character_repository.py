@@ -138,7 +138,7 @@ def update_owned_character(settings, owner_id, character_id, changes):
         payload["description"] = value.strip() if value else None
     if "reference_data" in changes: payload["reference_data"] = validate_reference_data(changes["reference_data"])
     if not payload: raise HTTPException(status_code=400, detail="No character changes were supplied.")
-    rows = _request(settings, "PATCH", {"select":"id,owner_id,name,description,reference_data,created_at",
+    rows = _request(settings, "PATCH", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at",
         "id":f"eq.{character}", "owner_id":f"eq.{owner}"}, payload)
     if not rows: raise HTTPException(status_code=404, detail="Character not found.")
     if rows[0].get("owner_id") != owner: raise HTTPException(status_code=404, detail="Character not found.")
