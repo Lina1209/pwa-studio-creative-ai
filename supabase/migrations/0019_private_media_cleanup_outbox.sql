@@ -419,6 +419,11 @@ begin
       and other.storage_path=v_asset.storage_path
       and other.status <> 'deleted'
   ) or exists (
+    select 1 from public.media_assets other
+    where other.id <> v_asset.id
+      and position(v_asset.storage_path in coalesce(other.metadata::text,'')) > 0
+      and other.status <> 'deleted'
+  ) or exists (
     select 1 from public.characters other_character
     where (v_asset.character_id is null or other_character.id <> v_asset.character_id)
       and other_character.owner_id=v_asset.owner_id
