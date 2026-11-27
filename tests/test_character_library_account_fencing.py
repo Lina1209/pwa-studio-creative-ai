@@ -11,6 +11,20 @@ APP = (Path(__file__).resolve().parents[1] / "app.js").read_text(encoding="utf-8
 
 
 class CharacterLibraryAccountFencingTests(unittest.TestCase):
+    def test_notification_action_cleanup_is_account_fenced(self):
+        one_start = APP.index("const markOneNotificationRead = async")
+        one_end = APP.index('$("#notificationRefresh")', one_start)
+        one = APP[one_start:one_end]
+        self.assertIn("const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;", one)
+        self.assertIn("if (contextIsCurrent()) {", one)
+        self.assertIn("button.disabled = false;", one)
+        all_start = APP.index('$("#notificationReadAll")?.addEventListener')
+        all_end = APP.index("const messagesFeedback", all_start)
+        read_all = APP[all_start:all_end]
+        self.assertIn("const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;", read_all)
+        self.assertIn("if (contextIsCurrent()) {", read_all)
+        self.assertIn("button.disabled = false;", read_all)
+
     def test_community_search_results_are_latest_request_only(self):
         search_start = APP.index("const searchCommunity = async")
         search_end = APP.index("const openCommunityProfile = async", search_start)
