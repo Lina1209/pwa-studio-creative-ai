@@ -111,6 +111,15 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("setKattyAssistantExpression(kattyContextState(value))", app)
 
 
+    def test_katty_mode_previews_prompt_suggestions(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.indexOf('$$("[data-assist]")') if hasattr(app, "indexOf") else app.index('$$("[data-assist]")')
+        end = app.index("\n  // AI Companion cloud history", start)
+        handler = app[start:end]
+        self.assertIn("setKattyAssistantMode(kattyModeForMessage(prompt))", handler)
+        self.assertIn("setKattyAssistantExpression(kattyContextState(prompt))", handler)
+        self.assertIn('$("#assistantInput").value = prompt', handler)
+
     def test_katty_mode_resets_when_conversation_changes(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         for function_name in ("clearAssistantMessages", "loadAssistantMessages", "startAssistantConversation"):
