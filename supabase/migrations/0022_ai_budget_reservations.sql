@@ -102,7 +102,7 @@ create or replace function public.reserve_ai_budget(
   p_provider text,
   p_model text,
   p_reserved_usd numeric
-) returns table(reservation_id uuid, reservation_status text, reserved_usd numeric)
+ ) returns table(reservation_id uuid, reservation_status text, reserved_usd numeric, reservation_created boolean)
 language plpgsql security definer
 set search_path = pg_catalog, public, pg_temp
 as $$
@@ -141,7 +141,7 @@ begin
        or v_existing.request_id <> p_request_id then
       raise exception 'ai_budget_idempotency_conflict' using errcode = '23505';
     end if;
-    return query select v_existing.id, v_existing.status, v_existing.reserved_usd;
+    return query select v_existing.id, v_existing.status, v_existing.reserved_usd, false;
     return;
   end if;
 
@@ -198,6 +198,7 @@ begin
 
   reservation_status := 'reserved';
   reserved_usd := p_reserved_usd;
+  reservation_created := true;
   return next;
 end;
 $$;
