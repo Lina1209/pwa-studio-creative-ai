@@ -344,3 +344,9 @@ The test is authored in `backend/tests/test_media_cleanup_worker.py`. It has bee
 A worker unit test now supplies a server claim with an unsupported bucket and verifies that no Storage DELETE or database completion is attempted; the worker only attempts the fenced retry/dead-letter path. This complements the valid-claim path and confirms that claim validation is a hard boundary before the external side effect.
 
 The test is committed on the feature branch. Workflow run #90 passed the existing backend suite and disposable PostgreSQL cleanup integration harness, but it was triggered by the preceding documentation commit and therefore does **not** include this latest test commit. A fresh CI run is still required to verify the added test.
+
+## 31. Cleanup RPC credential-boundary tests
+
+Repository-level tests now cover the service-role RPC adapter's exact PostgREST function path, service-role headers, bounded timeout, and sanitized handling of transport and HTTP failures. They assert that upstream response text and service-role credentials are not included in raised error messages.
+
+The preceding CI run #94 completed successfully with 222 backend unit tests and the disposable PostgreSQL integration job. That run included the invalid-claim-before-Storage test. The three new repository-adapter tests in the latest commit still require a subsequent CI run; no pass is claimed for them yet.
