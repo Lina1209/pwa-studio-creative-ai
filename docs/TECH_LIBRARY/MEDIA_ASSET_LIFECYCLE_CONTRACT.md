@@ -296,7 +296,7 @@ A narrow Storage primitive now exists in `backend/app/services/media_storage_del
 ### Required persistence sequence before enabling character deletion
 
 1. In one server-side database transaction, lock the character row by both character ID and verified owner ID.
-2. Load the complete associated media set (not a client-supplied subset), and discover all exact references by bucket + immutable object key across media metadata and character passport fields.
+2. Load the complete associated media set (not a client-supplied subset), and discover all references that will survive deletion by exact bucket + immutable object key across other media rows and other characters' passport fields. The target character's own media rows/passport pointers are removed as part of the same deletion transaction and are not external references.
 3. If any object is referenced elsewhere, abort the deletion plan; do not delete it.
 4. Atomically transition each eligible asset to `cleanup_pending` and enqueue one `media_cleanup_requested` event per object with owner-scoped idempotency. Do not delete the character yet.
 5. A cleanup worker claims each event with a database lease and fencing token. It reloads the asset by owner + asset ID, repeats the exact-reference check immediately before the Storage side effect, and calls the narrow Storage delete primitive.
