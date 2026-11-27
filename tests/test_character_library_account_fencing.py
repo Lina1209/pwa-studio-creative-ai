@@ -98,6 +98,14 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if(requestVersion===audioStoryRequestVersion)status.textContent", audio)
         self.assertIn("finally{if(requestVersion===audioStoryRequestVersion)generate.disabled=false;}", audio)
 
+    def test_audio_dictation_callbacks_are_invalidated_on_account_change(self):
+        audio = (Path(__file__).resolve().parents[1] / "audio-lab.js").read_text(encoding="utf-8")
+        self.assertIn("const staleRecognition = recognition;", audio)
+        self.assertIn("staleRecognition.abort();", audio)
+        self.assertIn("const recognitionVersion = audioStoryRequestVersion;", audio)
+        self.assertIn("if (!recognitionIsCurrent()) return;", audio)
+        self.assertIn('Диктовка остановлена из-за смены аккаунта.', audio)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
