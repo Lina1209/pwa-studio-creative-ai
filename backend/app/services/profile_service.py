@@ -134,7 +134,7 @@ def search_public_profiles(settings: Settings, query: str, current_user_id: str)
     # Search only fields explicitly intended for public discovery.
     safe = term.replace("%", "").replace("*", "")
     rows = _request(settings, "GET", params={
-        "select": "user_id,username,display_name,bio,avatar_path,avatar_catalog_id,avatar_representation,updated_at",
+        "select": "user_id,username,display_name,bio,avatar_catalog_id,avatar_representation,updated_at",
         "visibility": "eq.public", "show_in_directory": "eq.true",
         "or": f"(username.ilike.*{safe}*,display_name.ilike.*{safe}*)",
         "user_id": f"neq.{uid}", "order": "username.asc", "limit": "30",
@@ -148,7 +148,7 @@ def get_public_profile(settings: Settings, target_user_id: str, current_user_id:
     if target == current:
         return get_own_profile(settings, current)
     rows = _request(settings, "GET", params={
-        "select": "user_id,username,display_name,bio,avatar_path,avatar_catalog_id,avatar_representation,updated_at",
+        "select": "user_id,username,display_name,bio,avatar_catalog_id,avatar_representation,updated_at",
         "user_id": f"eq.{target}", "visibility": "eq.public",
         "show_in_directory": "eq.true", "limit": "1",
     })
