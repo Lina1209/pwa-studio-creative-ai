@@ -13,6 +13,7 @@
   let authContextVersion = 0;
   let activeAssistantConversationId = null;
   let assistantConversationLoadVersion = 0;
+  let assistantHistoryLoadVersion = 0;
   let assistantHistoryBusy = false;
   let assistantUserId = null;
   let activeMessageThreadId = null;
@@ -1176,16 +1177,18 @@ const movieHistoryStyle = document.createElement("style");
       setAssistantStatus("Войдите в аккаунт, чтобы сохранять историю диалогов.");
       clearAssistantMessages(); activeAssistantConversationId = null; return;
     }
-    if (assistantHistoryBusy) return;
+    const historyLoadVersion = ++assistantHistoryLoadVersion;
     assistantHistoryBusy = true; setAssistantStatus("Загружаем ваши диалоги…");
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
+    const historyContextIsCurrent = () => historyLoadVersion === assistantHistoryLoadVersion &&
+      authSession?.user?.id === requestUserId && authContextVersion === requestVersion;
     try {
       const { data, error } = await supabaseClient.from("assistant_conversations")
         .select("id,title,updated_at").eq("user_id", requestUserId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
-      if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+      if (!historyContextIsCurrent()) return;
       assistantHistoryList.replaceChildren();
       (data || []).forEach(conversation => {
         const row = document.createElement("div"); row.className = "assistant-history-row";
@@ -1215,19 +1218,26 @@ const movieHistoryStyle = document.createElement("style");
       }
       setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
     } catch (error) {
-      setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
-    } finally { assistantHistoryBusy = false; }
+      if (historyContextIsCurrent()) setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
+    } finally {
+      if (historyLoadVersion === assistantHistoryLoadVersion) assistantHistoryBusy = false;
+    }
   };
   const startAssistantConversation = async () => {
     setKattyAssistantMode("companion");
     setKattyAssistantExpression("neutral");
     if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
     const { data, error } = await supabaseClient.from("assistant_conversations")
-      .insert({ user_id: authSession.user.id, title: "Новый диалог" }).select("id").single();
+      .insert({ user_id: requestUserId, title: "Новый диалог" }).select("id").single();
     if (error) throw error;
+    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return null;
     activeAssistantConversationId = data.id; clearAssistantMessages({ preserveKattyState: true });
     await renderAssistantHistory();
-    setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
+    if (authSession?.user?.id === requestUserId && authContextVersion === requestVersion)
+      setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
+    return data.id;
   };
   $("#assistantNewChat")?.addEventListener("click", async () => {
     try { await startAssistantConversation(); $("#assistantInput").focus(); }
