@@ -58,6 +58,14 @@ The backend uses a service-role secret for server-side telemetry. Any future Sto
 
 **Action:** service-role use must be limited to a small backend-only function after explicit JWT and ownership checks. Never accept client-provided owner identity as a substitute. Never return or log the key, signed URLs, authorization headers, or raw provider/storage error bodies.
 
+### AUTHZ-06 — Message self-delete update must retain participant scope (medium)
+
+The messaging service uses a server-side service-role REST client, which bypasses table RLS. The self-delete flow first selected a message only when the caller was sender or recipient, but its subsequent UPDATE originally filtered only by message UUID. Although the UUID came from that scoped read, the write itself did not repeat the participant predicate.
+
+**Change on 2026-11-27:** the UPDATE now includes both the message UUID and an explicit sender-or-recipient predicate. This makes the authorization condition part of the write operation, not only a preceding read. This is a source-level hardening change; no live API request or integration test was run.
+
+**Required regression test:** with two users, attempt self-delete using a foreign message UUID and assert no row is updated; verify sender and recipient can each hide only their own view and cannot set the other participant's deletion timestamp.
+
 ## Required isolated test matrix
 
 | Test | Attempt | Expected |
