@@ -8,6 +8,15 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 
+class ProviderSubmissionOutcome(str, Enum):
+    """Evidence about whether an external provider accepted a billable request."""
+
+    DEFINITELY_NOT_SUBMITTED = "definitely_not_submitted"
+    DEFINITELY_REJECTED = "definitely_rejected"
+    ACCEPTED = "accepted"
+    UNKNOWN = "unknown"
+
+
 class JobStatus(str, Enum):
     QUEUED = "queued"
     PROCESSING = "processing"
@@ -98,6 +107,7 @@ def mark_failed(
     error_code: str,
     retryable: bool,
     retry_delay_seconds: int = 30,
+    submission_outcome: ProviderSubmissionOutcome = ProviderSubmissionOutcome.UNKNOWN,
 ) -> GenerationJob:
     _validate_now(now)
     if job.status == JobStatus.CANCEL_REQUESTED:
@@ -108,7 +118,15 @@ def mark_failed(
         raise ValueError("A short, non-sensitive error code is required.")
     if retry_delay_seconds < 1 or retry_delay_seconds > 3600:
         raise ValueError("retry_delay_seconds must be between 1 and 3600.")
-    can_retry = retryable and job.attempt_count < job.max_attempts
+    if not isinstance(submission_outcome, ProviderSubmissionOutcome):
+        raise ValueError("submission_outcome must be a ProviderSubmissionOutcome.")
+    # A generic timeout/connection error is not proof of non-acceptance.
+    # Only conclusive evidence permits a new provider submission.
+    safe_to_retry = submission_outcome in {
+        ProviderSubmissionOutcome.DEFINITELY_NOT_SUBMITTED,
+        ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+    }
+    can_retry = retryable and safe_to_retry and job.attempt_count < job.max_attempts
     return replace(
         job,
         status=JobStatus.RETRY_WAIT if can_retry else JobStatus.FAILED,
