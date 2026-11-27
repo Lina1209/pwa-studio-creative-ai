@@ -106,6 +106,17 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if (!recognitionIsCurrent()) return;", audio)
         self.assertIn('Диктовка остановлена из-за смены аккаунта.', audio)
 
+    def test_audio_story_edits_are_preserved_for_same_account_handoff(self):
+        audio = (Path(__file__).resolve().parents[1] / "audio-lab.js").read_text(encoding="utf-8")
+        self.assertIn('resultText.addEventListener("input",()=>{latestResult=resultText.value;});', audio)
+        bridge_start = APP.index("window.PWAStudioAudioBridge = {")
+        bridge_end = APP.index("\\n  };", bridge_start) + 5
+        bridge = APP[bridge_start:bridge_end]
+        self.assertIn('!String(story || "").trim()', bridge)
+        self.assertNotIn('generation.reply !== String(story || "")', bridge)
+        self.assertIn("generation.version !== authContextVersion", bridge)
+        self.assertIn("generation.userId !== (authSession?.user?.id || null)", bridge)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
