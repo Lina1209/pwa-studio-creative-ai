@@ -111,3 +111,9 @@ These helpers do not query Supabase, upload/download bytes, or create signed URL
 The repository uses the existing server-side Supabase REST pattern and service-role credential; that credential is never returned or accepted from a caller. Table names are fixed in code, and the function accepts no bucket, object path, or signed URL from the client.
 
 This is a repository primitive only. No FastAPI route, upload, download, Storage operation, signed URL, or deletion endpoint has been added. The returned metadata includes `storage_path` for trusted internal follow-up only; a future route must not serialize it to the browser. The new mocked unit tests are in `backend/tests/test_media_repository.py`; they have not been executed.
+
+## 12. Pure lifecycle state machine added (not persistence)
+
+`backend/app/services/media_lifecycle.py` implements the allowed status transitions as pure domain logic. It makes only `ready` assets readable; pending, failed, and cleanup-pending assets remain unavailable. A ready asset must first enter `cleanup_pending` before it can become deleted. Deleted is terminal, and repeating the current status is idempotent.
+
+This does not persist state or coordinate Storage/Postgres. A future implementation must enforce transitions atomically (row lock or compare-and-swap), bind idempotency keys to the authenticated owner, verify object existence and metadata before `ready`, and keep cleanup retries safe. The 10 tests in `backend/tests/test_media_lifecycle.py` are authored but have not been executed. No migration, endpoint, worker, or Storage operation was added.
