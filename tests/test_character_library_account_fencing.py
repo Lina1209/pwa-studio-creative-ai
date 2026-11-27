@@ -208,6 +208,26 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("finally{if(contextIsCurrent())button.disabled=false;}", handler)
         self.assertIn("if(contextIsCurrent())messagesFeedback(", handler)
 
+    def test_user_report_submission_cleanup_is_account_fenced(self):
+        start = APP.index('$("#userReportForm")?.addEventListener')
+        end = APP.index("const adminFeedback", start)
+        report = APP[start:end]
+        self.assertIn("const version = authContextVersion, userId = authSession.user.id;", report)
+        self.assertIn("const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;", report)
+        self.assertIn("if (!contextIsCurrent()) return;", report)
+        self.assertIn("if (contextIsCurrent()) button.disabled = false;", report)
+
+    def test_block_actions_and_block_list_mutations_are_account_and_request_fenced(self):
+        start = APP.index('$("#blockConversationUser")?.addEventListener')
+        end = APP.index('$("#messagesRefresh")', start)
+        block_actions = APP[start:end]
+        self.assertIn("const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessagePartnerId===partnerId&&activeMessageThreadId===threadId;", block_actions)
+        self.assertIn("if(!contextIsCurrent())return;", block_actions)
+        self.assertIn("const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&Number(list.dataset.requestVersion)===requestVersion;", block_actions)
+        self.assertIn("if(!contextIsCurrent())return false;", block_actions)
+        self.assertIn("if(contextIsCurrent())button.disabled=false;", block_actions)
+        self.assertIn("if(!contextIsCurrent())return;", block_actions)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
