@@ -48,6 +48,8 @@ def authorize_media_mutation(
         raise ValueError("Media asset changed; reload before retrying.")
     if supplied_fence != current_fence:
         raise ValueError("This media operation is stale and no longer owns the lease.")
+    if current >= 2**63 - 1:
+        raise ValueError("Media version counter is exhausted.")
     return MediaMutationPermit(
         operation_id=operation,
         expected_version=current,
