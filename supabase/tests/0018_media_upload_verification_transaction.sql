@@ -48,6 +48,12 @@ declare
   v_status text;
   v_outbox_status text;
   v_count bigint;
+  v_asset2 uuid := gen_random_uuid();
+  v_event2 uuid := gen_random_uuid();
+  v_object2 uuid := gen_random_uuid();
+  v_claim2 uuid := gen_random_uuid();
+  v_attempt integer;
+  v_retry_result jsonb;
 begin
   if not exists (
     select 1 from public.characters where id=v_character and owner_id=v_owner
@@ -173,6 +179,61 @@ begin
   v_result := public.pwa_mark_character_reference_object_uploaded(v_owner,v_asset,v_event);
   if v_result->>'status' <> 'ready' then
     raise exception 'Late upload status update downgraded a ready asset';
+  end if;
+
+  -- Lease expiry reclaims the same event with a new fencing token.
+  v_path := v_owner::text || '/characters/' || v_character::text || '/' || v_object2::text || '.png';
+  perform public.pwa_reserve_character_reference_upload(
+    v_owner,v_character,v_asset2,v_event2,v_event2,
+    'test-media-retry-' || v_event2::text,
+    'retry.png','image/png','studio-media',v_path,
+    27,v_digest,3,3
+  );
+  v_stale_claim := gen_random_uuid();
+  v_result := public.pwa_claim_media_upload_verification(v_stale_claim,120);
+  if v_result->>'asset_id' <> v_asset2::text then
+    raise exception 'Retry fixture was not claimed';
+  end if;
+  update public.media_asset_outbox
+  set claim_expires_at=clock_timestamp() - interval '1 second'
+  where id=v_event2 and claim_token=v_stale_claim;
+  v_claim2 := gen_random_uuid();
+  v_result := public.pwa_claim_media_upload_verification(v_claim2,120);
+  if v_result->>'event_id' <> v_event2::text
+     or v_result->>'claim_token' <> v_claim2::text then
+    raise exception 'Expired claim was not recovered with a fresh token';
+  end if;
+
+  begin
+    perform public.pwa_retry_media_upload_verification(
+      v_owner,v_asset2,v_event2,v_stale_claim,1
+    );
+    raise exception 'Expired worker token unexpectedly scheduled a retry';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+
+  -- Exhaust the bounded retry budget. Move available_at forward in this test
+  -- transaction rather than sleeping through the production backoff.
+  for v_attempt in 2..8 loop
+    v_retry_result := public.pwa_retry_media_upload_verification(
+      v_owner,v_asset2,v_event2,v_claim2,1
+    );
+    if v_attempt < 8 then
+      update public.media_asset_outbox
+      set available_at=clock_timestamp()
+      where id=v_event2 and status='pending';
+      v_claim2 := gen_random_uuid();
+      v_result := public.pwa_claim_media_upload_verification(v_claim2,120);
+      if v_result->>'event_id' <> v_event2::text then
+        raise exception 'Retry event was not reclaimed at attempt %',v_attempt+1;
+      end if;
+    end if;
+  end loop;
+  select status into v_status from public.media_assets where id=v_asset2;
+  select status into v_outbox_status from public.media_asset_outbox where id=v_event2;
+  if v_status <> 'upload_failed' or v_outbox_status <> 'dead_letter' then
+    raise exception 'Retry exhaustion did not fail closed: media %, outbox %',v_status,v_outbox_status;
   end if;
 
   -- Server role only: browser roles cannot call the RPCs or inspect the outbox.
