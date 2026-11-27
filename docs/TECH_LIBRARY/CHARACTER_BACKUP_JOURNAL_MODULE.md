@@ -39,7 +39,7 @@ The state machine is restrictive: only `object_uploaded` may transition to `veri
 This commit adds the isolated persistence primitive only. It does not claim browser acceptance tests passed. Before wiring it into the UI, add automated real-browser tests using disposable browser storage for:
 - IndexedDB durability after reload and browser restart;
 - owner separation and account switching;
-- duplicate creation within one tab and racing creation from two independent browser tabs;
+- duplicate creation within one tab and racing creation from two independent browser tabs; aborted IndexedDB write rollback with no partial journal record;
 - quota failure and transaction abort;
 - invalid/forbidden state transitions and immutable mappings;
 - lost network response and offline recovery in the future coordinator;
