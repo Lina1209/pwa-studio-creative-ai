@@ -151,7 +151,7 @@ begin
     end if;
     if v_asset.bucket <> 'studio-media'
        or v_asset.storage_path is null
-       or v_asset.storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)$') then
+       or v_asset.storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$') then
       raise exception 'character media object key is invalid' using errcode='23514';
     end if;
 
