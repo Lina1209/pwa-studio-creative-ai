@@ -116,8 +116,13 @@ begin
   where id=p_asset_id and owner_id=p_owner_id;
   if not found or v_existing.operation_id is distinct from p_operation_id
      or v_existing.character_id is distinct from p_character_id
-     or v_existing.storage_path is distinct from p_storage_path then
-    raise exception 'media reservation conflict' using errcode='23505';
+     or v_existing.storage_path is distinct from p_storage_path
+     or v_existing.file_name is distinct from p_file_name
+     or v_existing.file_type is distinct from p_file_type
+     or v_existing.size_bytes is distinct from p_size_bytes
+     or v_existing.width is distinct from p_width
+     or v_existing.height is distinct from p_height then
+    raise exception 'media reservation fingerprint conflict' using errcode='23505';
   end if;
 
   insert into public.media_asset_outbox(
