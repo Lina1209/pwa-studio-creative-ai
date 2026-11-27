@@ -41,6 +41,14 @@
     await test("duplicate journal creation is rejected", async () => {
       await rejects(() => api.create(journalInput), "duplicate journal unexpectedly accepted");
     });
+    await test("simultaneous duplicate creation has one winner", async () => {
+      const racingCharacter = uuid();
+      const racingInput = {...journalInput, localCharacterId: racingCharacter, references: []};
+      const results = await Promise.allSettled([api.create(racingInput), api.create(racingInput)]);
+      check(results.filter(item => item.status === "fulfilled").length === 1, "concurrent create did not have exactly one winner");
+      check(results.filter(item => item.status === "rejected").length === 1, "concurrent duplicate was not rejected");
+      check(!!(await api.get(owner, racingCharacter)), "winning concurrent journal was not persisted");
+    });
     await test("owner boundary prevents foreign reads", async () => {
       check(await api.get(otherOwner, localCharacter) === null, "foreign owner read returned a record");
       const rows = await api.list(owner);
