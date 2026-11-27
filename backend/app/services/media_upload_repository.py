@@ -76,6 +76,7 @@ def reserve_character_reference_upload(settings: Settings, plan) -> dict:
         "p_bucket": plan.bucket,
         "p_storage_path": plan.storage_path,
         "p_size_bytes": plan.size_bytes,
+        "p_content_sha256": plan.content_sha256,
         "p_width": plan.width,
         "p_height": plan.height,
     })
