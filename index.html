@@ -168,6 +168,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             </details>
             <label for="characterImages">Изображения-референсы (до 6, PNG/JPEG/WebP, до 8 МБ каждое)</label>
             <input id="characterImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+            <div id="characterReferenceEditor" class="character-reference-editor" aria-live="polite"></div>
             <div class="character-form-actions"><button type="button" class="secondary-button" id="characterKittyPreset">✦ Заполнить паспорт Катти</button><button type="button" class="primary-button" id="saveCharacter">＋ Сохранить персонажа</button><button type="button" class="secondary-button" id="cancelCharacterEdit" hidden>Отмена</button></div>
             <div class="character-form-actions"><button type="button" class="secondary-button" id="backupCharacterLibrary">☁ Создать облачную копию</button></div><p class="helper-text" id="characterLibraryStatus" aria-live="polite">Материалы сохраняются локально. Для аккаунта можно вручную создать облачную копию после применения миграции 0012.</p>
           </div>
