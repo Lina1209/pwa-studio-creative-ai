@@ -186,7 +186,7 @@ begin
     from regexp_matches(
       coalesce(v_character.reference_data::text,'') || ' ' || coalesce(v_character.avatar_url,''),
       p_owner_id::text || '/characters/' || p_character_id::text ||
-      '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)',
+      '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)',
       'g'
     ) as passport_paths(path_parts)
     where not exists (
