@@ -42,6 +42,16 @@ class MediaVerificationWorkerTests(unittest.TestCase):
         self.assertEqual(plan.asset_id, ASSET)
         self.assertEqual(plan.bucket, "studio-media")
 
+    @patch("app.workers.media_outbox_worker.download_private_media_image")
+    def test_rejects_untrusted_bucket_or_object_key_before_storage_access(self, download):
+        invalid = dict(CLAIM, bucket="studio-exports")
+        with self.assertRaises(ValueError):
+            verify_claimed_media(object(), invalid)
+        invalid = dict(CLAIM, storage_path=f"{OWNER}/characters/../../private.png")
+        with self.assertRaises(ValueError):
+            verify_claimed_media(object(), invalid)
+        download.assert_not_called()
+
     @patch("app.workers.media_outbox_worker.download_private_media_image", return_value=image(content=b"different"))
     def test_rejects_digest_or_size_mismatch(self, _download):
         with self.assertRaises(ValueError):
