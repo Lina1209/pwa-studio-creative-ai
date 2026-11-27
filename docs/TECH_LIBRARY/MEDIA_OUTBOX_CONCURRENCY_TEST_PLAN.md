@@ -1,6 +1,6 @@
 # PWA Studio — media outbox concurrency and crash-recovery test plan
 
-**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 73 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
+**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 79 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
 **Target:** disposable PostgreSQL/Supabase project matching the reviewed migration chain.
 **Never run this plan against production.**
 
@@ -143,9 +143,9 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
   -f supabase/tests/0019_media_cleanup_transaction.sql
 ```
 
-The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet. The Storage delete unit tests also cover mocked 200/404, timeout, permanent rejection, invalid path/bucket, and missing credentials; these mocks do not verify a real Supabase Storage deployment.
+The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet. The Storage delete tests cover mocked 200/404, timeout, permanent rejection, invalid path/bucket, and missing credentials. An additional local HTTP-server test simulates a DELETE that succeeds server-side but loses its response, then verifies that the retry receives 404 and is treated as success. These tests do not verify a real Supabase Storage deployment.
 
-A second race harness, `supabase/tests/0019_media_cleanup_reference_race.sh`, tests both serialisation outcomes for passport writes versus cleanup intent. It passed in GitHub Actions run 73: a reference transaction that acquires the advisory lock first causes cleanup to wait and reject; when cleanup commits first, a later passport pointer update is rejected. Neither case contacts Storage.
+A second race harness, `supabase/tests/0019_media_cleanup_reference_race.sh`, tests both serialisation outcomes for passport writes versus cleanup intent. It passed in GitHub Actions run 79: a reference transaction that acquires the advisory lock first causes cleanup to wait and reject; when cleanup commits first, a later passport pointer update is rejected. Neither case contacts Storage.
 
 A third stress harness, `supabase/tests/0019_media_cleanup_batch_race.sh`, creates 50 cleanup events and runs five independent PostgreSQL worker sessions (ten claims each). CI run 73 confirmed 50 unique event IDs, asset IDs, and fencing tokens; all 50 tombstones completed and all 50 characters finalized. This checks a modest concurrent batch, not a production-scale load test.
 
@@ -155,7 +155,7 @@ Run only after migrations 0005, 0012, 0017, 0018, and 0019 are applied to a disp
 ```bash
 DISPOSABLE_DATABASE_URL="..." PWA_TEST_OWNER_ID="..." bash supabase/tests/0019_media_cleanup_claim_race.sh
 ```
-The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 73 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
+The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 79 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
 
 Still required before activation: run the full Supabase two-account RLS/Storage matrix; test actual Storage DELETE success/404/timeout-after-delete; test larger production-scale batches and worker counts; and exercise dead-letter/operator recovery. The foreign-owner cleanup reservation check is now covered by the passing SQL transaction harness. Never run these harnesses against production.
 
