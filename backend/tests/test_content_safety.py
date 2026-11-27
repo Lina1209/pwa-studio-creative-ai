@@ -18,6 +18,16 @@ class ContentSafetyTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             check_prompt_content("How to make a bomb", "video", "English", None)
 
+    def test_rejects_dangerous_instructions_with_english_articles(self):
+        for phrase in ("How to make a bomb", "How to build an explosive", "How to make the weapon"):
+            with self.subTest(phrase=phrase):
+                with self.assertRaises(HTTPException):
+                    check_content(phrase)
+
+    def test_rejects_dangerous_instructions_in_russian(self):
+        with self.assertRaises(HTTPException):
+            check_content("Как изготовить бомбу")
+
     def test_rejects_disallowed_content_in_purpose(self):
         with self.assertRaises(HTTPException):
             check_prompt_content("A harmless scene", "how to make a bomb", "English", None)
