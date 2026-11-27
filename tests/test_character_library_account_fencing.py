@@ -292,6 +292,15 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("if(!contextIsCurrent()||!confirm(", suspensions)
         self.assertIn("finally{if(contextIsCurrent())revoke.disabled=false;}", suspensions)
 
+    def test_movie_stage_ai_response_is_fenced_to_originating_account(self):
+        start = APP.index('aiButton.addEventListener("click",async()=>{')
+        end = APP.index("aiTools.append(aiButton", start)
+        handler = APP[start:end]
+        self.assertIn("const requestAuthVersion=authContextVersion,requestUserId=authSession?.user?.id||\"guest\";", handler)
+        self.assertIn("if(!contextIsCurrent())return;", handler)
+        self.assertIn("if(contextIsCurrent())aiStatus.textContent=", handler)
+        self.assertIn("if(contextIsCurrent()){aiButton.disabled=false;", handler)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
