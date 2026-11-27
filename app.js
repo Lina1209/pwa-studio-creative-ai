@@ -1257,8 +1257,11 @@ const movieHistoryStyle = document.createElement("style");
         intentVersion !== assistantConversationIntentVersion) return null;
     activeAssistantConversationId = data.id; clearAssistantMessages({ preserveKattyState: true });
     await renderAssistantHistory();
-    if (authSession?.user?.id === requestUserId && authContextVersion === requestVersion)
-      setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
+    // History rendering is asynchronous: a newer account or conversation intent wins.
+    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion ||
+        intentVersion !== assistantConversationIntentVersion ||
+        activeAssistantConversationId !== data.id) return null;
+    setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
     return data.id;
   };
   $("#assistantNewChat")?.addEventListener("click", async () => {
@@ -1286,7 +1289,8 @@ const movieHistoryStyle = document.createElement("style");
     try {
       if (!activeAssistantConversationId) {
         requestConversationId = await startAssistantConversation();
-        if (!requestConversationId || !contextIsCurrent()) return;
+        if (!requestConversationId || !contextIsCurrent() ||
+            activeAssistantConversationId !== requestConversationId) return;
       } else {
         requestConversationId = activeAssistantConversationId;
       }
