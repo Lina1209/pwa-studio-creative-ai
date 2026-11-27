@@ -62,5 +62,49 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
             claim_media_cleanup(Settings(), TOKEN)
 
 
+    @patch("app.services.media_cleanup_repository.httpx.post")
+    def test_rpc_uses_service_role_and_exact_function_path(self, post):
+        response = Mock()
+        response.json.return_value = None
+        post.return_value = response
+        from app.services.media_cleanup_repository import _call
+        _call(settings(), "pwa_claim_media_cleanup", {"p_claim_token": TOKEN})
+        args, kwargs = post.call_args
+        self.assertEqual(
+            args[0],
+            "https://example.supabase.co/rest/v1/rpc/pwa_claim_media_cleanup",
+        )
+        self.assertEqual(kwargs["headers"]["apikey"], "service-secret")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer service-secret")
+        self.assertEqual(kwargs["json"], {"p_claim_token": TOKEN})
+        self.assertEqual(kwargs["timeout"], 15.0)
+
+    @patch("app.services.media_cleanup_repository.httpx.post")
+    def test_rpc_transport_error_is_sanitized(self, post):
+        import httpx
+        post.side_effect = httpx.TimeoutException("secret response body")
+        from app.services.media_cleanup_repository import _call
+        with self.assertRaises(RuntimeError) as raised:
+            _call(settings(), "pwa_claim_media_cleanup", {"p_claim_token": TOKEN})
+        self.assertIn("pwa_claim_media_cleanup", str(raised.exception))
+        self.assertNotIn("secret response body", str(raised.exception))
+        self.assertNotIn("service-secret", str(raised.exception))
+
+    @patch("app.services.media_cleanup_repository.httpx.post")
+    def test_rpc_http_rejection_is_sanitized(self, post):
+        import httpx
+        request = httpx.Request("POST", "https://example.supabase.co/rest/v1/rpc/pwa_claim_media_cleanup")
+        response = httpx.Response(403, request=request, text="service-secret leaked by upstream")
+        post.return_value = Mock()
+        post.return_value.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "upstream rejection", request=request, response=response
+        )
+        from app.services.media_cleanup_repository import _call
+        with self.assertRaises(RuntimeError) as raised:
+            _call(settings(), "pwa_claim_media_cleanup", {"p_claim_token": TOKEN})
+        self.assertNotIn("service-secret", str(raised.exception))
+        self.assertNotIn("upstream rejection", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
