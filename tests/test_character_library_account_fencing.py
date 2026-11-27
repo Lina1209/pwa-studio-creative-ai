@@ -261,6 +261,23 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("authSession?.user?.id === userId", loader)
         self.assertIn("if (!contextIsCurrent()) return;", loader)
 
+    def test_community_profile_refresh_is_latest_request_and_account_only(self):
+        start = APP.index("let communityProfileRequestVersion = 0;")
+        end = APP.index('$("#communityProfileForm")?.addEventListener', start)
+        loader = APP[start:end]
+        self.assertIn("const requestVersion=++communityProfileRequestVersion;", loader)
+        self.assertIn("requestVersion===communityProfileRequestVersion", loader)
+        self.assertIn("if(!contextIsCurrent())return;", loader)
+        self.assertIn("catch(error){if(contextIsCurrent())", loader)
+
+    def test_notification_refresh_is_latest_request_and_account_only(self):
+        start = APP.index("let notificationLoadRequestVersion = 0;")
+        end = APP.index("const markOneNotificationRead", start)
+        loader = APP[start:end]
+        self.assertIn("const requestVersion=++notificationLoadRequestVersion;", loader)
+        self.assertIn("requestVersion===notificationLoadRequestVersion", loader)
+        self.assertIn("if (!contextIsCurrent()) return;", loader)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
