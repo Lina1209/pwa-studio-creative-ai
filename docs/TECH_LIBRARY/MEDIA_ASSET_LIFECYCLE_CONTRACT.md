@@ -284,3 +284,5 @@ For a future dedicated Render Background Worker, use the same repository and the
 - Add monitoring for process restarts, queue age, dead-letter count, and repeated verification failures without logging object paths, image bytes, signed URLs, or credentials.
 
 The worker is not configured in Render, and no deployment or secret changes have been made. Before activation, verify the exact Render environment-variable names against the backend Settings model and complete the disposable database + private Storage test matrix.
+
+The worker now independently validates every claimed payload before using any field in a Storage request: canonical UUID identifiers, the exact `studio-media` bucket, the four-segment owner/characters/resource/object key shape, MIME-to-extension agreement, safe metadata bounds, SHA-256 syntax, and the fixed eight-attempt policy. Invalid or tampered database claim data fails closed before network access. This is defense in depth in addition to the service-role-only claim RPC and the reservation RPC's own checks.
