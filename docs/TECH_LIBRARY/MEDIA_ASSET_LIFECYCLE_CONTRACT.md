@@ -110,7 +110,7 @@ These helpers do not query Supabase, upload/download bytes, or create signed URL
 
 The repository uses the existing server-side Supabase REST pattern and service-role credential; that credential is never returned or accepted from a caller. Table names are fixed in code, and the function accepts no bucket, object path, or signed URL from the client.
 
-This is a repository primitive only. No FastAPI route, upload, download, Storage operation, signed URL, or deletion endpoint has been added. The returned metadata includes `storage_path` for trusted internal follow-up only; a future route must not serialize it to the browser. The new mocked unit tests are in `backend/tests/test_media_repository.py`; they have not been executed.
+At the time this repository primitive was introduced, no FastAPI route or Storage operation existed. The later authenticated read/sign routes are documented in sections 21–22. The returned metadata includes `storage_path` for trusted internal follow-up only; routes must not serialize it to the browser. The new mocked unit tests are in `backend/tests/test_media_repository.py`; they have not been executed.
 
 ## 12. Pure lifecycle state machine added (not persistence)
 
@@ -206,15 +206,15 @@ The replacement composition guard now canonicalizes the authenticated owner, cha
 
 `backend/app/services/media_read.py` adds a pure eligibility gate for future private-media reads. It requires the verified owner to match the stored asset owner, the asset status to be exactly `ready`, an allowlisted private bucket, and a server-stored immutable object key whose owner/resource/object UUIDs and extension satisfy the key contract. It rejects pending, uploaded-but-not-ready, failed, cleanup-pending, and deleted assets.
 
-The owner-filtered repository now selects the stored `bucket` and `status` fields needed by this gate. The path and bucket remain server-internal and must never be serialized to the browser. This planner does not issue a signed URL, download bytes, or create a route. A future endpoint must first call `get_owned_media_asset` using the verified JWT subject, then apply this gate, and only then perform a short-lived private Storage operation. Signed URLs must not be logged or persisted.
+The owner-filtered repository now selects the stored `bucket` and `status` fields needed by this gate. The path and bucket remain server-internal and must never be serialized to the browser. This planner itself does not issue a signed URL or download bytes. The authenticated read/sign routes added later call `get_owned_media_asset` using the verified JWT subject, apply this gate, and only then perform the private Storage operation. Signed URLs must not be logged or persisted.
 
 Six unit tests are authored in `backend/tests/test_media_read.py`; they have not been executed. No Storage request, route, migration, or production change was made.
 
-## 20. Short-lived signed URL service added (not exposed by an API route)
+## 20. Short-lived signed URL service added
 
 `backend/app/services/media_signed_url.py` adds a server-only function that requests a Supabase Storage signed URL with a fixed 60-second expiry. It accepts only a `MediaReadPlan` produced after the owner-filtered metadata lookup and read-eligibility gate; it does not accept bucket, object path, or expiry from browser input. The Supabase service-role credential remains in the server request. The returned URL is accepted only as a relative Storage signing path and is pinned to the configured Supabase project host. Storage errors are converted to generic responses without relaying provider details.
 
-This is callable service code, but there is still no FastAPI route invoking it, so the browser cannot request or receive signed links yet. A future route must authenticate with the verified JWT, call `get_owned_media_asset`, call `plan_private_media_read`, then call `create_private_media_signed_url`; return only the short-lived URL and safe display metadata. Never persist, cache, log, or publish the signed URL. Treat it as a bearer capability until expiry.
+At the time this service was added, no FastAPI route invoked it. The authenticated `/access` route described in section 21 now performs that sequence. Never persist, cache, log, or publish the signed URL. Treat it as a bearer capability until expiry.
 
 Four mocked unit tests are authored in `backend/tests/test_media_signed_url.py`; they have not been executed. No live Storage request was made, no endpoint was added, and no production setting or database was changed.
 
