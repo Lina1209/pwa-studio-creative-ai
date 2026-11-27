@@ -2011,7 +2011,7 @@ const movieHistoryStyle = document.createElement("style");
       if(sessionError)throw sessionError;
       if(sessionData.session?.user?.id!==user.id)throw new Error("Сеанс аккаунта изменился. Обновите страницу и повторите.");
       for(const item of items){
-        if(!isCharacterUuid(item.id))throw new Error("У карточки «"+item.name+"» неподдерживаемый идентификатор. Локальная запись не изменена; обратитесь к поддержке.");
+        const cloudCharacterId=isCharacterUuid(item.cloudCharacterId)?item.cloudCharacterId:(isCharacterUuid(item.id)?item.id:makeCharacterUuid());
         const refs=Array.isArray(item.referenceImages)?item.referenceImages.slice(0,6):[];
         const passport={
           kind:item.kind||"character",
@@ -2023,14 +2023,14 @@ const movieHistoryStyle = document.createElement("style");
         // Create the parent row first so the media_assets.character_id FK is satisfied.
         // ignoreDuplicates avoids overwriting an existing cloud passport if a later upload fails.
         const parentRow={
-          id:item.id,owner_id:user.id,name:item.name,description:item.description||"",
+          id:cloudCharacterId,owner_id:user.id,name:item.name,description:item.description||"",
           avatar_url:null,reference_data:{kind:passport.kind,representation:passport.representation,voice:passport.voice,passport:passport.passport}
         };
         const {error:parentError}=await supabaseClient.from("characters").upsert(parentRow,{onConflict:"id",ignoreDuplicates:true});
         if(parentError)throw parentError;
         for(const ref of refs){
           if(!ref || typeof ref.id!=="string")continue;
-          const path=user.id+"/characters/"+item.id+"/"+ref.id;
+          const path=user.id+"/characters/"+cloudCharacterId+"/"+ref.id;
           const blob=await getCharacterImage(ref.id,user.id);
           if(!blob){
             if(ref.storagePath){passport.referenceImages.push({...ref});skipped++;continue;}
@@ -2043,9 +2043,9 @@ const movieHistoryStyle = document.createElement("style");
           if(uploadError)throw uploadError;
           const assetId=isCharacterUuid(ref.cloudAssetId)?ref.cloudAssetId:makeCharacterUuid();
           const assetRow={
-            id:assetId,owner_id:user.id,project_id:null,character_id:item.id,
+            id:assetId,owner_id:user.id,project_id:null,character_id:cloudCharacterId,
             file_name:(ref.name||"reference").slice(0,255),file_type:contentType,
-            storage_path:path,metadata:{source:"character-library",character_id:item.id,local_reference_id:ref.id}
+            storage_path:path,metadata:{source:"character-library",character_id:cloudCharacterId,local_reference_id:ref.id}
           };
           const {error:assetError}=await supabaseClient.from("media_assets").upsert(assetRow,{onConflict:"id"});
           if(assetError)throw assetError;
@@ -2053,7 +2053,7 @@ const movieHistoryStyle = document.createElement("style");
           uploaded++;
         }
         const characterRow={
-          id:item.id,owner_id:user.id,name:item.name,description:item.description||"",
+          id:cloudCharacterId,owner_id:user.id,name:item.name,description:item.description||"",
           avatar_url:null,
           reference_data:{...passport,local_created_at:item.createdAt||null,local_updated_at:item.updatedAt||null}
         };
@@ -2063,7 +2063,7 @@ const movieHistoryStyle = document.createElement("style");
         const latest=readCharacterLibrary();
         const index=latest.findIndex(row=>row.id===item.id);
         if(index>=0){
-          latest[index]={...latest[index],referenceImages:passport.referenceImages,cloudBackupAt:new Date().toISOString()};
+          latest[index]={...latest[index],cloudCharacterId,referenceImages:passport.referenceImages,cloudBackupAt:new Date().toISOString()};
           localStorage.setItem(characterLibraryKey(),JSON.stringify(latest));
         }
       }
