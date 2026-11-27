@@ -136,3 +136,9 @@ Strix — инструмент для динамического тестиро�
 
 - [Generation Jobs contract](GENERATION_JOBS_CONTRACT.md) — inactive job lifecycle, durable queue, cancellation, retry, billing, and go-live gates.
 - [Generation Credits Ledger contract](GENERATION_CREDITS_LEDGER_CONTRACT.md) — design-only immutable ledger, atomic reservations, idempotent settlement/release, and reconciliation. No wallet or billing implementation is active.
+
+
+## Security review records
+
+- [Reference asset security review](REFERENCE_ASSET_SECURITY_REVIEW.md) — local-first references, file validation limits, owner isolation, private Storage, upload compensation, and generation/chat boundary. Status: source review only; cloud/provider handoff remains NO-GO.
+- [Provider attempt and reconciliation contract](GENERATION_PROVIDER_RECONCILIATION_CONTRACT.md) — durable provider attempts, ambiguous outcomes, cancellation races, reconciliation leases, audit evidence, and credit holds. Status: design only; no worker or billing activation.
