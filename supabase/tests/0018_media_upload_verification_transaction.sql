@@ -60,6 +60,13 @@ begin
   ) then
     raise exception 'character_id must belong to owner_id';
   end if;
+  if exists (
+    select 1 from public.media_asset_outbox
+    where event_type='media_upload_verify_requested'
+      and status in ('pending','claimed')
+  ) then
+    raise exception 'Disposable test database must have no pending/claimed media verification events';
+  end if;
 
   v_path := v_owner::text || '/characters/' || v_character::text || '/' || v_object::text || '.png';
 
