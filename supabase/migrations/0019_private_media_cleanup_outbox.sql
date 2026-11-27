@@ -179,6 +179,26 @@ begin
     raise exception 'another character cleanup operation is already in progress'
       using errcode='23514';
   end if;
+  -- Refuse to discard a private object key hidden in the passport unless
+  -- it has a corresponding owner-scoped media row in the complete child set.
+  if exists (
+    select 1
+    from regexp_matches(
+      coalesce(v_character.reference_data::text,'') || ' ' || coalesce(v_character.avatar_url,''),
+      p_owner_id::text || '/characters/' || p_character_id::text ||
+      '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)',
+      'g'
+    ) as passport_paths(path_parts)
+    where not exists (
+      select 1 from public.media_assets a
+      where a.owner_id=p_owner_id and a.character_id=p_character_id
+        and a.storage_path=passport_paths.path_parts[1]
+    )
+  ) then
+    raise exception 'character passport contains an unindexed private media reference'
+      using errcode='23514';
+  end if;
+
   update public.characters
   set cleanup_operation_id=coalesce(cleanup_operation_id,p_operation_id),
       cleanup_requested_at=coalesce(cleanup_requested_at,clock_timestamp())
