@@ -55,13 +55,15 @@ def plan_media_cleanup(
         raise ValueError("Media object key owner mismatch.")
     if segments[1] not in ALLOWED_RESOURCE_KINDS:
         raise ValueError("Unsupported media resource kind in object key.")
-    _uuid(segments[2], "object resource")
+    resource_id = _uuid(segments[2], "object resource")
     filename = segments[3]
     if filename.count(".") != 1:
         raise ValueError("Invalid media object filename.")
     object_id, extension = filename.rsplit(".", 1)
-    _uuid(object_id, "storage object")
-    if extension.lower() not in ALLOWED_EXTENSIONS:
+    storage_object_id = _uuid(object_id, "storage object")
+    if resource_id != segments[2] or storage_object_id != object_id:
+        raise ValueError("Media object key must use canonical lowercase UUIDs.")
+    if extension not in ALLOWED_EXTENSIONS:
         raise ValueError("Unsupported media object extension.")
     if exact_object_is_referenced:
         raise ValueError("Media object is still referenced and cannot be deleted.")
