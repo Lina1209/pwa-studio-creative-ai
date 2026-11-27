@@ -5,10 +5,10 @@ A future repository must persist transitions transactionally and use row locking
 or compare-and-swap so concurrent requests cannot skip states.
 """
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 
-class MediaStatus(StrEnum):
+class MediaStatus(str, Enum):
     PENDING_UPLOAD = "pending_upload"
     OBJECT_UPLOADED = "object_uploaded"
     READY = "ready"
