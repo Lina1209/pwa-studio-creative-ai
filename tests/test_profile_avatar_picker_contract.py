@@ -113,7 +113,7 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
 
     def test_katty_mode_previews_prompt_suggestions(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
-        start = app.indexOf('$$("[data-assist]")') if hasattr(app, "indexOf") else app.index('$$("[data-assist]")')
+        start = app.index('$("[data-assist]")')
         end = app.index("\n  // AI Companion cloud history", start)
         handler = app[start:end]
         self.assertIn("setKattyAssistantMode(kattyModeForMessage(prompt))", handler)
