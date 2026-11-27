@@ -52,8 +52,10 @@ def plan_character_reference_replacement(
         raise ValueError("Character reference changed; reload before replacing.")
     if old_asset.get("character_id") != character_id:
         raise ValueError("Previous media asset is not attached to this character.")
-    if new_asset.get("character_id") != character_id:
+    if new_asset.get("character_id") is None:
         raise ValueError("Replacement media asset is not attached to this character.")
+    if new_asset.get("character_id") != character_id:
+        raise ValueError("Replacement media asset belongs to another character.")
     old_bucket = require_private_bucket(old_asset.get("bucket"))
     new_bucket = require_private_bucket(new_asset.get("bucket"))
     owner = replacement.owner_id
