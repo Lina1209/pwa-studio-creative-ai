@@ -78,3 +78,37 @@ class MediaRepositoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CharacterMediaAssetListTests(unittest.TestCase):
+    def setUp(self):
+        self.settings = Settings(supabase_url="https://example.supabase.co", supabase_service_role_key="test-only")
+
+    @patch("app.services.media_repository._rest_get")
+    def test_list_filters_owner_character_bucket_and_sanitizes_fields(self, get):
+        get.return_value = [{"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER, "file_name": "hero.png", "file_type": "image/png", "status": "ready", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now", "storage_path": "secret", "bucket": "studio-media", "metadata": {"secret": True}}]
+        rows = media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
+        params = get.call_args.args[2]
+        self.assertEqual(params["owner_id"], f"eq.{OWNER}")
+        self.assertEqual(params["character_id"], f"eq.{CHARACTER}")
+        self.assertEqual(params["bucket"], "eq.studio-media")
+        self.assertEqual(rows[0]["status"], "ready")
+        for hidden in ("storage_path", "bucket", "owner_id", "metadata"): self.assertNotIn(hidden, rows[0])
+
+    @patch("app.services.media_repository._rest_get")
+    def test_list_hides_foreign_rows(self, get):
+        get.return_value = [{"id": ASSET, "owner_id": OTHER, "character_id": CHARACTER, "status": "ready"}]
+        with self.assertRaises(HTTPException) as caught: media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
+        self.assertEqual(caught.exception.status_code, 404)
+
+    @patch("app.services.media_repository._rest_get")
+    def test_list_rejects_unknown_status(self, get):
+        get.return_value = [{"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER, "status": "mystery"}]
+        with self.assertRaises(HTTPException) as caught: media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
+        self.assertEqual(caught.exception.status_code, 502)
+
+    @patch("app.services.media_repository._rest_get")
+    def test_list_rejects_invalid_character_before_database_call(self, get):
+        with self.assertRaises(HTTPException) as caught: media_repository.list_owned_character_media_assets(self.settings, "../other", OWNER)
+        self.assertEqual(caught.exception.status_code, 422)
+        get.assert_not_called()
