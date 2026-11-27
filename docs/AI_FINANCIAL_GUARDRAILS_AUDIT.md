@@ -53,3 +53,22 @@ E. Add admin-only budget visibility and a global stop control.
 F. Re-run the full backend, PostgreSQL, and browser CI suites.
 
 This audit records the verified boundary between current protections and the future financial-control system; it does not activate billing or alter provider selection.
+
+## New isolated implementation artifacts (feature branch only)
+
+- `supabase/migrations/0022_ai_budget_reservations.sql` defines private policy, reservation, and append-only ledger tables plus privileged reserve/settle/unknown/release RPCs.
+- The global transaction advisory lock serializes reservation decisions across users and workers. An active platform policy is mandatory; provider/user policies are optional additional caps.
+- The global control row is seeded with `enforcement_enabled=false` and `kill_switch_enabled=true`. No monetary policy rows or numerical limits are seeded.
+- The reserve RPC returns whether it created a new reservation. A duplicate request must not call the provider again.
+- `backend/app/services/ai_budget_store.py` is a server-only Supabase RPC adapter. It is not wired to routes.
+- `backend/app/services/ai_budget.py` remains a provider-independent orchestration contract. It requires a trusted server-calculated reservation amount; no estimator/pricing table has been approved or implemented.
+- Disposable CI applies the migration and runs SQL checks. A concurrent reservation race harness is being validated. This is not production evidence until the latest CI run passes.
+- No live Supabase migration was run. No production setting, provider key, route, or billing flow was changed.
+
+## Remaining blockers before route integration
+
+1. Complete and pass the PostgreSQL concurrency harness on the latest branch commit.
+2. Define a reviewed server-side cost estimator for the configured model, including input/output price versioning and retry exposure.
+3. Add recovery/reconciliation for reservations stranded in `reserved` or `unknown`; never TTL-release an ambiguous provider request.
+4. Decide how to authenticate and audit policy/control changes and how to handle user deletion under ledger retention requirements.
+5. Only after numerical limits are approved, implement route integration and an explicit staged rollout.
