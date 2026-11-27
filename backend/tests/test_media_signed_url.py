@@ -53,6 +53,14 @@ class MediaSignedUrlTests(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer server-secret")
 
     @patch("app.services.media_signed_url.httpx.post")
+    def test_normalizes_storage_relative_signed_path(self, post):
+        response = Mock()
+        response.json.return_value = {"signedURL": "/object/sign/studio-media/private.png?token=secret"}
+        post.return_value = response
+        result = create_private_media_signed_url(settings(), plan())
+        self.assertTrue(result.startswith("https://example.supabase.co/storage/v1/object/sign/"))
+
+    @patch("app.services.media_signed_url.httpx.post")
     def test_rejects_absolute_or_protocol_relative_returned_url(self, post):
         for signed in ("https://evil.example/steal", "//evil.example/steal", "relative/path"):
             response = Mock()
