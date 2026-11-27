@@ -733,8 +733,7 @@ const movieHistoryStyle = document.createElement("style");
           edit.addEventListener("click",async()=>{
             const next=window.prompt("Изменить сообщение:",message.body||"");
             if(next===null||!next.trim()||next.trim()===message.body)return;
-            const actionVersion=authContextVersion,actionUserId=userId,actionThreadId=threadId;
-            const actionIsCurrent=()=>actionVersion===authContextVersion&&authSession?.user?.id===actionUserId&&activeMessageThreadId===actionThreadId;
+            const actionIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessageThreadId===threadId;
             try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"PATCH",body:JSON.stringify({body:next.trim()})});if(actionIsCurrent())loadConversationMessages(threadId);}
             catch(error){if(actionIsCurrent())messagesFeedback("Не удалось изменить сообщение: "+error.message);}
           });
@@ -889,15 +888,16 @@ const movieHistoryStyle = document.createElement("style");
     if(!authSession?.user||!activeMessagePartnerId)return;
     const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
     const body=$("#directMessageText").value.trim();if(!body)return;
-    const version=authContextVersion,userId=authSession.user.id,threadId=activeMessageThreadId;
+    const version=authContextVersion,userId=authSession.user.id,threadId=activeMessageThreadId,partnerId=activeMessagePartnerId;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessageThreadId===threadId&&activeMessagePartnerId===partnerId;
     button.disabled=true;
     try{
-      await apiRequest("/api/conversations/"+encodeURIComponent(activeMessagePartnerId)+"/messages",{method:"POST",body:JSON.stringify({body})});
-      if(version!==authContextVersion||authSession?.user?.id!==userId||activeMessageThreadId!==threadId)return;
+      await apiRequest("/api/conversations/"+encodeURIComponent(partnerId)+"/messages",{method:"POST",body:JSON.stringify({body})});
+      if(!contextIsCurrent())return;
       $("#directMessageText").value="";
       await loadConversationMessages(threadId);
-    }catch(error){if(version===authContextVersion)messagesFeedback("Не удалось отправить сообщение: "+error.message);}
-    finally{button.disabled=false;}
+    }catch(error){if(contextIsCurrent())messagesFeedback("Не удалось отправить сообщение: "+error.message);}
+    finally{if(contextIsCurrent())button.disabled=false;}
   });
 
   const reportFeedback = message => { const el = $("#reportFeedback"); if (el) el.textContent = message; };
