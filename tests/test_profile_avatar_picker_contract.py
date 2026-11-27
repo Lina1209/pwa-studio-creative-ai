@@ -31,6 +31,17 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn('applyProfileAvatarChrome(profileAvatarSavedId)', app)
         self.assertIn('"#accountAvatar","#topAvatar",".profile .avatar"', app)
 
+    def test_guest_selection_is_local_and_separate_from_signed_in_profiles(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertIn('pwa_studio_guest_profile_avatar_v1', app)
+        self.assertIn('localStorage.setItem("pwa_studio_guest_profile_avatar_v1"', app)
+        account_start = html.index('id="view-account"')
+        picker_start = html.index('id="profileAvatarPicker"') if 'id="profileAvatarPicker"' in html else html.index('id="profileAvatarTitle"')
+        community_start = html.index('id="communityPanel"')
+        self.assertLess(account_start, picker_start)
+        self.assertLess(picker_start, community_start)
+
     def test_all_catalog_assets_exist_and_are_svg(self):
         ids = [
             "portrait-violet", "forest-elf", "fox-scout", "robo-buddy",
