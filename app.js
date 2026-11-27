@@ -363,11 +363,28 @@ const movieHistoryStyle = document.createElement("style");
     });
     if(apply)apply.disabled=profileAvatarDraftId===profileAvatarSavedId;
   };
+  const initializeGuestProfileAvatar=()=>{
+    if(authSession?.user)return;
+    let stored=PROFILE_AVATAR_DEFAULT;
+    try{const value=localStorage.getItem("pwa_studio_guest_profile_avatar_v1");if(PROFILE_AVATAR_CATALOG.some(item=>item.id===value))stored=value;}catch(_){}
+    profileAvatarSavedId=stored;profileAvatarDraftId=stored;profileAvatarCategory="all";
+    renderProfileAvatarPicker();applyProfileAvatarChrome(stored);
+    const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Гостевой аватар хранится только в этом браузере.";
+  };
   const communityFeedback = message => { const el=$("#communityProfileFeedback"); if(el)el.textContent=message; };
   $("#profileAvatarReset")?.addEventListener("click",()=>{profileAvatarDraftId=PROFILE_AVATAR_DEFAULT;profileAvatarCategory="all";renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран стандартный аватар. Нажмите «Применить аватар», чтобы сохранить.";});
+  initializeGuestProfileAvatar();
   $("#profileAvatarApply")?.addEventListener("click",async()=>{
-    const userId=authSession?.user?.id;if(!userId)return;
-    const version=authContextVersion,button=$("#profileAvatarApply");button.disabled=true;
+    const userId=authSession?.user?.id,button=$("#profileAvatarApply");
+    if(!userId){
+      try{
+        localStorage.setItem("pwa_studio_guest_profile_avatar_v1",profileAvatarDraftId);
+        profileAvatarSavedId=profileAvatarDraftId;renderProfileAvatarPicker();applyProfileAvatarChrome(profileAvatarSavedId);
+        const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="✓ Гостевой аватар сохранён только на этом устройстве.";
+      }catch(error){const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Не удалось сохранить гостевой выбор в браузере.";}
+      return;
+    }
+    const version=authContextVersion;button.disabled=true;
     const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Сохраняем аватар…";
     try{
       const saved=await apiRequest("/api/community/profile",{method:"PATCH",body:JSON.stringify({avatar_catalog_id:profileAvatarDraftId,avatar_representation:"2d"})});
@@ -383,7 +400,7 @@ const movieHistoryStyle = document.createElement("style");
     const panel=$("#communityPanel");
     if(!panel)return;
     panel.hidden=!userId;
-    if(!userId)return;
+    if(!userId){initializeGuestProfileAvatar();return;}
     try{
       const profile=await apiRequest("/api/community/profile");
       if(version!==authContextVersion||authSession?.user?.id!==userId)return;
