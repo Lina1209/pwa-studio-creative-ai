@@ -79,3 +79,24 @@ Before endpoint implementation:
 - [ ] Logs redact secrets and prompts; safe metrics and alerts are available.
 - [ ] User-facing consent and clear progress/error/cancel UI.
 - [ ] Explicit approval before production deployment or any paid provider request.
+
+## Draft Supabase persistence (migration 0013; not applied)
+Files:
+- `supabase/migrations/0013_generation_jobs_and_outbox.sql`
+- `supabase/tests/0013_generation_jobs_preflight.sql`
+
+The migration draft defines:
+- `generation_jobs`: owner, per-owner idempotency key + canonical request fingerprint, type, status, minimal request payload, bounded attempts, worker lease + fencing token, cancellation timestamp, safe error code, result asset reference, estimated/actual cost fields, reserved-credit field, and lifecycle timestamps.
+- `generation_job_outbox`: backend-only dispatch records created in the same transaction as a job, with claim/delivery metadata.
+- RLS on both tables. Authenticated users can SELECT only their own job rows. Browser roles cannot INSERT/UPDATE/DELETE jobs and have no access to the outbox. Backend service_role is granted server-side CRUD only.
+- Indexes for owner history, due jobs, expired leases, and pending outbox records.
+
+Important limitations / review notes:
+- This is a schema draft, not a working queue. No claim/ack RPC, worker, scheduler, retry dispatcher, API route, or credit ledger is implemented.
+- Backend must validate Supabase JWT, derive owner_id from `sub`, validate request and check referenced asset ownership before inserting. Never trust a client owner_id.
+- Job insert and outbox insert must occur in one database transaction. The outbox dispatcher must use atomic row claims (`FOR UPDATE SKIP LOCKED` or equivalent), bounded delivery attempts, and claim fencing.
+- Every worker state update must match both job id and current lease_token. Stale attempts must not update current job state or publish output.
+- Idempotency conflict behavior must be implemented in the API: same owner/key + same fingerprint returns existing job; same owner/key + different fingerprint returns HTTP 409.
+- The request_payload schema and retention policy still require a field allowlist; prompts and references may contain personal data. Never put secrets, signed URLs, or raw provider credentials in it.
+- Credit reservation/settlement fields are placeholders only. Do not debit users until a separate atomic credit ledger and reconciliation flow is designed and tested.
+- Migration is additive but still requires review against the live schema, a backup, and isolated Supabase tests before any manual application. The preflight SQL is read-only; it is not a migration test.
