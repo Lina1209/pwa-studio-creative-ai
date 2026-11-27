@@ -33,6 +33,32 @@ def validate_reference_data(value):
     check(value)
     return value
 
+def _rpc(settings, function_name, payload):
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(status_code=503, detail="Character storage is not configured.")
+    headers = {"apikey": settings.supabase_service_role_key,
+               "Authorization": f"Bearer {settings.supabase_service_role_key}",
+               "Content-Type": "application/json", "Accept": "application/json"}
+    try:
+        response = httpx.post(
+            f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/{function_name}",
+            headers=headers, json=payload, timeout=12.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, list):
+            data = data[0] if len(data) == 1 else None
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=502, detail="Character storage returned an invalid result.")
+        return data
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 409 or (exc.response.status_code == 400 and "23505" in exc.response.text):
+            raise HTTPException(status_code=409, detail="The local character ID is already linked to different cloud data.") from exc
+        raise HTTPException(status_code=502, detail="Character storage rejected the request.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Character storage is temporarily unavailable.") from exc
+
+
 def _request(settings, method, params=None, payload=None):
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Character storage is not configured.")
@@ -57,29 +83,39 @@ def _request(settings, method, params=None, payload=None):
 
 def _public(row):
     if not isinstance(row, dict): raise HTTPException(status_code=502, detail="Character storage returned an invalid record.")
-    return {k: row.get(k) for k in ("id", "name", "description", "reference_data", "created_at")}
+    return {k: row.get(k) for k in ("id", "source_local_id", "name", "description", "reference_data", "created_at")}
 
 def list_owned_characters(settings, owner_id):
     owner = canonical_uuid(owner_id, "owner")
-    rows = _request(settings, "GET", {"select":"id,name,description,reference_data,created_at",
+    rows = _request(settings, "GET", {"select":"id,source_local_id,name,description,reference_data,created_at",
         "owner_id":f"eq.{owner}", "order":"created_at.desc", "limit":"100"})
     return [_public(row) for row in rows]
 
-def create_owned_character(settings, owner_id, name, description, reference_data):
+def create_owned_character(settings, owner_id, source_local_id, name, description, reference_data):
     owner = canonical_uuid(owner_id, "owner")
     name = name.strip()
     if not name or len(name) > 120: raise HTTPException(status_code=422, detail="Character name must contain 1–120 characters.")
     if description is not None and len(description) > 5000: raise HTTPException(status_code=422, detail="Character description exceeds 5,000 characters.")
     data = validate_reference_data(reference_data)
-    rows = _request(settings, "POST", {"select":"id,name,description,reference_data,created_at"},
-                    {"owner_id":owner,"name":name,"description":description.strip() if description else None,"reference_data":data})
-    if not rows: raise HTTPException(status_code=502, detail="Character could not be created.")
-    return _public(rows[0])
+    local_id = canonical_uuid(source_local_id, "local character")
+    normalized_description = description.strip() if description else None
+    row = _rpc(settings, "pwa_create_character_idempotent", {
+        "p_owner_id": owner,
+        "p_source_local_id": local_id,
+        "p_name": name,
+        "p_description": normalized_description,
+        "p_reference_data": data,
+    })
+    if row.get("owner_id") != owner or row.get("source_local_id") != local_id:
+        raise HTTPException(status_code=502, detail="Character creation returned an invalid ownership mapping.")
+    if row.get("name") != name or row.get("description") != normalized_description or row.get("reference_data") != data:
+        raise HTTPException(status_code=502, detail="Character creation returned a mismatched passport.")
+    return _public(row)
 
 def get_owned_character(settings, owner_id, character_id):
     owner = canonical_uuid(owner_id, "owner")
     character = canonical_uuid(character_id, "character")
-    rows = _request(settings, "GET", {"select":"id,owner_id,name,description,reference_data,created_at",
+    rows = _request(settings, "GET", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at",
         "id":f"eq.{character}", "owner_id":f"eq.{owner}", "limit":"1"})
     if not rows: raise HTTPException(status_code=404, detail="Character not found.")
     if rows[0].get("owner_id") != owner: raise HTTPException(status_code=404, detail="Character not found.")
