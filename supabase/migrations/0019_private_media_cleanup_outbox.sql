@@ -145,7 +145,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $$
 begin
   if auth.role() = 'authenticated' then
     if tg_op = 'INSERT' then
@@ -159,7 +159,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists characters_guard_cleanup_intent on public.characters;
 create trigger characters_guard_cleanup_intent
