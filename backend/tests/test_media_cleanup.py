@@ -70,6 +70,9 @@ class MediaCleanupTests(unittest.TestCase):
             f"{OWNER}/characters/{ASSET}/not-a-uuid.png",
             f"{OWNER}/characters/{ASSET}/{ASSET}.svg",
             f"{OWNER}/characters/{ASSET}/{ASSET}.png/extra",
+            f"{OWNER}/characters/ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF/{ASSET}.png",
+            f"{OWNER}/characters/{ASSET}/ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF.png",
+            f"{OWNER}/characters/{ASSET}/{ASSET}.PNG",
         )
         for path in invalid_paths:
             with self.subTest(path=path), self.assertRaises(ValueError):
