@@ -46,6 +46,27 @@ class MediaStorageDeleteTests(unittest.TestCase):
         delete.assert_not_called()
 
     @patch("app.services.media_storage_delete.httpx.delete")
+    def test_storage_timeout_is_retryable_service_unavailable(self, delete):
+        import httpx
+        delete.side_effect = httpx.TimeoutException("timed out")
+        with self.assertRaises(HTTPException) as raised:
+            delete_private_media_object(settings(), plan())
+        self.assertEqual(raised.exception.status_code, 503)
+
+    @patch("app.services.media_storage_delete.httpx.delete")
+    def test_permanent_storage_rejection_is_gateway_error(self, delete):
+        import httpx
+        response = Mock(status_code=403)
+        request = httpx.Request("DELETE", "https://example.supabase.co/storage/v1/object/studio-media/test")
+        delete.return_value = response
+        response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "forbidden", request=request, response=httpx.Response(403, request=request)
+        )
+        with self.assertRaises(HTTPException) as raised:
+            delete_private_media_object(settings(), plan())
+        self.assertEqual(raised.exception.status_code, 502)
+
+    @patch("app.services.media_storage_delete.httpx.delete")
     def test_requires_server_credentials(self, delete):
         with self.assertRaises(HTTPException) as raised:
             delete_private_media_object(Settings(), plan())
