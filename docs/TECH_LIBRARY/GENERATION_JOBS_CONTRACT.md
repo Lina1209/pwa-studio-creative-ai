@@ -237,3 +237,20 @@ Provider idempotency is provider-specific and must be verified against current o
 - Use a fake provider in automated tests. Any live-provider contract test requires separate explicit approval, a dedicated low-limit test account, and a known spend ceiling.
 
 This section is architecture guidance only. No attempt table, reconciler, provider adapter, webhook, scheduler, or billing behavior is implemented or active.
+
+## Critical review finding: lease expiry is not proof of provider non-acceptance
+
+Status: blocking condition for activation of migration 0014 recovery.
+
+The current draft RPC `recover_expired_generation_jobs` moves every expired `processing` job to `retry_wait` (while attempts remain), then inserts a retry outbox event. That behavior is safe only while a worker lease represents work that has not crossed an external side-effect boundary. Once a provider request may have been submitted, lease expiry alone cannot establish that the provider rejected or never received it.
+
+This creates a concrete duplicate-cost risk: a worker can submit a billable request, lose its process or database connection, and let its lease expire; the recovery RPC can then schedule another provider submission while the first operation is still running or accepted. The later per-attempt reconciliation design above does not currently gate this RPC because the attempt table and reconciler do not exist yet.
+
+Required resolution before any activation:
+1. Keep migration 0014 and its recovery RPC inactive until the per-provider-attempt record and reconciliation gate are implemented and tested; OR split the worker lifecycle into a pre-submission phase that can safely expire/requeue and a submitted/unknown phase that is held for reconciliation.
+2. Recovery must inspect durable attempt state under the same transaction/locking discipline. It may requeue only when there is conclusive evidence that no provider submission began, or that the provider definitively did not accept the operation.
+3. If an attempt is `submitting`, `accepted`, or `unknown`, recovery must retain the job/reservation and schedule reconciliation, never a new provider submission.
+4. Add a regression test: provider accepts the request, worker crashes before persisting acceptance, lease expires, and recovery must not create a second provider dispatch.
+5. Add a second test for a crash before the network call, proving that a safely unsubmitted attempt can be resumed without duplicate provider cost.
+
+Until these conditions are met, the current queue SQL is a design draft only and must not be enabled with a real provider. The existing no-blind-retry rule takes precedence over automatic lease recovery.
