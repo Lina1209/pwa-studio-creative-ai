@@ -184,7 +184,7 @@ begin
   if not found then
     select * into v_row from public.media_assets
     where id=p_asset_id and owner_id=p_owner_id and operation_id=p_operation_id;
-    if not found or v_row.status <> 'object_uploaded' then
+    if not found or v_row.status not in ('object_uploaded','ready') then
       raise exception 'media upload reservation not found or stale' using errcode='P0002';
     end if;
   end if;
@@ -264,7 +264,7 @@ begin
   from public.media_assets a
   where a.id=v_event.asset_id and a.owner_id=v_event.owner_id;
 
-  if not found or v_asset.status <> 'object_uploaded' then
+  if not found or v_asset.status not in ('pending_upload','object_uploaded') then
     update public.media_asset_outbox
     set status='dead_letter', claim_token=null, claim_expires_at=null
     where id=v_event.id and claim_token=p_claim_token;
@@ -325,7 +325,7 @@ begin
 
   update public.media_assets
   set status='ready',version=version+1
-  where id=p_asset_id and owner_id=p_owner_id and status='object_uploaded'
+  where id=p_asset_id and owner_id=p_owner_id and status in ('pending_upload','object_uploaded')
     and content_sha256=p_content_sha256 and size_bytes=p_size_bytes
     and file_type=p_file_type and width=p_width and height=p_height
   returning * into v_asset;
