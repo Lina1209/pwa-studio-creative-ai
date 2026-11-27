@@ -1,6 +1,6 @@
 # PWA Studio — implementation roadmap and status
 
-Last reviewed: 2026-11-21
+Last reviewed: 2026-11-27
 
 For the complete product vision, platform rules, prohibited-content taxonomy, filters, bans, appeals, privacy/security requirements, rights/consent, testing strategy, and phased plan, see [ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md](./ARCHITECTURE_SECURITY_AND_PRODUCT_PLAN.md).
 
@@ -18,6 +18,9 @@ This document is the working source of truth for the next implementation stages.
 - AI Companion history is connected to Supabase; a new conversation and both messages were visible after a browser refresh on 2026-11-21. RLS owner policies are present; logout/login, account-switch behavior, and two-account isolation still require end-to-end verification.
 - Mini Movie Studio has a local-first cloud sync implementation in `app.js`. Migration `0005_cloud_projects_and_storage.sql` was applied to live Supabase; `public.projects` and the private `studio-media` bucket were verified. A test movie row was independently confirmed in Supabase and remained visible after browser refresh. Cross-device persistence, conflict behavior, and deletion synchronization still require verification.
 - Audio Studio has a navigable UI and local microphone/file preview only. It does not yet upload media or call speech/music generation services.
+- Account-boundary race protection has been added across AI Companion history/messages, community profiles and search, notifications, direct messages, admin report/suspension actions, Mini Movie Studio AI stage responses, and movie cloud synchronization. The protections invalidate stale async work when the signed-in account or active thread changes; regression tests cover these boundaries. This is code-level protection, not a substitute for manual two-account verification against live Supabase.
+- Character Library foundation now includes a local-first owner-scoped browser library, 2D/3D passport fields, up to six private-to-browser reference images per item, a starter Катти passport, and IndexedDB image ownership checks. The 3D representation is descriptive/passport metadata only; no real 3D rig or animation is implemented. Cloud CRUD and cross-device image storage remain future work.
+- GitHub Actions for commit `8b83919` completed successfully on 2026-11-27: browser character-backup journal tests, backend unit tests, and media-cleanup Postgres integration tests. Earlier workflow runs for `c54a485` also completed successfully. These CI results do not certify the live production environment.
 
 ## Workstreams and acceptance criteria
 
@@ -51,7 +54,7 @@ Tasks:
 Done when: a user can upload/record, securely store, generate or process supported audio, preview it, and export it with usage tracked.
 
 ### 4. Character Library
-**Current state:** a `studio_characters` table is reported in the existing database foundation; the full workflow is not implemented or verified.
+**Current state:** a local-first browser Character Library foundation is implemented on the feature branch: owner-keyed local metadata, IndexedDB reference-image blobs with owner checks, editable character/scene passports, 2D/3D representation labels, and a starter Катти passport. This is not yet cloud CRUD or cross-device storage; the 3D tab does not provide a rig or animation. The live `studio_characters` schema/RLS must be independently inspected before any cloud integration.
 
 Tasks:
 1. Inspect the actual schema and RLS policies before relying on the table.
