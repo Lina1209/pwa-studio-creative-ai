@@ -254,3 +254,35 @@ Required resolution before any activation:
 5. Add a second test for a crash before the network call, proving that a safely unsubmitted attempt can be resumed without duplicate provider cost.
 
 Until these conditions are met, the current queue SQL is a design draft only and must not be enabled with a real provider. The existing no-blind-retry rule takes precedence over automatic lease recovery.
+
+
+## Additional blocking review: cancellation and outbox delivery semantics
+
+Status: design review finding; migration 0014 remains inactive.
+
+### Cancellation is a request, not proof that provider work stopped
+
+The draft RPC `recover_expired_generation_jobs` currently changes an expired `cancel_requested` job directly to `cancelled`. That is not safe when a provider operation may already have been accepted. A worker lease expiring does not prove that remote work stopped, that cancellation was accepted, or that no billable usage accrued. The current `finish_generation_job_cancel` also does not check lease expiry, so its fencing contract should be tightened before use.
+
+Required behavior before activation:
+- Keep cancellation as a durable request while the provider outcome is unresolved.
+- Mark the job `cancelled` only after provider cancellation is confirmed, or after a documented terminal outcome is reconciled and the result is safely suppressed. Record any billable usage/cost evidence even when the user does not receive an output.
+- If provider cancellation is unsupported or inconclusive, move to/retain an explicit reconciliation-needed state; do not equate local worker shutdown with remote cancellation.
+- Define and test the race between provider completion, cancellation request, lease expiry, and result upload. Exactly one internal terminal outcome may win, but late provider billing evidence must still be recorded as an auditable cost correction.
+- Require current fencing token and a valid lease (or a separately designed reconciliation lease) for cancellation completion; stale workers must not finalize a newer operation.
+
+### Retry classification must distinguish definite failure from ambiguous timeout
+
+The draft `fail_generation_job(..., p_retryable => true)` can schedule a retry and outbox event. The worker contract must prohibit setting this flag for a timeout, connection reset, or process interruption if the request may have reached the provider. Those outcomes are `unknown`, not safely retryable. Only a provider rejection or other evidence that conclusively establishes non-acceptance may enter ordinary retry scheduling. Provider-specific semantics must be verified rather than inferred from generic HTTP error classes.
+
+### Outbox acknowledgement is at-least-once
+
+The dispatcher can publish an event to an external queue and crash before `ack_generation_outbox`; after the lease expires the same event can be published again. This is expected at-least-once behavior, not a defect that an acknowledgement token alone can eliminate.
+
+Before activation:
+- Give each outbox event a stable event identity and make downstream dispatch/consumption idempotent on that identity (and job/attempt identity where appropriate).
+- Document whether acknowledgement means accepted by the durable queue, not merely attempted over the network.
+- Test crash after successful publish but before DB acknowledgement, duplicate delivery, stale claim acknowledgement, and dead-letter alert/replay procedures.
+- Dead-lettering must alert an operator and have an auditable replay path; silently stranded generation jobs are unacceptable.
+
+These findings are review requirements, not implementation claims. No SQL was applied and no worker/provider behavior is active.
