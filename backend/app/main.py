@@ -78,6 +78,7 @@ def health():
 @app.post(f"{settings.api_prefix}/characters/{{character_id}}/references", status_code=202)
 async def upload_character_reference(
     character_id: str,
+    response: Response,
     file: UploadFile = File(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
     user: StudioUser = Depends(get_current_user),
@@ -114,6 +115,8 @@ async def upload_character_reference(
         upload_character_reference_object(settings, plan, content)
         reservation = mark_character_reference_object_uploaded(settings, plan)
 
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
     return {
         "asset": {
             "id": asset_id,
