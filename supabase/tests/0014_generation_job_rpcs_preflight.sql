@@ -72,3 +72,13 @@ where table_schema = 'public'
   and table_name = 'generation_job_outbox'
   and column_name in ('claimed_by','dead_lettered_at','last_error_code')
 order by column_name;
+
+select
+  column_name,
+  data_type,
+  is_nullable
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'media_assets'
+  and column_name in ('id','owner_id','storage_path')
+order by column_name;
