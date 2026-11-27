@@ -17,7 +17,7 @@ NOW = datetime(2026, 11, 27, 12, tzinfo=timezone.utc)
 
 def event(**changes):
     values = dict(id=EVENT, owner_id=OWNER, asset_id=ASSET,
-                  event_type="media_cleanup_requested", available_at=NOW)
+                  event_type="media_cleanup_requested", idempotency_key="media-cleanup-0001", available_at=NOW)
     values.update(changes)
     return MediaOutboxEvent(**values)
 
@@ -68,6 +68,12 @@ class MediaOutboxTests(unittest.TestCase):
         claimed = claim_media_event(event(), now=NOW, claim_token=TOKEN)
         with self.assertRaises(ValueError):
             claim_media_event(claimed, now=NOW, claim_token=OTHER_TOKEN)
+
+    def test_idempotency_key_is_required_and_bounded(self):
+        with self.assertRaises(ValueError):
+            event(idempotency_key="short")
+        with self.assertRaises(ValueError):
+            event(idempotency_key="bad key value")
 
     def test_unknown_event_type_is_rejected(self):
         with self.assertRaises(ValueError):
