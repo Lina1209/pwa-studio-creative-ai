@@ -4,6 +4,7 @@
 **Версия:** 1  
 **Статус:** канонический ориентир для 2D в feature-ветке; 3D-модель ещё не создана.  
 **Машиночитаемый источник:** `assets/characters/katty/identity.v1.json`  
+**Словарь эмоций:** `assets/characters/katty/expressions.v1.json`  
 **Аватар профиля:** `katty-assistant` → `assets/avatars/2d/katty-assistant.svg`
 
 ## Неизменяемое ядро образа
