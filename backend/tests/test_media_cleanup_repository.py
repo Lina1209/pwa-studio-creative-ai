@@ -31,6 +31,27 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
         self.assertEqual(call.call_args.args[1], "pwa_request_character_media_cleanup")
 
     @patch("app.services.media_cleanup_repository._call")
+    def test_reservation_rejects_mismatched_request_binding(self, call):
+        call.return_value = {
+            "owner_id": OWNER, "character_id": CHARACTER, "operation_id": EVENT,
+            "assets_enqueued": 1, "status": "cleanup_pending",
+        }
+        with self.assertRaisesRegex(RuntimeError, "mismatched or invalid fields"):
+            request_character_media_cleanup(settings(), OWNER, CHARACTER, TOKEN)
+
+    @patch("app.services.media_cleanup_repository._call")
+    def test_reservation_rejects_invalid_count_or_status(self, call):
+        base = {
+            "owner_id": OWNER, "character_id": CHARACTER, "operation_id": TOKEN,
+            "assets_enqueued": 1, "status": "cleanup_pending",
+        }
+        for changes in ({"assets_enqueued": True}, {"assets_enqueued": -1}, {"status": "deleted"}):
+            with self.subTest(changes=changes):
+                call.return_value = {**base, **changes}
+                with self.assertRaisesRegex(RuntimeError, "mismatched or invalid fields"):
+                    request_character_media_cleanup(settings(), OWNER, CHARACTER, TOKEN)
+
+    @patch("app.services.media_cleanup_repository._call")
     def test_claim_rejects_multiple_rpc_rows_as_ambiguous(self, call):
         from app.services.media_cleanup_repository import claim_media_cleanup
         event = {
