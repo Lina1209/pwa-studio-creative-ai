@@ -86,7 +86,7 @@ begin
   end if;
   if p_bucket is null or p_bucket <> 'studio-media'
      or p_storage_path is null
-     or p_storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)
+     or p_storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)$')
     raise exception 'invalid media reservation data' using errcode='22023';
   end if;
   if not exists (
