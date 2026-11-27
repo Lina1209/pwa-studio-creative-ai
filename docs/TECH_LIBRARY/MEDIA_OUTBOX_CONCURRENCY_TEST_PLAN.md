@@ -1,6 +1,6 @@
 # PWA Studio — media outbox concurrency and crash-recovery test plan
 
-**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 21 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
+**Status (2026-11-27):** migration chain 0005/0012/0017/0018/0019 and both 0019 SQL harnesses passed in GitHub Actions run 33 against a disposable PostgreSQL 16 instance with a minimal Supabase-compatible auth/storage schema. The harnesses were executed, not merely authored. This is not a full Supabase stack and does not exercise real Supabase Storage HTTP operations or production configuration.
 **Target:** disposable PostgreSQL/Supabase project matching the reviewed migration chain.
 **Never run this plan against production.**
 
@@ -110,7 +110,7 @@ Run with `bash supabase/tests/0018_media_upload_claim_race.sh`. The script refus
 
 ## 10. Character deletion and cross-owner cleanup matrix (release gate)
 
-Migration 0019 now drafts a transactional cleanup-intent fence, reference checks, cleanup outbox, leased claims, fenced completion/retry, and a finalizer. The SQL transaction harness covers core single-session behavior and metadata-reference refusal. The two-session race harness is in section 11. These checks are no longer merely authored: the transaction and two-session race harnesses passed on disposable PostgreSQL 16 in CI. The transaction harness now also checks that a foreign owner cannot reserve cleanup for a known character UUID. The remaining matrix below is still a release gate.
+Migration 0019 now drafts a transactional cleanup-intent fence, reference checks, cleanup outbox, leased claims, fenced completion/retry, and a finalizer. The SQL transaction harness covers core single-session behavior and metadata-reference refusal. The two-session race harness is in section 11. These checks are no longer merely authored: the transaction and two-session race harnesses passed on disposable PostgreSQL 16 in CI. The transaction harness now also checks that a foreign owner cannot reserve cleanup for a known character UUID, that an empty character finalizes without an outbox event, and that a transient retry can be reclaimed under a fresh fencing token. The remaining matrix below is still a release gate.
 
 Remaining release-gate cases:
 - Character A with zero media rows: remove only the owner-matched character; no Storage request.
@@ -126,7 +126,7 @@ No user-facing delete route or frontend integration is enabled. Migration 0019 i
 
 ## 11. Character cleanup outbox and worker (migration 0019 draft)
 
-The disposable-only SQL harness is `supabase/tests/0019_media_cleanup_transaction.sql`. It creates a character and one private media fixture, reserves cleanup twice with the same operation ID, checks exactly one outbox event, claims with worker A, expires the lease, reclaims with worker B, and verifies that A cannot complete or retry. It then simulates Storage DELETE success by invoking worker B's completion RPC, verifies the tombstone is detached and the event delivered, and finalizes the character. All database fixtures roll back.
+The disposable-only SQL harness is `supabase/tests/0019_media_cleanup_transaction.sql`. It creates a character and one private media fixture, verifies foreign-owner denial, reserves cleanup twice with the same operation ID, checks exactly one outbox event, claims with worker A, expires the lease, reclaims with worker B, and verifies that A cannot complete or retry. It simulates Storage DELETE success by invoking worker B's completion RPC, verifies the tombstone is detached and the event delivered, and finalizes the character. It also checks zero-media finalization and a transient retry followed by a fresh claim and successful completion. All database fixtures roll back.
 
 Run only with:
 - `DISPOSABLE_DATABASE_URL` pointing to a disposable Supabase/PostgreSQL database.
@@ -149,7 +149,7 @@ Run only after migrations 0005, 0012, 0017, 0018, and 0019 are applied to a disp
 ```bash
 DISPOSABLE_DATABASE_URL="..." PWA_TEST_OWNER_ID="..." bash supabase/tests/0019_media_cleanup_claim_race.sh
 ```
-The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 21 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
+The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness passed in GitHub Actions run 33 against disposable PostgreSQL 16. Its parser treats psql's blank `-qAt` output for SQL NULL as the expected losing-worker result (not as a missing execution result).
 
 Still required before activation: run the full Supabase two-account RLS/Storage matrix; test actual Storage DELETE success/404/timeout-after-delete; run an adversarial reference-write-vs-cleanup race; test batches of many events and workers; and exercise dead-letter/operator recovery. The foreign-owner cleanup reservation check is now covered by the passing SQL transaction harness. Never run these harnesses against production.
 
