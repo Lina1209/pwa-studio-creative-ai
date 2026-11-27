@@ -10,7 +10,7 @@ from app.character_api import build_character_router
 from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest, ProfileUpdateRequest)
 from app.services.ai_service import AIConfigurationError, ask_ai
 from app.services.auth import StudioUser, get_current_user, require_admin
-from app.services.content_safety import check_content
+from app.services.content_safety import check_content, check_prompt_content
 from app.services.usage_service import record_ai_usage
 from app.services.ai_rate_limit import enforce_ai_rate_limit
 from app.services.moderation_service import create_user_report, list_user_reports, review_user_report, create_suspension, list_suspensions, revoke_suspension, ensure_user_not_suspended
@@ -421,7 +421,7 @@ def chat(payload: ChatRequest, user: StudioUser = Depends(get_current_user)):
 def create_prompt(payload: PromptRequest, user: StudioUser = Depends(get_current_user)):
     ensure_user_not_suspended(settings, user.user_id, "assistant")
     enforce_ai_rate_limit(user.user_id)
-    check_content(payload.idea)
+    check_prompt_content(payload.idea, payload.purpose, payload.language, payload.style)
     system = (
         "You are an expert prompt engineer for creative AI tools. "
         "Turn the user's idea into one detailed, coherent, production-ready prompt. "
