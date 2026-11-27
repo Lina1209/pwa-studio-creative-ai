@@ -2202,6 +2202,8 @@ const movieHistoryStyle = document.createElement("style");
   $("#characterKittyPreset")?.addEventListener("click",()=>{
     if(editingCharacterId && !window.confirm("Заменить текущие поля карточки данными стартового паспорта Катти? Сохранённая запись изменится только после нажатия «Сохранить изменения»."))return;
     editingCharacterId=null;
+    removedCharacterReferenceIds=new Set();
+    const refsPanel=$("#characterReferenceEditor");if(refsPanel)refsPanel.replaceChildren();
     $("#characterName").value="Катти";
     $("#characterKind").value="character";
     $("#characterRepresentation").value="both";
@@ -2238,10 +2240,12 @@ const movieHistoryStyle = document.createElement("style");
       for(let i=0;i<files.length;i++)await saveCharacterImage(refs[i].id,files[i],ownerId);
       const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
       localStorage.setItem(characterLibraryKey(),JSON.stringify(next));
+      let cleanupWarning="";
       if(existing&&removedCharacterReferenceIds.size){
-        await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));
+        try{await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));}
+        catch(cleanupError){cleanupWarning=" Карточка сохранена, но часть старых файлов не удалось очистить: "+cleanupError.message;}
       }
-      resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера.";
+      resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера."+cleanupWarning;
       await renderCharacterLibrary();
     }catch(error){
       $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+" Новые изображения не очищались автоматически.";
