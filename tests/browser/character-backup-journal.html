@@ -96,6 +96,8 @@
       }), "verified state was allowed to move backwards");
     });
     output.textContent = "PASS " + passed.length + " tests\n" + passed.map(x => "✓ " + x).join("\n");
+    document.documentElement.dataset.persistOwner = owner;
+    document.documentElement.dataset.persistCharacter = localCharacter;
     document.documentElement.dataset.testResult = "passed";
   } catch (error) {
     output.textContent = "FAIL after " + passed.length + " tests\n" + passed.map(x => "✓ " + x).join("\n") + "\n" + (error.stack || error);
