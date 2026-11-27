@@ -175,6 +175,17 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("if (contextIsCurrent()) setAssistantStatus", handler)
         self.assertIn("if (conversationId && contextIsCurrent())", handler)
 
+    def test_ai_companion_rename_handles_network_rejection_without_unhandled_error(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index('rename.addEventListener("click", async () => {')
+        end = app.index("\n        });", start) + 11
+        handler = app[start:end]
+        self.assertIn("try {", handler)
+        self.assertIn("await supabaseClient.from(\"assistant_conversations\")", handler)
+        self.assertIn("catch (error)", handler)
+        self.assertIn("if (historyContextIsCurrent()) setAssistantStatus(\"Не удалось переименовать: \" + error.message);", handler)
+        self.assertIn("if (!historyContextIsCurrent()) return;", handler)
+
     def test_ai_companion_conversation_selection_is_latest_intent_wins(self):
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         self.assertIn("let assistantConversationIntentVersion = 0;", app)
