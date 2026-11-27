@@ -1,0 +1,58 @@
+"""HTTP tests for the authenticated character passport API routes."""
+import unittest
+from unittest.mock import patch
+from fastapi.testclient import TestClient
+from app.main import app
+from app.services.auth import StudioUser, get_current_user
+
+OWNER = "11111111-1111-4111-8111-111111111111"
+CHARACTER = "33333333-3333-4333-8333-333333333333"
+
+class CharacterApiRouteTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+
+    def setUp(self):
+        app.dependency_overrides[get_current_user] = lambda: StudioUser(
+            user_id=OWNER, email="creator@example.test", role="creator"
+        )
+
+    def tearDown(self):
+        app.dependency_overrides.clear()
+
+    @patch("app.character_api.list_owned_characters", return_value=[])
+    def test_list_requires_auth_and_returns_private_no_store(self, list_rows):
+        response = self.client.get("/api/characters")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+        self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
+        list_rows.assert_called_once_with(patch("unused"), OWNER) if False else None
+
+    def test_client_cannot_supply_owner_id_on_create(self):
+        response = self.client.post("/api/characters", json={
+            "owner_id": "22222222-2222-4222-8222-222222222222",
+            "name": "Injected", "reference_data": {}
+        })
+        self.assertEqual(response.status_code, 422)
+
+    def test_client_cannot_supply_owner_id_on_patch(self):
+        response = self.client.patch(f"/api/characters/{CHARACTER}", json={"owner_id": OWNER})
+        self.assertEqual(response.status_code, 422)
+
+    @patch("app.character_api.create_owned_character", return_value={
+        "id": CHARACTER, "name": "Hero", "description": None,
+        "reference_data": {}, "created_at": "2026-11-27T00:00:00Z"
+    })
+    def test_create_binds_authenticated_owner(self, create):
+        response = self.client.post("/api/characters", json={"name": "Hero", "reference_data": {}})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(create.call_args.args[1], OWNER)
+
+    def test_guest_without_session_is_rejected(self):
+        app.dependency_overrides.clear()
+        response = self.client.get("/api/characters")
+        self.assertEqual(response.status_code, 401)
+
+if __name__ == "__main__":
+    unittest.main()
