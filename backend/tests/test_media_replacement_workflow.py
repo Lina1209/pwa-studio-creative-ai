@@ -89,5 +89,26 @@ class CharacterReferenceReplacementTests(unittest.TestCase):
                 ))
 
 
+    def test_assets_must_be_explicitly_attached_to_the_character(self):
+        for field in ("old_asset", "new_asset"):
+            with self.subTest(field=field):
+                values = inputs()
+                values[field] = {**values[field], "character_id": None}
+                with self.assertRaisesRegex(ValueError, "attached to this character"):
+                    plan_character_reference_replacement(**values)
+
+    def test_uuid_formatting_is_canonicalized_before_pointer_comparison(self):
+        result = plan_character_reference_replacement(**inputs(
+            authenticated_owner_id="{" + OWNER.upper() + "}",
+            character={"id": "{" + CHARACTER.upper() + "}", "owner_id": "{" + OWNER.upper() + "}"},
+            current_reference_asset_id="{" + OLD.upper() + "}",
+        ))
+        self.assertEqual(result.character_id, CHARACTER)
+
+    def test_malformed_current_pointer_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "valid UUID"):
+            plan_character_reference_replacement(**inputs(current_reference_asset_id="not-a-uuid"))
+
+
 if __name__ == "__main__":
     unittest.main()
