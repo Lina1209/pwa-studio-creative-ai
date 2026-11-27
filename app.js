@@ -352,12 +352,12 @@ const movieHistoryStyle = document.createElement("style");
     if(preview){preview.src=profileAvatarPath(profileAvatarDraftId);const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarDraftId);preview.alt="Предпросмотр аватара: "+(item?.name||"Стандартный");}
     categories.replaceChildren();
     const groups=[["all","Все"],...Array.from(new Map(PROFILE_AVATAR_CATALOG.map(item=>[item.category,[item.category,item.group]])).values())];
-    groups.forEach(([id,label])=>{const button=adminNode("button","profile-avatar-category",label);button.type="button";button.classList.toggle("is-active",profileAvatarCategory===id);button.setAttribute("aria-pressed",String(profileAvatarCategory===id));button.addEventListener("click",()=>{profileAvatarCategory=id;renderProfileAvatarPicker();});categories.append(button);});
+    groups.forEach(([id,label])=>{const button=document.createElement("button");button.className="profile-avatar-category";button.textContent=label;button.type="button";button.classList.toggle("is-active",profileAvatarCategory===id);button.setAttribute("aria-pressed",String(profileAvatarCategory===id));button.addEventListener("click",()=>{profileAvatarCategory=id;renderProfileAvatarPicker();});categories.append(button);});
     grid.replaceChildren();
     PROFILE_AVATAR_CATALOG.filter(item=>profileAvatarCategory==="all"||item.category===profileAvatarCategory).forEach(item=>{
       const button=document.createElement("button");button.type="button";button.className="profile-avatar-option"+(profileAvatarDraftId===item.id?" is-selected":"");button.setAttribute("aria-pressed",String(profileAvatarDraftId===item.id));button.setAttribute("aria-label",item.name);
       const img=document.createElement("img");img.src=profileAvatarPath(item.id);img.alt="";img.loading="lazy";
-      const label=adminNode("span","",item.name);button.append(img,label);
+      const label=document.createElement("span");label.textContent=item.name;button.append(img,label);
       button.addEventListener("click",()=>{profileAvatarDraftId=item.id;renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран образ «"+item.name+"». Нажмите «Применить аватар», чтобы сохранить.";});
       grid.append(button);
     });
