@@ -107,3 +107,10 @@ Do not expose an image-generation button until:
 - browser and backend end-to-end tests pass.
 
 Until then, the application must describe the feature as planning/continuity preparation, not image generation.
+
+
+## Implemented preparatory code (not an active generation API)
+- Added `backend/app/services/image_reference_validation.py`: provider-neutral byte-level validation for PNG/JPEG/WebP, actual-signature vs declared-MIME consistency, per-file 8 MiB cap, max 6 references per scene, combined 24 MiB cap, and safe basename normalization.
+- Added standard-library unit tests in `backend/tests/test_image_reference_validation.py`.
+- This helper deliberately does not decode pixels, access Supabase, verify asset ownership, upload files, or call a provider. It must be used only after server-side ownership checks and must be followed by safe image decoding/dimension/pixel limits before any provider handoff.
+- No API route calls this helper yet; no generation endpoint is enabled.
