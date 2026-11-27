@@ -44,7 +44,7 @@ class ImageReferenceValidationTests(unittest.TestCase):
     def test_rejects_inconsistent_reference_size_metadata(self):
         from dataclasses import replace
 
-        one = validate_reference_image(b"\\x89PNG\\r\\n\\x1a\\n" + b"x", "one.png")
+        one = validate_reference_image(b"\x89PNG\r\n\x1a\n" + b"x", "one.png")
         with self.assertRaises(ValueError):
             validate_reference_batch([replace(one, size_bytes=999)])
 
