@@ -63,6 +63,20 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
 
 
     @patch("app.services.media_cleanup_repository.httpx.post")
+    def test_rpc_rejects_unlisted_function_before_network(self, post):
+        from app.services.media_cleanup_repository import _call
+        with self.assertRaises(ValueError):
+            _call(settings(), "pwa_claim_media_cleanup/../../admin", {})
+        post.assert_not_called()
+
+    @patch("app.services.media_cleanup_repository.httpx.post")
+    def test_rpc_requires_object_payload_before_network(self, post):
+        from app.services.media_cleanup_repository import _call
+        with self.assertRaises(ValueError):
+            _call(settings(), "pwa_claim_media_cleanup", [])
+        post.assert_not_called()
+
+    @patch("app.services.media_cleanup_repository.httpx.post")
     def test_rpc_uses_service_role_and_exact_function_path(self, post):
         response = Mock()
         response.json.return_value = None
