@@ -12,9 +12,9 @@ This plan is for an isolated Supabase project only. Do not use the production pr
 ## Test setup
 1. Create the disposable Supabase project.
 2. Create two test Auth users, A and B, with separate email addresses controlled by the project owner.
-3. Confirm the private `studio-media` bucket exists and its Storage policies restrict the first path segment to `auth.uid()`.
+3. Confirm the private `studio-media` bucket exists. Inspect SELECT, INSERT, UPDATE, and DELETE policies: all authenticated access must be scoped to the owner's first folder segment (`auth.uid()`), and no PUBLIC/anon read policy may expose this bucket.
 4. Apply `supabase/migrations/0012_character_library_media_links.sql` in the test project's SQL Editor.
-5. Run `supabase/tests/0012_character_library_preflight.sql`. Investigate every FAIL before proceeding.
+5. Run `supabase/tests/0012_character_library_preflight.sql`. It checks the private bucket plus owner-scoped SELECT/INSERT/UPDATE/DELETE policies and absence of PUBLIC/anon read policies. Investigate every FAIL before proceeding.
 6. Deploy the feature branch to a disposable test frontend configured with the test project's public URL and publishable key. Do not change the production frontend configuration.
 
 ## Functional test matrix
@@ -27,7 +27,7 @@ This plan is for an isolated Supabase project only. Do not use the production pr
 | CL-04 | B | Sign in and open the library | A's local cards are not displayed |
 | CL-05 | B | Attempt a direct SELECT for A's character/media rows using B's authenticated session | No rows from A are returned |
 | CL-06 | B | Attempt to insert a media row with A's character_id and B's owner_id | Composite foreign key rejects the cross-owner association |
-| CL-07 | B | Attempt to read A's object in studio-media | Storage policy denies access |
+| CL-07 | B | Attempt to read A's object in studio-media | Storage policy denies access |\n| CL-07a | B | Attempt to list A's folder and create an object under A's path | Both operations are denied |\n| CL-07b | B | Attempt to update or delete A's object | Both operations are denied |
 | CL-08 | A | Back up a card with multiple references | Each object has path A/characters/<character UUID>/<reference ID> and each media row points to the same character and owner |
 | CL-09 | A | Simulate a failed upload (e.g. temporarily disable test Storage INSERT policy) | UI reports failure; local card and image remain available |
 | CL-10 | A | Switch from A to B and back | Local libraries remain isolated by account; no cross-account display |
