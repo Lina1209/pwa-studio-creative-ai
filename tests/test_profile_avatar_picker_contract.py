@@ -66,5 +66,17 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertIn("kattyExpressionDraft=id;renderProfileAvatarPicker();", app)
         self.assertNotIn("avatar_expression", app)
 
+
+    def test_ai_companion_uses_katty_static_expressions_for_conversation_states(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="kattyCompanionExpression"', html)
+        self.assertIn("const KATTY_ASSISTANT_EXPRESSIONS", app)
+        self.assertIn('setKattyAssistantExpression("thinking")', app)
+        self.assertIn('setKattyAssistantExpression(kattySupportSignal(value) ? "empathetic" : "joy")', app)
+        self.assertIn('setKattyAssistantExpression("neutral")', app)
+        self.assertIn('assets/characters/katty/expressions/" + id + ".svg', app)
+        self.assertNotIn("apiRequest(", app[app.index("const setKattyAssistantExpression"):app.index("const copyAssistantText")])
+
 if __name__ == "__main__":
     unittest.main()
