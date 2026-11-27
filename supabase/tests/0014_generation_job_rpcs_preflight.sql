@@ -18,8 +18,7 @@ where n.nspname = 'public'
     'fail_generation_job',
     'request_generation_job_cancel',
     'finish_generation_job_cancel',
-    'recover_expired_generation_jobs',
-    'fail_generation_outbox'
+    'recover_expired_generation_jobs'
   )
 order by p.proname;
 
@@ -37,7 +36,8 @@ where specific_schema = 'public'
     'complete_generation_job',
     'fail_generation_job',
     'request_generation_job_cancel',
-    'finish_generation_job_cancel'
+    'finish_generation_job_cancel',
+    'recover_expired_generation_jobs'
   )
 order by routine_name, grantee, privilege_type;
 
@@ -57,7 +57,18 @@ where n.nspname = 'public'
     'complete_generation_job',
     'fail_generation_job',
     'request_generation_job_cancel',
-    'finish_generation_job_cancel'
+    'finish_generation_job_cancel',
+    'recover_expired_generation_jobs'
   )
   and r.rolname in ('anon','authenticated','service_role')
 order by function_name, grantee;
+
+select
+  column_name,
+  data_type,
+  is_nullable
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'generation_job_outbox'
+  and column_name in ('claimed_by','dead_lettered_at','last_error_code')
+order by column_name;
