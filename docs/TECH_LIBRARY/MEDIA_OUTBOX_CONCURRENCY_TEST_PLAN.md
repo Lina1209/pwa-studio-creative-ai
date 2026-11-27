@@ -108,24 +108,21 @@ Required environment:
 
 Run with `bash supabase/tests/0018_media_upload_claim_race.sh`. The script refuses to run if any other media verification event is pending or claimed, creates one fixture, runs the race, and deletes its own fixture on exit. It does not call Storage. Use a disposable database only; never production. This harness has been authored but not executed.
 
-## 10. Character deletion and cross-owner cleanup matrix (planned integration gate)
+## 10. Character deletion and cross-owner cleanup matrix (release gate)
 
-The pure planner and Storage DELETE primitive are drafted, but the database orchestration and cleanup worker do not exist yet. Before any delete route is enabled, add disposable-database fixtures for:
+Migration 0019 now drafts a transactional cleanup-intent fence, reference checks, cleanup outbox, leased claims, fenced completion/retry, and a finalizer. The SQL transaction harness covers core single-session behavior and metadata-reference refusal. The two-session race harness is in section 11. These are authored checks only; none has been executed.
 
-- Character A with zero media rows: delete only the owner-matched character; no Storage request.
-- Character A with several owned assets: every asset becomes `cleanup_pending` and gets exactly one cleanup event in the same transaction.
-- Character A with one asset still referenced by another metadata row or passport field: abort or retain that object; never delete it.
-- Character A with a foreign-owner media row supplied by a corrupted fixture: reject the entire character cleanup plan.
-- User B submits A's character ID, asset ID, or exact Storage path: uniform not-found/authorization failure; no object lookup or DELETE request.
-- Two cleanup workers claim the same event: only one lease succeeds.
-- Worker A's lease expires and B reclaims: A cannot delete/finalize/ack after B's fencing token is issued.
-- Storage returns 404: finalize as already absent; repeated cleanup remains idempotent.
-- Storage times out after the delete may have succeeded: keep the event retryable and reconcile existence before declaring completion.
-- A new reference is attempted while cleanup is pending: database/API layer must reject it or serialize it before the Storage side effect.
-- Character deletion is attempted before all child assets are terminal: reject and preserve the character row.
-- Final character deletion succeeds only after all associated media objects are confirmed absent and tombstones are finalized.
+Remaining release-gate cases:
+- Character A with zero media rows: remove only the owner-matched character; no Storage request.
+- Character A with several assets: every eligible asset becomes `cleanup_pending` and receives exactly one cleanup event in the same transaction.
+- Passport or another media row references an object: refuse cleanup; never delete the referenced object.
+- User B submits A's character, asset, or Storage path: no cross-owner lookup or DELETE.
+- Storage DELETE succeeds, returns 404, times out after possible success, or returns a permanent error: reconcile and retry without premature tombstoning.
+- A new reference races with cleanup intent: exactly one operation wins under the database serialization guards.
+- A dead-letter event remains recoverable by an operator; the character must not be finalized while any associated media row remains.
+- Final character deletion succeeds only after every child media row is detached and confirmed absent.
 
-The current branch contains only pure planning and a narrow Storage DELETE primitive for this flow. No cleanup SQL RPC, event claim path, worker, route, or end-to-end integration test is present. These checks are release blockers, not passed tests.
+No user-facing delete route or frontend integration is enabled. Migration 0019 is a draft and must first be applied and tested only in a disposable database. No production migration, Storage deletion, or worker deployment has occurred.
 
 ## 11. Character cleanup outbox and worker (migration 0019 draft)
 
@@ -145,6 +142,14 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
 ```
 
 The SQL harness does **not** call Supabase Storage; it validates database transaction and fencing behavior only. Separately run the Python worker/repository tests with the backend test environment. Neither test suite has been executed yet.
+
+The two-session race harness is `supabase/tests/0019_media_cleanup_claim_race.sh`. It creates one disposable character and ready image, requests cleanup, launches two independent `psql` sessions, and asserts exactly one claim. It then expires the lease, reclaims with a new token, verifies that the stale token cannot retry or complete, completes using the fresh token, and finalizes the character. It does not contact Storage.
+
+Run only after migrations 0005, 0012, 0017, 0018, and 0019 are applied to a disposable database:
+```bash
+DISPOSABLE_DATABASE_URL="..." PWA_TEST_OWNER_ID="..." bash supabase/tests/0019_media_cleanup_claim_race.sh
+```
+The script requires an otherwise idle cleanup queue. If it fails, it intentionally preserves its fixture in that disposable database for diagnosis. The harness has been authored but not executed.
 
 Before activation, add and run a two-session cleanup claim race (parallel with the existing upload race), a disposable Storage test for successful DELETE/404/timeout-after-delete, a foreign-owner request test, and an adversarial reference-write-vs-cleanup race. Never run these harnesses against production.
 
