@@ -42,6 +42,10 @@ def _validated_uuid(value: str, label: str) -> str:
 
 
 def create_user_report(settings: Settings, reporter_user_id: str, payload):
+    reported_user_id = (
+        _validated_uuid(payload.reported_user_id, "reported user")
+        if payload.reported_user_id else None
+    )
     rows = _request(
         settings,
         "POST",
@@ -49,7 +53,7 @@ def create_user_report(settings: Settings, reporter_user_id: str, payload):
         params={"select": "id,status,created_at"},
         payload={
             "reporter_user_id": reporter_user_id,
-            "reported_user_id": payload.reported_user_id,
+            "reported_user_id": reported_user_id,
             "category": payload.category,
             "description": payload.description,
             "content_reference": payload.content_reference,
