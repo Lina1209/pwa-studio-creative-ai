@@ -1,4 +1,5 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -38,6 +39,21 @@ class AIRateLimitTests(unittest.TestCase):
             for _ in range(10):
                 ai_rate_limit.enforce_ai_rate_limit("user-a")
             ai_rate_limit.enforce_ai_rate_limit("user-a")
+
+    def test_concurrent_requests_cannot_exceed_user_limit(self):
+        def attempt(_):
+            try:
+                ai_rate_limit.enforce_ai_rate_limit("user-a")
+                return "allowed"
+            except HTTPException as exc:
+                return exc.status_code
+
+        with patch("app.services.ai_rate_limit.time.monotonic", return_value=100.0):
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                outcomes = list(pool.map(attempt, range(40)))
+
+        self.assertEqual(outcomes.count("allowed"), 10)
+        self.assertEqual(outcomes.count(429), 30)
 
 
 if __name__ == "__main__":
