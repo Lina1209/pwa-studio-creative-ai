@@ -37,11 +37,11 @@ create table public.project_character_links (
 Prerequisite: confirm that `projects` has a unique constraint on `(id, owner_id)`. If not, add it in a separately reviewed migration. Enable RLS and use owner-only `USING` and `WITH CHECK` predicates. Never rely on a client-supplied owner_id without RLS enforcement.
 
 ## Mini Movie Studio workflow
-1. Add an explicit “Выбрать из библиотеки” action in the cast/locations stage.
-2. Show only the signed-in user's characters and scenes. Guest mode sees only the current browser's guest library.
-3. Let the creator select a character, then choose which reference images to attach to this project/scene.
-4. Store a passport snapshot when the creator confirms the selection. Keep a link to the master character ID for future manual refresh.
-5. Let the creator explicitly choose “Обновить паспорт из библиотеки” if the master record changes. Show a before/after summary; never silently replace an approved snapshot.
+1. **Implemented in the feature branch (local MVP):** the “Персонажи из вашей библиотеки” picker appears in the cast/locations stage. It reads only the active browser scope (signed-in user ID or guest), supports selecting multiple cards, and inserts their passport text into the cast description.
+2. **Implemented locally:** the picker uses the existing owner-scoped local library key. Guest mode sees only the current browser's guest library.
+3. **Partially implemented:** the creator can select cards and save passport snapshots (identity, description, representation, voice, face, silhouette, wardrobe, palette, and reference file names) with the project. Reference image blobs are not copied or attached to the project yet.
+4. **Implemented locally:** a project stores `characterLibrarySnapshots` with the master local card ID and a copied passport snapshot. The snapshot is independent of later master-card edits. This is a browser-local reference, not a cloud foreign-key relationship.
+5. Future: let the creator explicitly choose “Обновить паспорт из библиотеки” if the master record changes. Show a before/after summary; never silently replace an approved snapshot.
 6. Build generation prompts from the approved snapshot plus selected references and the current scene action. Keep scene action separate from immutable identity traits.
 7. Save the project link and snapshot with the project version history so restoring a project restores its cast/visual continuity.
 
@@ -72,4 +72,4 @@ The model may vary scene action, pose and camera, but should not reinterpret ide
 - Guest and authenticated libraries remain separate unless a deliberate, confirmed migration flow is implemented.
 
 ## Not implemented yet
-This file is an architectural contract only. It does not add the join table, project picker UI, prompt injection, cloud restore, or bidirectional sync. Those require separate implementation and tests.
+The local picker and passport snapshot are implemented in the feature branch only. The following are still not implemented: database join table, cloud relationship and cross-device loading, attaching actual reference image blobs to a project/scene, signed preview URLs, explicit passport refresh with diff, prompt-assembly enforcement across all generation routes, cloud restore, and bidirectional sync. The picker has not passed browser E2E or Supabase integration tests. The proposed SQL remains design-only and must not be run until separately reviewed and tested.
