@@ -484,16 +484,21 @@ set search_path = pg_catalog, public
 as $$
 declare
   v_deleted uuid;
+  v_cleanup_operation_id uuid;
 begin
   if p_owner_id is null or p_character_id is null then
     raise exception 'invalid character finalization' using errcode='22023';
   end if;
 
-  perform 1 from public.characters
+  select cleanup_operation_id into v_cleanup_operation_id
+  from public.characters
   where id=p_character_id and owner_id=p_owner_id
   for update;
   if not found then
     raise exception 'character not found' using errcode='P0002';
+  end if;
+  if v_cleanup_operation_id is null then
+    raise exception 'character cleanup was not requested' using errcode='23514';
   end if;
 
   if exists (
