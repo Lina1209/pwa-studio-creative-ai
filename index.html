@@ -24,7 +24,16 @@
 .assistant-message.user-message{align-self:flex-end;background:rgba(112,103,210,.18);color:var(--text)}
 .assistant-message.ai-message{align-self:flex-start;background:rgba(145,125,190,.12);color:var(--text)}
 body.light .assistant-history-open,body.light .assistant-history-rename{color:#373149}
-</style>
+
+    .character-library{margin-top:22px}.character-library-form{display:grid;gap:12px;padding:16px;border:1px solid var(--border-color,#444);border-radius:14px;background:var(--surface,rgba(255,255,255,.025))}
+    .character-library-form input,.character-library-form textarea,.character-library-form select,.character-library-toolbar input{width:100%;padding:11px;border:1px solid var(--border-color,#555);border-radius:10px;background:var(--surface,#171421);color:var(--text,inherit)}
+    .character-library-form label,.character-library-toolbar label{display:block;margin:5px 0;font-size:13px}.character-passport{padding:12px;border:1px dashed var(--border-color,#666);border-radius:10px}.character-passport summary{cursor:pointer;font-weight:600;margin-bottom:10px}
+    .character-form-actions,.character-library-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.character-library-toolbar{margin:18px 0}.character-library-toolbar input{max-width:340px}
+    .character-library-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.character-card{padding:14px;border:1px solid var(--border-color,#444);border-radius:13px;background:var(--surface,rgba(255,255,255,.025));min-width:0}
+    .character-card h3{margin:0 0 7px}.character-card p{white-space:pre-wrap;overflow-wrap:anywhere}.character-card-gallery{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.character-card-gallery img{width:76px;height:76px;object-fit:cover;border-radius:9px;border:1px solid var(--border-color,#555)}
+    .character-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.character-card-actions button{font-size:12px}.character-meta{font-size:12px;opacity:.75}
+
+  </style>
 <style>.guest-import-label{position:relative;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}.guest-import-label input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:100px}</style>
 </head>
 <body>
@@ -136,6 +145,35 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
         <div class="page-heading"><div class="eyebrow">PROMPT ENGINEERING</div><h1>Prompt <span class="gradient-text">Studio</span></h1><p>Превращайте простые описания в точные и выразительные запросы для ИИ.</p></div>
         <div class="prompt-layout"><div class="panel"><label for="promptIdea">Опишите, что хотите получить</label><textarea id="promptIdea" rows="7" placeholder="Например: кинематографичный кадр старинного города после дождя, тёплый свет окон, камера медленно движется вперёд..."></textarea><div class="form-row"><div><label for="promptType">Для чего промт?</label><select id="promptType"><option>Генерация видео</option><option>Генерация изображения</option><option>Музыка и звук</option><option>Сценарий</option></select></div><div><label for="promptLanguage">Язык результата</label><select id="promptLanguage"><option>English</option><option>Русский</option></select></div></div><button class="primary-button" id="buildPrompt">✦ Сформировать промт</button><p class="helper-text" id="promptFeedback">Промт формируется через настроенный backend и выбранную языковую модель. Для работы необходим вход в аккаунт и действующий ключ AI-провайдера.</p></div><div class="panel prompt-result"><div class="result-head"><b>Ваш промт</b><span class="draft-badge">DRAFT</span></div><div id="promptOutput" class="prompt-output">Здесь появится структурированный промт с описанием сцены, визуального стиля, освещения, композиции и движения камеры.</div><button class="secondary-button full-button" id="copyPrompt">Скопировать промт <span>⧉</span></button></div></div>
       </section>
+
+
+        <section class="panel character-library" aria-label="Библиотека персонажей">
+          <div class="page-heading"><div class="eyebrow">CHARACTER WORKSPACE</div><h2>Библиотека персонажей</h2><p>Сохраняйте героев, визуальные паспорта и референсы, чтобы возвращаться к одному образу в разных проектах.</p></div>
+          <div class="character-library-form">
+            <div class="form-row">
+              <div><label for="characterName">Имя персонажа</label><input id="characterName" maxlength="80" placeholder="Например, Катти"></div>
+              <div><label for="characterKind">Тип</label><select id="characterKind"><option value="character">Персонаж</option><option value="scene">Локация / сцена</option></select></div>
+            </div>
+            <label for="characterDescription">Характер и основное описание</label>
+            <textarea id="characterDescription" rows="3" maxlength="5000" placeholder="Внешность, характер, роль, отличительные черты…"></textarea>
+            <div class="form-row">
+              <div><label for="characterRepresentation">Визуальное представление</label><select id="characterRepresentation"><option value="2d">2D</option><option value="3d">3D — паспорт для будущей модели</option><option value="both">2D и 3D</option></select></div>
+              <div><label for="characterVoice">Голос и манера речи</label><input id="characterVoice" maxlength="500" placeholder="Тембр, язык, манера речи"></div>
+            </div>
+            <details class="character-passport"><summary>Визуальный паспорт — постоянство внешности</summary>
+              <label for="characterFace">Лицо и профиль</label><textarea id="characterFace" rows="2" maxlength="1200" placeholder="Форма лица, глаза, нос, профиль, особые черты"></textarea>
+              <label for="characterBody">Телосложение и силуэт</label><textarea id="characterBody" rows="2" maxlength="1200" placeholder="Рост, пропорции, осанка, силуэт"></textarea>
+              <label for="characterWardrobe">Одежда и аксессуары</label><textarea id="characterWardrobe" rows="2" maxlength="1200" placeholder="Костюм, обувь, украшения, аксессуары"></textarea>
+              <label for="characterPalette">Цветовая палитра и эмоции</label><textarea id="characterPalette" rows="2" maxlength="1200" placeholder="Основные цвета, выражения лица и эмоции"></textarea>
+            </details>
+            <label for="characterImages">Изображения-референсы (до 6, PNG/JPEG/WebP, до 8 МБ каждое)</label>
+            <input id="characterImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+            <div class="character-form-actions"><button type="button" class="primary-button" id="saveCharacter">＋ Сохранить персонажа</button><button type="button" class="secondary-button" id="cancelCharacterEdit" hidden>Отмена</button></div>
+            <p class="helper-text" id="characterLibraryStatus" aria-live="polite">Материалы пока сохраняются в защищённой памяти этого браузера. Облачная синхронизация будет подключена отдельным проверенным этапом.</p>
+          </div>
+          <div class="character-library-toolbar"><label for="characterSearch">Поиск по библиотеке</label><input id="characterSearch" type="search" placeholder="Имя или описание"></div>
+          <div id="characterLibraryList" class="character-library-grid" aria-live="polite"><p class="helper-text">Библиотека пока пуста.</p></div>
+        </section>
 
       <section class="view" id="view-assistant">
         <div class="page-heading"><div class="eyebrow">YOUR CREATIVE PARTNER</div><h1>Studio AI <span class="gradient-text">Companion</span></h1><p>Помощник по идеям, сценариям, промтам и инструментам студии.</p></div>
