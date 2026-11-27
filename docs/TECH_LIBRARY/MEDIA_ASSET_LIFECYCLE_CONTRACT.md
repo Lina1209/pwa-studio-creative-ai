@@ -117,3 +117,11 @@ This is a repository primitive only. No FastAPI route, upload, download, Storage
 `backend/app/services/media_lifecycle.py` implements the allowed status transitions as pure domain logic. It makes only `ready` assets readable; pending, failed, and cleanup-pending assets remain unavailable. A ready asset must first enter `cleanup_pending` before it can become deleted. Deleted is terminal, and repeating the current status is idempotent.
 
 This does not persist state or coordinate Storage/Postgres. A future implementation must enforce transitions atomically (row lock or compare-and-swap), bind idempotency keys to the authenticated owner, verify object existence and metadata before `ready`, and keep cleanup retries safe. The 10 tests in `backend/tests/test_media_lifecycle.py` are authored but have not been executed. No migration, endpoint, worker, or Storage operation was added.
+
+## 13. Immutable replacement planner added (not persistence)
+
+`backend/app/services/media_replacement.py` adds a pure precondition checker for replacement. It requires both old and new records to belong to the verified owner, distinct UUIDs, an old asset in `ready`, and a new asset in `object_uploaded` (meaning the Storage object has already been uploaded and verified). It returns a plan that promotes the new asset to `ready` and moves the old asset to `cleanup_pending`. It does not mutate either input record.
+
+A future implementation MUST perform the active-pointer switch and both status updates in one database transaction (with row locks or optimistic version checks). The new object must be uploaded under a fresh immutable key before that transaction. If upload or verification fails, the old asset remains ready. If the database transaction fails, the old asset remains the active pointer and the new object is an orphan eligible for owner-scoped cleanup. Cleanup must independently verify that no ready row references the old bucket/path before deletion.
+
+Seven tests are authored in `backend/tests/test_media_replacement.py`; they have not been executed. No Storage call, database write, endpoint, migration, or worker was added.
