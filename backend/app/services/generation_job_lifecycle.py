@@ -22,6 +22,7 @@ class JobStatus(str, Enum):
     PROCESSING = "processing"
     RETRY_WAIT = "retry_wait"
     CANCEL_REQUESTED = "cancel_requested"
+    RECONCILIATION_REQUIRED = "reconciliation_required"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -126,6 +127,11 @@ def mark_failed(
         ProviderSubmissionOutcome.DEFINITELY_NOT_SUBMITTED,
         ProviderSubmissionOutcome.DEFINITELY_REJECTED,
     }
+    if submission_outcome in {ProviderSubmissionOutcome.UNKNOWN, ProviderSubmissionOutcome.ACCEPTED}:
+        return replace(
+            job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
+            next_attempt_at=None, error_code="provider_outcome_unknown",
+        )
     can_retry = retryable and safe_to_retry and job.attempt_count < job.max_attempts
     return replace(
         job,
@@ -136,12 +142,23 @@ def mark_failed(
     )
 
 
-def recover_expired_lease(job: GenerationJob, now: datetime) -> GenerationJob:
+def recover_expired_lease(
+    job: GenerationJob,
+    now: datetime,
+    submission_outcome: ProviderSubmissionOutcome = ProviderSubmissionOutcome.UNKNOWN,
+) -> GenerationJob:
     _validate_now(now)
     if job.status not in {JobStatus.PROCESSING, JobStatus.CANCEL_REQUESTED}:
         raise ValueError("Only active jobs have leases to recover.")
     if job.lease_expires_at is None or job.lease_expires_at > now:
         raise ValueError("The job lease has not expired.")
+    if not isinstance(submission_outcome, ProviderSubmissionOutcome):
+        raise ValueError("submission_outcome must be a ProviderSubmissionOutcome.")
+    if submission_outcome in {ProviderSubmissionOutcome.UNKNOWN, ProviderSubmissionOutcome.ACCEPTED}:
+        return replace(
+            job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
+            next_attempt_at=None, result_asset_id=None, error_code="provider_outcome_unknown",
+        )
     if job.status == JobStatus.CANCEL_REQUESTED:
         return replace(job, status=JobStatus.CANCELLED, lease_expires_at=None, result_asset_id=None)
     can_retry = job.attempt_count < job.max_attempts
