@@ -48,6 +48,12 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("request.result?.ownerId===ownerId?request.result.blob:null", APP)
         self.assertIn("if(request.result?.ownerId===ownerId)store.delete(id);", APP)
 
+    def test_indexeddb_image_save_refuses_cross_owner_id_collision(self):
+        self.assertIn("const existing=store.get(id);", APP)
+        self.assertIn("existing.result.ownerId!==ownerId", APP)
+        self.assertIn("Исходная запись сохранена.", APP)
+        self.assertIn("tx.abort();", APP)
+
     def test_auth_identity_change_increments_context_and_notifies_library(self):
         self.assertIn("authContextVersion += 1;", APP)
         self.assertIn('window.dispatchEvent(new Event("pwa-studio-auth-changed"));', APP)
