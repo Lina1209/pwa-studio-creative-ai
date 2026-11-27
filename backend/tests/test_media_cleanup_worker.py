@@ -1,6 +1,6 @@
 """Tests for private media cleanup worker boundaries."""
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from app.services.media_cleanup import MediaCleanupPlan
 from app.workers.media_cleanup_worker import _validate_claim, process_one
@@ -52,7 +52,7 @@ class MediaCleanupWorkerTests(unittest.TestCase):
         self.assertTrue(process_one(object()))
         delete.assert_called_once()
         self.assertIsInstance(delete.call_args.args[1], MediaCleanupPlan)
-        complete.assert_called_once_with(unittest.mock.ANY, claim())
+        complete.assert_called_once_with(ANY, claim())
         retry.assert_not_called()
 
     @patch("app.workers.media_cleanup_worker.retry_media_cleanup")
