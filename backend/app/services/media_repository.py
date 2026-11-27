@@ -40,7 +40,7 @@ def get_owned_media_asset(settings: Settings, asset_id: str, authenticated_owner
     asset = canonical_uuid(asset_id, "media asset")
     owner = canonical_uuid(authenticated_owner_id, "owner")
     rows = _rest_get(settings, "media_assets", {
-        "select": "id,owner_id,project_id,character_id,file_name,file_type,storage_path,metadata,created_at",
+        "select": "id,owner_id,project_id,character_id,file_name,file_type,bucket,status,storage_path,metadata,created_at",
         "id": f"eq.{asset}",
         "owner_id": f"eq.{owner}",
         "limit": "1",
