@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "identityKey": "katty-katarina",
-  "status": "design_and_expression_tokens_only",
+  "status": "static_expression_artwork_available",
   "runtimeStatus": "not_connected",
   "visualIdentityManifest": "assets/characters/katty/identity.v1.json",
   "coordinateConvention": {
