@@ -1,6 +1,13 @@
--- PWA Studio: character library media associations.
--- Additive migration only. Do NOT run against production until the feature branch
--- has been reviewed and the cloud-sync implementation is ready.
+-- PWA Studio: character library media-association schema foundation.
+-- Draft feature-branch migration only. Never run against production as part of
+-- this development workflow. Apply only after a separate migration review and
+-- explicit deployment approval.
+--
+-- IMPORTANT: this migration creates database primitives; it does NOT enable
+-- browser cloud sync, an importer, or cross-device library restore. The current
+-- Character Library UI remains local-first (localStorage + IndexedDB).
+-- Later migrations add server-mediated upload, verification, and cleanup
+-- lifecycle controls. Do not infer that direct browser Storage access is safe.
 --
 -- Characters keep their visual passport in reference_data (JSONB).
 -- Individual reference/avatar files are represented by media_assets rows.
