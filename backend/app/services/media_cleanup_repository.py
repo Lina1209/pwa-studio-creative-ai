@@ -38,6 +38,8 @@ def _call(settings: Settings, function_name: str, payload: dict, *, timeout: flo
 
 def _object_result(result, label: str):
     if isinstance(result, list):
+        if len(result) > 1:
+            raise RuntimeError(f"{label} returned multiple rows.")
         result = result[0] if result else None
     if result is not None and not isinstance(result, dict):
         raise RuntimeError(f"{label} returned an invalid result.")
