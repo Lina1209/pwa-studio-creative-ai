@@ -16,7 +16,7 @@ MAX_REFERENCES_PER_SCENE = 6
 MAX_BATCH_BYTES = 24 * 1024 * 1024
 MAX_IMAGE_WIDTH = 8192
 MAX_IMAGE_HEIGHT = 8192
-MAX_IMAGE_PIXELS = 40_000_000
+MAX_IMAGE_PIXELS = 16_000_000
 MAX_IMAGE_FRAMES = 1
 
 _SIGNATURES = (
@@ -72,7 +72,7 @@ def _decode_and_verify(content: bytes, expected_mime: str) -> tuple[int, int, in
                 if width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
                     raise ValueError("Image dimensions exceed the 8192-pixel limit.")
                 if width * height > MAX_IMAGE_PIXELS:
-                    raise ValueError("Image pixel count exceeds the 40-megapixel limit.")
+                    raise ValueError("Image pixel count exceeds the 16-megapixel limit.")
                 if frames > MAX_IMAGE_FRAMES:
                     raise ValueError("Animated or multi-frame references are not accepted.")
                 image.verify()
