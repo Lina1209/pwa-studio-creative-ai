@@ -2,73 +2,38 @@
 
 **Date:** 27 November 2026  
 **Branch:** `feature/character-library-foundation`  
-**Status:** initial 2D profile picker implemented in the feature branch; database migration is draft-only and not applied to any live database. GitHub Actions run `46026487046` completed successfully on commit `7340768af86ee856c157fab34d63cb16724696f7`: backend unit tests, frontend syntax/source-contract checks, profile-avatar migration verification, and PostgreSQL integration tests all passed.
+**Status:** Nine local 2D SVG avatars and the profile picker are implemented in this feature branch. The additive database migration is draft-only and has not been applied to any live database. GitHub Actions run `46026736506` completed successfully on commit `8785f481124a1c0cd67027caa009ba1b18a4c041`; all three jobs passed: real-browser IndexedDB/account-switch checks, backend unit tests, and disposable PostgreSQL migration/integration tests. The run also verified migration `0021` defaults and constraints.
 
-## Existing profile model
+## Implemented
 
-The application already has a dedicated `public.user_profiles` table and authenticated community profile API:
+- Nine curated, locally hosted SVG avatars cover portrait, fantasy, animal, robot, cartoon, space, nature, and abstract categories.
+- The optional `katty-assistant` portrait is included in both frontend catalog and backend allowlist. It does not replace or force a user's own avatar.
+- Responsive picker in the account cabinet supports category filtering, preview, apply, and reset to the standard avatar.
+- Guests persist selection under a dedicated browser-local key. Signed-in users persist through the authenticated `PATCH /api/community/profile` endpoint.
+- Guest state is not sent to the profile API or reused as an authenticated user's selection.
+- The resolved avatar is used consistently in account, top-bar, sidebar, and public community profile cards.
+- Authenticated writes are fenced by user ID and auth-context version.
+- Backend accepts only published catalog IDs and currently accepts only `2d`; explicit `3d` requests are rejected until real model assets and a renderer are supported.
+- Public profile projections expose catalog ID and representation, not private storage paths.
+- Migration `0021_profile_avatar_catalog.sql` is additive and tested only against disposable PostgreSQL in CI. It has not been applied to production.
 
-- `user_profiles.user_id` is the primary key and references `auth.users(id)`.
-- Existing profile fields are `username`, `display_name`, `bio`, `visibility`, `show_in_directory`, and nullable `avatar_path`.
-- The backend derives the profile owner from the verified `StudioUser`; the client cannot choose another user's ID for an update.
-- Own-profile reads and updates go through `/api/community/profile`.
-- Public directory search and public profile reads return a deliberately limited field allowlist.
-- Community cards currently render the first letter of the display name; profile settings do not expose an avatar picker.
-- The account hero, sidebar profile, and top-bar avatar are also currently initials/placeholders.
+## Verification
 
-## Important compatibility finding
+Latest branch workflow: [run 46026736506](https://github.com/Lina1209/pwa-studio-creative-ai/actions/runs/46026736506).
 
-Do not add a second parallel avatar URL or profile table. The existing nullable `avatar_path` is an established field, but it represents a storage path and must not be overloaded with arbitrary catalog IDs or client-provided URLs.
+All three jobs completed successfully:
+1. `character-backup-journal-browser-tests` — real-browser IndexedDB journal tests and frontend syntax/account-switch fencing.
+2. `backend-unit-tests` — backend unit suite and cleanup race harness syntax.
+3. `media-cleanup-postgres-integration` — disposable schema, feature migrations, avatar catalog defaults/constraints, idempotency, cleanup rollback, worker races, and stress harness.
 
-The new catalog selection should use explicit logical fields, separate from `avatar_path`:
+This is feature-branch CI evidence only. It is not a production deployment or live Supabase verification.
 
-- `avatar_catalog_id`: stable ID from the curated, versioned catalog.
-- `avatar_representation`: `2d` or `3d`.
-- `avatar_asset_id`: optional future owner-scoped custom asset reference; not active.
-- `avatar_updated_at`: timestamp.
+## 3D status and safe next step
 
-A future additive migration must preserve existing `avatar_path` values and set safe defaults for existing accounts. API validation must accept only published catalog IDs and must derive the owner from authentication. Public profile responses may expose only the catalog ID and representation, never storage internals.
+The repository currently has no package manifest, 3D model assets, glTF/GLB files, or identified 3D preview runtime. The 3D picker tab therefore remains disabled and explicitly marked as planned. A 2D image with lighting/shadows must never be represented as a real 3D model.
 
-## UI integration surfaces
-
-1. Personal cabinet profile hero: primary avatar preview and selection entry point.
-2. Community profile form: avatar preview and picker controls; no duplicate avatar editor.
-3. Community search cards and public profile: render the selected catalog avatar with a safe fallback.
-4. Sidebar and top-bar: use the same resolved profile avatar, not separately persisted copies.
-5. Guest: use a guest-only default avatar; never reuse the previous signed-in user's selected avatar.
-6. Account switching: fence async avatar loads and saves by authenticated user ID and auth-context version, matching the existing Character Library account-switch protections.
-
-## Asset and representation status
-
-The repository currently contains only the generic app icon as a standalone image asset; there is no approved curated portrait/avatar collection and no real 3D model catalog or 3D preview runtime.
-
-Therefore:
-- Do not label emoji, initials, or a 2D illustration with a 3D-looking effect as a real 3D avatar.
-- Build and validate the catalog contract and 2D assets first.
-- The 3D tab must remain clearly marked as planned/unavailable until actual approved 3D assets and a supported preview/render path exist.
-- Standard catalog avatars should be free and local/static; no image-generation calls or paid provider calls are implied.
-- Custom upload and generated avatars remain future, separately consented features.
-
-## Implemented in the feature branch
-
-- Additive migration `0021_profile_avatar_catalog.sql` introduces `avatar_catalog_id`, `avatar_representation`, and `avatar_updated_at`; it has not been applied to production.
-- Backend allowlist currently accepts eight published static 2D IDs, derives the owner from the authenticated session, and rejects unknown IDs or 3D selection until real 3D assets exist.
-- Nine locally hosted SVG portraits cover people, fantasy, animals, robots, cartoon, space, nature, and abstract categories; the optional Katty mascot portrait is included without replacing a user's own selection.
-- The account cabinet has a responsive category filter, 2D collection, preview, apply, and reset-to-standard controls for both guests and signed-in users.
-- Guest selection is stored under a dedicated browser-local key and is never sent to the profile API or reused as an authenticated user's choice.
-- Community search cards and public profile cards render the selected catalog portrait; the account hero, top navigation, and sidebar use the same resolved avatar.
-- Public profile projections expose only catalog ID and representation, not private `avatar_path` storage paths.
-- Selection requests are fenced by authenticated user ID and auth-context version.
-- Backend, SQL migration, and frontend source-contract tests were added; latest CI result is pending.
-
-## Remaining safe implementation sequence
-
-1. Verify the new backend, SQL, and frontend contract tests in GitHub Actions; fix failures before proceeding.
-2. Add the same catalog to any additional account/profile surfaces discovered in the UI audit, without duplicating persisted state.
-3. Add guest-only local selection if guest profile UI is exposed; never reuse a signed-in user's choice.
-4. Render the same resolved avatar in sidebar/top bar if those surfaces have a stable profile component.
-5. Add real 3D support only after approved model assets and a real preview runtime are available.
+The implementation requirements are documented in `PROFILE_AVATAR_3D_ARCHITECTURE.md`. Real 3D support remains blocked on approved model assets, a reviewed renderer/runtime, mobile performance testing, and accessibility/fallback behavior. No provider or paid generation is selected.
 
 ## Explicit non-goals
 
-No production schema changes, no live Supabase calls, no deployment, no provider selection, no paid generation, no custom upload, and no 3D placeholder presented as a real 3D model.
+No production schema changes, live Supabase calls, deployment, merge, provider selection, paid generation, custom upload, or active 3D rendering. Profile avatars remain separate from Character Library characters and film-project character snapshots.
