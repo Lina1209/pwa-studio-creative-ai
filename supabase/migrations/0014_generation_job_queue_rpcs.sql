@@ -111,10 +111,15 @@ begin
   if p_result_asset_id is null or (p_actual_cost_usd is not null and p_actual_cost_usd < 0) then
     raise exception 'invalid_completion_payload' using errcode = '22023';
   end if;
-  update public.generation_jobs set status = 'succeeded', result_asset_id = p_result_asset_id,
+  update public.generation_jobs g set status = 'succeeded', result_asset_id = p_result_asset_id,
     actual_cost_usd = p_actual_cost_usd, completed_at = now(), updated_at = now(),
     worker_id = null, lease_token = null, lease_expires_at = null
-  where id = p_job_id and lease_token = p_lease_token and status = 'processing' and lease_expires_at > now();
+  where g.id = p_job_id and g.lease_token = p_lease_token
+    and g.status = 'processing' and g.lease_expires_at > now()
+    and exists (
+      select 1 from public.media_assets m
+      where m.id = p_result_asset_id and m.owner_id = g.owner_id
+    );
   get diagnostics v_count = row_count; return v_count = 1;
 end;
 $$;
