@@ -1,5 +1,6 @@
 import httpx
 from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import HTTPException
 
 from app.core.config import Settings
@@ -31,6 +32,13 @@ def _request(settings: Settings, method: str, table: str, *, params=None, payloa
         raise HTTPException(status_code=502, detail="Moderation storage rejected the request.") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Moderation storage is temporarily unavailable.") from exc
+
+
+def _validated_uuid(value: str, label: str) -> str:
+    try:
+        return str(UUID(value))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=422, detail=f"A valid {label} ID is required.") from exc
 
 
 def create_user_report(settings: Settings, reporter_user_id: str, payload):
@@ -65,6 +73,7 @@ def list_user_reports(settings: Settings):
     )
 
 def review_user_report(settings: Settings, report_id: str, moderator_id: str, payload):
+    report_id = _validated_uuid(report_id, "report")
     rows = _request(settings, "PATCH", "user_reports",
         params={"id": f"eq.{report_id}", "select": "id,status,created_at,reporter_user_id"},
         payload={"status": payload.status, "moderator_note": payload.moderator_note,
@@ -77,16 +86,17 @@ def review_user_report(settings: Settings, report_id: str, moderator_id: str, pa
 
 
 def create_suspension(settings: Settings, moderator_id: str, payload):
+    target_user_id = _validated_uuid(payload.user_id, "user")
     rows = _request(settings, "POST", "user_suspensions",
         params={"select": "id,user_id,reason,scope,expires_at,created_at"},
-        payload={"user_id": payload.user_id, "reason": payload.reason,
+        payload={"user_id": target_user_id, "reason": payload.reason,
                  "scope": payload.scope, "created_by": moderator_id,
                  "expires_at": payload.expires_at})
     if not rows:
         raise HTTPException(status_code=502, detail="The restriction could not be created.")
     row = rows[0]
     _write_audit(settings, moderator_id, "user.suspended", "suspension", row["id"],
-                 {"user_id": payload.user_id, "scope": payload.scope})
+                 {"user_id": target_user_id, "scope": payload.scope})
     return row
 
 
@@ -97,6 +107,7 @@ def list_suspensions(settings: Settings):
 
 
 def revoke_suspension(settings: Settings, moderator_id: str, suspension_id: str):
+    suspension_id = _validated_uuid(suspension_id, "suspension")
     rows = _request(settings, "PATCH", "user_suspensions",
         params={"id": f"eq.{suspension_id}", "revoked_at": "is.null",
                 "select": "id,user_id,scope"},
