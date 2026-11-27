@@ -92,7 +92,7 @@ The migration draft defines:
 - Indexes for owner history, due jobs, expired leases, and pending outbox records.
 
 Important limitations / review notes:
-- This is a schema draft, not a working queue. No claim/ack RPC, worker, scheduler, retry dispatcher, API route, or credit ledger is implemented.
+- Migration 0014 adds draft claim/ack/lease/recovery RPCs, but this is still not an active queue. No API route, worker, scheduler, retry dispatcher process, or credit ledger is implemented.
 - Backend must validate Supabase JWT, derive owner_id from `sub`, validate request and check referenced asset ownership before inserting. Never trust a client owner_id.
 - Job insert and outbox insert must occur in one database transaction. The outbox dispatcher must use atomic row claims (`FOR UPDATE SKIP LOCKED` or equivalent), bounded delivery attempts, and claim fencing.
 - Every worker state update must match both job id and current lease_token. Stale attempts must not update current job state or publish output.
@@ -125,4 +125,5 @@ These functions are schema proposals only. No function has been executed or gran
 - Test max attempts, retry delay, invalid parameters, expired lease boundaries, and all table CHECK constraints on a disposable Supabase project.
 
 Operational caution: outbox dispatch is at-least-once, not exactly-once. The worker must be idempotent. The database lease fences state writes, but cannot undo an external provider call that was already accepted; provider-side idempotency and billing reconciliation remain mandatory.
-- `complete_generation_job` additionally requires the result `media_assets` row to have the same owner as the job; backend must still ensure the private object upload succeeded before creating that row.
+- `complete_generation_job` additionally requires the result `media_assets` row to have the same owner as the job and a non-null storage path; backend must still verify the private object upload succeeded before creating that row.
+\n## Static source guardrails\n\n`backend/tests/test_generation_queue_migration_contract.py` checks the draft's fixed SECURITY DEFINER search paths, explicit function grants/revokes, PostgreSQL `LIMIT ... FOR UPDATE SKIP LOCKED` ordering, result-asset owner/storage-path check, fencing predicates, and preflight coverage. These are source-contract tests only; they are not a PostgreSQL parser or substitute for isolated Supabase concurrency tests. They have not yet been executed in CI.\n
