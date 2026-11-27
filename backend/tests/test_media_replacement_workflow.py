@@ -1,5 +1,6 @@
 """Tests for safe character-reference replacement orchestration."""
 import unittest
+from fastapi import HTTPException
 from uuid import uuid4
 
 from app.services.media_lifecycle import MediaStatus
@@ -59,7 +60,7 @@ class CharacterReferenceReplacementTests(unittest.TestCase):
             ))
 
     def test_public_bucket_is_rejected(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(HTTPException):
             plan_character_reference_replacement(**inputs(
                 new_asset={**inputs()["new_asset"], "bucket": "public"}
             ))
@@ -73,6 +74,19 @@ class CharacterReferenceReplacementTests(unittest.TestCase):
     def test_cleanup_event_is_bound_to_old_asset(self):
         result = plan_character_reference_replacement(**inputs())
         self.assertEqual(result.cleanup_event.asset_id, result.replacement.old_asset_id)
+
+
+    def test_foreign_or_malformed_object_key_is_rejected(self):
+        for path in (
+            f"55555555-5555-4555-8555-555555555555/characters/{CHARACTER}/{NEW}.png",
+            f"{OWNER}/projects/{CHARACTER}/{NEW}.png",
+            f"{OWNER}/characters/{CHARACTER}/not-a-uuid.png",
+            f"{OWNER}/characters/{CHARACTER}/{NEW}.svg",
+        ):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                plan_character_reference_replacement(**inputs(
+                    new_asset={**inputs()["new_asset"], "storage_path": path}
+                ))
 
 
 if __name__ == "__main__":
