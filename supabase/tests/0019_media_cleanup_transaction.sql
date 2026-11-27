@@ -108,6 +108,23 @@ begin
     raise exception 'cleanup reservation did not enqueue exactly one asset: %',v_request;
   end if;
 
+  -- Authenticated users must not bypass the media cleanup outbox by deleting
+  -- private studio-media objects directly. Export deletion remains owner-scoped.
+  if exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and cmd='DELETE' and coalesce(qual,'') ilike '%studio-media%'
+  ) then
+    raise exception 'a direct Storage DELETE policy still exposes studio-media';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and policyname='Users delete own studio exports' and cmd='DELETE'
+  ) then
+    raise exception 'owner-scoped studio-exports deletion policy is missing';
+  end if;
+
   -- The browser role cannot forge, update, or delete server-managed media rows.
   if has_table_privilege('authenticated','public.media_assets','INSERT')
      or has_table_privilege('authenticated','public.media_assets','UPDATE')
