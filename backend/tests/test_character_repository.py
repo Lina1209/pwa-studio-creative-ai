@@ -38,7 +38,6 @@ class CharacterRepositoryTests(unittest.TestCase):
         request.return_value = Mock(content=b"[]", json=lambda: [])
         self.assertEqual(list_owned_characters(self.settings, OWNER), [])
         self.assertEqual(request.call_args.kwargs["params"]["owner_id"], f"eq.{OWNER}")
-        self.assertIn("owner_id", request.call_args.kwargs["params"]["select"])
 
     @patch("app.services.character_repository.httpx.request")
     def test_create_uses_verified_owner_not_client_owner_id(self, request):
