@@ -1071,6 +1071,24 @@ const movieHistoryStyle = document.createElement("style");
     if (/(поздрав|спасибо|получилось|готово|ура|здорово)/i.test(value)) return "joy";
     return "thinking";
   };
+  const KATTY_ASSISTANT_MODES = {
+    companion: { label: "Собеседница", hint: "Поддерживает диалог и помогает сформулировать мысли." },
+    teacher: { label: "Учительница", hint: "Объясняет по шагам и приводит примеры." },
+    creator: { label: "Творческий партнёр", hint: "Помогает развивать сюжеты, образы и идеи." },
+    guide: { label: "Помощница", hint: "Помогает сориентироваться в инструментах PWA Studio." }
+  };
+  const kattyModeForMessage = message => {
+    const value = String(message || "");
+    if (/(объясни|научи|обуч|урок|как работает|разберём|изучи|изучить)/i.test(value)) return "teacher";
+    if (/(сценар|рассказ|истори|песн|стих|иде|придум|творч|фантаз)/i.test(value)) return "creator";
+    if (/(где найти|как открыть|как пользоваться|настройк|инструмент|в студии)/i.test(value)) return "guide";
+    return "companion";
+  };
+  const setKattyAssistantMode = mode => {
+    const image = $("#kattyCompanionExpression");
+    const selected = KATTY_ASSISTANT_MODES[mode] || KATTY_ASSISTANT_MODES.companion;
+    if (image) { image.dataset.assistantMode = mode; image.title = selected.label + ". " + selected.hint; }
+  };
   const kattyResponseState = (prompt, reply) => {
     if (kattySupportSignal(prompt)) return "empathetic";
     if (/(вот план|шаг первый|давайте разберём|объяснение|пример)/i.test(reply)) return "curious";
@@ -1206,6 +1224,7 @@ const movieHistoryStyle = document.createElement("style");
     event.preventDefault();
     const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
+    setKattyAssistantMode(kattyModeForMessage(value));
     setKattyAssistantExpression(kattyContextState(value));
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     const requestUserId = authSession.user.id;
