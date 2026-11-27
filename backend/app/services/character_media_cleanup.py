@@ -65,9 +65,9 @@ def plan_character_media_cleanup(
         seen_objects.add(object_key)
         if object_key in referenced_object_keys:
             raise ValueError("A character media object is still referenced.")
-        if asset.get("status") not in {
-            "ready", "pending_upload", "object_uploaded", "upload_failed", "cleanup_pending"
-        }:
+        if asset.get("status") in {"pending_upload", "object_uploaded"}:
+            raise ValueError("Character media upload is still in progress.")
+        if asset.get("status") not in {"ready", "upload_failed", "cleanup_pending"}:
             raise ValueError("Character media is in an unsupported lifecycle state.")
 
         cleanup_asset = dict(asset, status="cleanup_pending")
