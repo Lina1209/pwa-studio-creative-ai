@@ -75,7 +75,7 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         requested = request_cancel(running, NOW)
         self.assertEqual(requested.status, JobStatus.CANCEL_REQUESTED)
         cancelled = mark_succeeded(requested, "asset-should-not-be-published")
-        self.assertEqual(cancelled.status, JobStatus.CANCELLED)
+        self.assertEqual(cancelled.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(cancelled.result_asset_id)
 
     def test_success_requires_processing_and_asset_id(self):
