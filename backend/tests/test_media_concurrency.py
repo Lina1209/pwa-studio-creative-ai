@@ -52,13 +52,13 @@ class MediaConcurrencyTests(unittest.TestCase):
                     supplied_fencing_token=1, current_fencing_token=1,
                 )
 
-    def test_counter_overflow_not_silently_wrapped(self):
-        permit = authorize_media_mutation(
-            operation_id=OP, expected_version=2**63 - 1,
-            current_version=2**63 - 1, supplied_fencing_token=2,
-            current_fencing_token=2,
-        )
-        self.assertEqual(permit.next_version, 2**63)
+    def test_counter_overflow_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "exhausted"):
+            authorize_media_mutation(
+                operation_id=OP, expected_version=2**63 - 1,
+                current_version=2**63 - 1, supplied_fencing_token=2,
+                current_fencing_token=2,
+            )
 
 
 if __name__ == "__main__":
