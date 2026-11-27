@@ -1459,7 +1459,7 @@ const movieHistoryStyle = document.createElement("style");
       const libraryItems=readCharacterLibrary();
       const picker=document.createElement("section");picker.className="movie-character-picker movie-stage-field";
       const pickerTitle=document.createElement("strong");pickerTitle.textContent="Персонажи из вашей библиотеки";
-      const pickerNote=document.createElement("p");pickerNote.className="movie-stage-note";pickerNote.textContent=libraryItems.length?"Выберите сохранённых персонажей или локации. В фильм попадёт снимок их паспорта; мастер-карточка останется независимой.":"В библиотеке пока нет карточек. Можно продолжить с текстовым описанием или сначала добавить персонажа в Prompt Studio.";
+      const pickerNote=document.createElement("p");pickerNote.className="movie-stage-note";pickerNote.textContent=libraryItems.length?"Выберите сохранённых персонажей или локации. В фильм попадёт снимок их паспорта; мастер-карточка останется независимой. Сами файлы изображений пока остаются в библиотеке и не копируются в проект.":"В библиотеке пока нет карточек. Можно продолжить с текстовым описанием или сначала добавить персонажа в Prompt Studio.";
       picker.append(pickerTitle,pickerNote);
       if(libraryItems.length){
         const select=document.createElement("select");select.multiple=true;select.size=Math.min(5,Math.max(2,libraryItems.length));select.setAttribute("aria-label","Выберите персонажей и локации из библиотеки");select.style.cssText="width:100%;min-height:100px;padding:10px;border-radius:9px;background:#0f0e1d;color:#eee9fa;border:1px solid rgba(166,154,187,.35);";
@@ -1472,7 +1472,7 @@ const movieHistoryStyle = document.createElement("style");
           const added=[];
           chosen.forEach(item=>{
             if(selectedLibrarySnapshots.some(saved=>saved.id===item.id))return;
-            const snapshot={id:item.id,name:item.name,kind:item.kind||"character",representation:item.representation||"2d",description:item.description||"",voice:item.voice||"",passport:item.passport||{},referenceImages:(item.referenceImages||[]).map(ref=>({name:ref.name||"",type:ref.type||"",storagePath:ref.storagePath||null}))};
+            const snapshot={id:item.id,name:item.name,kind:item.kind||"character",representation:item.representation||"2d",description:item.description||"",voice:item.voice||"",passport:item.passport||{},referenceImages:(item.referenceImages||[]).map(ref=>({name:ref.name||"",type:ref.type||""}))};
             selectedLibrarySnapshots.push(snapshot);added.push(snapshot);
           });
           if(!added.length){selectedStatus.textContent="Выбранные карточки уже добавлены.";return;}
