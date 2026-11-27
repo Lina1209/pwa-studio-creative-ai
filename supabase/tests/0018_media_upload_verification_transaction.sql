@@ -48,6 +48,7 @@ declare
   v_status text;
   v_outbox_status text;
   v_count bigint;
+  v_foreign_owner uuid := gen_random_uuid();
   v_asset2 uuid := gen_random_uuid();
   v_event2 uuid := gen_random_uuid();
   v_object2 uuid := gen_random_uuid();
@@ -110,9 +111,10 @@ begin
   -- Wrong owner cannot reserve against another user's character.
   begin
     perform public.pwa_reserve_character_reference_upload(
-      gen_random_uuid(),v_character,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
+      v_foreign_owner,v_character,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
       'test-foreign-owner-' || v_event::text,
-      'foreign.png','image/png','studio-media',v_path,
+      'foreign.png','image/png','studio-media',
+      v_foreign_owner::text || '/characters/' || v_character::text || '/' || gen_random_uuid()::text || '.png',
       27,v_digest,3,3
     );
     raise exception 'Expected owner isolation failure was not raised';
