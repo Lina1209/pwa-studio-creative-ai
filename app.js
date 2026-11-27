@@ -1196,18 +1196,27 @@ const movieHistoryStyle = document.createElement("style");
         open.className = "assistant-history-open"; open.textContent = conversation.title || "Новый диалог";
         open.title = open.textContent; open.setAttribute("aria-current", conversation.id === activeAssistantConversationId ? "true" : "false");
         open.addEventListener("click", async () => {
-          try { await loadAssistantMessages(conversation.id); renderAssistantHistory(); setAssistantStatus(""); }
-          catch (error) { setAssistantStatus("Не удалось открыть диалог: " + error.message); }
+          if (!historyContextIsCurrent()) return;
+          try {
+            await loadAssistantMessages(conversation.id);
+            if (!historyContextIsCurrent()) return;
+            renderAssistantHistory();
+            setAssistantStatus("");
+          } catch (error) {
+            if (historyContextIsCurrent()) setAssistantStatus("Не удалось открыть диалог: " + error.message);
+          }
         });
         const rename = document.createElement("button"); rename.type = "button";
         rename.className = "assistant-history-rename"; rename.textContent = "✎";
         rename.title = "Переименовать диалог"; rename.setAttribute("aria-label", "Переименовать диалог");
         rename.addEventListener("click", async () => {
+          if (!historyContextIsCurrent()) return;
           const title = prompt("Название диалога:", conversation.title || "Новый диалог");
-          if (title === null) return;
+          if (title === null || !historyContextIsCurrent()) return;
           const cleanTitle = title.trim().slice(0, 100); if (!cleanTitle) return;
           const { error: updateError } = await supabaseClient.from("assistant_conversations")
-            .update({ title: cleanTitle }).eq("id", conversation.id).eq("user_id", authSession.user.id);
+            .update({ title: cleanTitle }).eq("id", conversation.id).eq("user_id", requestUserId);
+          if (!historyContextIsCurrent()) return;
           if (updateError) setAssistantStatus("Не удалось переименовать: " + updateError.message);
           else { setAssistantStatus("Название сохранено."); renderAssistantHistory(); }
         });
@@ -1215,7 +1224,9 @@ const movieHistoryStyle = document.createElement("style");
       });
       if (!activeAssistantConversationId && data?.length) {
         await loadAssistantMessages(data[0].id);
+        if (!historyContextIsCurrent()) return;
       }
+      if (!historyContextIsCurrent()) return;
       setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
     } catch (error) {
       if (historyContextIsCurrent()) setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
