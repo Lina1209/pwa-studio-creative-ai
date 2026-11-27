@@ -38,6 +38,9 @@ class MediaCleanupWorkerTests(unittest.TestCase):
             PATH.replace(f"/{OBJECT}.png", f"/%2e%2e/{OBJECT}.png"),
             PATH.replace(f"/{OBJECT}.png", f"/{OBJECT}.png/extra"),
             PATH.replace(f"/{OBJECT}.png", f"/{OBJECT}.svg"),
+            PATH.replace(CHARACTER, "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF"),
+            PATH.replace(OBJECT, "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF"),
+            PATH.replace(".png", ".PNG"),
         ]
         for bad_path in bad_paths:
             with self.subTest(path=bad_path), self.assertRaises(ValueError):
