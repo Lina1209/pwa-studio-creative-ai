@@ -1051,6 +1051,19 @@ const movieHistoryStyle = document.createElement("style");
   const assistantMessages = $("#assistantMessages");
   const assistantStatus = $("#assistantHistoryStatus");
   const setAssistantStatus = message => { if (assistantStatus) assistantStatus.textContent = message || ""; };
+  const KATTY_ASSISTANT_EXPRESSIONS = {
+    neutral: ["neutral-warm", "Катти — спокойная доброжелательность"],
+    thinking: ["thinking", "Катти размышляет"],
+    joy: ["joy", "Катти рада помочь"],
+    empathetic: ["empathetic", "Катти внимательно слушает"]
+  };
+  const setKattyAssistantExpression = state => {
+    const image = $("#kattyCompanionExpression");
+    const [id, label] = KATTY_ASSISTANT_EXPRESSIONS[state] || KATTY_ASSISTANT_EXPRESSIONS.neutral;
+    if (image) { image.src = "assets/characters/katty/expressions/" + id + ".svg"; image.alt = label; }
+  };
+  const kattySupportSignal = message => /\\b(груст|тоск|страш|тревож|устал|плохо|боль|одинок|пережива|расстро|сложно)\\w*/i.test(String(message || ""));
+
   const copyAssistantText = async (content, button) => {
     try {
       if (navigator.clipboard?.writeText && window.isSecureContext) {
@@ -1160,6 +1173,7 @@ const movieHistoryStyle = document.createElement("style");
     } finally { assistantHistoryBusy = false; }
   };
   const startAssistantConversation = async () => {
+    setKattyAssistantExpression("neutral");
     if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
     const { data, error } = await supabaseClient.from("assistant_conversations")
       .insert({ user_id: authSession.user.id, title: "Новый диалог" }).select("id").single();
@@ -1176,6 +1190,7 @@ const movieHistoryStyle = document.createElement("style");
     event.preventDefault();
     const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
+    setKattyAssistantExpression(kattySupportSignal(value) ? "empathetic" : "thinking");
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
@@ -1211,8 +1226,8 @@ const movieHistoryStyle = document.createElement("style");
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
       if (!contextIsCurrent()) return;
-      renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
-    } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
+      renderAssistantMessage("assistant", result.reply); setKattyAssistantExpression(kattySupportSignal(value) ? "empathetic" : "joy"); await renderAssistantHistory();
+    } catch (error) { setKattyAssistantExpression("neutral"); setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
     finally { button.disabled = false; input.disabled = false; input.focus(); }
   });
   setTimeout(() => renderAssistantHistory(), 0);
