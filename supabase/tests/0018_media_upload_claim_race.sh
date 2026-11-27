@@ -103,7 +103,8 @@ PY
 
 # Confirm one persisted claim and exactly one increment of attempts.
 psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -v event_id="$EVENT_ID" <<'SQL'
-do $$
+select set_config('pwa.test.event_id', :'event_id', false);
+do $
 declare
   v_count integer;
   v_attempts integer;
