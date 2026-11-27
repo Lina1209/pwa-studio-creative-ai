@@ -141,3 +141,32 @@ Operational caution: outbox dispatch is at-least-once, not exactly-once. The wor
 - Two historical migration files share the same numeric version prefix: `0005_cloud_projects_and_storage.sql` and `0005_moderation_admin.sql`. A CLI migration runner that treats the prefix as the migration version may reject this history as duplicated.
 - These historical files were deliberately not renamed or reordered: doing so without knowing the connected project's applied migration history could create drift or re-apply risk.
 - Before a local `supabase db reset` can be used as a trustworthy validation path, the migration history needs a reviewed, non-destructive versioning plan and a local config. Until then, the SQL behavior harness is prepared but not runnable through the repository's standard Supabase CLI workflow.
+
+
+## Two-session concurrency test plan (manual, disposable database only)
+
+The sequential SQL harness above cannot prove row-lock behavior. Once a disposable local Supabase database is available and migrations 0012–0014 have been applied there, run the following with two independent SQL sessions. Use a single dedicated queued job (and move all other queued/retry jobs' `next_attempt_at` into the future) so the result is unambiguous.
+
+### Job claim race
+1. In Session A, start a transaction and claim the one due job:
+   `begin;`
+   `select id, status, lease_token from public.claim_generation_job('race-worker-A', 120);`
+   `select pg_sleep(10);`
+   Keep Session A open during the sleep.
+2. During that sleep, in Session B run:
+   `select id, status, lease_token from public.claim_generation_job('race-worker-B', 120);`
+3. Expected: Session A returns the job; Session B returns zero rows because `SKIP LOCKED` skips the locked candidate. Commit Session A.
+4. Verify the job has one incremented attempt, `status='processing'`, and exactly the lease token returned to A. A second claim must not return the same processing job.
+
+### Outbox claim race
+1. Prepare exactly one due, undelivered outbox row in the disposable database.
+2. In Session A:
+   `begin;`
+   `select * from public.claim_generation_outbox('race-dispatcher-A', 10, 60);`
+   `select pg_sleep(10);`
+3. During the sleep, Session B runs:
+   `select * from public.claim_generation_outbox('race-dispatcher-B', 10, 60);`
+4. Expected: A receives the row and B receives no copy of that row. Commit A; then acknowledge using A's returned claim token.
+5. Verify the row is delivered once and cannot be acknowledged again with the consumed token.
+
+Record database version, migration hashes, fixture IDs, both session outputs, and final row state. Do not use production data. This is a test procedure, not evidence that concurrency has already passed.
