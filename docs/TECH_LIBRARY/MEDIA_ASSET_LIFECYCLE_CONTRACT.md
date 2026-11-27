@@ -168,3 +168,9 @@ Ten tests are authored in `backend/tests/test_media_outbox.py`; they have not be
 - For upload verification, only transition to `ready` after the object is verified and the owner-bound metadata transaction succeeds.
 
 The model is intentionally not a queue implementation. The actual transactional outbox requires a reviewed schema/RPC and disposable-database concurrency tests before any migration can be considered for deployment.
+
+## 17. PostgreSQL transactional outbox design (not an active migration)
+
+The detailed design is in `docs/TECH_LIBRARY/MEDIA_OUTBOX_POSTGRES_DESIGN.md`. It defines atomic metadata+event transactions, owner-scoped idempotency, `FOR UPDATE SKIP LOCKED` claims, fenced acknowledgements, crash recovery, and safe ordering for upload verification and cleanup.
+
+No SQL migration or RPC was added because the current `media_assets` draft schema does not yet contain the final status/version/operation columns and has not been reconciled against a disposable database. The design is intentionally non-executable. Do not apply it to production or treat it as a live queue.
