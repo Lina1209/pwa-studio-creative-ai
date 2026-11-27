@@ -321,3 +321,6 @@ body.light .message-new-form input,body.light .direct-message-form input{backgro
 body.light .profile-avatar-picker{background:#faf8ff;border-color:#e4deef}
 body.light .profile-avatar-option{background:#fff;color:#28223c;border-color:#e4deef}
 @media(max-width:420px){.profile-avatar-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.profile-avatar-heading{align-items:flex-start}.profile-avatar-preview{width:66px;height:66px;flex-basis:66px}.profile-avatar-actions{flex-direction:column}.profile-avatar-actions button{width:100%}}
+
+
+.account-avatar img,.top-avatar img,.profile .avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
