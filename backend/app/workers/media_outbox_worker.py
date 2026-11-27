@@ -9,8 +9,6 @@ import signal
 import time
 from uuid import uuid4
 
-from fastapi import HTTPException
-
 from app.core.config import get_settings
 from app.services.media_content import download_private_media_image
 from app.services.media_read import MediaReadPlan
