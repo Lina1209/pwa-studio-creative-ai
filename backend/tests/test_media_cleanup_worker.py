@@ -97,7 +97,7 @@ class MediaCleanupWorkerTests(unittest.TestCase):
     ):
         claim_rpc.return_value = claim()
         delete.side_effect = RuntimeError("storage timeout")
-        retry.return_value = {"event_status": "pending"}
+        retry.return_value = {"event_status": "pending", "asset_status": "cleanup_pending"}
         self.assertTrue(process_one(object()))
         complete.assert_not_called()
         retry.assert_called_once()
@@ -117,7 +117,7 @@ class MediaCleanupWorkerTests(unittest.TestCase):
         self, claim_rpc, complete, delete, retry
     ):
         claim_rpc.return_value = claim(bucket="unexpected-bucket")
-        retry.return_value = {"event_status": "dead_letter"}
+        retry.return_value = {"event_status": "dead_letter", "asset_status": "cleanup_pending"}
         self.assertTrue(process_one(object()))
         delete.assert_not_called()
         complete.assert_not_called()
