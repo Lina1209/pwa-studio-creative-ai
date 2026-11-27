@@ -5,6 +5,7 @@ metadata, create outbox rows, upload to Storage, or expose a signed URL.
 The caller must persist asset metadata + outbox event in one DB transaction.
 """
 from dataclasses import dataclass
+import hashlib
 
 from app.services.image_reference_validation import validate_reference_image
 from app.services.media_access import (
@@ -24,6 +25,7 @@ class CharacterReferenceUploadPlan:
     file_name: str
     file_type: str
     size_bytes: int
+    content_sha256: str
     width: int
     height: int
     initial_status: MediaStatus
@@ -72,6 +74,7 @@ def plan_character_reference_upload(
         file_name=validated.safe_filename,
         file_type=validated.mime_type,
         size_bytes=validated.size_bytes,
+        content_sha256=hashlib.sha256(validated.content).hexdigest(),
         width=validated.width,
         height=validated.height,
         initial_status=MediaStatus.PENDING_UPLOAD,
