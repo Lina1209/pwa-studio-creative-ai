@@ -1882,6 +1882,8 @@ const movieHistoryStyle = document.createElement("style");
       aiStatus.textContent=stageHints[stage.key];
       manualButton.addEventListener("click",()=>{const first=Object.values(inputs)[0];first?.focus();aiStatus.textContent="Можно заполнить материалы самостоятельно. Ваш текст сохранится после нажатия кнопки сохранения.";});
       aiButton.addEventListener("click",async()=>{
+        const requestAuthVersion=authContextVersion,requestUserId=authSession?.user?.id||"guest";
+        const contextIsCurrent=()=>requestAuthVersion===authContextVersion&&(authSession?.user?.id||"guest")===requestUserId;
         aiButton.disabled=true;manualButton.disabled=true;aiButton.textContent="Studio AI работает…";
         aiStatus.textContent="Изучаю материалы фильма и готовлю результат для этого этапа…";
         const latest=movieRead().find(item=>item.id===projectId)||project;
@@ -1977,6 +1979,7 @@ const movieHistoryStyle = document.createElement("style");
         }
         try{
           const result=await apiRequest("/api/chat",{method:"POST",body:JSON.stringify({message:prompt,history:[]})});
+          if(!contextIsCurrent())return;
           const generated=String(result.reply||"").trim();
           if(!generated)throw new Error("Studio AI вернул пустой ответ.");
           if(stage.key==="story"){
@@ -1999,9 +2002,9 @@ const movieHistoryStyle = document.createElement("style");
           if(!aiStatus.textContent.startsWith("✓ Черновик сценария"))aiStatus.textContent="✓ Материалы этапа подготовлены. Проверь их, при необходимости отредактируй и нажми «Сохранить черновик» или кнопку завершения этапа.";
           Object.values(inputs)[0]?.focus();
         }catch(error){
-          aiStatus.textContent="Не удалось создать материалы: "+(error?.message||"ошибка соединения")+". Можно заполнить поля самостоятельно.";
+          if(contextIsCurrent())aiStatus.textContent="Не удалось создать материалы: "+(error?.message||"ошибка соединения")+". Можно заполнить поля самостоятельно.";
         }finally{
-          aiButton.disabled=false;manualButton.disabled=false;aiButton.textContent="✦ Создать с Studio AI";
+          if(contextIsCurrent()){aiButton.disabled=false;manualButton.disabled=false;aiButton.textContent="✦ Создать с Studio AI";}
         }
       });
       aiTools.append(aiButton,manualButton,aiStatus);
