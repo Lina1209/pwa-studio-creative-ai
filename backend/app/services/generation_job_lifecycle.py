@@ -88,6 +88,10 @@ def request_cancel(job: GenerationJob, now: datetime) -> GenerationJob:
         return replace(job, status=JobStatus.CANCEL_REQUESTED, cancel_requested_at=now)
     if job.status == JobStatus.CANCEL_REQUESTED:
         return job
+    if job.status == JobStatus.RECONCILIATION_REQUIRED:
+        # Preserve the reconciliation hold; cancellation suppresses any later publication
+        # but cannot prove that an already-submitted provider operation stopped.
+        return replace(job, cancel_requested_at=job.cancel_requested_at or now)
     raise ValueError("Unsupported job state.")
 
 
