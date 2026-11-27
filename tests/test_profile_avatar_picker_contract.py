@@ -251,5 +251,19 @@ class ProfileAvatarPickerContractTests(unittest.TestCase):
         self.assertNotIn("const conversationId = activeAssistantConversationId;", submit)
 
 
+    def test_community_profile_save_cleanup_is_account_fenced(self):
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index('$("#communityProfileForm")?.addEventListener("submit"')
+        end = app.index("\n  });", start) + 6
+        handler = app[start:end]
+        self.assertIn("const version=authContextVersion,userId=authSession.user.id;", handler)
+        self.assertIn("const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;", handler)
+        self.assertIn("if(contextIsCurrent())communityFeedback", handler)
+        finally_start = handler.rindex("finally{")
+        finally_block = handler[finally_start:]
+        self.assertIn("if(contextIsCurrent())button.disabled=false;", finally_block)
+        self.assertNotIn("finally{button.disabled=false;}", handler)
+
+
 if __name__ == "__main__":
     unittest.main()
