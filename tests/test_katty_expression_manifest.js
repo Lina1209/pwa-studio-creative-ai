@@ -28,4 +28,18 @@ for (const phrase of ["green eyes", "freckles", "curly fire-red hair", "canonica
 assert.equal(manifest.motionPrinciples.status, "guidance_only_no_animation_assets");
 assert.ok(manifest.futureRigRequirements.includes("use the same expression IDs for 2D and 3D mappings"));
 assert.ok(!("asset" in manifest.expressions[0]));
-console.log("Katty expression manifest checks passed.");
+
+for (const expression of expressions.expressions) {
+  assert.equal(expression.assetType, "static_svg");
+  assert.equal(expression.assetStatus, "approved_static_artwork");
+  assert.ok(expression.asset.startsWith("assets/characters/katty/expressions/"));
+  const svg = fs.readFileSync(path.join(root, expression.asset), "utf8");
+  assert.match(svg, /^<svg\\b/);
+  assert.match(svg, /#45a66d/, "green eyes must remain in " + expression.id);
+  assert.match(svg, /#ffd1ad/, "canonical face tone must remain in " + expression.id);
+  assert.match(svg, /#e45c2e/, "red hair must remain in " + expression.id);
+  assert.match(svg, /PWA/, "PWA Studio shirt identity must remain in " + expression.id);
+  assert.match(svg, /#b96b4e/, "freckles must remain in " + expression.id);
+}
+
+console.log("Katty expression manifest and static artwork checks passed.");
