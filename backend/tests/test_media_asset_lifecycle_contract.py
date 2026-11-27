@@ -22,9 +22,10 @@ class MediaAssetLifecycleContractTests(unittest.TestCase):
         self.assertIn("ignore/reject owner ids supplied in json", self.contract)
 
     def test_read_sign_and_delete_resolve_database_owned_path(self):
-        self.assertIn("accept a media asset uuid, not a bucket/path or url", self.contract)
+        self.assertIn("read/sign endpoints accept a media asset uuid, not a bucket/path or url", self.contract)
         self.assertIn("resolve the immutable path from the owner's database row", self.contract)
-        self.assertIn("never based solely on a client-supplied path", self.contract)
+        self.assertIn("do not accept arbitrary", self.contract)
+        self.assertIn("storage_path", self.contract)
 
     def test_signed_urls_are_short_lived_and_never_persisted(self):
         self.assertIn("60 seconds", self.contract)
