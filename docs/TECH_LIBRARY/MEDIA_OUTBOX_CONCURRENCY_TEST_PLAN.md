@@ -118,7 +118,7 @@ Remaining release-gate cases:
 - Passport or another media row references an object: refuse cleanup; never delete the referenced object.
 - User B submits A's character, asset, or Storage path: no cross-owner lookup or DELETE.
 - Storage DELETE succeeds, returns 404, times out after possible success, or returns a permanent error: reconcile and retry without premature tombstoning.
-- A new reference races with cleanup intent: exactly one operation wins under the database serialization guards.
+- A new reference races with cleanup intent: exactly one operation wins under the database serialization guards. Reference triggers and the cleanup reservation acquire per-object advisory locks in deterministic bucket/path order to reduce lock-order inversion risk when rows contain multiple references.
 - A dead-letter event remains recoverable by an operator; the character must not be finalized while any associated media row remains.
 - Final character deletion succeeds only after every child media row is detached and confirmed absent.
 
