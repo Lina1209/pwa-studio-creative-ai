@@ -205,3 +205,207 @@ grant execute on function public.pwa_mark_character_reference_object_uploaded(uu
 
 comment on table public.media_asset_outbox is
   'Server-only durable work queue; no browser role may access this table.';
+
+-- Worker claim: one row at a time, transactionally fenced with a fresh token.
+create or replace function public.pwa_claim_media_upload_verification(
+  p_claim_token uuid,
+  p_lease_seconds integer default 120
+) returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_event public.media_asset_outbox%rowtype;
+  v_asset public.media_assets%rowtype;
+begin
+  if p_claim_token is null or p_lease_seconds < 10 or p_lease_seconds > 900 then
+    raise exception 'invalid media outbox claim' using errcode='22023';
+  end if;
+
+  -- Expired leases are recoverable; exhausted work is terminal.
+  update public.media_asset_outbox
+  set status='dead_letter', claim_token=null, claim_expires_at=null
+  where event_type='media_upload_verify_requested'
+    and status='claimed' and claim_expires_at <= now()
+    and attempts >= max_attempts;
+
+  update public.media_assets a
+  set status='upload_failed', version=version+1
+  from public.media_asset_outbox e
+  where e.asset_id=a.id and e.owner_id=a.owner_id
+    and e.event_type='media_upload_verify_requested'
+    and e.status='dead_letter'
+    and a.status in ('pending_upload','object_uploaded');
+
+  select * into v_event
+  from public.media_asset_outbox e
+  where e.event_type='media_upload_verify_requested'
+    and (
+      (e.status='pending' and e.available_at <= now() and e.attempts < e.max_attempts)
+      or (e.status='claimed' and e.claim_expires_at <= now() and e.attempts < e.max_attempts)
+    )
+  order by e.available_at, e.created_at
+  for update skip locked
+  limit 1;
+
+  if not found then
+    return null;
+  end if;
+
+  update public.media_asset_outbox
+  set status='claimed', claim_token=p_claim_token,
+      claim_expires_at=now() + make_interval(secs => p_lease_seconds),
+      attempts=attempts+1
+  where id=v_event.id
+  returning * into v_event;
+
+  select * into v_asset
+  from public.media_assets a
+  where a.id=v_event.asset_id and a.owner_id=v_event.owner_id;
+
+  if not found or v_asset.status <> 'object_uploaded' then
+    update public.media_asset_outbox
+    set status='dead_letter', claim_token=null, claim_expires_at=null
+    where id=v_event.id and claim_token=p_claim_token;
+    if found and v_asset.id is not null and v_asset.status in ('pending_upload','object_uploaded') then
+      update public.media_assets set status='upload_failed',version=version+1
+      where id=v_asset.id and owner_id=v_event.owner_id
+        and status in ('pending_upload','object_uploaded');
+    end if;
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'event_id',v_event.id,'owner_id',v_event.owner_id,'asset_id',v_asset.id,
+    'claim_token',p_claim_token,'attempts',v_event.attempts,'max_attempts',v_event.max_attempts,
+    'bucket',v_asset.bucket,'storage_path',v_asset.storage_path,
+    'file_name',v_asset.file_name,'file_type',v_asset.file_type,
+    'size_bytes',v_asset.size_bytes,'content_sha256',v_asset.content_sha256,
+    'width',v_asset.width,'height',v_asset.height
+  );
+end;
+$$;
+
+-- Successful byte verification and outbox acknowledgement are one transaction.
+create or replace function public.pwa_complete_media_upload_verification(
+  p_owner_id uuid,
+  p_asset_id uuid,
+  p_event_id uuid,
+  p_claim_token uuid,
+  p_content_sha256 text,
+  p_size_bytes bigint,
+  p_file_type text,
+  p_width integer,
+  p_height integer
+) returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_asset public.media_assets%rowtype;
+  v_event public.media_asset_outbox%rowtype;
+begin
+  if p_owner_id is null or p_asset_id is null or p_event_id is null
+     or p_claim_token is null or p_content_sha256 is null
+     or p_content_sha256 !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid media verification result' using errcode='22023';
+  end if;
+
+  select * into v_event from public.media_asset_outbox
+  where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
+    and event_type='media_upload_verify_requested'
+    and status='claimed' and claim_token=p_claim_token
+    and claim_expires_at > now()
+  for update;
+  if not found then
+    raise exception 'media verification claim is stale' using errcode='P0002';
+  end if;
+
+  update public.media_assets
+  set status='ready',version=version+1
+  where id=p_asset_id and owner_id=p_owner_id and status='object_uploaded'
+    and content_sha256=p_content_sha256 and size_bytes=p_size_bytes
+    and file_type=p_file_type and width=p_width and height=p_height
+  returning * into v_asset;
+  if not found then
+    raise exception 'stored media does not match reserved fingerprint' using errcode='23514';
+  end if;
+
+  update public.media_asset_outbox
+  set status='delivered',claim_token=null,claim_expires_at=null,delivered_at=now()
+  where id=p_event_id and claim_token=p_claim_token and status='claimed';
+  if not found then
+    raise exception 'media verification claim was lost' using errcode='P0002';
+  end if;
+
+  return jsonb_build_object('id',v_asset.id,'status',v_asset.status,'version',v_asset.version);
+end;
+$$;
+
+-- Retry is token-fenced; exhausted events fail closed and never become readable.
+create or replace function public.pwa_retry_media_upload_verification(
+  p_owner_id uuid,
+  p_asset_id uuid,
+  p_event_id uuid,
+  p_claim_token uuid,
+  p_retry_delay_seconds integer default 60
+) returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_event public.media_asset_outbox%rowtype;
+  v_asset public.media_assets%rowtype;
+begin
+  if p_retry_delay_seconds < 1 or p_retry_delay_seconds > 86400 then
+    raise exception 'invalid media verification retry delay' using errcode='22023';
+  end if;
+
+  select * into v_event from public.media_asset_outbox
+  where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
+    and status='claimed' and claim_token=p_claim_token
+    and claim_expires_at > now()
+  for update;
+  if not found then
+    raise exception 'media verification claim is stale' using errcode='P0002';
+  end if;
+
+  if v_event.attempts >= v_event.max_attempts then
+    update public.media_asset_outbox
+    set status='dead_letter',claim_token=null,claim_expires_at=null
+    where id=p_event_id and claim_token=p_claim_token;
+    update public.media_assets
+    set status='upload_failed',version=version+1
+    where id=p_asset_id and owner_id=p_owner_id
+      and status in ('pending_upload','object_uploaded')
+    returning * into v_asset;
+  else
+    update public.media_asset_outbox
+    set status='pending',available_at=now() + make_interval(secs => p_retry_delay_seconds),
+        claim_token=null,claim_expires_at=null
+    where id=p_event_id and claim_token=p_claim_token;
+    select * into v_asset from public.media_assets
+    where id=p_asset_id and owner_id=p_owner_id;
+  end if;
+
+  return jsonb_build_object(
+    'event_status',case when v_event.attempts >= v_event.max_attempts then 'dead_letter' else 'pending' end,
+    'asset_status',v_asset.status
+  );
+end;
+$$;
+
+revoke all on function public.pwa_claim_media_upload_verification(uuid,integer)
+  from public, anon, authenticated;
+revoke all on function public.pwa_complete_media_upload_verification(uuid,uuid,uuid,uuid,text,bigint,text,integer,integer)
+  from public, anon, authenticated;
+revoke all on function public.pwa_retry_media_upload_verification(uuid,uuid,uuid,uuid,integer)
+  from public, anon, authenticated;
+grant execute on function public.pwa_claim_media_upload_verification(uuid,integer) to service_role;
+grant execute on function public.pwa_complete_media_upload_verification(uuid,uuid,uuid,uuid,text,bigint,text,integer,integer)
+  to service_role;
+grant execute on function public.pwa_retry_media_upload_verification(uuid,uuid,uuid,uuid,integer)
+  to service_role;
