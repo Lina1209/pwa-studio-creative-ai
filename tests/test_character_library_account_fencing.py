@@ -66,5 +66,17 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn('window.addEventListener("pwa-studio-auth-changed",()=>{resetCharacterEditor();renderCharacterLibrary();});', APP)
 
 
+    def test_movie_cloud_sync_is_fenced_after_each_account_sensitive_await(self):
+        start = APP.index("const loadMovieProjectsFromCloud = async () => {")
+        end = APP.index("\n  };", start) + 5
+        loader = APP[start:end]
+        self.assertIn("const version = authContextVersion;", loader)
+        self.assertIn("const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;", loader)
+        self.assertIn("if (!contextIsCurrent()) return;", loader)
+        self.assertIn("if (contextIsCurrent() && movieWrite(projects))", loader)
+        self.assertIn("if (contextIsCurrent() && feedback)", loader)
+        self.assertLess(loader.index("await supabaseClient.from(\"projects\").delete()"), loader.index("if (!contextIsCurrent()) return;", loader.index("await supabaseClient.from(\"projects\").delete()")))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
