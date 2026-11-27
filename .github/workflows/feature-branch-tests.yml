@@ -34,3 +34,55 @@ jobs:
       - name: Check media cleanup race harness syntax
         if: always()
         run: bash -n supabase/tests/0019_media_cleanup_claim_race.sh
+
+  media-cleanup-postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pwa_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pwa_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pwa_test
+      PWA_TEST_OWNER_ID: 11111111-1111-4111-8111-111111111111
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Bootstrap disposable Supabase-compatible schema
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -f supabase/tests/0019_disposable_supabase_bootstrap.sql
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -c "insert into auth.users(id,email) values ('$PWA_TEST_OWNER_ID','cleanup-test@example.invalid')"
+      - name: Apply feature migrations to disposable PostgreSQL
+        run: |
+          for migration in \
+            supabase/migrations/0005_cloud_projects_and_storage.sql \
+            supabase/migrations/0012_character_library_media_links.sql \
+            supabase/migrations/0017_owner_scoped_media_associations.sql \
+            supabase/migrations/0018_private_media_upload_reservation.sql \
+            supabase/migrations/0019_private_media_cleanup_outbox.sql; do
+            echo "Applying $migration"
+            psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Run cleanup transaction and rollback harness
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+            -f supabase/tests/0019_media_cleanup_transaction.sql
+      - name: Run two-worker claim race harness
+        run: bash supabase/tests/0019_media_cleanup_claim_race.sh
