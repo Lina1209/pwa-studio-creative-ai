@@ -199,5 +199,15 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("conversationMessagesRequestVersion += 1;", auth_transition)
 
 
+    def test_direct_message_send_cleanup_is_fenced_to_originating_thread(self):
+        start = APP.index('$("#directMessageForm")?.addEventListener')
+        end = APP.index('const reportFeedback', start)
+        handler = APP[start:end]
+        self.assertIn("const contextIsCurrent=()=>version===authContextVersion", handler)
+        self.assertIn("activeMessageThreadId===threadId&&activeMessagePartnerId===partnerId", handler)
+        self.assertIn("finally{if(contextIsCurrent())button.disabled=false;}", handler)
+        self.assertIn("if(contextIsCurrent())messagesFeedback(", handler)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
