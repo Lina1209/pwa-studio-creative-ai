@@ -41,13 +41,13 @@ def _validate_claim(event: dict) -> None:
                 raise ValueError
         except (ValueError, TypeError, AttributeError) as exc:
             raise ValueError("Media cleanup claim contains an invalid identifier.") from exc
-    if event.get("bucket") not in {"studio-media", "studio-exports"}:
+    if event.get("bucket") != "studio-media":
         raise ValueError("Media cleanup claim references an unsupported private bucket.")
     path = event.get("storage_path")
     if not isinstance(path, str) or path.startswith("/") or "\\" in path:
         raise ValueError("Media cleanup claim contains an invalid object key.")
     parts = path.split("/")
-    if len(parts) != 4 or parts[0] != event["owner_id"] or parts[1] not in {"characters", "projects", "exports"}:
+    if len(parts) != 4 or parts[0] != event["owner_id"] or parts[1] != "characters":
         raise ValueError("Media cleanup claim object key is outside the owner's namespace.")
     try:
         UUID(parts[2])
@@ -55,7 +55,7 @@ def _validate_claim(event: dict) -> None:
         UUID(object_name)
     except (ValueError, TypeError, IndexError) as exc:
         raise ValueError("Media cleanup claim contains a malformed object key.") from exc
-    if extension.lower() not in {"png", "jpg", "jpeg", "webp", "mp4", "webm", "mp3", "wav"}:
+    if extension.lower() not in {"png", "jpg", "webp"}:
         raise ValueError("Media cleanup claim contains an unsupported object extension.")
     attempts, maximum = event.get("attempts"), event.get("max_attempts")
     if not isinstance(attempts, int) or isinstance(attempts, bool) or not 1 <= attempts <= 8:
