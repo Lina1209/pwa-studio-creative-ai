@@ -34,7 +34,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $$
 declare
   v_asset record;
 begin
@@ -64,7 +64,7 @@ begin
   end loop;
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists characters_guard_cleanup_reference on public.characters;
 create trigger characters_guard_cleanup_reference
@@ -78,7 +78,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $$
 begin
   if new.bucket is not null and new.storage_path is not null then
     perform pg_advisory_xact_lock(hashtextextended(
@@ -98,7 +98,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists media_assets_guard_cleanup_reference on public.media_assets;
 create trigger media_assets_guard_cleanup_reference
