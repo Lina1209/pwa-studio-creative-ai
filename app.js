@@ -1086,8 +1086,10 @@ const movieHistoryStyle = document.createElement("style");
   };
   const setKattyAssistantMode = mode => {
     const image = $("#kattyCompanionExpression");
+    const badge = $("#kattyAssistantModeLabel");
     const selected = KATTY_ASSISTANT_MODES[mode] || KATTY_ASSISTANT_MODES.companion;
     if (image) { image.dataset.assistantMode = mode; image.title = selected.label + ". " + selected.hint; }
+    if (badge) badge.textContent = "Режим: " + selected.label;
   };
   const kattyResponseState = (prompt, reply) => {
     if (kattySupportSignal(prompt)) return "empathetic";
