@@ -16,7 +16,8 @@
 -- while a private object may still exist. Cloud-sync writes go through the
 -- authenticated API and service-role RPCs.
 revoke insert, update, delete on public.media_assets from anon, authenticated;
-grant select on public.media_assets to authenticated;
+grant select on public.media_assets to authenticated, service_role;
+grant select on public.characters to service_role;
 
 -- Keep character deletion behind the fenced cleanup/finalization RPC sequence.
 revoke delete on public.characters from anon, authenticated;
