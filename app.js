@@ -1264,10 +1264,12 @@ const movieHistoryStyle = document.createElement("style");
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
     const contextIsCurrent = () => authSession?.user?.id === requestUserId && authContextVersion === requestVersion;
+    let requestConversationId = null;
     try {
       if (!activeAssistantConversationId) await startAssistantConversation();
       if (!contextIsCurrent()) return;
       const conversationId = activeAssistantConversationId;
+      requestConversationId = conversationId;
       const conversationIsCurrent = () => contextIsCurrent() && activeAssistantConversationId === conversationId;
       const { data: previousMessages, error: historyError } = await supabaseClient.from("assistant_messages")
         .select("role,content").eq("conversation_id", conversationId)
@@ -1302,7 +1304,7 @@ const movieHistoryStyle = document.createElement("style");
         await renderAssistantHistory();
       }
     } catch (error) {
-      if (contextIsCurrent() && (!activeAssistantConversationId || activeAssistantConversationId === conversationId))
+      if (contextIsCurrent() && (!requestConversationId || activeAssistantConversationId === requestConversationId))
         { setKattyAssistantExpression("neutral"); setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
     } finally {
       button.disabled = false; input.disabled = false;
