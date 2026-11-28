@@ -575,3 +575,6 @@ CI run `46111985459` on commit `f6f2c7d` passed all three jobs. The real-browser
 ### Additional byte-integrity hardening
 
 The exact Blob delete adapter now requires an injected image inspector and performs a preflight read of the actual staged Blob. Before opening the read-write delete transaction it recomputes SHA-256 from the received bytes, checks byte size and MIME, and rechecks image dimensions against the durable proof. The caller is required to hold the owner-wide lock for the entire preflight/delete sequence; the transaction then rechecks the exact owner/operation/asset/proof tuple before deleting the key. Browser tests deliberately replace stored bytes while leaving the proof metadata unchanged and verify that deletion is rejected and the Blob remains present.
+
+
+The final exact-byte deletion adapter test run is CI `46112211648` on commit `3add0af`: all three jobs succeeded (backend unit tests, disposable PostgreSQL integration, and the full browser/IndexedDB suite). The browser suite includes a same-size Blob byte-tampering attempt, and verifies checksum mismatch prevents deletion. Cross-owner and cross-operation delete attempts fail closed as `missing` without touching the real owner's staged Blob.
