@@ -314,3 +314,8 @@ The activation browser suite now uses the browser's actual `window.localStorage`
 ### Full document-reload recovery proof
 
 The simulated crash-recovery browser scenario now navigates to a separate recovery document after persisting the activation intent and writing the merged metadata, but before marking the operation committed. The new document reopens the IndexedDB journal, reconstructs the owner-scoped localStorage adapter, and invokes recovery using only the durable operation ID and revision. It proves that the merged digest and restore-operation marker survive a full page reload before committing the journal. GitHub Actions run `46108898647` on `0fcfd1f` passed backend unit tests, disposable PostgreSQL integration, all IndexedDB/browser tests, and frontend checks.
+
+
+### Recovery account-switch fence
+
+Recovery now rechecks the active-account fence after loading the durable journal, after acquiring the lease, after reading local metadata, and immediately before changing the journal state. A browser test flips the account fence after the metadata read: recovery refuses to checkpoint, leaves the operation in `activating`, and succeeds only after the correct account context is restored. GitHub Actions run `46108991587` on `db04ed6` passed backend unit tests, disposable PostgreSQL integration, and the complete browser/IndexedDB suite.
