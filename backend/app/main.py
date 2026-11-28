@@ -18,7 +18,7 @@ from app.services.notification_service import list_notifications, mark_notificat
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self, ensure_target_not_owner
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
 from app.services.media_repository import get_owned_media_asset, list_owned_character_media_assets, list_owned_character_media_assets_for_characters
-from app.services.media_read import plan_private_media_read
+from app.services.media_read import MediaReadPlan, plan_private_media_read
 from app.services.media_signed_url import create_private_media_signed_url, SIGNED_URL_TTL_SECONDS
 from app.services.media_access import media_asset_public_view
 from app.services.media_content import download_private_media_image
@@ -140,7 +140,37 @@ async def upload_character_reference(
     reservation = reserve_character_reference_upload(settings, plan)
     current_status = reservation.get("status")
     if current_status == "pending_upload":
-        upload_character_reference_object(settings, plan, content)
+        try:
+            upload_character_reference_object(settings, plan, content)
+        except HTTPException as upload_error:
+            if upload_error.status_code != 409:
+                raise
+            # A previous request may have stored the exact immutable object but
+            # lost its response before the database status transition. Reconcile
+            # only by reading that server-planned private key and comparing the
+            # complete bytes plus decoded image fingerprint with this reservation.
+            try:
+                existing = download_private_media_image(
+                    settings,
+                    MediaReadPlan(
+                        owner_id=user.user_id,
+                        asset_id=plan.asset_id,
+                        bucket=plan.bucket,
+                        storage_path=plan.storage_path,
+                    ),
+                    file_name=plan.file_name,
+                    expected_mime_type=plan.file_type,
+                )
+            except HTTPException:
+                raise upload_error
+            existing_digest = hashlib.sha256(existing.content).hexdigest()
+            if (existing.content != content
+                    or existing_digest != plan.content_sha256
+                    or existing.size_bytes != plan.size_bytes
+                    or existing.mime_type != plan.file_type
+                    or existing.width != plan.width
+                    or existing.height != plan.height):
+                raise upload_error
         reservation = mark_character_reference_object_uploaded(settings, plan)
         current_status = reservation.get("status")
     if current_status not in {"object_uploaded", "ready"}:
