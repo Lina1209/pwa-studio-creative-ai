@@ -11,6 +11,16 @@
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   const clone = value => structuredClone(value);
   const now = () => Date.now();
+  const validLockRecord = (record, ownerId) => !!record &&
+    record.ownerId === ownerId &&
+    Number.isSafeInteger(record.epoch) && record.epoch >= 1 &&
+    Number.isFinite(record.expiresAt) && record.expiresAt >= 0 &&
+    record.protocolVersion === 1 &&
+    (record.token === null
+      ? record.expiresAt === 0
+      : typeof record.token === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.token) &&
+        record.expiresAt > 0);
 
   function open() {
     return new Promise((resolve, reject) => {
@@ -47,14 +57,9 @@
       request.onsuccess = () => {
         const previous = request.result;
         const time = now();
-        if (previous) {
-          const validRecord = previous.ownerId === ownerId &&
-            Number.isSafeInteger(previous.epoch) && previous.epoch >= 1 &&
-            Number.isFinite(previous.expiresAt) && previous.expiresAt >= 0 &&
-            previous.protocolVersion === 1 &&
-            (previous.token === null || (typeof previous.token === "string" &&
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(previous.token)));
-          if (!validRecord) { abort(new Error("Owner lock record is malformed; refusing unsafe takeover.")); return; }
+        if (previous && !validLockRecord(previous, ownerId)) {
+          abort(new Error("Owner lock record is malformed; refusing unsafe takeover."));
+          return;
         }
         if (previous && previous.expiresAt > time) { abort(new Error("Owner critical section is already leased.")); return; }
         const epoch = (previous?.epoch || 0) + 1;
@@ -72,7 +77,8 @@
       const request = store.get(lease.ownerId);
       request.onsuccess = () => {
         const current = request.result;
-        if (!current || current.token !== lease.token || current.epoch !== lease.epoch || current.expiresAt <= now()) {
+        if (!validLockRecord(current, lease.ownerId) || !current.token ||
+            current.token !== lease.token || current.epoch !== lease.epoch || current.expiresAt <= now()) {
           abort(new Error("Owner lock renewal rejected: stale or expired fencing token."));
           return;
         }
@@ -110,7 +116,8 @@
         const request = db.transaction(STORE, "readonly").objectStore(STORE).get(lease.ownerId);
         request.onsuccess = () => {
           const current = request.result;
-          resolve(!!current && current.token === lease.token && current.epoch === lease.epoch && current.expiresAt > now());
+          resolve(validLockRecord(current, lease.ownerId) && !!current.token &&
+            current.token === lease.token && current.epoch === lease.epoch && current.expiresAt > now());
         };
         request.onerror = () => reject(request.error || new Error("Owner lock check failed."));
       });
