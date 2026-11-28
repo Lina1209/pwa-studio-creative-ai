@@ -39,7 +39,7 @@ begin
 
   v_storage_path := v_owner::text || '/characters/' || v_character_id::text || '/' || v_object::text || '.png';
   v_result := public.pwa_reserve_character_reference_upload_v2(
-    v_owner,v_character_id,v_local_reference,v_asset,v_operation,v_event,
+    v_owner,v_character_id,v_local_reference::text,v_asset,v_operation,v_event,
     'reference-binding-idempotency-001','hero.png','image/png','studio-media',
     v_storage_path,128,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',16,8
   );
@@ -65,7 +65,7 @@ begin
   v_conflict := false;
   begin
     perform public.pwa_reserve_character_reference_upload_v2(
-      v_owner,v_character_id,v_local_reference,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
+      v_owner,v_character_id,v_local_reference::text,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
       'reference-binding-idempotency-002','other.png','image/png','studio-media',
       v_owner::text || '/characters/' || v_character_id::text || '/' || gen_random_uuid()::text || '.png',
       128,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',16,8
@@ -82,7 +82,7 @@ begin
   v_conflict := false;
   begin
     perform public.pwa_reserve_character_reference_upload_v2(
-      v_owner,v_character_id,v_other_reference,v_asset,v_operation,v_event,
+      v_owner,v_character_id,v_other_reference::text,v_asset,v_operation,v_event,
       'reference-binding-idempotency-001','hero.png','image/png','studio-media',
       v_storage_path,128,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',16,8
     );
@@ -111,7 +111,7 @@ begin
   end if;
 
   if has_function_privilege('authenticated',
-       'public.pwa_reserve_character_reference_upload_v2(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,text,text,bigint,text,integer,integer)','EXECUTE') then
+       'public.pwa_reserve_character_reference_upload_v2(uuid,uuid,text,uuid,uuid,uuid,text,text,text,text,text,bigint,text,integer,integer)','EXECUTE') then
     raise exception 'authenticated role can execute the server-only reference-binding RPC';
   end if;
   if not has_function_privilege('service_role',
