@@ -59,6 +59,21 @@
    await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:badPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:41,height:30})}),"dimension mismatch accepted");
    ok(canonical(localAdapter.readLocalItems(owner))===canonical(before),"metadata changed despite failed verification");
   });
+  await run("account switch during staged-media revalidation fences metadata activation",async()=>{
+   const op=crypto.randomUUID(),switchCloud=crypto.randomUUID(),switchLocal=crypto.randomUUID(),switchAsset=crypto.randomUUID(),switchStage=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),base4=canonical(current),baseDigest4=await digest(base4);
+   const switchRef={...reference,characterId:switchCloud,sourceLocalId:switchLocal,cloudAssetId:switchAsset,localStagedBlobId:switchStage,localReferenceId:switchLocal+"-cccccccc-cccc-4ccc-8ccc-cccccccccccc"};
+   const switchManifest={...manifest,characterId:switchCloud,sourceLocalId:switchLocal,cloudAssetId:switchAsset,localReferenceId:switchRef.localReferenceId};
+   const switchProposal={...proposal,id:switchLocal,cloudBackup:{...proposal.cloudBackup,characterId:switchCloud,referenceManifest:[switchManifest]}};
+   const switchPlan={complete:true,ownerId:owner,baseLocalFingerprint:base4,proposedItems:[switchProposal],unchanged:[],conflicts:[]};
+   await blobStore.stageBlob({ownerId:owner,operationId:op,cloudAssetId:switchAsset,localStagedBlobId:switchStage,blob,proof:{sha256:sha,sizeBytes:blob.size,mimeType:"image/png",width:40,height:30}});
+   const ready=await operationReady(op,[switchCloud],[switchRef],baseDigest4),before=localAdapter.readLocalItems(owner);
+   let currentAccount=true;
+   const switchingStore={async readStagedBlob(args){const result=await blobStore.readStagedBlob(args);currentAccount=false;return result;}};
+   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:switchPlan,expectedRevision:ready.revision,journal,blobStore:switchingStore,localAdapter,inspectImage:async()=>({width:40,height:30}),isCurrent:()=>currentAccount}),"account switch did not stop activation");
+   ok(canonical(localAdapter.readLocalItems(owner))===canonical(before),"account switch changed local metadata");
+   ok((await journal.get(owner,op)).state==="ready_to_activate","account switch advanced the activation checkpoint");
+  });
   await run("storage quota failure preserves the base library and retryable intent",async()=>{
    const op=crypto.randomUUID(),nextCloud=crypto.randomUUID(),nextLocal=crypto.randomUUID();
    const current=localAdapter.readLocalItems(owner),base3=canonical(current),baseDigest3=await digest(base3);
