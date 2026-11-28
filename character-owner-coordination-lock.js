@@ -47,6 +47,15 @@
       request.onsuccess = () => {
         const previous = request.result;
         const time = now();
+        if (previous) {
+          const validRecord = previous.ownerId === ownerId &&
+            Number.isSafeInteger(previous.epoch) && previous.epoch >= 1 &&
+            Number.isFinite(previous.expiresAt) && previous.expiresAt >= 0 &&
+            previous.protocolVersion === 1 &&
+            (previous.token === null || (typeof previous.token === "string" &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(previous.token)));
+          if (!validRecord) { abort(new Error("Owner lock record is malformed; refusing unsafe takeover.")); return; }
+        }
         if (previous && previous.expiresAt > time) { abort(new Error("Owner critical section is already leased.")); return; }
         const epoch = (previous?.epoch || 0) + 1;
         const lease = { ownerId, token: crypto.randomUUID(), epoch, expiresAt: time + ttlMs, protocolVersion: 1 };
