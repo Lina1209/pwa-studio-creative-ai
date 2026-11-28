@@ -1754,8 +1754,8 @@ const movieHistoryStyle = document.createElement("style");
       if (error) throw error;
       if (!contextIsCurrent()) return;
       // A corrupt local library must stop cloud-side deletion and merge as well.
-      const local = movieRead();
-      const deletedIds = readMovieTombstones();
+      let local = movieRead();
+      let deletedIds = readMovieTombstones();
       if (deletedIds.length) {
         const { error: deleteError } = await supabaseClient.from("projects").delete()
           .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
@@ -1763,6 +1763,9 @@ const movieHistoryStyle = document.createElement("style");
         if (!contextIsCurrent()) return;
         // Remove only IDs handled by this request; preserve tombstones added while awaiting the network.
         writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
+        // The network wait may have overlapped local edits or another deletion; merge from fresh state.
+        local = movieRead();
+        deletedIds = readMovieTombstones();
       }
       const deletedSet = new Set(deletedIds);
       const survivingLocal = local.filter(project => !deletedSet.has(project.id));
