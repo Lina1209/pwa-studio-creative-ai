@@ -99,6 +99,13 @@ def request_cancel(job: GenerationJob, now: datetime) -> GenerationJob:
 
 def mark_succeeded(job: GenerationJob, result_asset_id: str) -> GenerationJob:
     if job.status == JobStatus.CANCEL_REQUESTED:
+        # A successful provider response is evidence of acceptance, but it must
+        # never overwrite an already-recorded contradictory provider outcome.
+        if job.provider_submission_outcome not in {
+            ProviderSubmissionOutcome.UNKNOWN,
+            ProviderSubmissionOutcome.ACCEPTED,
+        }:
+            raise ValueError("Provider submission evidence cannot be overwritten by contradictory evidence.")
         # Provider completion can still be billable; suppress publication and reconcile usage.
         return replace(
             job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
