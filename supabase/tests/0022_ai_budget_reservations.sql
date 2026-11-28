@@ -107,6 +107,20 @@ begin
     null;
   end;
 
+  -- Reject non-finite provider charges before changing reservation state.
+  begin
+    perform public.settle_ai_budget(v_first,'NaN'::numeric);
+    raise exception 'NaN settlement amount was accepted';
+  exception when sqlstate '22023' then
+    if sqlerrm <> 'invalid_ai_budget_settlement' then raise; end if;
+  end;
+  begin
+    perform public.settle_ai_budget(v_first,'Infinity'::numeric);
+    raise exception 'infinite settlement amount was accepted';
+  exception when sqlstate '22023' then
+    if sqlerrm <> 'invalid_ai_budget_settlement' then raise; end if;
+  end;
+
   v_status := public.settle_ai_budget(v_first,0.01);
   if v_status <> 'settled' then raise exception 'settlement failed'; end if;
   v_status := public.settle_ai_budget(v_first,0.01);
