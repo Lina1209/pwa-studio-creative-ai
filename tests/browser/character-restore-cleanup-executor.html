@@ -92,6 +92,16 @@
    const manifest=await cleanupJournal.getManifest(owner,cleanupId);
    assert(manifest.candidates[0].state==="delete_intent","durable intent was not preserved for manual recovery");
   });
+  await test("lock loss during Blob preflight blocks the final delete transaction",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["lock lost during image inspection"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);let lost=false;
+   const lock={acquire:(...args)=>PWACharacterOwnerCoordinationLock.acquire(...args),renew:(...args)=>PWACharacterOwnerCoordinationLock.renew(...args),release:(...args)=>PWACharacterOwnerCoordinationLock.release(...args),isCurrent:async lease=>lost?false:PWACharacterOwnerCoordinationLock.isCurrent(lease)};
+   const inspectImage=async()=>{lost=true;return {width:64,height:48}};
+   await rejects(()=>execute(owner,cleanupId,{ownerLock:lock,inspectImage}));
+   assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted after fencing token was lost during preflight");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.candidates[0].state==="delete_intent","durable intent was not retained after preflight lock loss");
+  });
   await test("incomplete restore journal pagination blocks deletion",async()=>{
    const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["pagination"],{type:"image/webp"});
    await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);let calls=0;
