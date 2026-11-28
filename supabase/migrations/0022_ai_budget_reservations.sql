@@ -168,9 +168,13 @@ begin
       end
     ),0) into v_exposure
     from public.ai_budget_reservations r
-    where (
-      r.created_at >= v_policy.period_start and r.created_at < v_policy.period_end
-    ) or r.status in ('reserved','unknown');
+    where r.created_at >= v_policy.period_start
+      and r.created_at < v_policy.period_end
+      and (
+        v_policy.scope_type = 'platform'
+        or (v_policy.scope_type = 'provider' and r.provider = lower(v_policy.scope_key))
+        or (v_policy.scope_type = 'user' and r.user_id::text = v_policy.scope_key)
+      );
 
     if v_exposure + p_reserved_usd > v_policy.limit_usd then
       raise exception 'ai_budget_limit_exceeded' using errcode = 'P0001';
@@ -258,6 +262,43 @@ begin
 end;
 $$;
 
+create or replace function public.mark_stale_ai_budget_reservations_unknown(
+  p_created_before timestamptz,
+  p_limit integer default 100
+) returns integer
+language plpgsql security definer
+set search_path = pg_catalog, public, pg_temp
+as $
+declare
+  v_count integer := 0;
+  v_res public.ai_budget_reservations%rowtype;
+begin
+  if p_created_before is null or p_limit is null or p_limit < 1 or p_limit > 1000 then
+    raise exception 'invalid_ai_budget_reconciliation_request' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(728194620031::bigint);
+  for v_res in
+    select * from public.ai_budget_reservations
+    where status = 'reserved' and created_at < p_created_before
+    order by created_at
+    limit p_limit
+    for update skip locked
+  loop
+    update public.ai_budget_reservations
+      set status = 'unknown', updated_at = now()
+      where id = v_res.id;
+    insert into public.ai_budget_ledger(
+      reservation_id,request_id,user_id,event_type,amount_usd,safe_reason
+    ) values (
+      v_res.id,v_res.request_id,v_res.user_id,'unknown',
+      v_res.reserved_usd,'stale_reservation_reconciliation'
+    );
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$;
+
 create or replace function public.release_ai_budget_no_charge(
   p_reservation_id uuid, p_safe_reason text
 ) returns boolean
@@ -286,10 +327,12 @@ $$;
 revoke all on function public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric) from public, anon, authenticated;
 revoke all on function public.settle_ai_budget(uuid,numeric) from public, anon, authenticated;
 revoke all on function public.mark_ai_budget_unknown(uuid,text) from public, anon, authenticated;
+revoke all on function public.mark_stale_ai_budget_reservations_unknown(timestamptz,integer) from public, anon, authenticated;
 revoke all on function public.release_ai_budget_no_charge(uuid,text) from public, anon, authenticated;
 grant execute on function public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric) to service_role;
 grant execute on function public.settle_ai_budget(uuid,numeric) to service_role;
 grant execute on function public.mark_ai_budget_unknown(uuid,text) to service_role;
+grant execute on function public.mark_stale_ai_budget_reservations_unknown(timestamptz,integer) to service_role;
 grant execute on function public.release_ai_budget_no_charge(uuid,text) to service_role;
 
 comment on table public.ai_budget_control is
