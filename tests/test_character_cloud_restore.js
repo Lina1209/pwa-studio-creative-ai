@@ -61,7 +61,7 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     const local={id:localId,name:"Локальная версия",description:"",referenceImages:[]};
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
     assert.equal(plan.conflicts.length,1);
-    assert.equal(plan.conflicts[0].reason,"local_and_cloud_content_differ");
+    assert.equal(plan.conflicts[0].reason,"local_record_missing_cloud_identity_binding");
   });
   await run("duplicate identity mappings across pages fail closed",async()=>{
     let call=0;
