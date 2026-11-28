@@ -39,7 +39,7 @@ class CharacterReferenceReplacementTests(unittest.TestCase):
         self.assertEqual(result.replacement.new_status, MediaStatus.READY)
         self.assertEqual(result.replacement.old_status, MediaStatus.CLEANUP_PENDING)
         self.assertEqual(result.cleanup_event.asset_id, OLD)
-        self.assertEqual(result.cleanup_event.event_type, "media_cleanup_requested")
+        self.assertEqual(result.cleanup_event.event_type, "media_reference_replacement_cleanup_requested")
         self.assertEqual(result.cleanup_event.status, OutboxStatus.PENDING)
 
     def test_stale_character_pointer_is_rejected(self):
