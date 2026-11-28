@@ -11,7 +11,7 @@ insert into public.ai_budget_policies(
   'platform','platform',date_trunc('month',now()),date_trunc('month',now()) + interval '1 month',0.05,true
 );
 
-do $
+do $$
 begin
   if (not (select not enforcement_enabled and kill_switch_enabled
            from public.ai_budget_control where singleton=true)) then
@@ -34,7 +34,7 @@ begin
     if sqlerrm <> 'ai_budget_enforcement_unavailable' then raise; end if;
   end;
 end;
-$;
+$$;
 
 update public.ai_budget_control
 set enforcement_enabled=true, kill_switch_enabled=false
