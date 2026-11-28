@@ -50,6 +50,7 @@ declare
   v_status text;
   v_count integer;
   v_created boolean;
+  v_stale_count integer;
 begin
   select reservation_id,reservation_created into v_first,v_created
   from public.reserve_ai_budget(
@@ -106,12 +107,26 @@ begin
     raise exception 'confirmed no-charge release failed';
   end if;
 
+  select reservation_id into v_first
+  from public.reserve_ai_budget(
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',v_user,'budget-test-key-0004',
+    repeat('f',64),'chat','deepseek','deepseek-flash',0.01
+  );
+  v_stale_count := public.mark_stale_ai_budget_reservations_unknown(now() + interval '1 second',10);
+  if v_stale_count <> 1 then
+    raise exception 'stale reservation was not conservatively marked unknown';
+  end if;
+  if (select status from public.ai_budget_reservations where id=v_first) <> 'unknown' then
+    raise exception 'stale reservation was incorrectly released';
+  end if;
+
   select count(*) into v_count from public.ai_budget_ledger
   where request_id in (
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    'ffffffff-ffff-4fff-8fff-ffffffffffff'
   );
-  if v_count <> 5 then raise exception 'unexpected immutable ledger event count: %',v_count; end if;
+  if v_count <> 7 then raise exception 'unexpected immutable ledger event count: %',v_count; end if;
 end;
 $$;
 
