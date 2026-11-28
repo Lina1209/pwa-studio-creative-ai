@@ -315,6 +315,9 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
   await run("backup serializer rejects duplicate immutable asset bindings",async()=>{
     assert.throws(()=>planner.serializeReferenceManifest([{id:localId2,slotId:localId2,assetLocalReferenceId:referenceId},{id:localId,slotId:localId,assetLocalReferenceId:referenceId}],[]),/duplicate asset identities/);
   });
+  await run("backup serializer rejects empty explicit v2 identity instead of falling back to legacy ID",async()=>{
+    assert.throws(()=>planner.serializeReferenceManifest([{id:localId2,slot_id:localId2,asset_local_reference_id:""}],[]),/v2 identity must not include a legacy ID/);
+  });
   await run("invalid passport kind and reference identity are rejected",async()=>{
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId,{reference_data:{kind:"unknown",representation:"2d",passport:{},referenceImages:[]}})])}),/kind is invalid/);
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId,{reference_data:{kind:"character",representation:"2d",passport:{},referenceImages:[{id:"",name:"x",type:"image/png"}]}})])}),/reference descriptor is invalid/);
