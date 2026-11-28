@@ -187,3 +187,32 @@ The original review above was written before the Character Library media API was
 5. AI budget reservation is still not wired to `/api/chat` or `/api/prompts`; passing isolated SQL tests is not production spend protection.
 
 **Current decision:** the media API has meaningful source-level ownership, integrity, and privacy controls and its isolated CI suite passes. This does not constitute a live Supabase policy audit, production penetration test, deployment verification, or security certification. Do not deploy or apply migrations from this review without explicit approval.
+
+
+### Follow-up verification — 2026-11-28: worker lifecycle and moderation boundaries
+
+#### Private media background workers
+
+- Both worker entry points are implemented as private polling processes: `python -m app.workers.media_outbox_worker` independently verifies uploaded character images, and `python -m app.workers.media_cleanup_worker` deletes only server-claimed tombstoned objects. Neither exposes an HTTP listener.
+- Both use bounded polling, finite claim leases, fresh UUID claim tokens, capped retry delays, bounded attempts (8), and graceful SIGTERM/SIGINT shutdown. The verification worker fully downloads/decodes and checks the reserved fingerprint; the cleanup worker validates the complete claim and canonical owner/character/object path before Storage access.
+- The cleanup SQL uses row locks, `SKIP LOCKED`, idempotency keys, claim-token/lease fencing, exact-reference checks, tombstones, and a separate finalization RPC. Repeated Storage deletion after an uncertain acknowledgement is designed to be safe because an already-absent object is treated as success by the Storage delete adapter. Exhausted/invalid claims go to dead letter; there is no supported automatic dead-letter requeue API. Do not manually edit queue rows.
+- **Deployment boundary:** the current Dockerfile starts only Uvicorn and `render.yaml` declares only the API web service. Neither worker is started by the current API deployment. API health therefore does not establish queue processing. A future deployment needs two separate private worker processes, one per command, with restart policy, bounded resources, SIGTERM grace, and queue-age/dead-letter/error monitoring. No worker service was provisioned or started by this review.
+- Regression test coverage includes malformed claims, no Storage access for invalid claims, storage-delete/acknowledgement uncertainty, lease expiry and fresh-token reclaim. CI run `46099345030` completed successfully: backend unit tests, disposable PostgreSQL media-cleanup integration, and real-browser account-isolation tests all passed. This run did not deploy or execute a worker against production objects.
+
+#### Reports, restrictions, and moderation
+
+- Report creation is authenticated and derives reporter identity from the verified session. Database constraints bound category, description, and content reference. Admin review and suspension routes are behind `require_admin`; moderator identity is passed from the server-derived `StudioUser`, not a client-supplied actor field.
+- Review, suspension creation, and revocation each use a single SECURITY DEFINER RPC with a fixed search path and service-role-only EXECUTE grants. State mutation and append-only audit insertion occur in the same transaction; disposable-database fault-injection tests verify rollback if the audit insert fails.
+- The current generation input guard is explicitly a conservative regex/keyword first layer, not complete moderation. It does not provide semantic classification, generated-output review, image/video moderation, or a complete appeals workflow. Reports are stored and can be reviewed, but there is no end-to-end automated moderation pipeline or appeals endpoint established by this review.
+- Suspension enforcement is currently explicit at selected community routes and should not be assumed to cover every generation, messaging, upload, or media operation. A route-by-route policy matrix and central enforcement design are still required before treating restrictions as platform-wide.
+- Report abuse controls (per-user quotas/rate limits, duplicate clustering, evidence retention/deletion policy, reviewer access workflow, and escalation/appeal handling) remain product/security design work. Do not add a broad output regex filter as a substitute: it would create false positives without a policy, appeal path, and test corpus.
+
+#### Remaining blockers and decision
+
+1. Provision and monitor the two private workers before relying on asynchronous media verification or cleanup in a live environment; confirm queue age and dead-letter alerting.
+2. Design a governed moderation pipeline covering input, generated text, uploaded/generated media, reviewer actions, appeals, and scoped restriction enforcement.
+3. Complete route-by-route suspension enforcement and report-abuse controls before claiming platform-wide moderation.
+4. Keep dead-letter recovery manual/escalated until a reviewed, audited recovery protocol exists.
+5. Live Supabase policy/grant checks, real two-account storage tests, immutable admin UUID configuration, and production deployment verification remain outstanding.
+
+**Decision:** source-level worker and moderation boundaries are now documented. CI run `46099345030` passed all three jobs. This is not a production deployment, live policy inspection, queue-processing proof, or security certification. Do not merge, deploy, or apply migrations without explicit approval.
