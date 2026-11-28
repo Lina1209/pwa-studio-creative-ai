@@ -174,6 +174,7 @@ begin
       where m.id = p_result_asset_id
         and m.owner_id = g.owner_id
         and m.storage_path is not null
+        and m.status = 'ready'
     );
   get diagnostics v_count = row_count; return v_count = 1;
 end;
