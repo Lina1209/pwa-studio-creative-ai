@@ -159,6 +159,22 @@
     if(!result)fail("Operation is leased by another tab or unavailable.");
     return result;
   }
+  async function renewLease(ownerValue,operationValue,lease,{ttlMs=60000}={}) {
+    const owner=uuid(ownerValue,"owner ID"),op=uuid(operationValue,"operation ID");
+    if(!Number.isInteger(ttlMs)||ttlMs<1000||ttlMs>120000)fail("Lease duration must be 1–120 seconds.");
+    let renewed=null;
+    await transaction("readwrite",(store,tx)=>{
+      const req=store.get(key(owner,op));
+      req.onsuccess=()=>{const r=req.result;if(!r||r.ownerId!==owner||!r.lease||r.lease.token!==lease?.token||r.lease.epoch!==lease?.epoch||r.leaseEpoch!==lease.epoch){tx.abort();return;}
+        validate(r);const time=Date.now();
+        if(Date.parse(r.lease.expiresAt)<=time){tx.abort();return;}
+        r.lease.expiresAt=new Date(time+ttlMs).toISOString();
+        validate(r);renewed=clone(r.lease);store.put(r);
+      };
+    });
+    if(!renewed)fail("Lease renewal rejected: lease is stale, expired, or no longer owned.");
+    return renewed;
+  }
   async function checkpoint(input) {
     const owner=uuid(input?.ownerId,"owner ID"),op=uuid(input?.operationId,"operation ID");
     const token=str(input?.leaseToken,"lease token",128),epoch=input?.leaseEpoch;
@@ -196,5 +212,5 @@
     if(!released)fail("Lease release rejected: lease is stale or no longer owned.");
     return true;
   }
-  globalThis.PWACharacterRestoreJournal=Object.freeze({protocolVersion:PROTOCOL,create,get,listPage,acquireLease,checkpoint,releaseLease});
+  globalThis.PWACharacterRestoreJournal=Object.freeze({protocolVersion:PROTOCOL,create,get,listPage,acquireLease,renewLease,checkpoint,releaseLease});
 })();
