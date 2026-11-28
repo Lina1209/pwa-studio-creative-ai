@@ -84,7 +84,7 @@ class CharacterMediaAssetListTests(unittest.TestCase):
 
     @patch("app.services.media_repository._rest_get")
     def test_list_filters_owner_character_bucket_and_sanitizes_fields(self, get):
-        get.return_value = [{"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER, "local_reference_id": "66666666-6666-4666-8666-666666666666", "content_sha256": "a" * 64, "file_name": "hero.png", "file_type": "image/png", "status": "ready", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now", "storage_path": "secret", "bucket": "studio-media", "metadata": {"secret": True}}]
+        get.return_value = [{"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER, "local_reference_id": "55555555-5555-4555-8555-555555555555-66666666-6666-4666-8666-666666666666", "content_sha256": "a" * 64, "file_name": "hero.png", "file_type": "image/png", "status": "ready", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now", "storage_path": "secret", "bucket": "studio-media", "metadata": {"secret": True}}]
         rows = media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
         params = get.call_args.args[2]
         self.assertEqual(params["owner_id"], f"eq.{OWNER}")
