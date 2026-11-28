@@ -31,4 +31,10 @@ assert.doesNotMatch(app, /const movieRead = \(\) => \{[\s\S]{0,1800}catch\s*\{\s
 assert.match(app, /Проекты не загружены/);
 assert.match(app, /Гостевые проекты не загружены/);
 
+
+assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(movieStorageKey\(\)\)\);\s*PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(projects\)\);/);
+assert.match(app, /Validate the local library before processing deletion tombstones or uploading anything/);
+assert.match(app, /A corrupt local library must stop cloud-side deletion and merge as well/);
+assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(guestArchiveKey\(\)\)\)/);
+
 console.log("Movie storage guard tests passed.");
