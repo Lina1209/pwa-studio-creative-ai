@@ -214,8 +214,10 @@ jobs:
           node --check character-restore-cleanup.js
           node --check character-restore-cleanup-executor.js
           node --check character-local-storage-adapter.js
+          node --check character-media-transfer.js
           node tests/test_character_cloud_restore.js
           node tests/test_character_local_storage_adapter.js
+          node tests/test_character_media_transfer.js
           node tests/test_character_library_owner_lock_contract.js
           node tests/test_character_cloud_restore_adapter_integration.js
           node tests/test_character_restore_coordinator.js
