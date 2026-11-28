@@ -54,7 +54,7 @@ class CharacterApiRouteTests(unittest.TestCase):
     @patch("app.character_api.update_owned_character", return_value={"id": CHARACTER, "name": "Hero", "description": "x" * 5000, "reference_data": {}, "created_at": "now", "version": 2})
     def test_patch_accepts_5000_character_description(self, update):
         response = self.client.patch(f"/api/characters/{CHARACTER}", json={"expected_version": 1, "description": "x" * 5000})
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(len(update.call_args.args[4]["description"]), 5000)
 
     def test_patch_rejects_description_above_local_limit(self):
