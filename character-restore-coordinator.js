@@ -29,12 +29,18 @@
     if(actual.sizeBytes!==expectedSize)fail("Image byte-size verification failed.");
     if(actual.mimeType!==expectedMime)fail("Image MIME verification failed.");
   };
-  async function stageRestoreReferences({ownerId,operationId,manifest,expectedRevision,journal,adapters,isCurrent=()=>true}) {
+  async function stageRestoreReferences({ownerId,operationId,manifest,expectedRevision,journal,adapters,isCurrent=()=>true,plan,preview,confirmation,validateConfirmation}) {
     ownerId=uuid(ownerId,"owner ID");operationId=uuid(operationId,"operation ID");
     if(!Array.isArray(manifest)||manifest.length>MAX_REFS)fail("Restore media manifest exceeds the supported limit.");
     if(!Number.isSafeInteger(expectedRevision)||expectedRevision<1)fail("Invalid journal revision.");
     if(!journal||typeof journal.get!=="function"||typeof journal.acquireLease!=="function"||typeof journal.checkpoint!=="function"||typeof journal.releaseLease!=="function")fail("Restore journal adapter is incomplete.");
     for(const name of ["downloadAsset","inspectImage","stageBlob","readStagedBlob"])if(typeof adapters?.[name]!=="function")fail("Missing media adapter: "+name+".");
+    if(typeof validateConfirmation!=="function"||!plan||!preview||!confirmation)fail("An explicit issued restore confirmation is required before media staging.");
+    const assertConfirmation=()=>{
+      if(typeof validateConfirmation!=="function"||validateConfirmation({ownerId,plan,preview,confirmation})!==true)
+        fail("Restore confirmation is missing, invalid, expired, or no longer matches this selection.");
+    };
+    assertConfirmation();
     if(typeof isCurrent!=="function"||!isCurrent())fail("Account is not current.");
     const seen=new Set();
     const refs=manifest.map(item=>{
@@ -51,11 +57,16 @@
       return {cloudAssetId,characterId,sourceLocalId,localReferenceId,name:item.name,type:item.type,expectedSha256:item.expectedSha256.toLowerCase(),expectedSizeBytes:item.expectedSizeBytes,expectedMimeType:item.expectedMimeType,width:item.width,height:item.height,state:"pending",localStagedBlobId:null};
     });
     if(refs.length===0)fail("There are no media references to stage.");
+    assertConfirmation();
     const operation=await journal.get(ownerId,operationId);
+    assertConfirmation();
     if(!operation||operation.ownerId!==ownerId||operation.operationId!==operationId)fail("Restore operation was not found for this owner.");
     if(operation.revision!==expectedRevision||!["planned","staging","paused_retryable"].includes(operation.state))fail("Restore operation is not at the expected checkpoint.");
+    assertConfirmation();
     const lease=await journal.acquireLease(ownerId,operationId,{ttlMs:60000});
+    assertConfirmation();
     const leasedOperation=await journal.get(ownerId,operationId);
+    assertConfirmation();
     if(!leasedOperation||leasedOperation.ownerId!==ownerId||leasedOperation.operationId!==operationId||
        leasedOperation.revision!==expectedRevision+1||leasedOperation.leaseEpoch!==lease.epoch){
       try{await journal.releaseLease(ownerId,operationId,lease);}catch{}
@@ -76,7 +87,9 @@
     const assertLease=()=>{if(leaseLost)fail("Restore lease was lost; staging must pause and resume safely.");};
     const heartbeat=setInterval(()=>{if(!leaseLost)void renewLease();},20000);
     try{
+      assertConfirmation();
       if(!isCurrent())fail("Account changed before media staging.");
+      assertConfirmation();
       if(state==="planned"){
         const row=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:refs.map(r=>({...r,localStagedBlobId:uuid(crypto.randomUUID(),"staged Blob ID")}))});
         revision=row.revision;state=row.state;
@@ -102,14 +115,18 @@
           if(dimensions?.width!==expected.width||dimensions?.height!==expected.height)fail("Staged image dimensions verification failed.");
           staged++;continue;
         }
+        assertConfirmation();
         const downloaded=await adapters.downloadAsset({ownerId,operationId,cloudAssetId:expected.cloudAssetId});
+        assertConfirmation();
         assertLease();
         if(!isCurrent())fail("Account changed while downloading a media asset.");
         const proof=await digestHex(downloaded);assertLease();proofMatches(proof,expected);
         const dimensions=await adapters.inspectImage(downloaded);assertLease();
         if(!dimensions||dimensions.width!==expected.width||dimensions.height!==expected.height)fail("Downloaded image dimensions verification failed.");
         assertLease();
+        assertConfirmation();
         const stored=await adapters.stageBlob({ownerId,operationId,cloudAssetId:expected.cloudAssetId,localStagedBlobId:localId,blob:downloaded,proof:{...proof,width:dimensions.width,height:dimensions.height}});
+        assertConfirmation();
         if(!stored||stored.localStagedBlobId!==localId)fail("Staged Blob adapter returned an unexpected identity.");
         if(!isCurrent())fail("Account changed after staging a media asset.");
         assertLease();
@@ -124,6 +141,7 @@
       await renewalInFlight;
       assertLease();
       if(!isCurrent())fail("Account changed before staging completion.");
+      assertConfirmation();
       const ready=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"ready_to_activate",references:savedRefs});
       revision=ready.revision;state=ready.state;
       return Object.freeze({ownerId,operationId,state,revision,stagedReferences:staged,totalReferences:refs.length,activationRequired:true});
