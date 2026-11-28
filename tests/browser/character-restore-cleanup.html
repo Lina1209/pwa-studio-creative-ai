@@ -97,9 +97,9 @@
      assert(pending.state==="retention_pending","retention interval was bypassed");
      const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-cleanup-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
      try{await new Promise((resolve,reject)=>{const tx=db.transaction("manifests","readwrite"),store=tx.objectStore("manifests"),q=store.get(owner+":"+marked.cleanupId);q.onsuccess=()=>{const row=q.result;row.candidates.forEach(c=>{c.markedAt=new Date(Date.now()-25*60*60*1000).toISOString();c.deleteAfter=new Date(Date.now()-1000).toISOString()});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+     const before=await cleanupJournal.getManifest(owner,marked.cleanupId);
      const ready=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
      assert(ready.state==="eligible_for_delete_review"&&ready.eligibleCount===1,"valid expired candidate did not pass the read-only recheck");
-     const before=await cleanupJournal.getManifest(owner,marked.cleanupId);
      const saved=await cleanupJournal.getManifest(owner,marked.cleanupId);
      assert(saved.state==="reconciled"&&saved.revision===2&&saved.candidates[0].state==="eligible_for_delete_review","eligible result was not durably reconciled");
      assert(saved.ownerLockEpoch>before.ownerLockEpoch,"reconciliation did not advance the owner lock fencing epoch");
