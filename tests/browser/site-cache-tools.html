@@ -59,6 +59,15 @@
   const nonShellSource = swSource.slice(swSource.indexOf("  // Everything outside the explicit app-shell allowlist"));
   assert(nonShellSource.includes("return;") && !nonShellSource.includes("caches.") && !nonShellSource.includes("cache.put"), "non-shell requests do not accumulate dynamic or large media in Cache Storage");
   assert(swSource.includes('cache.match(request, { ignoreSearch: true })'), "offline shell fallback matches precached assets despite cache-busting query strings");
+  const indexText = await fetch("index.html").then(response => response.text());
+  const indexDoc = new DOMParser().parseFromString(indexText, "text/html");
+  const coreBlock = swSource.match(/const CORE_ASSETS = \\[([\\s\\S]*?)\\];/);
+  const coreAssets = coreBlock ? [...coreBlock[1].matchAll(/"([^"]+)"/g)].map(match => new URL(match[1], location.origin + "/").pathname) : [];
+  const shellBlock = swSource.match(/const isShellAsset = request.mode === "navigate" \\|\\|\\s*\\[([\\s\\S]*?)\\]\\.some\\(asset/);
+  const shellPaths = shellBlock ? [...shellBlock[1].matchAll(/"([^"]+)"/g)].map(match => match[1]) : [];
+  const localScripts = [...indexDoc.querySelectorAll("script[src]")].map(script => new URL(script.getAttribute("src"), location.origin + "/")).filter(url => url.origin === location.origin);
+  assert(localScripts.every(url => coreAssets.includes(url.pathname)), "every same-origin script in index.html is included in the offline precache");
+  assert(localScripts.every(url => shellPaths.some(path => url.pathname.endsWith(path))), "every same-origin script is handled by the shell network-first strategy");
   const failingCaches = { async keys(){ return ["pwa-studio-shell-fail"]; }, async delete(){ return false; } };
   Object.defineProperty(window, "caches", { configurable:true, value:failingCaches });
   let failedClosed = false;
