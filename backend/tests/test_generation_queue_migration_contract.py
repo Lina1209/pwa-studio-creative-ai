@@ -25,7 +25,7 @@ class GenerationQueueMigrationContractTests(unittest.TestCase):
 
     def test_every_definer_function_has_fixed_search_path(self):
         definitions = re.split(r"create or replace function public\.", self.sql, flags=re.I)[1:]
-        self.assertEqual(len(definitions), 9)
+        self.assertEqual(len(definitions), 10)
         for definition in definitions:
             header = definition.split("as $$", 1)[0].lower()
             self.assertIn("security definer", header)
