@@ -189,7 +189,7 @@
         if (reference.type && reference.type !== asset.file_type) fail("Cloud reference MIME type does not match its passport descriptor.");
         return {
           ...reference,
-          name: reference.name || asset.file_name,
+          name: reference.name || asset.file_name.slice(0, 120),
           type: asset.file_type,
           characterId: row.id,
           sourceLocalId: row.source_local_id,
