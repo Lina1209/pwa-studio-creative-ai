@@ -84,4 +84,16 @@ function adapters({badReadback=false}={}){
  assert.equal(third.inspect().state,"staging");
  assert.equal(third.inspect().references[0].state,"pending");
  console.log("PASS account switch fences post-download staging writes");
+
+ const fourth=makeJournal(),checkpointGate=await issuedGate();let valid=true,downloads=0;
+ const checkpointJournal={
+  ...fourth,
+  async checkpoint(input){const result=await fourth.checkpoint(input);if(input.state==="staging"&&input.expectedRevision===2)valid=false;return result;}
+ };
+ const noDownload={...adapters(),async downloadAsset(){downloads++;return new Blob([bytes],{type:"image/png"});}};
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:checkpointJournal,...checkpointGate,validateConfirmation:()=>valid,adapters:noDownload}),/confirmation/);
+ assert.equal(downloads,0);
+ assert.equal(fourth.inspect().state,"paused_retryable");
+ assert.equal(fourth.inspect().lease,null);
+ console.log("PASS confirmation expiring during initial durable checkpoint pauses safely before any download");
 })().catch(error=>{console.error(error);process.exitCode=1;});
