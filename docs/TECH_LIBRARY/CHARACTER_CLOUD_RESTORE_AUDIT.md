@@ -108,3 +108,6 @@ The explicit binding is now consumable without one request per character:
 - Missing mappings, extra mapped assets, duplicate mappings, non-ready assets, MIME mismatch, account switch, or integrity errors fail closed. Filename/order/image-similarity matching is not used.
 
 The bulk catalog, backend route, planner join, and localStorage metadata adapter are covered by automated tests. Restore remains staging-only: there is still no user-facing restore UI, metadata activation, or production migration/deployment.
+
+
+The validated mapping now also carries card/reference identity through staging: every durable reference checkpoint retains cloud `characterId`, local `sourceLocalId`, original `localReferenceId`, display name, and MIME alongside the staged Blob ID and integrity proof. This is the identity information the future activation step will use; staging still does not write active character metadata.
