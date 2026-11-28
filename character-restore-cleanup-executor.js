@@ -85,7 +85,7 @@
       return {activeIds,metadataDigest,operations};
     };
     let manifest=await cleanupJournal.getManifest(ownerId,cleanupId);
-    if(!manifest||manifest.ownerId!==ownerId||manifest.cleanupId!==cleanupId||manifest.state!=="reconciled"||
+    if(!manifest||manifest.ownerId!==ownerId||manifest.cleanupId!==cleanupId||!["reconciled","deleting"].includes(manifest.state)||
        !Array.isArray(manifest.candidates)||manifest.candidates.length>MAX_CANDIDATES)fail("Manifest is not a reconciled cleanup record.");
     const results=[];
     for(const candidate of manifest.candidates){
