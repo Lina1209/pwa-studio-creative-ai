@@ -13,6 +13,7 @@ OBJECT = "55555555-5555-4555-8555-555555555555"
 def asset(**overrides):
     row = {
         "id": ASSET, "owner_id": OWNER, "status": "ready",
+        "character_id": RESOURCE,
         "bucket": "studio-media",
         "storage_path": f"{OWNER}/characters/{RESOURCE}/{OBJECT}.png",
     }
@@ -52,6 +53,26 @@ class MediaReadTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path), self.assertRaises(ValueError):
                 plan_private_media_read(authenticated_owner_id=OWNER, asset=asset(storage_path=path))
+
+    def test_storage_path_must_match_linked_character_or_project(self):
+        with self.assertRaises(ValueError):
+            plan_private_media_read(
+                authenticated_owner_id=OWNER,
+                asset=asset(character_id=OTHER),
+            )
+        with self.assertRaises(ValueError):
+            plan_private_media_read(
+                authenticated_owner_id=OWNER,
+                asset=asset(character_id=None),
+            )
+
+    def test_project_path_must_match_linked_project(self):
+        path = f"{OWNER}/projects/{RESOURCE}/{OBJECT}.png"
+        plan = plan_private_media_read(
+            authenticated_owner_id=OWNER,
+            asset=asset(storage_path=path, character_id=None, project_id=RESOURCE),
+        )
+        self.assertEqual(plan.storage_path, path)
 
     def test_invalid_asset_identifier_is_rejected(self):
         with self.assertRaises(ValueError):
