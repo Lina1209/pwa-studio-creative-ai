@@ -217,5 +217,45 @@ class CharacterReferenceStatusRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         assets.assert_not_called()
 
+
+
+class CharacterReferenceBulkCatalogRouteTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+
+    def setUp(self):
+        app.dependency_overrides[get_current_user] = lambda: StudioUser(
+            user_id=OWNER, email="creator@example.test", role="creator"
+        )
+
+    def tearDown(self):
+        app.dependency_overrides.clear()
+
+    @patch("app.main.list_owned_character_media_assets_for_characters", return_value=[
+        {"id": "33333333-3333-4333-8333-333333333333", "character_id": CHARACTER,
+         "local_reference_id": CHARACTER + "-44444444-4444-4444-8444-444444444444",
+         "status": "ready", "content_sha256": "a" * 64}
+    ])
+    def test_bulk_catalog_is_authenticated_private_and_no_store(self, catalog):
+        response = self.client.get(
+            f"/api/characters/references?character_ids={CHARACTER}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["local_reference_id"],
+                         CHARACTER + "-44444444-4444-4444-8444-444444444444")
+        self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
+        catalog.assert_called_once()
+        self.assertEqual(catalog.call_args.args[1], [CHARACTER])
+        self.assertEqual(catalog.call_args.args[2], OWNER)
+
+    @patch("app.main.list_owned_character_media_assets_for_characters")
+    def test_bulk_catalog_rejects_more_than_100_character_ids(self, catalog):
+        ids = ",".join([CHARACTER] * 101)
+        response = self.client.get(f"/api/characters/references?character_ids={ids}")
+        self.assertEqual(response.status_code, 422)
+        catalog.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
