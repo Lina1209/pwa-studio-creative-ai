@@ -133,6 +133,17 @@
      const saved=await cleanupJournal.getManifest(owner,marked.cleanupId);
      assert(saved.state==="reconciled"&&saved.candidates[0].state==="retained"&&saved.candidates[0].reasonCode==="metadata_changed","blocked candidate outcome was not durably recorded");
    });
+   await test("cleanup journal rejects cross-owner reads and immutable candidate identity changes",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["journal-cas"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     const marked=await mark(owner),saved=await cleanupJournal.getManifest(owner,marked.cleanupId);
+     assert(await cleanupJournal.getManifest(uuid(),marked.cleanupId)===null,"cross-owner manifest read returned data");
+     const altered=saved.candidates.map(c=>({...c,state:"retained",reasonCode:"metadata_changed",cloudAssetId:uuid()}));
+     await rejects(()=>cleanupJournal.reconcileManifest({ownerId:owner,cleanupId:marked.cleanupId,expectedRevision:saved.revision,ownerLockEpoch:saved.ownerLockEpoch+1,candidates:altered}));
+     const unchanged=await cleanupJournal.getManifest(owner,marked.cleanupId);
+     assert(unchanged.state==="marked"&&unchanged.revision===saved.revision&&unchanged.candidates[0].cloudAssetId===asset,"rejected identity mutation changed durable manifest");
+     await rejects(()=>cleanupJournal.beginCandidateDelete({ownerId:owner,cleanupId:marked.cleanupId,expectedRevision:saved.revision,ownerLockEpoch:saved.ownerLockEpoch+1,localStagedBlobId:blobId,deleteAttemptId:uuid()}));
+   });
    out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
    document.documentElement.dataset.testResult="passed";
  }catch(error){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(error.stack||error);document.documentElement.dataset.testResult="failed";}
