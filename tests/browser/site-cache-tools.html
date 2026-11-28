@@ -57,7 +57,7 @@
   assert(swResponse.ok, "service worker source is available to the cache audit test");
   const swSource = await swResponse.text();
   const nonShellSource = swSource.slice(swSource.indexOf("  // Everything outside the explicit app-shell allowlist"));
-  assert(nonShellSource.includes("return;") && !/caches\\.|cache\\.put/.test(nonShellSource), "non-shell requests do not accumulate dynamic or large media in Cache Storage");
+  assert(nonShellSource.includes("return;") && !nonShellSource.includes("caches.") && !nonShellSource.includes("cache.put"), "non-shell requests do not accumulate dynamic or large media in Cache Storage");
   const failingCaches = { async keys(){ return ["pwa-studio-shell-fail"]; }, async delete(){ return false; } };
   Object.defineProperty(window, "caches", { configurable:true, value:failingCaches });
   let failedClosed = false;
