@@ -99,6 +99,10 @@
      try{await new Promise((resolve,reject)=>{const tx=db.transaction("manifests","readwrite"),store=tx.objectStore("manifests"),q=store.get(owner+":"+marked.cleanupId);q.onsuccess=()=>{const row=q.result;row.candidates.forEach(c=>{c.markedAt=new Date(Date.now()-25*60*60*1000).toISOString();c.deleteAfter=new Date(Date.now()-1000).toISOString()});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
      const ready=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
      assert(ready.state==="eligible_for_delete_review"&&ready.eligibleCount===1,"valid expired candidate did not pass the read-only recheck");
+     const saved=await cleanupJournal.getManifest(owner,marked.cleanupId);
+     assert(saved.state==="reconciled"&&saved.revision===2&&saved.candidates[0].state==="eligible_for_delete_review","eligible result was not durably reconciled");
+     const repeat=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
+     assert(repeat.state==="already_reconciled","repeated recheck changed an already reconciled manifest");
      const stillThere=await blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
      assert(stillThere instanceof Blob,"read-only recheck deleted the Blob");
    });
@@ -112,6 +116,8 @@
      const args={ownerId:owner,cleanupId:marked.cleanupId,restoreJournal:api,cleanupJournal,blobStore,localAdapter:localFor(owner),ownerLock:PWACharacterOwnerCoordinationLock,inspectImage:async()=>({width:64,height:48})};
      const result=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
      assert(result.state==="blocked_metadata_changed"&&result.eligibleCount===0,"changed metadata did not block candidate");
+     const saved=await cleanupJournal.getManifest(owner,marked.cleanupId);
+     assert(saved.state==="reconciled"&&saved.candidates[0].state==="retained"&&saved.candidates[0].reasonCode==="metadata_changed","blocked candidate outcome was not durably recorded");
    });
    out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
    document.documentElement.dataset.testResult="passed";
