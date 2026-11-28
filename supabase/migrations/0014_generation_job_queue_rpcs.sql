@@ -121,7 +121,7 @@ create or replace function public.record_generation_submission_outcome(
   p_job_id uuid, p_lease_token uuid, p_outcome text
 ) returns boolean language plpgsql security definer
 set search_path = pg_catalog, public, pg_temp
-as $
+as $$
 declare v_count integer;
 begin
   if p_outcome not in ('unknown','definitely_not_submitted','definitely_rejected','accepted') then
@@ -137,7 +137,7 @@ begin
   get diagnostics v_count = row_count;
   return v_count = 1;
 end;
-$;
+$$;
 
 create or replace function public.heartbeat_generation_job(p_job_id uuid, p_lease_token uuid, p_lease_seconds integer default 120)
 returns boolean language plpgsql security definer
