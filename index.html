@@ -433,6 +433,11 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <p class="helper-text" id="backendStatus" aria-live="polite">Backend пока не подключён. Укажите HTTPS-адрес развёрнутого API.</p>
           </div>
           <div><b>Хранение проектов</b><span>Фильмы авторизованных пользователей синхронизируются с Supabase; гостевые черновики сохраняются локально в браузере.</span></div>
+          <div class="cache-maintenance">
+            <div><b>Обслуживание приложения</b><span>Если сайт стал медленно работать или показывает старую версию, очистите временный кеш файлов на этом устройстве. Ваши проекты, изображения, аккаунт и настройки не удаляются.</span></div>
+            <div class="backend-actions"><button class="secondary-button" id="clearSiteCache" type="button">Очистить кеш сайта</button></div>
+            <p class="helper-text" id="clearSiteCacheStatus" role="status" aria-live="polite">Очистка затрагивает только кеш PWA Studio в этом браузере.</p>
+          </div>
         </div>
       </section>
 
@@ -502,5 +507,6 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
   <script src="./profile-avatar-catalog.js?v=20261127-1" defer></script>
   <script src="./app.js?v=20261127-2" defer></script>
   <script src="./audio-lab.js?v=20261126-4" defer></script>
+  <script src="./site-cache-tools.js?v=20261128-1" defer></script>
 </body>
 </html>
