@@ -324,3 +324,99 @@ Recovery now rechecks the active-account fence after loading the durable journal
 ### Recovery boundary matrix
 
 Recovery browser coverage now exercises all three outcomes: (1) the exact merged digest plus expected operation markers becomes `committed`; (2) the untouched base digest becomes `paused_retryable`; (3) any third metadata state becomes `conflict` without rollback or overwrite. The journal transition table explicitly allows `activating → conflict` for the third case. GitHub Actions run `46109097295` on `960f620` passed backend unit tests, disposable PostgreSQL integration, and the complete browser/IndexedDB suite.
+
+
+## 17. Staged Blob cleanup protocol (design gate; no deletion implementation)
+
+Status: protocol design only. The Blob adapter intentionally remains write/read-only. No cleanup method, cleanup worker, UI action, or deletion has been added.
+
+### Why operation leases alone are insufficient
+
+The current journal lease is scoped to one restore operation. Two different operations for the same owner can therefore hold separate leases concurrently. That does not serialize cleanup against activation: a cleanup pass could inspect one operation while another operation is about to activate a staged Blob. A check followed by an IndexedDB delete is also unsafe if another tab can publish a reference between those steps.
+
+Consequently, cleanup MUST NOT be implemented using only per-operation leases or a scan for unreferenced image rows.
+
+### Shared owner-level critical-section lock
+
+Before any cleanup implementation, introduce one owner-scoped coordination lock shared by activation and cleanup:
+
+- Store lock records in a dedicated coordination IndexedDB database, separate from the image Blob database and restore journal. This avoids changing either existing database schema.
+- Lock identity is the validated owner UUID; record includes opaque token, monotonically increasing fencing epoch, expiry timestamp, and bounded protocol version. Never store credentials.
+- Acquisition, renewal, takeover, and release use atomic IndexedDB read-write transactions. A live lock cannot be stolen; expired lock takeover increments the epoch. Every mutation verifies owner, token, epoch, and unexpired lease.
+- Activation must acquire this same owner lock before its final local metadata snapshot / staged-Blob verification / activation-intent and metadata commit critical section. It must recheck the account fence and lock immediately before the synchronous metadata write. Cleanup must hold the same lock from its complete reference inventory through the final delete transaction.
+- Both paths retain their per-operation journal leases as well. The owner lock serializes cross-operation critical sections; the operation lease fences the specific journal record.
+- Heartbeat/renewal is mandatory for long work. A failed renewal permanently fences that attempt. Browser suspension beyond expiry means stop; a later holder must re-read all state from scratch.
+- No path may wait indefinitely while holding the lock. Bound lock duration, candidate count, and work per pass. Release is best effort; expiry is the recovery mechanism.
+
+The lock is a cooperative protocol: every code path that can activate or delete restore-staged Blobs must use it. Until activation is updated to participate, cleanup remains prohibited.
+
+### Candidate eligibility: deliberately narrow
+
+A candidate must satisfy ALL conditions:
+
+1. It is an image row with a valid `restoreStage` descriptor. Ordinary legacy/user image rows without that descriptor are never candidates.
+2. The exact tuple `ownerId + operationId + cloudAssetId + localStagedBlobId` matches a validated reference in the corresponding durable restore journal record.
+3. The operation is explicitly `aborted`, or is otherwise eligible only after a separately specified retention policy has marked it terminal. `committed`, `conflict`, `activation_uncertain`, and every nonterminal/paused state are retained by default. A conflict is not proof that its staged data is disposable.
+4. The operation has no live operation lease, and no newer owner/operation epoch or cleanup claim supersedes the candidate.
+5. The exact staged Blob ID is not referenced by any active local card metadata, including cards not created by this restore.
+6. No nonterminal, retryable, uncertain, or otherwise retained restore operation references the same staged Blob ID or asset mapping.
+7. The active owner/account fence still matches. Any malformed journal, unreadable metadata, incomplete journal inventory, pagination error, quota error, or ambiguous identity blocks the entire candidate batch.
+
+No filename, age-only, missing-journal, or unreferenced-row heuristic is sufficient. Unknown rows are retained, not deleted.
+
+### Two-phase mark, recheck, delete
+
+Cleanup is a resumable, idempotent operation with its own UUID and durable audit state. It does not mutate active character metadata.
+
+Phase A — mark:
+- Acquire the owner lock and validate its current fencing epoch.
+- Read the complete owner-local metadata array and compute a canonical digest.
+- Read every owner journal page to exhaustion using bounded pagination; validate every row and cursor. Do not infer completeness from a partial page.
+- Identify a bounded candidate set from explicit `restoreStage` descriptors and matching journal references.
+- Persist a cleanup manifest containing only owner/operation/asset/staged IDs, candidate proof digest, observed journal revision/state, observed metadata digest, owner-lock epoch, and timestamp. No Blob bytes or secrets.
+- Mark candidates `cleanup_pending` in the cleanup manifest only; do not alter restore operation state or delete anything.
+- Release the lock. A delay/retention interval separates marking from deletion so an interrupted or newly referenced item can be detected.
+
+Phase B — delete:
+- Reacquire the same owner lock with a new valid fencing token/epoch and recheck the active account.
+- Re-read and hash current local metadata; re-read every journal page; verify candidate operation/revision/state, absence of live leases, absence of any active reference, and absence of any retained operation reference.
+- If any observed digest, revision, identity, or eligibility condition changed, cancel that candidate as retained/conflict; do not delete it.
+- For each candidate, open a read-write transaction on the existing image database, fetch the exact staged row, and revalidate owner + restoreStage operation + asset + staged ID + proof identity before deleting that exact key. A missing row is an idempotent already-deleted result only if the durable cleanup manifest proves that exact candidate; otherwise it is an identity conflict.
+- Record `deleted` only after the IndexedDB delete transaction completes. If the browser crashes between deletion and audit update, a retry sees the exact row missing and can reconcile the already-deleted result using the durable manifest.
+- Never issue a range delete, clear the object store, or delete by owner prefix.
+
+The localStorage and IndexedDB stores still cannot share a transaction. The shared owner lock closes the activation-vs-cleanup race only for cooperating code paths. If the lock is lost, cleanup stops before its next delete; it must not attempt a stale release or continue using a stale inventory.
+
+### Cleanup manifest states
+
+Suggested per-candidate states: `marked` → `deleted`; alternate outcomes `retained`, `cancelled_changed`, `identity_conflict`, `blocked_incomplete_inventory`. The cleanup operation itself is resumable and owner-bound. It has a monotonic revision and fenced lease, and stores bounded error categories rather than raw server messages.
+
+No automatic cleanup of committed restore staging is allowed in this phase. A future retention policy may consider committed staging only after proving that the active metadata references a different verified local Blob ID and no restore/recovery path needs the staged source. That policy requires a separate review and tests; it is not implied by this protocol.
+
+### Mandatory race and failure tests before any delete API
+
+Use real browser IndexedDB, real localStorage, multiple pages/tabs, and disposable databases:
+
+- preserve every ordinary image row, including legacy rows with no `restoreStage`;
+- preserve a staged row referenced by active metadata, even if its operation is aborted;
+- preserve a staged row referenced by any other live, paused, retryable, conflict, or uncertain operation;
+- reject malformed or duplicate owner/operation/asset/staged-ID mappings and incomplete journal pagination;
+- two operations for one owner cannot hold the owner lock simultaneously;
+- stale owner-lock token/epoch cannot renew, release, mark, or delete after takeover;
+- activation and cleanup contend for the same owner lock: whichever acquires first completes its bounded critical section; the other re-reads all state and cannot use stale inventory;
+- a new activation cannot publish a Blob while cleanup holds the owner lock;
+- account switch before marking, between phases, during a batch, and immediately before delete blocks further mutation;
+- crash after mark, after delay, after final recheck, after IndexedDB delete but before audit checkpoint, and during partial batch is safely resumable;
+- repeated cleanup is idempotent and never deletes a different row after key reuse/collision;
+- quota, blocked database, malformed journal, localStorage read failure, lock renewal failure, and browser suspension all fail closed;
+- a 100-card / 600-reference owner inventory remains bounded and pagination is exhausted before deletion begins.
+
+### Explicit implementation gate
+
+Do not add a delete method to `character-restore-blob-store.js` until:
+1. the owner coordination lock is implemented and tested in real-browser multi-tab scenarios;
+2. activation acquires and renews that same lock around its final verification and metadata commit boundary;
+3. cleanup manifest persistence, two-phase recheck, and crash reconciliation are implemented;
+4. every mandatory race test above passes in feature-branch CI.
+
+No production database, Storage object, migration, account, or deployment is involved. UI remains disconnected and cleanup remains disabled.
