@@ -70,8 +70,11 @@
     if (!isUuid(ownerId)) fail("A valid authenticated owner ID is required.");
     if (typeof fetchPage !== "function") fail("A cloud page loader is required.");
     if (!Array.isArray(existingLocalItems) || existingLocalItems.length > 100) fail("The local library is invalid or exceeds its supported limit.");
+    let localSnapshot;
+    try { localSnapshot = JSON.parse(JSON.stringify(existingLocalItems)); }
+    catch { fail("The local library could not be snapshotted safely."); }
     const localById = new Map();
-    for (const item of existingLocalItems) {
+    for (const item of localSnapshot) {
       if (!item || !isUuid(item.id) || typeof item.name !== "string" || localById.has(item.id)) fail("Local library contains an invalid or duplicate character ID.");
       localById.set(item.id, item);
     }
