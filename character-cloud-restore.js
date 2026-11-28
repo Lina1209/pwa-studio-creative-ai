@@ -167,8 +167,12 @@
         String(existing.description || "") === String(row.description || "") &&
         canonical(localProjection(existing)) === canonical(data);
       const knownCloudId = existing.cloudBackup?.characterId;
-      if (knownCloudId && knownCloudId !== row.id) {
-        conflicts.push({localId: row.source_local_id, cloudId: row.id, reason: "local_cloud_identity_mismatch"});
+      if (knownCloudId !== row.id) {
+        conflicts.push({
+          localId: row.source_local_id,
+          cloudId: row.id,
+          reason: knownCloudId ? "local_cloud_identity_mismatch" : "local_record_missing_cloud_identity_binding"
+        });
       } else if (same) {
         unchanged.push({localId: row.source_local_id, cloudId: row.id, version: row.version});
       } else {
