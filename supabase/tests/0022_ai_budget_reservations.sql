@@ -54,6 +54,7 @@ declare
   v_count integer;
   v_created boolean;
   v_stale_count integer;
+  v_candidate_count integer;
 begin
   select reservation_id,reservation_created into v_first,v_created
   from public.reserve_ai_budget(
@@ -93,6 +94,12 @@ begin
   );
   if not public.mark_ai_budget_unknown(v_first,'provider_timeout') then
     raise exception 'unknown transition failed';
+  end if;
+  select count(*) into v_candidate_count
+  from public.list_ai_budget_reconciliation_candidates(10)
+  where reservation_id = v_first and reservation_status = 'unknown';
+  if v_candidate_count <> 1 then
+    raise exception 'reconciliation candidate query did not return unknown reservation';
   end if;
 
   -- Settled spend 0.01 + unknown exposure 0.03 leaves only 0.01 of the 0.05 cap.
