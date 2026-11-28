@@ -33,6 +33,15 @@
   await rejects(()=>api.stageBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof}));
   await rejects(()=>api.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof:{...proof,sha256:"0".repeat(64)}}));
   passed.push("collision and invalid proof rejected");
+  await rejects(()=>api.deleteStagedBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof}));
+  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id,proof}));
+  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof:{...proof,sha256:"0".repeat(64)}}));
+  assert(await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id}) instanceof Blob,"rejected deletion changed the stored Blob");
+  const deleted=await api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof});
+  assert(deleted==="deleted","exact owner/operation/asset/proof deletion failed");
+  assert(await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id})===null,"exactly deleted Blob remains readable");
+  assert(await api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof})==="missing","exact delete retry was not idempotent");
+  passed.push("exact-key deletion rejects cross-owner, cross-operation, and proof mismatch; retry is idempotent");
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
   document.documentElement.dataset.testResult="passed";
  }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
