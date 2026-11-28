@@ -262,6 +262,37 @@ begin
 end;
 $$;
 
+create or replace function public.list_ai_budget_reconciliation_candidates(
+  p_limit integer default 100
+) returns table(
+  reservation_id uuid,
+  request_id uuid,
+  user_id uuid,
+  endpoint text,
+  provider text,
+  model text,
+  reservation_status text,
+  reserved_usd numeric,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql security definer
+set search_path = pg_catalog, public, pg_temp
+as $
+begin
+  if p_limit is null or p_limit < 1 or p_limit > 1000 then
+    raise exception 'invalid_ai_budget_reconciliation_limit' using errcode = '22023';
+  end if;
+  return query
+    select r.id,r.request_id,r.user_id,r.endpoint,r.provider,r.model,
+           r.status,r.reserved_usd,r.created_at,r.updated_at
+    from public.ai_budget_reservations r
+    where r.status in ('reserved','unknown')
+    order by r.created_at
+    limit p_limit;
+end;
+$;
+
 create or replace function public.mark_stale_ai_budget_reservations_unknown(
   p_created_before timestamptz,
   p_limit integer default 100
@@ -327,11 +358,13 @@ $$;
 revoke all on function public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric) from public, anon, authenticated;
 revoke all on function public.settle_ai_budget(uuid,numeric) from public, anon, authenticated;
 revoke all on function public.mark_ai_budget_unknown(uuid,text) from public, anon, authenticated;
+revoke all on function public.list_ai_budget_reconciliation_candidates(integer) from public, anon, authenticated;
 revoke all on function public.mark_stale_ai_budget_reservations_unknown(timestamptz,integer) from public, anon, authenticated;
 revoke all on function public.release_ai_budget_no_charge(uuid,text) from public, anon, authenticated;
 grant execute on function public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric) to service_role;
 grant execute on function public.settle_ai_budget(uuid,numeric) to service_role;
 grant execute on function public.mark_ai_budget_unknown(uuid,text) to service_role;
+grant execute on function public.list_ai_budget_reconciliation_candidates(integer) to service_role;
 grant execute on function public.mark_stale_ai_budget_reservations_unknown(timestamptz,integer) to service_role;
 grant execute on function public.release_ai_budget_no_charge(uuid,text) to service_role;
 
