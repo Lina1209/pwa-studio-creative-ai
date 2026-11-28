@@ -2,6 +2,7 @@
 import unittest
 from unittest.mock import patch
 from app.core.config import Settings
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from app.main import app
 from app.services.auth import StudioUser, get_current_user, get_platform_active_user
@@ -30,6 +31,13 @@ class CharacterApiRouteTests(unittest.TestCase):
         self.assertEqual(response.json()["items"], [])
         self.assertIsNone(response.json()["next_cursor"])
         self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
+
+    @patch("app.services.moderation_service.ensure_user_not_suspended", side_effect=HTTPException(status_code=403, detail="Account is suspended"))
+    def test_platform_suspension_blocks_character_api_route(self, suspension_check):
+        app.dependency_overrides.pop(get_platform_active_user, None)
+        response = self.client.get("/api/characters")
+        self.assertEqual(response.status_code, 403)
+        suspension_check.assert_called_once_with(unittest.mock.ANY, OWNER, "platform")
 
     def test_client_cannot_supply_owner_id_on_create(self):
         response = self.client.post("/api/characters", json={
