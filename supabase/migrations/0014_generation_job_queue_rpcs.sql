@@ -112,10 +112,32 @@ begin
   set status = 'processing', worker_id = p_worker_id, attempt_count = j.attempt_count + 1,
       lease_token = gen_random_uuid(), lease_expires_at = now() + make_interval(secs => p_lease_seconds),
       next_attempt_at = null, started_at = coalesce(j.started_at, now()),
-      updated_at = now(), safe_error_code = null
+      updated_at = now(), safe_error_code = null, provider_submission_outcome = 'unknown'
   where j.id = v_job_id and j.status in ('queued','retry_wait') returning j.*;
 end;
 $$;
+
+create or replace function public.record_generation_submission_outcome(
+  p_job_id uuid, p_lease_token uuid, p_outcome text
+) returns boolean language plpgsql security definer
+set search_path = pg_catalog, public, pg_temp
+as $
+declare v_count integer;
+begin
+  if p_outcome not in ('unknown','definitely_not_submitted','definitely_rejected','accepted') then
+    raise exception 'invalid_provider_submission_outcome' using errcode = '22023';
+  end if;
+  -- Evidence is monotonic: once conclusive evidence is recorded it cannot be
+  -- overwritten by contradictory evidence from the same or a stale worker.
+  update public.generation_jobs
+  set provider_submission_outcome = p_outcome, updated_at = now()
+  where id = p_job_id and lease_token = p_lease_token
+    and status in ('processing','cancel_requested') and lease_expires_at > now()
+    and (provider_submission_outcome = 'unknown' or provider_submission_outcome = p_outcome);
+  get diagnostics v_count = row_count;
+  return v_count = 1;
+end;
+$;
 
 create or replace function public.heartbeat_generation_job(p_job_id uuid, p_lease_token uuid, p_lease_seconds integer default 120)
 returns boolean language plpgsql security definer
@@ -172,7 +194,21 @@ begin
   select * into v_job from public.generation_jobs
   where id = p_job_id and lease_token = p_lease_token and status = 'processing' and lease_expires_at > now() for update;
   if not found then return 'stale_lease'; end if;
-  if p_retryable and v_job.attempt_count < v_job.max_attempts then
+  if v_job.provider_submission_outcome in ('unknown','accepted') then
+    -- A timeout or worker crash is not proof that the provider did not accept
+    -- the request. Hold for reconciliation instead of risking duplicate spend.
+    v_status := 'reconciliation_required';
+    update public.generation_jobs set status = v_status, safe_error_code = 'provider_outcome_unknown',
+      actual_cost_usd = coalesce(p_actual_cost_usd, actual_cost_usd), next_attempt_at = null,
+      worker_id = null, lease_token = null, lease_expires_at = null, updated_at = now()
+      where id = p_job_id;
+  elsif v_job.status = 'cancel_requested' then
+    v_status := 'cancelled';
+    update public.generation_jobs set status = v_status, safe_error_code = p_safe_error_code,
+      actual_cost_usd = coalesce(p_actual_cost_usd, actual_cost_usd), result_asset_id = null,
+      completed_at = now(), next_attempt_at = null, worker_id = null, lease_token = null,
+      lease_expires_at = null, updated_at = now() where id = p_job_id;
+  elsif p_retryable and v_job.attempt_count < v_job.max_attempts then
     v_status := 'retry_wait';
     update public.generation_jobs set status = v_status, safe_error_code = p_safe_error_code,
       actual_cost_usd = coalesce(p_actual_cost_usd, actual_cost_usd),
@@ -227,7 +263,15 @@ begin
     where status in ('processing','cancel_requested') and lease_expires_at <= now()
     order by lease_expires_at, id limit p_batch_size for update skip locked
   loop
-    if v_job.status = 'cancel_requested' then
+    if v_job.provider_submission_outcome in ('unknown','accepted') then
+      -- Unknown/accepted external outcomes must be reconciled manually; never
+      -- assume that an expired worker means the provider did no work.
+      update public.generation_jobs set status = 'reconciliation_required',
+        safe_error_code = 'provider_outcome_unknown', result_asset_id = null,
+        updated_at = now(), worker_id = null, lease_token = null,
+        lease_expires_at = null, next_attempt_at = null
+      where id = v_job.id and lease_token = v_job.lease_token;
+    elsif v_job.status = 'cancel_requested' then
       update public.generation_jobs set status = 'cancelled', result_asset_id = null, completed_at = now(),
         updated_at = now(), worker_id = null, lease_token = null, lease_expires_at = null, next_attempt_at = null
       where id = v_job.id and lease_token = v_job.lease_token;
@@ -263,6 +307,7 @@ $$;
 
 -- Privileged RPCs are executable only by the trusted backend service_role.
 revoke all on function public.claim_generation_outbox(text, integer, integer) from public, anon, authenticated;
+revoke all on function public.record_generation_submission_outcome(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.ack_generation_outbox(bigint, uuid) from public, anon, authenticated;
 revoke all on function public.claim_generation_job(text, integer) from public, anon, authenticated;
 revoke all on function public.heartbeat_generation_job(uuid, uuid, integer) from public, anon, authenticated;
@@ -272,6 +317,7 @@ revoke all on function public.request_generation_job_cancel(uuid, uuid) from pub
 revoke all on function public.recover_expired_generation_jobs(integer) from public, anon, authenticated;
 revoke all on function public.finish_generation_job_cancel(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.claim_generation_outbox(text, integer, integer) to service_role;
+grant execute on function public.record_generation_submission_outcome(uuid, uuid, text) to service_role;
 grant execute on function public.ack_generation_outbox(bigint, uuid) to service_role;
 grant execute on function public.claim_generation_job(text, integer) to service_role;
 grant execute on function public.heartbeat_generation_job(uuid, uuid, integer) to service_role;
