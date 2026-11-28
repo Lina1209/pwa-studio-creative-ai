@@ -93,7 +93,7 @@ jobs:
           done
       - name: Verify private media upload reservation and verification transaction (disposable PostgreSQL only)
         run: |
-          TEST_CHARACTER_ID="$(psql "$DISPOSABLE_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 \
+          TEST_CHARACTER_ID="$(psql "$DISPOSABLE_DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 \
             -c "insert into public.characters(owner_id,name,reference_data) values ('$PWA_TEST_OWNER_ID','Media verification CI fixture','{}'::jsonb) returning id")"
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v owner_id="$PWA_TEST_OWNER_ID" \
