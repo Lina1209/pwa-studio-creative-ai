@@ -62,6 +62,30 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     let checks=0;
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],isCurrent:()=>++checks<2,fetchPage:async()=>page([row(cloudId,localId)])}),/Account changed/);
   });
+  await run("validated restore plan commits atomically through owner-scoped adapter",async()=>{
+    let stored=[];
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
+    const result=planner.applyRestorePlan({ownerId:owner,plan,readLocalItems:()=>stored,writeLocalItems:(writeOwner,items)=>{assert.equal(writeOwner,owner);stored=items;}});
+    assert.deepEqual(result,{restoredCount:1,totalCount:1});
+    assert.equal(stored[0].id,localId);
+    assert.equal(stored[0].cloudBackup.characterId,cloudId);
+    assert.deepEqual(stored[0].referenceImages,[]);
+  });
+  await run("restore commit refuses stale local state and performs no write",async()=>{
+    let stored=[];
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
+    stored=[{id:localId2,name:"added elsewhere"}];
+    let writes=0;
+    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan,readLocalItems:()=>stored,writeLocalItems:()=>writes++}),/changed after planning/);
+    assert.equal(writes,0);
+  });
+  await run("restore commit refuses conflicts and account changes",async()=>{
+    const conflictPlan={complete:true,ownerId:owner,proposedItems:[],conflicts:[{reason:"collision"}],baseLocalFingerprint:"[]"};
+    let writes=0;
+    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:conflictPlan,readLocalItems:()=>[],writeLocalItems:()=>writes++}),/Resolve every/);
+    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:{complete:true,ownerId:owner,proposedItems:[],conflicts:[],baseLocalFingerprint:"[]"},readLocalItems:()=>[],writeLocalItems:()=>writes++,isCurrent:()=>false}),/Account changed/);
+    assert.equal(writes,0);
+  });
   await run("malformed passport field types are rejected",async()=>{
     const malformed=row(cloudId,localId,{reference_data:{kind:"character",voice:17,passport:{face:0},referenceImages:[]}});
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([malformed])}),/Invalid character voice/);
