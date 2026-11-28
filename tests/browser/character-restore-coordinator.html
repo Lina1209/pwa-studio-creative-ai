@@ -143,7 +143,13 @@
      const op=await planned();let staged=0;
      const base=adapters();
      const media={...base,async stageBlob(input){staged++;return base.stageBlob(input)}};
-     await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest:[badRef],expectedRevision:op.revision,journal:api,...gate,adapters:media}),"invalid media manifest proof was accepted");
+     const reviewedGate={
+      plan:Object.freeze({proposedItems:Object.freeze([{id:sourceLocalId,cloudBackup:Object.freeze({characterId,referenceManifest:Object.freeze([{...badRef}])})}])}),
+      preview:gate.preview,
+      confirmation:{selectedCloudIds:[characterId]},
+      validateConfirmation:()=>true
+     };
+     await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest:[badRef],expectedRevision:op.revision,journal:api,...reviewedGate,adapters:media}),"invalid media manifest proof was accepted");
      const row=await api.get(owner,op.operationId);
      ok(row.state==="paused_retryable"&&staged===0,"invalid media reached persistent staging");
     }
