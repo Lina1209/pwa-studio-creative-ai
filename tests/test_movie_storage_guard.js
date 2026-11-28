@@ -72,6 +72,7 @@ assert.match(app, /\.eq\("updated_at", item\.expectedUpdatedAt\)\.select\("id"\)
 assert.match(app, /Фильм изменился на другом устройстве во время сохранения/);
 assert.match(app, /локальная копия при конфликте/);
 assert.match(app, /writeMovieStorage\(nextLocal\)/);
+assert.match(app, /writeMovieStorage\(nextLocal\);\s*renderMovieProjects\(\)/);
 assert.match(app, /movieCloudState\.pending = true/);
 assert.match(app, /return PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(\[candidate\]\)\)\[0\]/);
 assert.doesNotMatch(app, /versions: Array\.isArray\(saved\.versions\) \? saved\.versions : \[\]/);
