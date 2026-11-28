@@ -2401,12 +2401,14 @@ const movieHistoryStyle = document.createElement("style");
   };
   const renderGuestSpace = () => {
     const list=$("#guestProjectList"); if(!list)return;
-    let projects=[];
-    try { projects=authSession?.user?[]:movieRead(); }
-    catch(error) {
+    let projects=[], archivedProjects=[];
+    try {
+      projects=authSession?.user?[]:movieRead();
+      archivedProjects=authSession?.user?[]:readGuestArchive();
+    } catch(error) {
       list.replaceChildren();
       const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");
-      warning.textContent="⚠ Гостевые проекты не загружены: "+error.message+" Данные не перезаписаны.";
+      warning.textContent="⚠ Гостевые проекты или архив не загружены: "+error.message+" Данные не перезаписаны.";
       list.append(warning);
       return;
     }
@@ -2440,7 +2442,7 @@ const movieHistoryStyle = document.createElement("style");
       const download=document.createElement("button");download.type="button";download.className="secondary-button";download.textContent="⇩ Скачать проект";download.addEventListener("click",()=>downloadGuestProject(project));
       actions.append(open,download);card.append(head,meta,expiry,actions);list.append(card);
     });
-    const archived=authSession?.user?[]:readGuestArchive();
+    const archived=archivedProjects;
     if(archived.length){
       const archiveHeading=document.createElement("h3");archiveHeading.textContent="Архив гостевых проектов";archiveHeading.style.margin="22px 0 10px";list.append(archiveHeading);
       archived.forEach((project,index)=>{
