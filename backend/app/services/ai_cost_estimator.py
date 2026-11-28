@@ -36,8 +36,15 @@ class AIPriceRateCard:
             and self.output_usd_per_million_tokens == 0
         ):
             raise ValueError("At least one AI token rate must be positive.")
-        if self.max_input_tokens < 1 or self.max_output_tokens < 1:
-            raise ValueError("AI rate card token ceilings must be positive.")
+        if (
+            not isinstance(self.max_input_tokens, int)
+            or isinstance(self.max_input_tokens, bool)
+            or not isinstance(self.max_output_tokens, int)
+            or isinstance(self.max_output_tokens, bool)
+            or self.max_input_tokens < 1
+            or self.max_output_tokens < 1
+        ):
+            raise ValueError("AI rate card token ceilings must be positive integers.")
 
 
 def estimate_ai_cost_upper_bound(
