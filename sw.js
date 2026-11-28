@@ -1,4 +1,4 @@
-const CACHE_NAME = "pwa-studio-shell-v34";
+const CACHE_NAME = "pwa-studio-shell-v35";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -8,7 +8,8 @@ const CORE_ASSETS = [
   "./audio-lab.js",
   "./supabase-config.js",
   "./manifest.webmanifest",
-  "./assets/icon.svg"
+  "./assets/icon.svg",
+  "./site-cache-tools.js?v=20261128-1"
 ];
 
 self.addEventListener("install", event => {
