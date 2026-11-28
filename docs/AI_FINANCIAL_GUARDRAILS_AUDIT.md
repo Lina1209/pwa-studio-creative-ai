@@ -61,8 +61,8 @@ This audit records the verified boundary between current protections and the fut
 - The global control row is seeded with `enforcement_enabled=false` and `kill_switch_enabled=true`. No monetary policy rows or numerical limits are seeded.
 - The reserve RPC returns whether it created a new reservation. A duplicate request must not call the provider again.
 - `backend/app/services/ai_budget_store.py` is a server-only Supabase RPC adapter. It is not wired to routes.
-- `backend/app/services/ai_budget.py` remains a provider-independent orchestration contract. It requires a trusted server-calculated reservation amount; no estimator/pricing table has been approved or implemented.
-- Disposable CI applies the migration and runs SQL checks. A concurrent reservation race harness is being validated. This is not production evidence until the latest CI run passes.
+- `backend/app/services/ai_budget.py` remains a provider-independent orchestration contract. It requires a trusted server-calculated reservation amount; the pure estimator contract now exists, but is not yet wired to a tokenizer, rate card, or routes.
+- Disposable CI applies the migration and runs SQL checks. The current SQL suite verifies sequential cap enforcement and transaction-level invariants; it does NOT yet launch concurrent sessions, so race behavior still needs a true multi-session stress test. A global advisory transaction lock serializes reserve calls in the RPC.
 - No live Supabase migration was run. No production setting, provider key, route, or billing flow was changed.
 
 ### Versioned cost-estimator contract
@@ -77,13 +77,13 @@ This audit records the verified boundary between current protections and the fut
 - Added `list_ai_budget_reconciliation_candidates`: a bounded, service-role-only read RPC exposing only reservation metadata needed for manual/provider reconciliation; it returns no prompt or response content.
 - Added a backend adapter method for invoking that RPC; no scheduler or background worker is configured.
 - Exposure aggregation now filters by both the active policy's scope and its period. Platform policies aggregate all provider/user reservations in-period; provider and user policies aggregate only matching rows.
-- SQL tests now check disabled-by-default behavior, browser-role privilege denial, idempotency, settlement, unknown exposure, confirmed no-charge release, and stale reservation reconciliation.
-- The CI SQL test initially failed due to a dollar-quote typo in its first DO block. This was corrected; the corrected and expanded run is pending.
+- SQL tests now check disabled-by-default behavior, browser-role privilege denial, idempotency, settlement, unknown exposure, confirmed no-charge release, stale reservation reconciliation, and that a provider cost overrun is recorded at its actual amount rather than clipped to the reservation.
+- The corrected migration/reconciliation SQL integration run completed successfully in CI (`46095350845`). The versioned estimator, its validation tests, and documentation workflows also completed successfully (`46095400515`, `46095412636`, `46095418512`).
 
 ## Remaining blockers before route integration
 
-1. Complete and pass the PostgreSQL concurrency harness on the latest branch commit.
-2. Define a reviewed server-side cost estimator for the configured model, including input/output price versioning and retry exposure.
-3. Add recovery/reconciliation for reservations stranded in `reserved` or `unknown`; never TTL-release an ambiguous provider request.
+1. Add and pass a true multi-session PostgreSQL concurrency test; current SQL contract tests are sequential.
+2. Select a trusted server-side tokenizer or conservative token-bound method, then review and version actual model input/output prices including retry exposure.
+3. Add an authenticated, audited reconciliation operator workflow for reservations stranded in `reserved` or `unknown`; no scheduler exists, and ambiguous provider requests must never be TTL-released.
 4. Decide how to authenticate and audit policy/control changes and how to handle user deletion under ledger retention requirements.
 5. Only after numerical limits are approved, implement route integration and an explicit staged rollout.
