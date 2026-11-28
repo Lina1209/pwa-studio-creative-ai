@@ -110,6 +110,21 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
             self.store.reserve(self.request)
         self.assertNotIn("secret response body", str(raised.exception))
 
+    @patch("app.services.ai_budget_store.httpx.Client")
+    def test_stale_reconciliation_calls_safe_unknown_rpc(self, client_cls):
+        client = client_cls.return_value.__enter__.return_value
+        client.post.return_value.json.return_value = 3
+        count = self.store.mark_stale_reservations_unknown("2026-11-28T00:00:00Z", 25)
+        self.assertEqual(count, 3)
+        self.assertTrue(client.post.call_args.args[0].endswith(
+            "/rpc/mark_stale_ai_budget_reservations_unknown"
+        ))
+        self.assertEqual(client.post.call_args.kwargs["json"]["p_limit"], 25)
+
+    def test_stale_reconciliation_rejects_invalid_batch_size(self):
+        with self.assertRaises(ValueError):
+            self.store.mark_stale_reservations_unknown("2026-11-28T00:00:00Z", 0)
+
     def test_missing_server_credentials_fail_closed(self):
         store = SupabaseAIBudgetStore(Settings())
         with self.assertRaises(AIBudgetStoreUnavailable):
