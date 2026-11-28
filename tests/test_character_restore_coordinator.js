@@ -108,4 +108,16 @@ function adapters({badReadback=false}={}){
  assert.equal(fifth.inspect().state,"planned");
  assert.equal(fifth.inspect().lease,null);
  console.log("PASS confirmation expiring during lease acquisition releases the newly acquired lease without starting work");
+
+ const sixth=makeJournal(),stageGate=await issuedGate();let stageValid=true,stageCalls=0;
+ const stagedThenExpired={
+  ...adapters(),
+  async stageBlob(input){stageCalls++;const result=await adapters().stageBlob(input);stageValid=false;return result;}
+ };
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:sixth,...stageGate,validateConfirmation:()=>stageValid,adapters:stagedThenExpired}),/confirmation/);
+ assert.equal(stageCalls,1);
+ assert.equal(sixth.inspect().state,"paused_retryable");
+ assert.equal(sixth.inspect().references[0].state,"pending");
+ assert.equal(sixth.inspect().lease,null);
+ console.log("PASS confirmation expiring inside stageBlob prevents verified checkpoint and leaves operation safely retryable");
 })().catch(error=>{console.error(error);process.exitCode=1;});
