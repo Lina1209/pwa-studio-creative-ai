@@ -5,9 +5,16 @@ const owner = "11111111-1111-4111-8111-111111111111";
 const cloudId = "22222222-2222-4222-8222-222222222222";
 const localId = "33333333-3333-4333-8333-333333333333";
 const localId2 = "44444444-4444-4444-8444-444444444444";
+const referenceId = localId + "-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const referenceAsset = (overrides={}) => ({
+  id:"99999999-9999-4999-8999-999999999999", character_id:cloudId,
+  local_reference_id:referenceId, file_name:"front.png", file_type:"image/png",
+  status:"ready", size_bytes:2048, content_sha256:"a".repeat(64), width:1024, height:768,
+  ...overrides
+});
 const row = (id, sourceId, overrides={}) => ({
   id, source_local_id:sourceId, version:1, name:"Катти", description:"Описание",
-  reference_data:{kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[{id:"ref-local-1",name:"front.png",type:"image/png"}]},
+  reference_data:{kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[]},
   created_at:"2026-11-28T00:00:00.000Z", ...overrides
 });
 const page = (items,next_cursor=null) => ({items,next_cursor});
@@ -15,8 +22,9 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
 (async()=>{
   await run("fetches every page and produces local-ID-preserving metadata plan",async()=>{
     const calls=[];
-    const pages=[page([row(cloudId,localId)],"cursor-1"),page([row("55555555-5555-4555-8555-555555555555",localId2)])];
-    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async cursor=>{calls.push(cursor);return pages[calls.length-1];}});
+    const withReference = row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[{id:referenceId,name:"front.png",type:"image/png"}]}});
+    const pages=[page([withReference],"cursor-1"),page([row("55555555-5555-4555-8555-555555555555",localId2)])];
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async cursor=>{calls.push(cursor);return pages[calls.length-1];},fetchReferences:async ids=>{assert.deepEqual(ids,[cloudId]);return [referenceAsset()];}});
     assert.deepEqual(calls,[null,"cursor-1"]);
     assert.equal(plan.complete,true);
     assert.equal(plan.pagesRead,2);
@@ -26,6 +34,9 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(plan.proposedItems[0].cloudBackup.characterId,cloudId);
     assert.deepEqual(plan.proposedItems[0].referenceImages,[]);
     assert.equal(plan.proposedItems[0].cloudBackup.referenceManifest[0].name,"front.png");
+    assert.equal(plan.proposedItems[0].cloudBackup.referenceManifest[0].cloudAssetId,referenceAsset().id);
+    assert.equal(plan.proposedItems[0].cloudBackup.referenceManifest[0].expectedSha256,"a".repeat(64));
+    assert.equal(plan.proposedItems[0].cloudBackup.referenceManifest[0].expectedSizeBytes,2048);
   });
   await run("identical local passport is unchanged and never overwritten",async()=>{
     const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[],cloudBackup:{characterId:cloudId}};
@@ -36,11 +47,28 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(JSON.stringify(local),snapshot);
   });
   await run("restored metadata manifest remains unchanged without local image Blobs",async()=>{
-    const manifest=[{id:"ref-local-1",name:"front.png",type:"image/png"}];
+    const manifest=[{id:referenceId,name:"front.png",type:"image/png"}];
     const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[],cloudBackup:{characterId:cloudId,version:1,referenceManifest:manifest}};
-    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:local.passport,referenceImages:manifest}});
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[referenceAsset()]});
     assert.equal(plan.unchanged.length,1);
     assert.equal(plan.conflicts.length,0);
+  });
+
+
+  await run("reference descriptors require explicit ready media mappings",async()=>{
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{},referenceImages:[{id:referenceId,name:"front.png",type:"image/png"}]}});
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow])}),/loader is required/);
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[]}),/no explicit media asset mapping/);
+  });
+  await run("reference restore rejects pending assets and integrity mismatches",async()=>{
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{},referenceImages:[{id:referenceId,name:"front.png",type:"image/png"}]}});
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[referenceAsset({status:"object_uploaded"})]}),/not ready/);
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[referenceAsset({content_sha256:"bad"})]}),/integrity metadata/);
+  });
+  await run("reference restore rejects duplicate asset-to-reference mappings",async()=>{
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{},referenceImages:[{id:referenceId,name:"front.png",type:"image/png"}]}});
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[referenceAsset(),referenceAsset({id:"88888888-8888-4888-8888-888888888888"})]}),/duplicate local reference mappings/);
   });
 
   await run("matching passport without a persisted cloud identity binding requires conflict resolution",async()=>{
