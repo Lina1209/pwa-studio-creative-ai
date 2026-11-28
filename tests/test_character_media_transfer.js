@@ -39,7 +39,8 @@ function harness(fetchImpl,isCurrent=()=>true){
  assert.equal(await digest(restored),await digest(blob));
  assert.equal(getCalls,1);
  const badDigest=harness(async()=>new Response(blob,{status:200,headers:{"Content-Type":"image/png","X-Content-SHA256":"0".repeat(64)}}));
- const expectedDigest=await digest(blob);\n await assert.rejects(()=>badDigest.adapter.downloadAsset({cloudAssetId:asset,expectedSha256:expectedDigest,expectedSizeBytes:blob.size,expectedMimeType:"image/png"}),/headers/);
+ const expectedDigest=await digest(blob);
+ await assert.rejects(()=>badDigest.adapter.downloadAsset({cloudAssetId:asset,expectedSha256:expectedDigest,expectedSizeBytes:blob.size,expectedMimeType:"image/png"}),/headers/);
  let current=true;
  const fenced=harness(async()=>{current=false;return uploadResponse();},()=>current);
  await assert.rejects(()=>fenced.adapter.uploadAsset({characterId:character,localReferenceId:reference,fileName:"reference.png",blob}),/Account changed/);
