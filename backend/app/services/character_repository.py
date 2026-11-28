@@ -87,11 +87,11 @@ def _request(settings, method, params=None, payload=None):
 
 def _public(row):
     if not isinstance(row, dict): raise HTTPException(status_code=502, detail="Character storage returned an invalid record.")
-    return {k: row.get(k) for k in ("id", "source_local_id", "name", "description", "reference_data", "created_at")}
+    return {k: row.get(k) for k in ("id", "source_local_id", "name", "description", "reference_data", "created_at", "version")}
 
 def list_owned_characters(settings, owner_id):
     owner = canonical_uuid(owner_id, "owner")
-    rows = _request(settings, "GET", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at",
+    rows = _request(settings, "GET", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at,version",
         "owner_id":f"eq.{owner}", "order":"created_at.desc", "limit":"100"})
     # Defense in depth: verify every returned row before exposing any passport.
     if any(not isinstance(row, dict) or row.get("owner_id") != owner for row in rows):
@@ -122,15 +122,17 @@ def create_owned_character(settings, owner_id, source_local_id, name, descriptio
 def get_owned_character(settings, owner_id, character_id):
     owner = canonical_uuid(owner_id, "owner")
     character = canonical_uuid(character_id, "character")
-    rows = _request(settings, "GET", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at",
+    rows = _request(settings, "GET", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at,version",
         "id":f"eq.{character}", "owner_id":f"eq.{owner}", "limit":"1"})
     if not rows: raise HTTPException(status_code=404, detail="Character not found.")
     if rows[0].get("owner_id") != owner: raise HTTPException(status_code=404, detail="Character not found.")
     return _public(rows[0])
 
-def update_owned_character(settings, owner_id, character_id, changes):
+def update_owned_character(settings, owner_id, character_id, expected_version, changes):
     owner = canonical_uuid(owner_id, "owner")
     character = canonical_uuid(character_id, "character")
+    if isinstance(expected_version, bool) or not isinstance(expected_version, int) or expected_version < 1:
+        raise HTTPException(status_code=422, detail="A positive expected character version is required.")
     payload = {}
     if "name" in changes:
         value = changes["name"]
@@ -145,8 +147,22 @@ def update_owned_character(settings, owner_id, character_id, changes):
         payload["description"] = value.strip() if value else None
     if "reference_data" in changes: payload["reference_data"] = validate_reference_data(changes["reference_data"])
     if not payload: raise HTTPException(status_code=400, detail="No character changes were supplied.")
-    rows = _request(settings, "PATCH", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at",
-        "id":f"eq.{character}", "owner_id":f"eq.{owner}"}, payload)
-    if not rows: raise HTTPException(status_code=404, detail="Character not found.")
-    if rows[0].get("owner_id") != owner: raise HTTPException(status_code=404, detail="Character not found.")
-    return _public(rows[0])
+    row = _rpc(settings, "pwa_update_character_versioned", {
+        "p_owner_id": owner,
+        "p_character_id": character,
+        "p_expected_version": expected_version,
+        "p_changes": payload,
+    })
+    if row.get("not_found") is True:
+        raise HTTPException(status_code=404, detail="Character not found.")
+    if row.get("conflict") is True:
+        raise HTTPException(status_code=409, detail={
+            "code": "character_version_conflict",
+            "message": "This character was changed elsewhere. Reload the latest version before editing.",
+            "current_version": row.get("version"),
+        })
+    if row.get("owner_id") != owner or row.get("id") != character:
+        raise HTTPException(status_code=502, detail="Character update returned an invalid ownership mapping.")
+    if row.get("version") != expected_version + 1:
+        raise HTTPException(status_code=502, detail="Character update returned an invalid version.")
+    return _public(row)
