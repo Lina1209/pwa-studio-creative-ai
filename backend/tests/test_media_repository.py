@@ -83,13 +83,15 @@ class CharacterMediaAssetListTests(unittest.TestCase):
 
     @patch("app.services.media_repository._rest_get")
     def test_list_filters_owner_character_bucket_and_sanitizes_fields(self, get):
-        get.return_value = [{"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER, "file_name": "hero.png", "file_type": "image/png", "status": "ready", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now", "storage_path": "secret", "bucket": "studio-media", "metadata": {"secret": True}}]
+        get.return_value = [{"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER, "local_reference_id": "66666666-6666-4666-8666-666666666666", "content_sha256": "a" * 64, "file_name": "hero.png", "file_type": "image/png", "status": "ready", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now", "storage_path": "secret", "bucket": "studio-media", "metadata": {"secret": True}}]
         rows = media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
         params = get.call_args.args[2]
         self.assertEqual(params["owner_id"], f"eq.{OWNER}")
         self.assertEqual(params["character_id"], f"eq.{CHARACTER}")
         self.assertEqual(params["bucket"], "eq.studio-media")
         self.assertEqual(rows[0]["status"], "ready")
+        self.assertEqual(rows[0]["local_reference_id"], "66666666-6666-4666-8666-666666666666")
+        self.assertEqual(rows[0]["content_sha256"], "a" * 64)
         for hidden in ("storage_path", "bucket", "owner_id", "metadata"): self.assertNotIn(hidden, rows[0])
 
     @patch("app.services.media_repository._rest_get")
