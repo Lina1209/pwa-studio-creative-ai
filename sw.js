@@ -61,16 +61,8 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  event.respondWith(
-    caches.open(CACHE_NAME).then(async cache => {
-      const cached = await cache.match(request);
-      if (cached) return cached;
-      const response = await fetch(request);
-      if (response && response.ok && response.type === "basic") {
-        const copy = response.clone();
-        cache.put(request, copy).catch(error => console.warn("PWA cache write failed:", error));
-      }
-      return response;
-    })
-  );
+  // Everything outside the explicit app-shell allowlist is network-only.
+  // In particular, never accumulate generated images, audio, video, or user files
+  // in Cache Storage: large media can exhaust device storage and make the PWA sluggish.
+  return;
 });
