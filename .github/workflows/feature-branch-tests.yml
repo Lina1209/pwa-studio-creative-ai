@@ -93,8 +93,8 @@ jobs:
           done
       - name: Verify private media upload reservation and verification transaction (disposable PostgreSQL only)
         run: |
-          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \\
-            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \\
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0018_media_upload_verification_transaction.sql
       - name: Run generation job queue behavior harness (disposable PostgreSQL only)
         run: |
