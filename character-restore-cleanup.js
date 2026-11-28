@@ -99,7 +99,7 @@
      await assertLease();
      const manifest=existingManifest||await cleanupJournal.createManifest({ownerId,cleanupId,ownerLockEpoch:lease.epoch,metadataDigest,candidates});
      await assertLease();
-     return Object.freeze({state:"marked",cleanupId,revision:manifest.revision,candidateCount:manifest.candidates.length,deleteAfter:manifest.candidates.reduce((max,x)=>Date.parse(x.deleteAfter)>max?Date.parse(x.deleteAfter):max,0)});
+     return Object.freeze({state:manifest.state==="reconciled"?"already_reconciled":"marked",cleanupId,revision:manifest.revision,candidateCount:manifest.candidates.length,deleteAfter:manifest.candidates.reduce((max,x)=>Date.parse(x.deleteAfter)>max?Date.parse(x.deleteAfter):max,0)});
    }finally{
      if(heartbeat)clearInterval(heartbeat);
      await renewal;
@@ -129,7 +129,7 @@
        const candidates=manifest.candidates.map(c=>candidateState==="retained"
          ?{...c,state:"retained",reasonCode}
          :{...c,state:"eligible_for_delete_review",recheckedAt});
-       const saved=await cleanupJournal.reconcileManifest({ownerId,cleanupId,expectedRevision:manifest.revision,candidates});
+       const saved=await cleanupJournal.reconcileManifest({ownerId,cleanupId,expectedRevision:manifest.revision,ownerLockEpoch:lease.epoch,candidates});
        await assertLease();
        return Object.freeze({state:candidateState==="retained"?"blocked_"+reasonCode:"eligible_for_delete_review",revision:saved.revision,eligibleCount:saved.candidates.filter(c=>c.state==="eligible_for_delete_review").length,retainedCount:saved.candidates.filter(c=>c.state==="retained").length,candidates:saved.candidates.map(c=>({localStagedBlobId:c.localStagedBlobId,state:c.state,reasonCode:c.reasonCode||null}))});
      };
