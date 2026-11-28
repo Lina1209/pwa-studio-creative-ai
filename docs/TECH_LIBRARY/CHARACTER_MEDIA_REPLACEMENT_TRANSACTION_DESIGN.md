@@ -212,3 +212,75 @@ Required guard for the feature migration:
 6. Add disposable-PostgreSQL tests for both orderings: replacement reservation first, then whole-character cleanup; and whole-character cleanup first, then attempted replacement. Also race two claimers and verify that only one active event can ever authorize deletion for an asset.
 
 This is a required safety invariant, not an optimization. It is deliberately stricter than allowing both event types to coexist and hoping one worker wins. The migration and any worker support remain feature-branch-only until the race matrix passes; no production database or worker is to be activated by this work.
+
+
+## 12. Follow-up implementation audit and verified cross-scope fence
+
+The manifest v2 compatibility work described above is now present on the feature branch:
+
+- `character-cloud-restore.js` parses legacy `{id,name,type}` and v2 `{slot_id,asset_local_reference_id,name,type}` entries.
+- Its serializer preserves legacy form when slot and immutable upload identity are the same, preserves v2 identity when merging legacy local cards with cloud data, and rejects malformed or duplicate identities.
+- `app.js` uses this serializer for cloud backup writes.
+- Browser tests cover legacy round-trip, v2 round-trip, cloud/local merge, explicit identity update, duplicate rejection, and malformed explicit identities.
+- This is serializer compatibility only. The UI still does not offer an end-to-end cloud replacement operation, and no atomic server-side switch exists.
+
+### Cross-scope deletion fence verification
+
+Migration `0026_media_cleanup_cross_scope_fence.sql` now:
+
+1. Adds `media_reference_replacement_cleanup_requested` to the outbox event-type constraint.
+2. Refuses to install if duplicate active deletion events already exist for an asset.
+3. Adds the partial unique index `media_asset_outbox_one_active_cleanup_per_asset` across both deletion event types and active states `pending` / `claimed`.
+4. Leaves the existing whole-character claim, completion, and retry RPCs unchanged. They still process only `media_cleanup_requested`.
+
+Disposable CI coverage now includes both sequential orderings and a two-session PostgreSQL race harness. At commit `c661304614f6d9299a626825e0bb75964fcf3b7a`, both the push run `46180809888` and PR run `46180814888` completed successfully. The PR run also passed the cross-scope race step. This proves the reservation uniqueness fence under the tested orderings; it does not prove replacement-worker claiming or two-claimer behavior, which do not exist yet.
+
+### Next implementation boundary: replacement transaction, still inactive
+
+The next migration should add a new narrowly scoped RPC, not alter the existing whole-character functions. Proposed signature:
+
+```sql
+pwa_replace_character_reference_v1(
+  p_owner_id uuid,
+  p_character_id uuid,
+  p_expected_character_version bigint,
+  p_slot_id text,
+  p_expected_old_local_reference_id text,
+  p_new_local_reference_id text,
+  p_replacement_operation_id uuid,
+  p_expected_new_sha256 text,
+  p_expected_new_size_bytes bigint,
+  p_expected_new_file_type text
+)
+```
+
+The backend must derive `p_owner_id` from the verified bearer identity; the browser must not call this RPC directly. The function must:
+
+1. Validate every identifier and fingerprint; reject nulls, malformed IDs, unsupported MIME, invalid digest, and invalid size.
+2. Lock the owned character row `FOR UPDATE`; reject if `cleanup_operation_id` is set; compare the exact expected version.
+3. Check an operation receipt/idempotency record before treating a retry as a new switch. The receipt must bind owner, character, operation ID, slot, old/new identities, expected version, and resulting version. A reused operation ID with different inputs is a hard conflict.
+4. Parse the existing `reference_data.referenceImages` array without rewriting unrelated keys. Resolve legacy `id` entries as slot and asset identity equal; resolve v2 entries by `slot_id` and `asset_local_reference_id`. Require exactly one target slot and exact old identity.
+5. Resolve old and new `media_assets` rows by owner + character + `local_reference_id`, then lock the rows in deterministic asset-ID order. Never accept a client-supplied asset UUID, bucket, or Storage path as authority.
+6. Require the new row to be `ready` and match the verifier-persisted SHA-256, size, and MIME. Require the old row to be live, attached to this character, and not already tombstoned.
+7. Acquire the existing exact-object advisory lock for the old bucket/path and recheck that no other media row, media metadata, passport slot, or avatar still references that object. The target slot's old binding is the only reference expected to disappear.
+8. Write a v2 slot entry retaining `slot_id` and setting the new `asset_local_reference_id`; increment character version once. In the same transaction, set the old asset to `cleanup_pending` and insert exactly one replacement-scoped outbox event. The partial unique index must reject an active whole-character cleanup event.
+9. Store and return the operation receipt. Any failure rolls back the passport update, version bump, tombstone, receipt, and outbox insertion together.
+
+The replacement cleanup claim/completion/retry functions must be added separately after this transaction is proven. They must use a consistent character -> outbox event -> media asset lock order, recheck references under the existing advisory lock before returning a Storage key, and fence event ID + owner + asset ID + replacement operation ID + claim token + lease. They must never require or set the whole-character `cleanup_operation_id`. Completion may detach the old asset only after the worker confirms Storage DELETE or 404. No existing worker is to be assumed compatible with the new event type.
+
+### Required disposable test matrix before any route/UI wiring
+
+- Legacy and v2 target-slot replacement, preserving unrelated manifest keys and slots.
+- Stale character version and stale old-identity conflicts with byte-for-byte unchanged old manifest.
+- New asset not ready; fingerprint mismatch; upload in progress; upload failed.
+- Foreign owner, foreign character, ambiguous old/new local-reference identity, duplicate slot, missing catalog mapping.
+- Same replacement operation retried with identical input returns the same committed result and one outbox event; reused operation ID with changed input conflicts.
+- Two replacements from the same expected version: exactly one commits.
+- Replacement versus whole-character cleanup in both lock acquisition orders.
+- Replacement versus unrelated versioned manifest update.
+- Transaction rollback after manifest update but before outbox insert.
+- Replacement claim versus two concurrent claimers; only one valid lease and no duplicate deletion authorization.
+- Stale/expired claim cannot complete or retry; worker DELETE/404 completion is idempotently fenced.
+- Worker failure/dead-letter leaves the new pointer intact and old tombstone auditable.
+
+Until these tests and route-level ownership/idempotency tests pass, do not add a user-facing replacement button, do not activate a worker for this event type, and do not execute the migration on live Supabase.
