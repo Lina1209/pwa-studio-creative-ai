@@ -314,60 +314,7 @@ declare
 begin
   if p_owner_id is null or p_asset_id is null or p_event_id is null
      or p_claim_token is null or p_content_sha256 is null
-     or p_content_sha256 !~ '^[0-9a-f]{64}$' then
-    raise exception 'invalid media verification result' using errcode='22023';
-  end if;
-
-  -- Match cleanup's character -> media lock order. The media_assets update
-  -- below performs an FK check that takes KEY SHARE on characters; acquiring
-  -- that lock before the outbox/media locks prevents a cleanup/verification
-  -- deadlock (cleanup holds FOR UPDATE on the character before locking media).
-  select character_id into v_character_id
-  from public.media_assets
-  where id=p_asset_id and owner_id=p_owner_id;
-  if not found or v_character_id is null then
-    raise exception 'media verification character is missing' using errcode='P0002';
-  end if;
-
-  perform 1 from public.characters
-  where id=v_character_id and owner_id=p_owner_id
-  for key share;
-  if not found then
-    raise exception 'media verification character is missing' using errcode='P0002';
-  end if;
-
-  select * into v_event from public.media_asset_outbox
-  where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
-    and event_type='media_upload_verify_requested'
-    and status='claimed' and claim_token=p_claim_token
-    and claim_expires_at > clock_timestamp()
-  for update;
-  if not found then
-    raise exception 'media verification claim is stale' using errcode='P0002';
-  end if;
-
-  update public.media_assets
-  set status='ready',version=version+1
-  where id=p_asset_id and owner_id=p_owner_id and status in ('pending_upload','object_uploaded')
-    and content_sha256=p_content_sha256 and size_bytes=p_size_bytes
-    and file_type=p_file_type and width=p_width and height=p_height
-  returning * into v_asset;
-  if not found then
-    raise exception 'stored media does not match reserved fingerprint' using errcode='23514';
-  end if;
-
-  update public.media_asset_outbox
-  set status='delivered',claim_token=null,claim_expires_at=null,delivered_at=clock_timestamp()
-  where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
-    and event_type='media_upload_verify_requested'
-    and claim_token=p_claim_token and status='claimed';
-  if not found then
-    raise exception 'media verification claim was lost' using errcode='P0002';
-  end if;
-
-  return jsonb_build_object('id',v_asset.id,'status',v_asset.status,'version',v_asset.version);
-end;
-$$;
+     or p_content_sha256 !~ '^[0-9a-f]{64}$'
 
 -- Retry is token-fenced; exhausted events fail closed and never become readable.
 create or replace function public.pwa_retry_media_upload_verification(
