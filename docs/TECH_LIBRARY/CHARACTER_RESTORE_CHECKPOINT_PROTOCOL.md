@@ -260,3 +260,19 @@ This enables the staging coordinator to download the exact asset IDs and verify 
 
 
 Each staged reference checkpoint also preserves `characterId` (cloud character UUID), `sourceLocalId` (local card UUID), `localReferenceId` (the original stable local reference key), display name, and MIME. The staging coordinator carries these fields unchanged from the planner into the durable journal. This prevents the activation phase from having to reconstruct or guess which staged Blob belongs to which restored card/reference slot.
+
+
+## 15. Durable activation-intent checkpoint (isolated journal foundation)
+
+The restore journal now has an optional validated `activation` record containing:
+- `baseDigest`: SHA-256 of the exact owner-local metadata snapshot used for activation;
+- `mergedDigest`: SHA-256 of the complete canonical intended merged metadata array;
+- `intendedCount`: expected total metadata record count (1–100);
+- `operationMarker`: must equal the journal's immutable restore operation UUID;
+- `preparedAt`: timestamp for the activation intent.
+
+A transition into `activating` is rejected unless this complete intent is persisted in the same journal checkpoint. The journal permits an interrupted `activating` operation to become `paused_retryable` while retaining its intent, and permits an `activation_uncertain` operation to be explicitly returned to retryable review. These transitions do not themselves perform recovery or authorize a metadata write.
+
+The browser journal suite now verifies that an activation transition without intent is rejected, a valid intent survives a checkpoint/read-back, malformed digests are rejected, and an interrupted activation can be paused without losing the intent.
+
+This is only the durable intent primitive. There is still no activation coordinator, canonical merged-array builder, staged-Blob revalidation at activation time, localStorage commit, read-back recovery, or crash-boundary integration test. Do not enable restore/import or connect this journal field to the application UI.
