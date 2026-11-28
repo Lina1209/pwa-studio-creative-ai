@@ -59,7 +59,6 @@
   const nonShellSource = swSource.slice(swSource.indexOf("  // Everything outside the explicit app-shell allowlist"));
   assert(nonShellSource.includes("return;") && !nonShellSource.includes("caches.") && !nonShellSource.includes("cache.put"), "non-shell requests do not accumulate dynamic or large media in Cache Storage");
   assert(swSource.includes('cache.match(request, { ignoreSearch: true })'), "offline shell fallback matches precached assets despite cache-busting query strings");
-  assert(coreAssets.includes("/assets/icon.svg") && shellPaths.includes("/assets/icon.svg"), "manifest app icon is both precached and served by the offline shell strategy");
   const indexText = await fetch("index.html").then(response => response.text());
   const indexDoc = new DOMParser().parseFromString(indexText, "text/html");
   const coreStart = swSource.indexOf("const CORE_ASSETS = [");
@@ -70,6 +69,7 @@
   const shellEnd = swSource.indexOf("].some(asset", shellStart);
   const shellBlock = shellStart >= 0 && shellEnd > shellStart ? swSource.slice(shellStart, shellEnd) : "";
   const shellPaths = [...shellBlock.matchAll(/"([^"]+)"/g)].map(match => match[1]);
+  assert(coreAssets.includes("/assets/icon.svg") && shellPaths.includes("/assets/icon.svg"), "manifest app icon is both precached and served by the offline shell strategy");
   const localScripts = [...indexDoc.querySelectorAll("script[src]")].map(script => new URL(script.getAttribute("src"), location.origin + "/")).filter(url => url.origin === location.origin);
   assert(localScripts.every(url => coreAssets.includes(url.pathname)), "every same-origin script in index.html is included in the offline precache");
   assert(localScripts.every(url => shellPaths.some(path => url.pathname.endsWith(path))), "every same-origin script is handled by the shell network-first strategy");
