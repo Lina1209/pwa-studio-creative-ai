@@ -77,6 +77,8 @@ jobs:
             supabase/migrations/0005_cloud_projects_and_storage.sql \
             supabase/migrations/0009_user_profiles.sql \
             supabase/migrations/0012_character_library_media_links.sql \
+            supabase/migrations/0013_generation_jobs_and_outbox.sql \
+            supabase/migrations/0014_generation_job_queue_rpcs.sql \
             supabase/migrations/0017_owner_scoped_media_associations.sql \
             supabase/migrations/0018_private_media_upload_reservation.sql \
             supabase/migrations/0019_private_media_cleanup_outbox.sql \
@@ -89,6 +91,10 @@ jobs:
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
+      - name: Run generation job queue behavior harness (disposable PostgreSQL only)
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -f supabase/tests/0015_generation_job_queue_behavior.sql
       - name: Verify profile avatar catalog migration and defaults
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
