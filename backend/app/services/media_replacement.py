@@ -48,8 +48,8 @@ def plan_media_replacement(
         raise ValueError("Replacement must use a new immutable asset ID.")
     if old_asset.get("status") != MediaStatus.READY.value:
         raise ValueError("The previous asset must be ready before replacement.")
-    if new_asset.get("status") != MediaStatus.OBJECT_UPLOADED.value:
-        raise ValueError("The new object must be uploaded and verified before replacement.")
+    if new_asset.get("status") != MediaStatus.READY.value:
+        raise ValueError("The new asset must complete server-side verification before replacement.")
 
     return ReplacementPlan(
         owner_id=owner,
