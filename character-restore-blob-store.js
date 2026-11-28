@@ -24,6 +24,10 @@
     function open() {
       return new Promise((resolve, reject) => {
         const request = idb.open(DB_NAME, 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+        };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error || new Error("Character image database open failed."));
         request.onblocked = () => reject(new Error("Character image database upgrade is blocked."));
