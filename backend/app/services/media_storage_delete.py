@@ -36,8 +36,10 @@ def delete_private_media_object(settings: Settings, plan: MediaCleanupPlan) -> N
     )
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-    }
+ 
+    # sb_secret keys are apikey-only; legacy service-role JWTs also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"   }
     try:
         response = httpx.delete(endpoint, headers=headers, timeout=20.0)
         if response.status_code == 404:
