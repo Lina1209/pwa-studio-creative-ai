@@ -3,6 +3,7 @@
 <script src="../../character-restore-journal.js"></script>
 <script src="../../character-restore-blob-store.js"></script>
 <script src="../../character-restore-cleanup-journal.js"></script>
+<script src="../../character-local-storage-adapter.js"></script>
 <script src="../../character-restore-cleanup.js"></script>
 <script>
 (async()=>{
@@ -39,7 +40,7 @@
      assert(Date.parse(manifest.candidates[0].deleteAfter)-Date.parse(manifest.candidates[0].markedAt)>=86400000-1000,"retention window shorter than 24h");
      const stillThere=await blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
      assert(stillThere instanceof Blob,"marking deleted or changed the staged Blob");
-     passed.push("mark-only manifest and retention; Blob bytes remain untouched");
+
    });
    await test("repeated marking is idempotent for the same snapshot",async()=>{
      const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["idempotent"],{type:"image/webp"});
@@ -48,7 +49,7 @@
      assert(first.cleanupId===second.cleanupId,"same snapshot generated a different cleanup identity");
      const page=await cleanupJournal.listPage(owner,{limit:10});
      assert(page.items.length===1,"repeated mark duplicated the manifest");
-     passed.push("deterministic cleanup identity and idempotent retry");
+
    });
    await test("active card reference is never marked",async()=>{
      const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["active-ref"],{type:"image/webp"});
@@ -58,7 +59,7 @@
      assert(result.state==="no_candidates","active card reference was marked");
      const stillThere=await blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
      assert(stillThere instanceof Blob,"active referenced Blob disappeared");
-     passed.push("active metadata references block cleanup marking");
+
    });
    await test("nonterminal operation and same cloud asset in another operation are retained",async()=>{
      const owner=uuid(),blob=new Blob(["shared-source"],{type:"image/webp"});
@@ -67,7 +68,7 @@
      await makeAborted({owner,operation:op2,asset,blobId:id2,blob,terminal:"paused_retryable"});
      const result=await mark(owner);
      assert(result.state==="no_candidates","asset mapping used by another operation was marked");
-     passed.push("nonterminal and cross-operation asset mappings are retained");
+
    });
    await test("owner lock contention blocks marking before manifest creation",async()=>{
      const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["locked"],{type:"image/webp"});
@@ -76,7 +77,7 @@
      try{await rejects(()=>mark(owner));}finally{await PWACharacterOwnerCoordinationLock.release(held);}
      const page=await cleanupJournal.listPage(owner,{limit:10});
      assert(page.items.length===0,"manifest created while owner lock was held");
-     passed.push("shared owner lock contention fails closed");
+
    });
    await test("account switch during marking aborts before durable manifest write",async()=>{
      const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["switch"],{type:"image/webp"});
@@ -85,7 +86,7 @@
      await rejects(()=>mark(owner,localFor(owner),()=>++calls<4));
      const page=await cleanupJournal.listPage(owner,{limit:10});
      assert(page.items.length===0,"manifest was written after account context changed");
-     passed.push("account context fence prevents manifest commit");
+
    });
    out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
    document.documentElement.dataset.testResult="passed";
