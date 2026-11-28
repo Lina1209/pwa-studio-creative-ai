@@ -246,6 +246,23 @@ class GenerationJobLifecycleTests(unittest.TestCase):
             mark_failed(running, NOW, "provider_rejected", True, True,
                         ProviderSubmissionOutcome.DEFINITELY_REJECTED)
 
+    def test_retryable_flag_must_be_a_boolean(self):
+        running = claim_job(new_job(), NOW)
+        for invalid_value in (1, 0, "yes", None):
+            with self.subTest(retryable=invalid_value):
+                with self.assertRaisesRegex(ValueError, "retryable"):
+                    mark_failed(running, NOW, "provider_rejected", invalid_value)
+
+    def test_success_requires_a_nonempty_string_asset_id(self):
+        running = replace(
+            claim_job(new_job(), NOW),
+            provider_submission_outcome=ProviderSubmissionOutcome.ACCEPTED,
+        )
+        for invalid_asset_id in (None, 123, "", False):
+            with self.subTest(asset_id=invalid_asset_id):
+                with self.assertRaisesRegex(ValueError, "asset id string"):
+                    mark_succeeded(running, invalid_asset_id)
+
     def test_error_code_matches_sql_safe_character_contract(self):
         running = claim_job(new_job(), NOW)
         for invalid_code in ("", "contains space", "slash/path", "кириллица", "x" * 81):
