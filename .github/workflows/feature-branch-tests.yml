@@ -139,14 +139,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
-      - name: Run real-browser IndexedDB journal tests
+      - name: Run real-browser IndexedDB backup journal tests
         run: python tests/browser/run_character_backup_journal.py
+      - name: Run real-browser durable restore checkpoint journal tests
+        run: python tests/browser/run_character_restore_journal.py
       - name: Check frontend syntax and account-switch fencing
         run: |
           node --check profile-avatar-catalog.js
           node --check app.js
           node --check audio-lab.js
           node --check character-cloud-restore.js
+          node --check character-restore-journal.js
           node --check character-local-storage-adapter.js
           node tests/test_character_cloud_restore.js
           node tests/test_character_local_storage_adapter.js
