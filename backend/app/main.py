@@ -80,7 +80,7 @@ def health():
 
 
 
-@app.get(f"{settings.api_prefix}/characters/references")
+@app.get(f"{settings.api_prefix}/media/character-references")
 def list_character_reference_catalog(character_ids: str, response: Response,
                                      user: StudioUser = Depends(get_current_user)):
     """Return an explicit owner-scoped local-reference to cloud-asset catalog."""
