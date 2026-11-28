@@ -168,6 +168,7 @@ jobs:
           node --check profile-avatar-catalog.js
           node --check app.js
           node --check site-cache-tools.js
+          node --check sw.js
           node --check audio-lab.js
           node --check character-cloud-restore.js
           node --check character-restore-journal.js
