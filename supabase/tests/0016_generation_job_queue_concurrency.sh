@@ -84,7 +84,7 @@ wait "$PID_B"
 
 python3 - "$tmp_dir/outbox-a.out" "$tmp_dir/outbox-b.out" "$OUTBOX_ID" "$JOB_ID" <<'PY'
 import json, pathlib, sys
-paths, expected_outbox, expected_job = sys.argv[1:4], sys.argv[3], sys.argv[4]
+paths = sys.argv[1:3]\nexpected_outbox, expected_job = sys.argv[3:5]
 rows = []
 for path in paths:
     raw = pathlib.Path(path).read_text().strip()
