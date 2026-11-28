@@ -71,7 +71,7 @@ def _validate_claim(event: dict) -> None:
         raise ValueError("Media verification claim contains invalid image dimensions.")
     if not isinstance(event.get("content_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", event["content_sha256"]):
         raise ValueError("Media verification claim contains an invalid content digest.")
-    if not isinstance(event.get("attempts"), int) or not 1 <= event["attempts"] <= 8:
+    if type(event.get("attempts")) is not int or not 1 <= event["attempts"] <= 8:
         raise ValueError("Media verification claim contains an invalid attempt counter.")
     if not isinstance(event.get("max_attempts"), int) or event["max_attempts"] != 8:
         raise ValueError("Media verification claim contains an invalid retry limit.")
