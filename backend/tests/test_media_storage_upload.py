@@ -23,7 +23,7 @@ def png():
 
 def settings():
     return Settings(supabase_url="https://example.supabase.co",
-                    supabase_service_role_key="server-only-secret")
+                    supabase_service_role_key="eyJserver.only-secret")
 
 
 def upload_plan():
@@ -47,7 +47,7 @@ class MediaStorageUploadTests(unittest.TestCase):
         self.assertEqual(args[0], "https://example.supabase.co/storage/v1/object/studio-media/" + plan.storage_path)
         self.assertEqual(kwargs["content"], content)
         self.assertEqual(kwargs["headers"]["x-upsert"], "false")
-        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer server-only-secret")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer eyJserver.only-secret")
 
     @patch("app.services.media_storage_upload.httpx.post")
     def test_rejects_content_length_mismatch_before_network(self, post):
