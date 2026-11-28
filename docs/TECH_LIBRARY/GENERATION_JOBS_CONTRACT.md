@@ -126,6 +126,7 @@ These functions are schema proposals only. No function has been executed or gran
 
 Operational caution: outbox dispatch is at-least-once, not exactly-once. The worker must be idempotent. The database lease fences state writes, but cannot undo an external provider call that was already accepted; provider-side idempotency and billing reconciliation remain mandatory.
 - `complete_generation_job` requires the result `media_assets` row to have the same owner as the job, a non-null storage path, and `status='ready'`. The ready state is reached only after the private upload verification flow validates the stored bytes against the reserved fingerprint. The queue RPC therefore refuses `pending_upload` and `object_uploaded` assets.
+- The `status` lifecycle column and its `ready` value are introduced by migration 0018. Consequently, migration 0014's completion RPC must remain unused until migration 0018 and its upload-verification schema are present; the complete migration set is tested together only in the disposable CI database.
 \n## Static source guardrails\n\n`backend/tests/test_generation_queue_migration_contract.py` checks the draft's fixed SECURITY DEFINER search paths, explicit function grants/revokes, PostgreSQL `LIMIT ... FOR UPDATE SKIP LOCKED` ordering, result-asset owner/storage-path check, fencing predicates, and preflight coverage. These are source-contract tests only; they are not a PostgreSQL parser or substitute for isolated Supabase concurrency tests. They have not yet been executed in CI.\n
 
 ## Disposable behavior test (not executed)
