@@ -66,8 +66,12 @@
       [blobStore,["readStagedBlob","deleteStagedBlob"],"Blob store"],[localAdapter,["readLocalItems"],"Local metadata"]
     ])for(const method of methods)if(typeof obj[method]!=="function")fail(label+" adapter is incomplete.");
     const assertContext=()=>{if(!isCurrent())fail("Account changed during cleanup execution.");};
-    const acquire=async()=>{assertContext();const lease=await ownerLock.acquire(ownerId,{ttlMs:30000});try{assertContext();const current=await ownerLock.isCurrent(lease);assertContext();if(!current)fail("Owner cleanup lock could not be verified.");return lease;}catch(error){try{await ownerLock.release(lease);}catch{}throw error;}};
-    const release=async lease=>{if(lease)await ownerLock.release(lease);};
+    let activeLease=null,heartbeat=null,renewal=Promise.resolve(),lockLost=false;
+    const acquire=async()=>{assertContext();const lease=await ownerLock.acquire(ownerId,{ttlMs:30000});try{assertContext();const current=await ownerLock.isCurrent(lease);assertContext();if(!current)fail("Owner cleanup lock could not be verified.");activeLease=lease;lockLost=false;return lease;}catch(error){try{await ownerLock.release(lease);}catch{}throw error;}};
+    const startHeartbeat=()=>{if(heartbeat)clearInterval(heartbeat);heartbeat=setInterval(()=>{renewal=renewal.then(async()=>{if(!activeLease||lockLost)return;try{activeLease=await ownerLock.renew(activeLease,{ttlMs:30000});}catch{lockLost=true;}});},8000);};
+    const stopHeartbeat=async()=>{if(heartbeat)clearInterval(heartbeat);heartbeat=null;await renewal;};
+    const assertLease=async()=>{assertContext();await renewal;if(lockLost||!activeLease||!(await ownerLock.isCurrent(activeLease)))fail("Owner cleanup lock was lost or fenced.");assertContext();};
+    const release=async lease=>{if(lease){await ownerLock.release(lease);if(activeLease?.token===lease.token)activeLease=null;}};
     const snapshot=async()=>{
       assertContext();
       const cards=localAdapter.readLocalItems(ownerId);
@@ -94,20 +98,21 @@
         fail("Candidate identity or proof is invalid.");
       let lease=null,intent=null,attemptId=null;
       try{
-        lease=await acquire();
-        const fresh=await snapshot();assertContext();
+        lease=await acquire();startHeartbeat();
+        const fresh=await snapshot();await assertLease();
         if(fresh.metadataDigest!==manifest.metadataDigest)fail("Owner metadata changed since cleanup marking.");
         const {operation,reference}=assertInventories(ownerId,fresh.operations,candidate,fresh.activeIds);
         if(candidate.state==="delete_intent"){
           // Crash recovery: only an exact missing Blob may be finalized, after the same complete recheck.
           const existing=await blobStore.readStagedBlob({ownerId,operationId:candidate.operationId,cloudAssetId:candidate.cloudAssetId,localStagedBlobId:candidate.localStagedBlobId});
           if(existing)fail("A prior delete intent still has a Blob; manual recovery is required.");
-          await release(lease);lease=null;
-          lease=await acquire();
+          await assertLease();await stopHeartbeat();await release(lease);lease=null;
+          lease=await acquire();startHeartbeat();await assertLease();
           manifest=await cleanupJournal.getManifest(ownerId,cleanupId);
           const current=manifest?.candidates?.find(c=>c.localStagedBlobId===candidate.localStagedBlobId);
           if(!manifest||!current||current.state!=="delete_intent"||current.deleteAttemptId!==candidate.deleteAttemptId)
             fail("Delete-intent recovery manifest changed.");
+          await assertLease();
           const finalized=await cleanupJournal.finalizeCandidateDeleted({ownerId,cleanupId,expectedRevision:manifest.revision,
             ownerLockEpoch:lease.epoch,localStagedBlobId:candidate.localStagedBlobId,deleteAttemptId:candidate.deleteAttemptId});
           manifest=finalized;results.push({localStagedBlobId:candidate.localStagedBlobId,state:"recovered_deleted"});continue;
@@ -117,21 +122,21 @@
         intent=await cleanupJournal.beginCandidateDelete({ownerId,cleanupId,expectedRevision:manifest.revision,
           ownerLockEpoch:lease.epoch,localStagedBlobId:candidate.localStagedBlobId,deleteAttemptId:attempt});
         manifest=intent;
-        const locked=await ownerLock.isCurrent(lease);assertContext();
-        if(!locked)fail("Owner lock was lost before exact deletion.");
+        await assertLease();
         // Re-read the exact manifest identity after the durable intent and before touching bytes.
         const exact=intent.candidates.find(c=>c.localStagedBlobId===candidate.localStagedBlobId);
         if(!exact||exact.state!=="delete_intent"||exact.deleteAttemptId!==attempt||
            exact.operationId!==candidate.operationId||exact.cloudAssetId!==candidate.cloudAssetId||
            exact.sha256!==candidate.sha256||exact.sizeBytes!==candidate.sizeBytes||exact.mimeType!==candidate.mimeType||
            exact.width!==candidate.width||exact.height!==candidate.height)fail("Durable delete intent does not match the exact candidate.");
+        await assertLease();
         const result=await blobStore.deleteStagedBlob({ownerId,operationId:candidate.operationId,cloudAssetId:candidate.cloudAssetId,
           localStagedBlobId:candidate.localStagedBlobId,inspectImage,
           proof:{sha256:candidate.sha256,sizeBytes:candidate.sizeBytes,mimeType:candidate.mimeType,width:candidate.width,height:candidate.height}});
         if(result!=="deleted")fail(result==="missing"?"Staged Blob disappeared before exact deletion; intent retained for manual recovery.":"Blob store returned an unknown deletion result.");
-        await release(lease);lease=null;
-        lease=await acquire();
-        assertContext();
+        await assertLease();await stopHeartbeat();await release(lease);lease=null;
+        lease=await acquire();startHeartbeat();
+        await assertLease();
         const latest=await cleanupJournal.getManifest(ownerId,cleanupId);
         const latestCandidate=latest?.candidates?.find(c=>c.localStagedBlobId===candidate.localStagedBlobId);
         if(!latest||latestCandidate?.state!=="delete_intent"||latestCandidate.deleteAttemptId!==attempt)
@@ -139,7 +144,7 @@
         const final=await cleanupJournal.finalizeCandidateDeleted({ownerId,cleanupId,expectedRevision:latest.revision,
           ownerLockEpoch:lease.epoch,localStagedBlobId:candidate.localStagedBlobId,deleteAttemptId:attempt});
         manifest=final;results.push({localStagedBlobId:candidate.localStagedBlobId,state:"deleted",blobResult:result});
-      }finally{if(lease)try{await release(lease);}catch{}}
+      }finally{await stopHeartbeat();if(lease)try{await release(lease);}catch{}}
     }
     return Object.freeze({state:"processed",processed:results.length,results:Object.freeze(results)});
   }
