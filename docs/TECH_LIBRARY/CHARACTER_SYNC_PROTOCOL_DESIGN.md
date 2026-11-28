@@ -119,6 +119,9 @@ Validation checkpoint: CI run `46103022172` passed all three jobs on commit `263
 
 Deletion-flow audit: removing a local character commits the metadata removal before deleting its owner-scoped IndexedDB image blobs. If blob cleanup partially fails, the record remains deleted and some unreferenced blobs may remain; this is an orphan-storage issue, not a reason to restore deleted metadata automatically. Do not add a naive orphan sweep: another tab or an in-flight save may temporarily own staged blobs not yet referenced by committed metadata. Any future cleanup must use explicit staging ownership/leases or a journaled, race-safe protocol.
 
+
+Validation checkpoint: CI runs `46103404601` and `46103408877` both completed successfully on commit `cea8f2d`; each run passed backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal/frontend checks. The browser suite now verifies an IndexedDB v1-to-v2 upgrade using a dedicated legacy owner fixture, preservation of pre-existing journal records, and owner-index access without contaminating other test cases. The PostgreSQL job completed its adversarial reference-write race and 50-event/five-worker cleanup stress checks. This validates the isolated journal migration and existing backend race harnesses only; it does not establish production worker operation, resumable restore, or UI integration.
+
 ## Decision
 
-Keep cloud restore/import disabled until the latest CI run passes, browser account-switch and resumable multi-page restore integration is implemented, deletion/tombstone semantics are defined, and worker deployment/monitoring is approved. No production migration or deployment is part of this work.
+Keep cloud restore/import disabled until browser account-switch and resumable multi-page restore integration is implemented, deletion/tombstone semantics are defined, and worker deployment/monitoring is approved. The successful CI checkpoint above validates the isolated journal migration and race harnesses, not those remaining operational and end-to-end requirements. No production migration or deployment is part of this work.
