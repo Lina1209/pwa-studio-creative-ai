@@ -60,6 +60,11 @@ class GenerationJob:
             raise ValueError("status must be a JobStatus.")
         if not isinstance(self.provider_submission_outcome, ProviderSubmissionOutcome):
             raise ValueError("provider_submission_outcome must be a ProviderSubmissionOutcome.")
+        if self.error_code is not None and (
+            not isinstance(self.error_code, str) or not 1 <= len(self.error_code) <= 80
+            or not all(char.isascii() and (char.isalnum() or char in "_.-") for char in self.error_code)
+        ):
+            raise ValueError("error_code must be a short, non-sensitive safe code.")
         for value in (self.created_at, self.next_attempt_at, self.lease_expires_at, self.cancel_requested_at):
             if value is not None and (
                 not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None
