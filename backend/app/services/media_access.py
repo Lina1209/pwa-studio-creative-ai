@@ -28,7 +28,7 @@ def canonical_local_reference_id(value: str) -> str:
     uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
     if re.fullmatch(uuid_pattern, candidate):
         return candidate
-    if re.fullmatch(uuid_pattern + "-" + uuid_pattern, candidate):
+    if re.fullmatch(uuid_pattern + "-[a-z0-9_-]{8,80}", candidate):
         return candidate
     raise HTTPException(status_code=422, detail="A valid local reference ID is required.")
 
