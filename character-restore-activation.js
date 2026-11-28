@@ -33,8 +33,9 @@
   if(row.state!=="ready_to_activate")fail("Restore operation is not ready for activation.");
   if(row.references.some(x=>x.state!=="verified_staged"))fail("Every media reference must be verified before activation.");
   const cards=manifestMap(plan),seen=new Set();
-  if(cards.size!==row.selectedCharacterIds.length)fail("Fresh plan does not match the selected cloud character set.");
-  for(const id of row.selectedCharacterIds)if(!cards.has(id))fail("Fresh plan is missing a selected cloud character.");
+  const covered=new Set([...cards.keys(),...(Array.isArray(plan.unchanged)?plan.unchanged.map(x=>x.cloudId):[])]);
+  if(covered.size!==row.selectedCharacterIds.length)fail("Fresh plan does not match the selected cloud character set.");
+  for(const id of row.selectedCharacterIds)if(!covered.has(id))fail("Fresh plan is missing a selected cloud character.");
   for(const ref of row.references){
    const card=cards.get(ref.characterId);
    if(!card||card.id!==ref.sourceLocalId)fail("Staged reference is bound to a different character card.");
@@ -112,7 +113,7 @@
    const assertLease=()=>{assertCurrent(isCurrent);if(lost||!lease||Date.parse(lease.expiresAt)<=Date.now())fail("Activation lease expired or was fenced.");};
    const prepared=await prepareMerged({ownerId,operationId,row,plan,localAdapter,blobStore,inspectImage,isCurrent});
    assertLease();
-   const intent={baseDigest:prepared.baseDigest,mergedDigest:prepared.mergedDigest,intendedCount:prepared.merged.length,operationMarker:operationId,preparedAt:new Date().toISOString()};
+   const intent={baseDigest:prepared.baseDigest,mergedDigest:prepared.mergedDigest,intendedCount:prepared.merged.length,restoredCount:plan.proposedItems.length,operationMarker:operationId,preparedAt:new Date().toISOString()};
    const activating=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"activating",activation:intent});
    revision=activating.revision;
    await renewal;assertLease();
@@ -161,7 +162,7 @@
    if(items&&typeof items.then==="function")fail("Local metadata adapter must be synchronous.");
    const actual=await digest(canonical(items));
    let next;
-   if(actual===current.activation.mergedDigest&&items.filter(x=>x?.restoreOperationId===operationId).length===current.activation.intendedCount-(current.activation.intendedCount-items.filter(x=>x?.restoreOperationId===operationId).length)){
+   if(actual===current.activation.mergedDigest&&items.length===current.activation.intendedCount&&items.filter(x=>x?.restoreOperationId===operationId).length===current.activation.restoredCount){
      next="committed";
     }else if(actual===current.activation.baseDigest){
      next="paused_retryable";
