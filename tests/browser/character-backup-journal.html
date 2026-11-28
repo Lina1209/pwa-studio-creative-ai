@@ -136,7 +136,7 @@
       const abortedCharacter = uuid();
       const abortedId = owner + ":" + abortedCharacter;
       const db = await new Promise((resolve, reject) => {
-        const request = indexedDB.open("pwa-studio-character-backup-journal-v1", 1);
+        const request = indexedDB.open("pwa-studio-character-backup-journal-v1", 2);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
