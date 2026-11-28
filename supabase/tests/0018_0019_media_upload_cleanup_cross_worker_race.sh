@@ -61,7 +61,7 @@ select public.pwa_claim_media_upload_verification(:'claim',120);
 SQL
 
 PGAPPNAME=pwa_upload_verify_race_a psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
-  -v owner="$PWA_TEST_OWNER_ID" -v asset="$ASSET_A" -v event="$EVENT_A" \
+  -v owner="$PWA_TEST_OWNER_ID" -v character="$CHAR_A" -v asset="$ASSET_A" -v event="$EVENT_A" \
   -v claim="$CLAIM_A" -v digest="$DIGEST_A" <<'SQL' >"$TMP/a.out" 2>&1 &
 begin;
 select id from public.characters where id=:'character' and owner_id=:'owner' for key share;
