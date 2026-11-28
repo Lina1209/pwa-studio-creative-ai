@@ -127,7 +127,7 @@ def mark_failed(
     error_code: str,
     retryable: bool,
     retry_delay_seconds: int = 30,
-    submission_outcome: ProviderSubmissionOutcome = ProviderSubmissionOutcome.UNKNOWN,
+    submission_outcome: ProviderSubmissionOutcome | None = None,
 ) -> GenerationJob:
     _validate_now(now)
     if job.status not in {JobStatus.PROCESSING, JobStatus.CANCEL_REQUESTED}:
@@ -136,6 +136,8 @@ def mark_failed(
         raise ValueError("A short, non-sensitive error code is required.")
     if retry_delay_seconds < 1 or retry_delay_seconds > 3600:
         raise ValueError("retry_delay_seconds must be between 1 and 3600.")
+    if submission_outcome is None:
+        submission_outcome = job.provider_submission_outcome
     if not isinstance(submission_outcome, ProviderSubmissionOutcome):
         raise ValueError("submission_outcome must be a ProviderSubmissionOutcome.")
     # A generic timeout/connection error is not proof of non-acceptance.
@@ -174,6 +176,8 @@ def recover_expired_lease(
         raise ValueError("Only active jobs have leases to recover.")
     if job.lease_expires_at is None or job.lease_expires_at > now:
         raise ValueError("The job lease has not expired.")
+    if submission_outcome is None:
+        submission_outcome = job.provider_submission_outcome
     if not isinstance(submission_outcome, ProviderSubmissionOutcome):
         raise ValueError("submission_outcome must be a ProviderSubmissionOutcome.")
     if job.provider_submission_outcome not in {ProviderSubmissionOutcome.UNKNOWN, submission_outcome}:
