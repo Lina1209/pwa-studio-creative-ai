@@ -21,6 +21,29 @@ SUSPENSION = "44444444-4444-4444-8444-444444444444"
 
 
 class ModerationAtomicAuditTests(unittest.TestCase):
+    @patch.object(moderation_service.httpx, "request")
+    def test_new_supabase_secret_key_is_not_sent_as_bearer_jwt(self, request):
+        request.return_value = SimpleNamespace(content=b"[]", json=lambda: [])
+        settings = SimpleNamespace(
+            supabase_url="https://example.supabase.co",
+            supabase_service_role_key="sb_secret_test_key",
+        )
+        moderation_service._request(settings, "GET", "user_reports")
+        headers = request.call_args.kwargs["headers"]
+        self.assertEqual(headers["apikey"], "sb_secret_test_key")
+        self.assertNotIn("Authorization", headers)
+
+    @patch.object(moderation_service.httpx, "request")
+    def test_legacy_service_role_jwt_is_sent_as_bearer(self, request):
+        request.return_value = SimpleNamespace(content=b"[]", json=lambda: [])
+        settings = SimpleNamespace(
+            supabase_url="https://example.supabase.co",
+            supabase_service_role_key="eyJlegacy.jwt",
+        )
+        moderation_service._request(settings, "GET", "user_reports")
+        headers = request.call_args.kwargs["headers"]
+        self.assertEqual(headers["Authorization"], "Bearer eyJlegacy.jwt")
+
     @patch.object(moderation_service, "_request")
     def test_review_uses_one_atomic_rpc(self, request):
         expected = {"id": REPORT, "status": "resolved", "reporter_user_id": TARGET}
