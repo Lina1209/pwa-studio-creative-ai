@@ -19,7 +19,7 @@ TOKEN = "55555555-5555-4555-8555-555555555555"
 
 
 def settings():
-    return Settings(supabase_url="https://example.supabase.co", supabase_service_role_key="service-secret")
+    return Settings(supabase_url="https://example.supabase.co", supabase_service_role_key="eyJserver.secret")
 
 
 class MediaCleanupRepositoryTests(unittest.TestCase):
@@ -153,7 +153,7 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
             args[0],
             "https://example.supabase.co/rest/v1/rpc/pwa_claim_media_cleanup",
         )
-        self.assertEqual(kwargs["headers"]["apikey"], "service-secret")
+        self.assertEqual(kwargs["headers"]["apikey"], "eyJserver.secret")
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer service-secret")
         self.assertEqual(kwargs["json"], {"p_claim_token": TOKEN})
         self.assertEqual(kwargs["timeout"], 15.0)
@@ -167,7 +167,7 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
             _call(settings(), "pwa_claim_media_cleanup", {"p_claim_token": TOKEN})
         self.assertIn("pwa_claim_media_cleanup", str(raised.exception))
         self.assertNotIn("secret response body", str(raised.exception))
-        self.assertNotIn("service-secret", str(raised.exception))
+        self.assertNotIn("eyJserver.secret", str(raised.exception))
 
     @patch("app.services.media_cleanup_repository.httpx.post")
     def test_rpc_http_rejection_is_sanitized(self, post):
@@ -181,7 +181,7 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
         from app.services.media_cleanup_repository import _call
         with self.assertRaises(RuntimeError) as raised:
             _call(settings(), "pwa_claim_media_cleanup", {"p_claim_token": TOKEN})
-        self.assertNotIn("service-secret", str(raised.exception))
+        self.assertNotIn("eyJserver.secret", str(raised.exception))
         self.assertNotIn("upstream rejection", str(raised.exception))
 
 
