@@ -11,7 +11,9 @@ NOW = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
 
 
 def new_job(**kwargs):
-    return GenerationJob(id="job-1", owner_id="user-1", idempotency_key="idem-key-0001", **kwargs)
+    values = {"id": "job-1", "owner_id": "user-1", "idempotency_key": "idem-key-0001"}
+    values.update(kwargs)
+    return GenerationJob(**values)
 
 
 class GenerationJobLifecycleTests(unittest.TestCase):
