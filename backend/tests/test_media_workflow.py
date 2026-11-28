@@ -56,6 +56,10 @@ class CharacterReferenceWorkflowTests(unittest.TestCase):
             plan(character={"id": CHARACTER, "owner_id": OTHER})
         self.assertEqual(caught.exception.status_code, 404)
 
+    def test_stable_legacy_fallback_reference_key_is_accepted(self):
+        result = plan(local_reference_id=CHARACTER + "-legacyrefabc123")
+        self.assertEqual(result.local_reference_id, CHARACTER + "-legacyrefabc123")
+
     def test_invalid_local_reference_id_is_rejected(self):
         with self.assertRaises(HTTPException):
             plan(local_reference_id="../other")
