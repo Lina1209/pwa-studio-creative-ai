@@ -1,6 +1,6 @@
 # Character backup journal module
 
-Status: isolated browser persistence primitive in the feature branch. It is not loaded by the application and does not enable cloud import.
+Status: isolated browser persistence primitive in the feature branch. Its real-browser acceptance suite is now running in CI and has passed on the latest reviewed source; it is still not loaded by the application and does not enable cloud import.
 
 ## File and loading boundary
 
@@ -36,7 +36,7 @@ The state machine is restrictive: only `object_uploaded` may transition to `veri
 
 ## Verification still required
 
-This commit adds the isolated persistence primitive only. It does not claim browser acceptance tests passed. Before wiring it into the UI, add automated real-browser tests using disposable browser storage for:
+The isolated persistence primitive has a real-browser acceptance suite. The following additional cases remain required before wiring it into the UI:
 - IndexedDB durability after reload and browser restart;
 - owner separation and account switching;
 - duplicate creation within one tab and racing creation from two independent browser tabs; aborted IndexedDB write rollback with no partial journal record;
@@ -56,3 +56,14 @@ Do not enable an importer, add network orchestration, or remove local source dat
 - Current cases: create/read-back while asserting an existing local image Blob remains byte-for-byte unchanged, duplicate creation rejection, concurrent duplicate creation in one tab and across two independent tabs (exactly one winner), owner-scoped get/list including identical local character IDs under two different owners, immutable cloud character mapping, malformed passport fingerprint rejection, rejection of skipped upload states and premature verified transitions, valid lifecycle through verified, completion criteria, terminal verified state, aborted-transaction rollback, simulated IndexedDB quota/open failure with source Blob preservation, and a late IndexedDB success callback after a blocked upgrade (the late connection must be closed). The runner also reopens the same persistent Chromium profile and verifies journal recovery after browser restart.
 
 The suite simulates an IndexedDB `QuotaExceededError` at database-open time and verifies that the source Blob and journal remain unchanged. This is not a physical browser storage-exhaustion test. The suite does not yet simulate process termination mid-transaction, real quota exhaustion, account-switch UI behavior, or network recovery. Those remain required before importer integration.
+
+
+## 2026-11-28 review notes
+
+- Latest reviewed feature-branch source: `character-backup-journal.js` SHA `ac3538befb0cbecc834de925a6a0b8ba936173cc`; repository SHA `26c2fad0b89e7b7d1c32d0a868fca954c328853f`.
+- CI run `46099783129` completed successfully: backend unit tests, PostgreSQL media-cleanup integration, and real-browser character backup journal tests all passed. Run `46099779456` also completed with all three jobs successful.
+- The journal remains an isolated browser module, not loaded by the product UI. CI proves the tested browser persistence behaviors only; it does not prove a complete cloud backup/import workflow.
+- `list(ownerId)` currently reads all journal rows with IndexedDB `getAll()` before filtering by owner. This is correct for owner isolation in the current local-only design but has no pagination or record-count bound; add a suitable owner index and bounded cursor/pagination before broad rollout.
+- `assertRecord` validates protocol version, basic shape, state names, and duplicate reference identities, but does not deeply revalidate every persisted field on read. IndexedDB is same-origin client storage, not a trusted server boundary; a future cloud coordinator must validate all journal fields again before sending any request.
+- Real storage exhaustion, forced browser-process termination mid-transaction, account-switch UI integration, and network/offline resume are not covered yet. Keep the source passport and image Blobs untouched; do not enable import until those cases and server read-back verification are covered.
+- No production database, Storage, or deployment operation was performed.
