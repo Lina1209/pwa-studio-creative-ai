@@ -107,7 +107,7 @@
         if(!stored||stored.localStagedBlobId!==localId)fail("Staged Blob adapter returned an unexpected identity.");
         if(!isCurrent())fail("Account changed after staging a media asset.");
         assertLease();
-        const readBack=await adapters.readStagedBlob({ownerId,operationId,localStagedBlobId:localId});
+        const readBack=await adapters.readStagedBlob({ownerId,operationId,cloudAssetId:expected.cloudAssetId,localStagedBlobId:localId});
         const readProof=await digestHex(readBack);assertLease();proofMatches(readProof,expected);
         const readDimensions=await adapters.inspectImage(readBack);assertLease();
         if(!readDimensions||readDimensions.width!==expected.width||readDimensions.height!==expected.height)fail("Staged Blob read-back dimensions verification failed.");
