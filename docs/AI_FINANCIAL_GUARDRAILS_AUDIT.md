@@ -65,6 +65,12 @@ This audit records the verified boundary between current protections and the fut
 - Disposable CI applies the migration and runs SQL checks. A concurrent reservation race harness is being validated. This is not production evidence until the latest CI run passes.
 - No live Supabase migration was run. No production setting, provider key, route, or billing flow was changed.
 
+### Versioned cost-estimator contract
+
+- Added `backend/app/services/ai_cost_estimator.py`, a pure Decimal-based upper-bound calculator requiring a server-supplied, versioned provider/model rate card and trusted token upper bounds.
+- It rejects missing/invalid prices, non-finite rates, invalid token counts, and counts beyond the reviewed rate-card ceilings; rounding is upward to ledger precision.
+- No real DeepSeek or other provider prices are embedded. No tokenizer, rate card, numerical spending cap, or route integration is configured. The estimator cannot be used safely until a trusted tokenizer/bound source and reviewed rate card are supplied.
+
 ### Reconciliation and exposure refinements
 
 - Added `mark_stale_ai_budget_reservations_unknown`: a bounded, service-role-only RPC that converts old `reserved` rows to `unknown` and appends a ledger event. It never releases a stale reservation.
