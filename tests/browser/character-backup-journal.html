@@ -205,6 +205,37 @@
       check((await api.list(owner)).every(row => row.ownerId === owner), "first owner's list exposed another owner's journal");
       check((await api.list(secondOwner)).length === 1, "second owner's list did not return only its own journal");
     });
+    await test("owner-indexed journal pagination is bounded and complete", async () => {
+      const pageOwner = uuid();
+      const ids = [];
+      for (let index = 0; index < 7; index++) {
+        const id = uuid();
+        ids.push(id);
+        await api.create({ownerId:pageOwner,localCharacterId:id,passportFingerprint:sha,references:[]});
+      }
+      const seen = [];
+      let cursor = null;
+      let pageCount = 0;
+      do {
+        const page = await api.listPage(pageOwner,{limit:2,cursor});
+        check(page.items.length <= 2, "journal page exceeded requested bound");
+        seen.push(...page.items.map(row=>row.localCharacterId));
+        cursor = page.nextCursor;
+        pageCount++;
+        check(pageCount <= 10, "journal pagination did not terminate");
+      } while(cursor);
+      check(seen.length === 7 && new Set(seen).size === 7, "journal pagination omitted or duplicated records");
+      check(ids.every(id=>seen.includes(id)), "journal pagination missed an inserted record");
+    });
+    await test("journal cursor is owner-bound and tamper-resistant", async () => {
+      const pageOwner = uuid(), foreignOwner = uuid();
+      for(let index=0;index<3;index++) await api.create({ownerId:pageOwner,localCharacterId:uuid(),passportFingerprint:sha,references:[]});
+      const page = await api.listPage(pageOwner,{limit:1});
+      check(!!page.nextCursor, "expected a continuation cursor");
+      await rejects(()=>api.listPage(foreignOwner,{limit:1,cursor:page.nextCursor}),"foreign owner cursor was accepted");
+      await rejects(()=>api.listPage(pageOwner,{limit:1,cursor:page.nextCursor+"x"}),"tampered cursor was accepted");
+      await rejects(()=>api.listPage(pageOwner,{limit:101}),"oversized page limit was accepted");
+    });
     await test("cloud character mapping is immutable", async () => {
       await api.setCloudCharacter(owner, localCharacter, cloudCharacter);
       await rejects(() => api.setCloudCharacter(owner, localCharacter, uuid()), "cloud mapping replacement unexpectedly accepted");
