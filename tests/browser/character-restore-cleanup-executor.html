@@ -133,6 +133,18 @@
    const manifest=await cleanupJournal.getManifest(owner,cleanupId);
    assert(manifest.candidates[0].state==="delete_intent","recovery finalized after owner metadata drift");
   });
+  await test("metadata change after Blob deletion blocks journal finalization",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["metadata drift after bytes removed"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);let changed=false;
+   const lock={acquire:(...args)=>PWACharacterOwnerCoordinationLock.acquire(...args),
+    renew:(...args)=>PWACharacterOwnerCoordinationLock.renew(...args),
+    isCurrent:(...args)=>PWACharacterOwnerCoordinationLock.isCurrent(...args),
+    release:async lease=>{await PWACharacterOwnerCoordinationLock.release(lease);if(!changed){changed=true;localStorage.setItem("pwa-studio-character-library-v1:"+owner,JSON.stringify([{id:uuid(),name:"changed after byte deletion",referenceImages:[]}]))}}};
+   await rejects(()=>execute(owner,cleanupId,{ownerLock:lock}));
+   assert(await read(owner,op,asset,id)===null,"exact staged Blob should already be deleted before this finalization race");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.candidates[0].state==="delete_intent","journal finalized despite owner metadata drift");
+  });
   await test("owner lock loss after durable delete intent blocks Blob deletion",async()=>{
    const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["lock lost after intent"],{type:"image/webp"});
    await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
