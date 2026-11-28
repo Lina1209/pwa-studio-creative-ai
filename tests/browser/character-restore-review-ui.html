@@ -53,6 +53,11 @@
   assert(!document.querySelector("#characterRestoreChoices img")&&!document.querySelector("#characterRestorePreview img"),"untrusted cloud names are rendered as text, not HTML");
   assert(document.getElementById("characterRestoreChoices").textContent.includes("<img src=x"),"untrusted cloud name remains visible as literal text");
   assert(!document.getElementById("characterRestorePanel").hidden,"successful review opens the review panel");
+  const reviewButton=[...document.querySelectorAll("#characterRestoreChoices button")].find(x=>x.textContent.includes("Проверить выбранные"));
+  assert(!!reviewButton,"selected-card review action is rendered");
+  reviewButton.click();
+  assert(document.getElementById("characterRestorePreview").textContent.includes("<img src=x"),"preview also renders untrusted cloud names as literal text");
+  assert(document.getElementById("characterRestorePreview").textContent.includes("Проверка завершена"),"selected-card preview is built without activating restore");
   window.dispatchEvent(new Event("pwa-studio-auth-changed"));
   assert(document.getElementById("characterRestorePanel").hidden,"account change closes the review panel");
   assert(document.getElementById("characterRestoreChoices").childElementCount===0,"account change clears previous account choices");
