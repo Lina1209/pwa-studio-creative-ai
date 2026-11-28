@@ -12,10 +12,13 @@ def _request(settings: Settings, method: str, table: str, *, params=None, payloa
     base = settings.supabase_url.rstrip("/")
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
+    # Legacy service-role JWTs are also bearer tokens. New sb_secret keys are
+    # valid as apikey but are not JWTs and must not be sent as Authorization.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.request(
             method,
