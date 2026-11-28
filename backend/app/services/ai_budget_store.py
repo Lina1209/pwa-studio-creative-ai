@@ -70,7 +70,13 @@ class SupabaseAIBudgetStore:
             created = row["reservation_created"] is True
         except (KeyError, InvalidOperation, TypeError, ValueError) as exc:
             raise AIBudgetStoreUnavailable("AI budget reserve RPC returned an invalid result.") from exc
-        if not amount.is_finite() or amount <= 0 or not reservation_id:
+        if (
+            not amount.is_finite()
+            or amount <= 0
+            or not reservation_id
+            or status not in {"reserved", "settled", "released", "unknown"}
+            or not isinstance(row.get("reservation_created"), bool)
+        ):
             raise AIBudgetStoreUnavailable("AI budget reserve RPC returned an invalid result.")
         return AIReservation(
             reservation_id=reservation_id,
