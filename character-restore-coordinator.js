@@ -90,7 +90,7 @@
         if(saved.cloudAssetId!==expected.cloudAssetId||saved.expectedSha256!==expected.expectedSha256||saved.expectedSizeBytes!==expected.expectedSizeBytes||saved.expectedMimeType!==expected.expectedMimeType)fail("Persisted media checkpoint differs from the requested manifest.");
         let localId=saved.localStagedBlobId;
         if(saved.state==="verified_staged"){
-          const existing=await adapters.readStagedBlob({ownerId,operationId,localStagedBlobId:localId});
+          const existing=await adapters.readStagedBlob({ownerId,operationId,cloudAssetId:expected.cloudAssetId,localStagedBlobId:localId});
           const proof=await digestHex(existing);proofMatches(proof,expected);
           const dimensions=await adapters.inspectImage(existing);
           if(dimensions?.width!==expected.width||dimensions?.height!==expected.height)fail("Staged image dimensions verification failed.");
