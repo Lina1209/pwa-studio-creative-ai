@@ -187,11 +187,11 @@ The future RPC should identify the target by `slot_id`, the expected old `asset_
 
 The client must not choose a raw Storage path or supply authority to delete an object. The RPC returns a conflict if the slot binding or character version changed. The old pointer and old object remain intact on every rejected or rolled-back attempt.
 
-## 10. Implementation boundary after this audit
+## 10. Implementation boundary after the manifest compatibility audit
 
-The repository currently supports upload reservation, immutable local-reference binding, independent verification, and owner-scoped catalog lookup. It does not yet support a logical slot identity distinct from the immutable upload identity, nor does the current passport serializer persist a cloud asset ID.
+The manifest v2 serializer compatibility layer is now present and browser-tested, as recorded in section 12. It supports legacy and v2 entry shapes, merge preservation, and malformed/duplicate identity rejection.
 
-Consequently, the next implementation must first add and test the manifest v2 compatibility layer and catalog-to-manifest resolver. Only after that contract is stable should a new migration add the atomic replacement RPC and replacement-specific cleanup event/claim/completion path. Do not wire the current `id` field directly to a destructive replacement operation.
+This does NOT yet prove that the runtime media catalog resolver is complete or that a cloud replacement operation exists. Before implementing the atomic replacement RPC, verify the catalog-to-manifest mapping at the actual API boundary and test that it resolves by owner + character + exact `local_reference_id`, never by filename, array order, or client-supplied asset UUID. The next server-side milestone is the transaction and its disposable PostgreSQL tests; cleanup worker support remains a separate milestone.
 
 ## 11. Additional audit: prevent duplicate deletion across cleanup scopes
 
@@ -284,3 +284,38 @@ The replacement cleanup claim/completion/retry functions must be added separatel
 - Worker failure/dead-letter leaves the new pointer intact and old tombstone auditable.
 
 Until these tests and route-level ownership/idempotency tests pass, do not add a user-facing replacement button, do not activate a worker for this event type, and do not execute the migration on live Supabase.
+
+
+## 13. Follow-up audit: cleanup claim locking and worker scope
+
+A read-only inspection of migration `0019_private_media_cleanup_outbox.sql`, `media_cleanup_repository.py`, and `media_cleanup_worker.py` identified additional implementation constraints. These findings are not proof that a replacement worker exists.
+
+### Existing whole-character claim behavior
+
+- `pwa_claim_media_cleanup` selects and locks an outbox event with `FOR UPDATE SKIP LOCKED`, then locks the media asset. It accepts only `media_cleanup_requested` and requires the owning character's `cleanup_operation_id` to match the event operation.
+- The claim performs reference checks against other media rows, other media metadata, and other characters' passport/avatar fields. The current whole-character claim intentionally excludes the deleting character's own passport because the whole character is being removed.
+- The current claim body does not acquire the exact-object advisory transaction lock used by the cleanup-reference triggers before its final reference checks and before returning the Storage key. A replacement claim must not copy this omission: it must serialize its final exact-key reference check with passport/metadata writes using the same key derivation convention, `hashtextextended(owner_id || ':' || bucket || ':' || storage_path, 0)`.
+- The current claim locks outbox then media asset and does not lock the character row. That is a scope-specific existing behavior, not a safe template for a replacement claim that must coordinate with character edits and deletion. Do not change the existing whole-character RPC as part of this work.
+
+### Required replacement claim lock protocol
+
+The replacement claim must avoid holding an outbox lock while waiting for a character lock, because the replacement transaction and whole-character cleanup both serialize first on the character row. A safe implementation pattern to validate in disposable PostgreSQL is:
+
+1. Read a candidate replacement event and its asset/character identifiers without taking a row lock; this is discovery only and grants no deletion authority.
+2. Lock the owner-matched character row `FOR UPDATE`.
+3. Lock and re-read the exact candidate outbox event; revalidate event type, status, operation ID, lease, owner, and asset association. If another claimant changed it while this claimant waited, return no claim and retry discovery.
+4. Lock the exact media asset row and revalidate `cleanup_pending`, owner, character, bucket, and canonical path.
+5. Acquire the exact-object advisory transaction lock, then recheck all relevant references, including the same character's passport with only the specific replaced slot excluded. Also check other passport/avatar references, other media rows, and media metadata.
+6. Only after every check succeeds, issue the claim token and lease and return the server-stored Storage key.
+
+Two claimers may discover the same candidate, but the character/event locks and post-lock revalidation must allow only one live lease. Tests must cover two claimers, expired leases, and a second claimant arriving while the first holds the character lock.
+
+### Replacement worker allowlist gap
+
+The existing Python cleanup repository's `_ALLOWED_RPC_FUNCTIONS` contains only the whole-character request/claim/complete/retry/finalize RPCs. Its claim result validator requires `character_id` but does not carry a replacement-specific operation fence. The existing worker validates a full character object key and calls only the whole-character cleanup repository functions. It must not be made to process replacement events merely by broadening the SQL event-type filter.
+
+A replacement worker path must use separate repository functions and strict response schemas carrying at least event ID, owner ID, asset ID, character ID, replacement operation ID, claim token, bucket, storage path, attempts, and lease evidence. Completion and retry must include the replacement operation ID and must reject stale or expired claims. The worker may delete only after a valid replacement claim has passed the server-side exact-reference recheck; completion may detach the old asset only after Storage confirms DELETE or 404.
+
+### Consequence for implementation order
+
+The atomic replacement RPC and its idempotency receipt remain the first transaction milestone. Replacement claim/completion/retry and a separate worker implementation are a later milestone, after the transaction tests pass. The existing whole-character cleanup RPCs, repository allowlist, and worker must remain unchanged. No worker service is currently assumed to be running, and no replacement event may be activated or sent to Storage by the existing worker.
