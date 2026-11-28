@@ -225,7 +225,8 @@ declare v_count integer;
 begin
   update public.generation_jobs set status = 'cancelled', result_asset_id = null, completed_at = now(),
     updated_at = now(), worker_id = null, lease_token = null, lease_expires_at = null, next_attempt_at = null
-  where id = p_job_id and lease_token = p_lease_token and status = 'cancel_requested';
+  where id = p_job_id and lease_token = p_lease_token and status = 'cancel_requested'
+    and lease_expires_at > now();
   get diagnostics v_count = row_count; return v_count = 1;
 end;
 $$;
