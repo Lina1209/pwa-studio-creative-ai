@@ -140,16 +140,28 @@ def list_owned_character_media_assets(settings: Settings, character_id: str, aut
     rows = _rest_get(settings, "media_assets", {
         "select": "id,owner_id,character_id,local_reference_id,file_name,file_type,status,size_bytes,content_sha256,width,height,created_at",
         "owner_id": f"eq.{owner}", "character_id": f"eq.{character}",
-        "bucket": "eq.studio-media", "order": "created_at.asc", "limit": "100",
+        "bucket": "eq.studio-media", "order": "created_at.asc,id.asc", "limit": "101",
     })
+    # Never silently return a truncated identity catalog: callers must not
+    # mistake a partial set of references for a complete character backup.
+    if len(rows) > 100:
+        raise HTTPException(status_code=502, detail="Character media catalog exceeds the safe limit.")
     allowed_statuses = {"pending_upload", "object_uploaded", "ready", "upload_failed", "cleanup_pending", "deleted"}
     result = []
+    seen_assets = set()
+    seen_references = set()
     for row in rows:
         if not isinstance(row, dict) or row.get("owner_id") != owner or row.get("character_id") != character:
             raise HTTPException(status_code=404, detail="Media resource not found.")
-        canonical_uuid(row.get("id"), "media asset")
+        asset_id = canonical_uuid(row.get("id"), "media asset")
+        if asset_id in seen_assets:
+            raise HTTPException(status_code=502, detail="Media catalog contains duplicate asset IDs.")
+        seen_assets.add(asset_id)
         if row.get("local_reference_id") is not None:
-            canonical_local_reference_id(row.get("local_reference_id"))
+            local_reference_id = canonical_local_reference_id(row.get("local_reference_id"))
+            if local_reference_id in seen_references:
+                raise HTTPException(status_code=502, detail="Media catalog contains duplicate reference mappings.")
+            seen_references.add(local_reference_id)
             digest = row.get("content_sha256")
             if (not isinstance(digest, str) or len(digest) != 64
                     or any(char not in "0123456789abcdef" for char in digest)
