@@ -56,7 +56,7 @@ function adapters({badReadback=false}={}){
  console.log("PASS verified download, staged Blob read-back, durable checkpoint and lease release");
 
  const second=makeJournal(),bad=adapters({badReadback:true});
- await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:second,adapters:bad}));
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:second,...gate,adapters:bad}));
  assert.equal(second.inspect().state,"paused_retryable");
  assert.equal(second.inspect().references[0].state,"pending");
  assert.equal(second.inspect().lease,null);
@@ -65,7 +65,7 @@ function adapters({badReadback=false}={}){
  const third=makeJournal();
  let current=true;
  const switched={...adapters(),async downloadAsset(){current=false;return new Blob([bytes],{type:"image/png"});}};
- await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:third,adapters:switched,isCurrent:()=>current}));
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:third,...gate,adapters:switched,isCurrent:()=>current}));
  assert.equal(third.inspect().state,"staging");
  assert.equal(third.inspect().references[0].state,"pending");
  console.log("PASS account switch fences post-download staging writes");
