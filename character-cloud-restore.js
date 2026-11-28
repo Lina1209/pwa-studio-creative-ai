@@ -17,6 +17,8 @@
     if (typeof value !== "string" || value.length > max) fail("Invalid " + label + ".");
     return value;
   };
+  const optionalText = (value, max, label) =>
+    value === undefined || value === null ? "" : text(value, max, label);
   const canonical = value => JSON.stringify(value, (key, item) => {
     if (item && typeof item === "object" && !Array.isArray(item)) {
       return Object.keys(item).sort().reduce((out, name) => (out[name] = item[name], out), {});
@@ -31,15 +33,15 @@
     const manifest = refs.map(ref => {
       if (!ref || typeof ref !== "object" || Array.isArray(ref)) fail("Cloud reference descriptor is invalid.");
       return {
-        id: text(ref.id || "", 180, "cloud reference ID"),
-        name: text(ref.name || "", 120, "cloud reference name"),
-        type: text(ref.type || "", 80, "cloud reference type")
+        id: optionalText(ref.id, 180, "cloud reference ID"),
+        name: optionalText(ref.name, 120, "cloud reference name"),
+        type: optionalText(ref.type, 80, "cloud reference type")
       };
     });
     return {
       kind: value.kind === "scene" ? "scene" : "character",
       representation: ["2d", "3d", "both"].includes(value.representation) ? value.representation : "2d",
-      voice: text(value.voice || "", 500, "character voice"),
+      voice: optionalText(value.voice, 500, "character voice"),
       passport: {
         face: text(passport.face || "", 1200, "passport face"),
         body: text(passport.body || "", 1200, "passport body"),
