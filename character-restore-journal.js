@@ -7,6 +7,7 @@
   const VERSION = 1;
   const STORE = "operations";
   const PROTOCOL = 1;
+  const LOCAL_REFERENCE_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-[a-z0-9_-]{8,80})?$/i;
   const STATES = new Set(["planning","planned","staging","ready_to_activate","activating","committed","paused_retryable","conflict","aborted","activation_uncertain"]);
   const NEXT = {
     planning:["planned","paused_retryable","conflict","aborted"],
@@ -54,10 +55,14 @@
     for(const x of r.references){
       if(!x || typeof x!=="object") fail("Invalid reference checkpoint.");
       uuid(x.cloudAssetId,"cloud asset ID"); uuid(x.localStagedBlobId,"staged Blob ID");
+      uuid(x.characterId,"cloud character ID"); uuid(x.sourceLocalId,"local character ID");
+      if(typeof x.localReferenceId!=="string" || !LOCAL_REFERENCE_KEY.test(x.localReferenceId)) fail("Invalid local reference identity.");
+      str(x.name,"reference display name",120);
+      if(!["image/png","image/jpeg","image/webp"].includes(x.type)) fail("Invalid reference display MIME type.");
       if(refs.has(x.cloudAssetId)) fail("Duplicate cloud asset checkpoint.");
       refs.add(x.cloudAssetId);
       if(!/^[a-f0-9]{64}$/i.test(x.expectedSha256) || !Number.isSafeInteger(x.expectedSizeBytes) || x.expectedSizeBytes<1 || x.expectedSizeBytes>8*1024*1024) fail("Invalid reference proof.");
-      if(!["image/png","image/jpeg","image/webp"].includes(x.expectedMimeType)) fail("Invalid reference MIME type.");
+      if(!["image/png","image/jpeg","image/webp"].includes(x.expectedMimeType) || x.type!==x.expectedMimeType) fail("Invalid reference MIME type.");
       if(!["pending","staging","verified_staged"].includes(x.state)) fail("Invalid reference state.");
       if(x.width!==null && (!Number.isInteger(x.width)||x.width<1||x.width>12000)) fail("Invalid reference width.");
       if(x.height!==null && (!Number.isInteger(x.height)||x.height<1||x.height>12000)) fail("Invalid reference height.");
