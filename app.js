@@ -1815,12 +1815,16 @@ const movieHistoryStyle = document.createElement("style");
     });
     let selectedLibrarySnapshots=Array.isArray(project.characterLibrarySnapshots)?project.characterLibrarySnapshots.map(item=>({...item})).filter(item=>item&&typeof item.id==="string"):[];
     if(stage.key==="characters"){
-      const libraryItems=readCharacterLibrary();
+      let libraryItems=[],libraryReadError=null;
+      try { libraryItems=readCharacterLibrary(); } catch(error) { libraryReadError=error; }
       const picker=document.createElement("section");picker.className="movie-character-picker movie-stage-field";
       const pickerTitle=document.createElement("strong");pickerTitle.textContent="Персонажи из вашей библиотеки";
-      const pickerNote=document.createElement("p");pickerNote.className="movie-stage-note";pickerNote.textContent=libraryItems.length?"Выберите сохранённых персонажей или локации. В фильм попадёт снимок их паспорта; мастер-карточка останется независимой. Сами файлы изображений пока остаются в библиотеке и не копируются в проект.":"В библиотеке пока нет карточек. Можно продолжить с текстовым описанием или сначала добавить персонажа в Prompt Studio.";
+      const pickerNote=document.createElement("p");pickerNote.className="movie-stage-note";
+      pickerNote.textContent=libraryReadError
+        ? "⚠ Выбор персонажей временно заблокирован: "+libraryReadError.message
+        : libraryItems.length?"Выберите сохранённых персонажей или локации. В фильм попадёт снимок их паспорта; мастер-карточка останется независимой. Сами файлы изображений пока остаются в библиотеке и не копируются в проект.":"В библиотеке пока нет карточек. Можно продолжить с текстовым описанием или сначала добавить персонажа в Prompt Studio.";
       picker.append(pickerTitle,pickerNote);
-      if(libraryItems.length){
+      if(libraryItems.length&&!libraryReadError){
         const select=document.createElement("select");select.multiple=true;select.size=Math.min(5,Math.max(2,libraryItems.length));select.setAttribute("aria-label","Выберите персонажей и локации из библиотеки");select.style.cssText="width:100%;min-height:100px;padding:10px;border-radius:9px;background:#0f0e1d;color:#eee9fa;border:1px solid rgba(166,154,187,.35);";
         libraryItems.forEach(item=>{const option=document.createElement("option");option.value=item.id;option.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name+(selectedLibrarySnapshots.some(saved=>saved.id===item.id)?" · уже добавлен":"");select.append(option);});
         const add=document.createElement("button");add.type="button";add.className="secondary-button";add.textContent="＋ Добавить выбранных в фильм";
