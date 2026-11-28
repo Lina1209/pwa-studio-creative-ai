@@ -68,6 +68,7 @@ This audit records the verified boundary between current protections and the fut
 ### Reconciliation and exposure refinements
 
 - Added `mark_stale_ai_budget_reservations_unknown`: a bounded, service-role-only RPC that converts old `reserved` rows to `unknown` and appends a ledger event. It never releases a stale reservation.
+- Added `list_ai_budget_reconciliation_candidates`: a bounded, service-role-only read RPC exposing only reservation metadata needed for manual/provider reconciliation; it returns no prompt or response content.
 - Added a backend adapter method for invoking that RPC; no scheduler or background worker is configured.
 - Exposure aggregation now filters by both the active policy's scope and its period. Platform policies aggregate all provider/user reservations in-period; provider and user policies aggregate only matching rows.
 - SQL tests now check disabled-by-default behavior, browser-role privilege denial, idempotency, settlement, unknown exposure, confirmed no-charge release, and stale reservation reconciliation.
