@@ -202,3 +202,17 @@ A Playwright/Chromium integration page now runs the coordinator against the actu
 - account switching during download prevents later staging/checkpoint writes and releases the lease.
 
 CI run `46104818818` on commit `6dcbe09` passed all three jobs, including this real-browser coordinator integration test, the existing restore/backup journal browser suites, backend unit tests, and disposable PostgreSQL integration. This validates the injected-adapter boundary and journal integration; it does not validate a real cloud media endpoint or production Blob adapter.
+
+## Lease renewal hardening (2026-11-28)
+
+The restore journal now exposes an atomic `renewLease(ownerId, operationId, lease, {ttlMs})` operation. Renewal:
+- requires the current owner, token, and monotonic lease epoch;
+- refuses an expired, stale, or replaced lease;
+- extends expiry without changing the checkpoint revision, so it cannot invalidate an in-flight revision-CAS checkpoint;
+- remains bounded to 1–120 seconds.
+
+The media staging coordinator renews its 60-second lease every 20 seconds while staging. A renewal failure permanently fences that coordinator attempt: it stops before the next media/checkpoint boundary, does not attempt an unsafe stale-owner rollback, and leaves the operation available for a later lease holder to inspect and resume. The heartbeat is stopped and any in-flight renewal settled before lease release.
+
+Real-browser tests now cover successful renewal, stale-token rejection, renewal after lease takeover, and monotonic epoch fencing. The coordinator's existing browser and unit tests continue to exercise staging, tampered read-back, and account-switch fencing.
+
+This improves long-transfer resilience but does not make browser timers reliable during device sleep or browser suspension. If a tab is suspended beyond the lease expiry, the attempt must fail closed and resume under a newly acquired lease. No production UI, cloud media endpoint, metadata activation, or deployment is enabled by this change.
