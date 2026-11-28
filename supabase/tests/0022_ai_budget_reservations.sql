@@ -59,6 +59,7 @@ declare
   v_created boolean;
   v_stale_count integer;
   v_candidate_count integer;
+  v_actual numeric;
 begin
   select reservation_id,reservation_created into v_first,v_created
   from public.reserve_ai_budget(
@@ -134,13 +135,28 @@ begin
     raise exception 'stale reservation was incorrectly released';
   end if;
 
+  -- A provider overrun must be recorded at its actual amount, never clipped to the reservation.
+  select reservation_id into v_first
+  from public.reserve_ai_budget(
+    '77777777-7777-4777-8777-777777777777',v_user,'budget-test-key-0005',
+    repeat('7',64),'chat','deepseek','deepseek-flash',0.005
+  );
+  v_status := public.settle_ai_budget(v_first,0.08);
+  if v_status <> 'settled' then raise exception 'overrun settlement was not recorded'; end if;
+  select actual_usd into v_actual
+  from public.ai_budget_reservations where id=v_first;
+  if v_actual <> 0.08 then
+    raise exception 'provider overrun was hidden or clipped: %',v_actual;
+  end if;
+
   select count(*) into v_count from public.ai_budget_ledger
   where request_id in (
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    'ffffffff-ffff-4fff-8fff-ffffffffffff'
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    '77777777-7777-4777-8777-777777777777'
   );
-  if v_count <> 7 then raise exception 'unexpected immutable ledger event count: %',v_count; end if;
+  if v_count <> 9 then raise exception 'unexpected immutable ledger event count: %',v_count; end if;
 end;
 $$;
 
