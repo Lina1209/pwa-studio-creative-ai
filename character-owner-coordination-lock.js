@@ -95,8 +95,9 @@
       const request = store.get(lease.ownerId);
       request.onsuccess = () => {
         const current = request.result;
-        if (!current || current.token !== lease.token || current.epoch !== lease.epoch || current.expiresAt <= now()) {
-          abort(new Error("Owner lock release rejected: stale fencing token."));
+        if (!validLockRecord(current, lease.ownerId) || !current.token ||
+            current.token !== lease.token || current.epoch !== lease.epoch || current.expiresAt <= now()) {
+          abort(new Error("Owner lock release rejected: stale or malformed fencing token."));
           return;
         }
         current.token = null;
