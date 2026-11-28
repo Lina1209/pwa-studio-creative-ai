@@ -294,3 +294,8 @@ No compensating deletion or blind rollback is attempted after the metadata commi
 Real-browser integration tests cover successful activation with preserved existing data, image bytes and dimensions being checked before activation, refusal on dimension mismatch without metadata mutation, and recognition of a completed metadata write after a simulated crash.
 
 This is still an isolated foundation. No application UI or automatic cloud restore flow calls this coordinator. No cleanup/deletion of staged Blobs, tombstones, deployment, or production migration is included. The next validation step is the new GitHub Actions browser job; activation remains disabled until it passes and further crash/account-switch boundary tests are completed.
+
+
+### Validation result
+
+The activation coordinator and journal changes passed GitHub Actions run `46108551390` on feature-branch commit `e1c4d4a`: backend unit tests, disposable PostgreSQL integration, all existing IndexedDB/browser suites, activation browser integration (4 scenarios), and frontend syntax/account-switch checks. The activation browser scenarios cover successful staged-media verification and additive activation, tampered dimensions rejected before metadata mutation, storage quota failure preserving the original library with a retryable checkpoint, and recovery after a simulated crash between metadata write and journal commit. This validation is feature-branch CI only; it does not authorize UI wiring or production deployment.
