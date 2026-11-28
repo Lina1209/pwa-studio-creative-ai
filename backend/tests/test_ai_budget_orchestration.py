@@ -18,7 +18,7 @@ class AIBudgetOrchestrationTests(unittest.TestCase):
         self.request = AIReservationRequest(
             user_id="verified-user",
             request_id="request-1",
-            endpoint="/api/chat",
+            endpoint="chat",
             provider="deepseek",
             model="deepseek-flash",
             request_fingerprint="a" * 64,
