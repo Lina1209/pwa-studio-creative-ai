@@ -1,7 +1,7 @@
 # Character cloud restore and synchronization audit
 
 Date: 2026-11-28
-Status: read-only review and implementation requirements. No importer activation, production migration, Storage operation, or deployment.
+Status: feature-branch implementation checkpoint. No importer activation, production migration, Storage operation, or deployment.
 
 ## Confirmed server-side protections
 
@@ -17,13 +17,21 @@ Status: read-only review and implementation requirements. No importer activation
 
 - The browser backup journal remains an isolated IndexedDB module and is not loaded by the product UI.
 - The API worker scripts exist, but current Render configuration starts only the API web process. Queue processing is not proven operational until separate private worker services are deliberately provisioned and monitored.
-- The cloud character list currently requests at most 100 rows and has no cursor pagination. A restore flow must not silently treat a truncated list as complete.
-- Character passport PATCH is owner-filtered, but the current repository update path has no expected-version/ETag precondition. Concurrent edits can be last-write-wins. Before enabling multi-device sync, add an atomic optimistic-concurrency contract (monotonic version or updated-at token) and a 409 conflict response; never silently overwrite a newer passport.
-- The create idempotency mapping compares the full passport payload. This is appropriate for retrying an unchanged create, but it is not an update protocol. Changed local passports need an explicit versioned update path.
+- The character list now has owner-scoped keyset pagination (maximum 100 per page), with an owner-bound signed cursor and immutable ordering. The client must still traverse until `next_cursor = null` and treat any failed page as incomplete.
+- Character passport PATCH now requires `expected_version`; the compare-and-swap path increments a monotonic version and returns a conflict for stale writes. The create idempotency mapping remains a retry contract, not an update protocol.
 - The journal's local `passportFingerprint` and reference SHA values must be recomputed from the actual source bytes before upload. Client-provided fingerprints are hints, not trusted verification.
 - Before restore, the coordinator must fetch the canonical cloud passport and every required media status, download/read back each media object through the authenticated private-media API, and independently compare bytes/hash/size/MIME/dimensions. A `ready` status alone is not sufficient evidence that the browser's local copy matches.
 - Restore must stage all data separately, verify the complete set, and only then offer an atomic local activation/swap. Never delete or mutate the old local passport/Blobs during a partial restore.
 - Local and cloud IDs are distinct namespaces. Preserve the owner-scoped `source_local_id` mapping and never replace the cloud primary key with a browser-provided identifier.
+
+## Newly implemented restore-planning boundary
+
+- `character-cloud-restore.js` validates all cloud pages (up to 100 pages / 10,000 records), validates identity/version/timestamps/passport fields, rejects duplicate mappings, and creates a side-effect-free plan.
+- The plan preserves local and cloud IDs separately, records missing-image metadata as a manifest without creating broken local image references, and classifies changed local/cloud records as conflicts rather than overwriting.
+- Its guarded commit helper requires a complete conflict-free plan, unchanged local snapshot, owner match, account-current check, local limit compliance, and read-back verification through injected synchronous adapters.
+- The restore planner is not loaded by `index.html` and is not connected to localStorage, IndexedDB, the backup journal, or a UI action. This is deliberate: no restore has been activated.
+- CI run `46101439442` passed all three jobs on `b009d64`: backend unit tests, disposable PostgreSQL integration (including concurrency/cleanup stress harnesses), and real-browser IndexedDB journal/account-switch checks. The companion workflow `46101433709` also succeeded.
+- The prior restore test failure on `6e0a206` was a malformed fixture that failed the representation validator before reaching the intended voice-type assertion; `b009d64` corrected the fixture and the newest full CI run passed.
 
 ## Required acceptance matrix before importer activation
 
@@ -42,4 +50,4 @@ Status: read-only review and implementation requirements. No importer activation
 
 ## Current decision
 
-Keep cloud restore/import disabled. The underlying server-side identity and media lifecycle primitives are promising, but versioned concurrent updates, complete pagination, worker deployment/monitoring, end-to-end restore orchestration, and acceptance tests remain blockers. No production resources were touched.
+Keep cloud restore/import disabled. Versioned updates, paginated reads, a side-effect-free restore planner, and a guarded injected commit helper now exist on the feature branch. Remaining blockers include wiring the planner to the actual local storage adapters, durable resumable checkpoints, conflict-resolution UX, deletion/tombstone semantics, safe image transfer and validation, worker deployment/monitoring, and end-to-end browser interruption/account-switch tests. No production resources were touched.
