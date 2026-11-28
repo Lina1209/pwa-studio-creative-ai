@@ -304,3 +304,8 @@ The activation coordinator and journal changes passed GitHub Actions run `461085
 ### Additional account-switch validation
 
 A fifth activation browser scenario now switches the active-account fence immediately after the staged Blob is read. The coordinator refuses to continue, leaves local metadata byte-for-byte unchanged, and does not advance the operation beyond `ready_to_activate`. GitHub Actions run `46108643132` on commit `693e65a` passed all three jobs: backend unit tests, disposable PostgreSQL integration, and the full browser/IndexedDB suite including all five activation scenarios.
+
+
+### Real localStorage integration
+
+The activation browser suite now uses the browser's actual `window.localStorage` implementation rather than an in-memory Map shim. The quota-failure adapter wraps the real read path and injects a failing write, confirming that the exact base library remains intact and the durable operation is retryable. GitHub Actions run `46108806956` on `df458f6` passed all three jobs, including the five activation scenarios and frontend checks.
