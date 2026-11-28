@@ -45,6 +45,7 @@ class GenerationJob:
     cancel_requested_at: datetime | None = None
     result_asset_id: str | None = None
     error_code: str | None = None
+    provider_submission_outcome: ProviderSubmissionOutcome = ProviderSubmissionOutcome.UNKNOWN
 
     def __post_init__(self):
         if not self.id or not self.owner_id or not self.idempotency_key:
@@ -75,6 +76,7 @@ def claim_job(job: GenerationJob, now: datetime, lease_seconds: int = 120) -> Ge
         lease_expires_at=now + timedelta(seconds=lease_seconds),
         next_attempt_at=None,
         error_code=None,
+        provider_submission_outcome=ProviderSubmissionOutcome.UNKNOWN,
     )
 
 
@@ -106,6 +108,8 @@ def mark_succeeded(job: GenerationJob, result_asset_id: str) -> GenerationJob:
         raise ValueError("Only a processing job can succeed.")
     if not result_asset_id:
         raise ValueError("A successful job requires a result asset id.")
+    if job.provider_submission_outcome != ProviderSubmissionOutcome.ACCEPTED:
+        raise ValueError("A successful job requires accepted provider submission evidence.")
     return replace(job, status=JobStatus.SUCCEEDED, lease_expires_at=None, result_asset_id=result_asset_id)
 
 
@@ -128,13 +132,16 @@ def mark_failed(
         raise ValueError("submission_outcome must be a ProviderSubmissionOutcome.")
     # A generic timeout/connection error is not proof of non-acceptance.
     # Only conclusive evidence permits a new provider submission.
+    if job.provider_submission_outcome not in {ProviderSubmissionOutcome.UNKNOWN, submission_outcome}:
+        raise ValueError("Provider submission evidence cannot be overwritten by contradictory evidence.")
+    job = replace(job, provider_submission_outcome=submission_outcome)
     safe_to_retry = submission_outcome in {
         ProviderSubmissionOutcome.DEFINITELY_NOT_SUBMITTED,
         ProviderSubmissionOutcome.DEFINITELY_REJECTED,
     }
     if submission_outcome in {ProviderSubmissionOutcome.UNKNOWN, ProviderSubmissionOutcome.ACCEPTED}:
         return replace(
-            job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
+            job, provider_submission_outcome=submission_outcome, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
             next_attempt_at=None, error_code="provider_outcome_unknown",
         )
     if job.status == JobStatus.CANCEL_REQUESTED:
@@ -161,9 +168,12 @@ def recover_expired_lease(
         raise ValueError("The job lease has not expired.")
     if not isinstance(submission_outcome, ProviderSubmissionOutcome):
         raise ValueError("submission_outcome must be a ProviderSubmissionOutcome.")
+    if job.provider_submission_outcome not in {ProviderSubmissionOutcome.UNKNOWN, submission_outcome}:
+        raise ValueError("Provider submission evidence cannot be overwritten by contradictory evidence.")
+    job = replace(job, provider_submission_outcome=submission_outcome)
     if submission_outcome in {ProviderSubmissionOutcome.UNKNOWN, ProviderSubmissionOutcome.ACCEPTED}:
         return replace(
-            job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
+            job, provider_submission_outcome=submission_outcome, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
             next_attempt_at=None, result_asset_id=None, error_code="provider_outcome_unknown",
         )
     if job.status == JobStatus.CANCEL_REQUESTED:
