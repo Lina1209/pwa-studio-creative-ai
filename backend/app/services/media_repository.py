@@ -89,8 +89,20 @@ def list_owned_character_media_assets(settings: Settings, character_id: str, aut
     for row in rows:
         if not isinstance(row, dict) or row.get("owner_id") != owner or row.get("character_id") != character:
             raise HTTPException(status_code=404, detail="Media resource not found.")
+        canonical_uuid(row.get("id"), "media asset")
         if row.get("local_reference_id") is not None:
             canonical_local_reference_id(row.get("local_reference_id"))
+            digest = row.get("content_sha256")
+            if (not isinstance(digest, str) or len(digest) != 64
+                    or any(char not in "0123456789abcdef" for char in digest)
+                    or row.get("file_type") not in {"image/png", "image/jpeg", "image/webp"}
+                    or isinstance(row.get("size_bytes"), bool)
+                    or not isinstance(row.get("size_bytes"), int)
+                    or not 1 <= row["size_bytes"] <= 8 * 1024 * 1024
+                    or isinstance(row.get("width"), bool) or not isinstance(row.get("width"), int)
+                    or isinstance(row.get("height"), bool) or not isinstance(row.get("height"), int)
+                    or not 1 <= row["width"] <= 8192 or not 1 <= row["height"] <= 8192):
+                raise HTTPException(status_code=502, detail="Media identity mapping returned invalid integrity metadata.")
         if row.get("status") not in allowed_statuses:
             raise HTTPException(status_code=502, detail="Media metadata returned an invalid status.")
         result.append({key: row.get(key) for key in ("id", "character_id", "local_reference_id", "file_name", "file_type", "status", "size_bytes", "content_sha256", "width", "height", "created_at")})
