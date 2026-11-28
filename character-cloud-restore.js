@@ -256,12 +256,25 @@
       }
     }
     if (!isCurrent()) fail("Account changed before cloud restore planning completed.");
+    const cloudSummary = cloudRows.map(row => {
+      const data = cloudDataById.get(row.id);
+      return {
+        cloudId: row.id,
+        localId: row.source_local_id,
+        name: row.name,
+        kind: data.kind,
+        representation: data.representation,
+        referenceCount: data.referenceManifest.length,
+        mappedReferenceCount: (mappedManifestByCharacter.get(row.id) || []).length
+      };
+    });
     const plan = Object.freeze({
       complete: true,
       ownerId,
       baseLocalFingerprint: canonical(localSnapshot),
       pagesRead,
       cloudCount: cloudRows.length,
+      cloudSummary: deepFreeze(cloudSummary),
       proposedItems: deepFreeze(proposedItems),
       unchanged: deepFreeze(unchanged),
       conflicts: deepFreeze(conflicts)
@@ -288,12 +301,72 @@
       complete: true, ownerId, baseLocalFingerprint: plan.baseLocalFingerprint,
       pagesRead: plan.pagesRead, cloudCount: selected.size,
       selectedCloudIds: Object.freeze([...selected]),
+      cloudSummary: deepFreeze(plan.cloudSummary.filter(x => selected.has(x.cloudId))),
       proposedItems: deepFreeze(plan.proposedItems.filter(x => selected.has(x.cloudBackup.characterId))),
       unchanged: deepFreeze(plan.unchanged.filter(x => selected.has(x.cloudId))),
       conflicts: deepFreeze(plan.conflicts.filter(x => selected.has(x.cloudId)))
     });
     issuedPlans.add(selectedPlan);
     return selectedPlan;
+  }
+
+  function buildRestorePreview({ownerId, plan}) {
+    if (!isUuid(ownerId) || !plan || !issuedPlans.has(plan) || plan.complete !== true || plan.ownerId !== ownerId) {
+      fail("Restore preview requires an issued complete plan for this owner.");
+    }
+    if (!Array.isArray(plan.cloudSummary) || !Array.isArray(plan.proposedItems) ||
+        !Array.isArray(plan.unchanged) || !Array.isArray(plan.conflicts)) {
+      fail("Restore preview snapshot is incomplete.");
+    }
+    const proposedByCloud = new Map(plan.proposedItems.map(item => [item.cloudBackup.characterId, item]));
+    const unchangedByCloud = new Map(plan.unchanged.map(item => [item.cloudId, item]));
+    const conflictsByCloud = new Map(plan.conflicts.map(item => [item.cloudId, item]));
+    const conflictLabels = Object.freeze({
+      cloud_character_already_mapped_to_another_local_id: "Облачная карточка уже связана с другой локальной карточкой.",
+      local_cloud_identity_mismatch: "Локальная карточка связана с другой облачной записью.",
+      local_record_missing_cloud_identity_binding: "Не подтверждена связь локальной и облачной карточек.",
+      local_and_cloud_content_differ: "Локальная и облачная версии различаются."
+    });
+    const items = plan.cloudSummary.map(summary => {
+      const conflict = conflictsByCloud.get(summary.cloudId);
+      const unchanged = unchangedByCloud.has(summary.cloudId);
+      const proposed = proposedByCloud.get(summary.cloudId);
+      const referenceCount = summary.referenceCount;
+      const mappedReferenceCount = summary.mappedReferenceCount;
+      return Object.freeze({
+        cloudId: summary.cloudId,
+        localId: summary.localId,
+        name: summary.name,
+        kind: summary.kind,
+        representation: summary.representation,
+        status: conflict ? "conflict" : unchanged ? "unchanged" : proposed ? "ready_to_stage" : "unclassified",
+        statusLabel: conflict ? "Требует решения" : unchanged ? "Уже актуальна" : proposed ? "Можно восстановить" : "Не проверено",
+        conflictReason: conflict ? conflict.reason : null,
+        conflictMessage: conflict ? (conflictLabels[conflict.reason] || "Требуется ручная проверка.") : null,
+        referenceCount,
+        mappedReferenceCount,
+        referencesPending: referenceCount,
+        referenceStatusLabel: referenceCount ? "Изображения проверены по облачному каталогу; загрузка ещё не выполнена." : "Изображений для восстановления нет."
+      });
+    });
+    const conflictCount = items.filter(item => item.status === "conflict").length;
+    const restorableCount = items.filter(item => item.status === "ready_to_stage").length;
+    const unchangedCount = items.filter(item => item.status === "unchanged").length;
+    const referenceCount = items.reduce((sum, item) => sum + item.referenceCount, 0);
+    const preview = {
+      ownerId,
+      selectedCount: items.length,
+      restorableCount,
+      unchangedCount,
+      conflictCount,
+      referenceCount,
+      canContinue: restorableCount > 0 && conflictCount === 0,
+      requiresExplicitConfirmation: restorableCount > 0,
+      writesPerformed: false,
+      downloadsPerformed: false,
+      items
+    };
+    return deepFreeze(preview);
   }
 
   function applyRestorePlan({ownerId, plan, readLocalItems, writeLocalItems, isCurrent = () => true}) {
@@ -348,5 +421,5 @@
     }
   }
 
-  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,selectRestorePlan,applyRestorePlan});
+  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,selectRestorePlan,buildRestorePreview,applyRestorePlan});
 })();
