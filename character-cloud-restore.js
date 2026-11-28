@@ -202,13 +202,33 @@
     const merged = [...plan.proposedItems, ...current];
     if (merged.length > 100) fail("The local library limit of 100 materials would be exceeded.");
     if (!isCurrent()) fail("Account changed before local restore commit.");
-    const writeResult = writeLocalItems(ownerId, merged);
-    if (writeResult && typeof writeResult.then === "function") fail("Local restore adapter must commit synchronously.");
-    if (!isCurrent()) fail("Account changed during local restore commit.");
-    const readBack = readLocalItems(ownerId);
-    if (readBack && typeof readBack.then === "function") fail("Local restore adapters must be synchronous.");
-    if (canonical(readBack) !== canonical(merged)) fail("Local restore read-back verification failed.");
-    return Object.freeze({restoredCount:plan.proposedItems.length,totalCount:merged.length});
+    let writeStarted = false;
+    try {
+      writeStarted = true;
+      const writeResult = writeLocalItems(ownerId, merged);
+      if (writeResult && typeof writeResult.then === "function") fail("Local restore adapter must commit synchronously.");
+      if (!isCurrent()) fail("Account changed during local restore commit.");
+      const readBack = readLocalItems(ownerId);
+      if (readBack && typeof readBack.then === "function") fail("Local restore adapters must be synchronous.");
+      if (!Array.isArray(readBack) || canonical(readBack) !== canonical(merged)) fail("Local restore read-back verification failed.");
+      return Object.freeze({restoredCount:plan.proposedItems.length,totalCount:merged.length});
+    } catch (error) {
+      // Best-effort compensation: adapters are required to address the supplied
+      // owner key, never whichever account happens to be active in the UI.
+      // If the account changed, do not invoke a potentially session-bound writer.
+      if (writeStarted && isCurrent()) {
+        try {
+          writeLocalItems(ownerId, current);
+          const rollbackReadBack = readLocalItems(ownerId);
+          if (!Array.isArray(rollbackReadBack) || canonical(rollbackReadBack) !== canonical(current)) {
+            fail("Local restore failed and rollback verification also failed.");
+          }
+        } catch {
+          fail("Local restore failed; rollback could not be verified. Keep the browser storage intact and contact support before retrying.");
+        }
+      }
+      throw error;
+    }
   }
 
   globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,applyRestorePlan});
