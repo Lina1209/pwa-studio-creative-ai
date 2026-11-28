@@ -50,6 +50,27 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(rejected.provider_submission_outcome, ProviderSubmissionOutcome.DEFINITELY_REJECTED)
 
+    def test_conclusive_provider_evidence_cannot_be_reversed_in_either_direction(self):
+        running = claim_job(new_job(), NOW)
+        rejected = replace(
+            running,
+            provider_submission_outcome=ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+        )
+        accepted = replace(
+            running,
+            provider_submission_outcome=ProviderSubmissionOutcome.ACCEPTED,
+        )
+        with self.assertRaisesRegex(ValueError, "contradictory evidence"):
+            mark_failed(
+                rejected, NOW, "late_acceptance", True, 30,
+                ProviderSubmissionOutcome.ACCEPTED,
+            )
+        with self.assertRaisesRegex(ValueError, "contradictory evidence"):
+            mark_failed(
+                accepted, NOW, "late_rejection", True, 30,
+                ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+            )
+
     def test_accepted_provider_attempt_requires_reconciliation(self):
         running = claim_job(new_job(), NOW)
         unresolved = mark_failed(
