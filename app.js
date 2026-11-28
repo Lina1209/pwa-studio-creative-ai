@@ -1745,14 +1745,28 @@ const movieHistoryStyle = document.createElement("style");
     const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     movieCloudState.loadingUser = userId;
     try {
-      const { data, error } = await supabaseClient
-        .from("projects")
-        .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
-        .eq("owner_id", userId)
-        .eq("project_type", "movie")
-        .order("updated_at", { ascending: false });
-      if (error) throw error;
-      if (!contextIsCurrent()) return;
+      // Read the complete owner-scoped library in bounded pages; PostgREST may cap a single response.
+      const data = [];
+      const pageSize = 100;
+      const maxRows = 10000;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data: page, error } = await supabaseClient
+          .from("projects")
+          .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
+          .eq("owner_id", userId)
+          .eq("project_type", "movie")
+          .order("updated_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        if (!contextIsCurrent()) return;
+        const rows = page || [];
+        if (offset >= maxRows && rows.length) {
+          throw new Error("В облачной библиотеке больше 10 000 фильмов. Загрузка остановлена без частичного перезаписывания локальных данных.");
+        }
+        data.push(...rows);
+        if (rows.length < pageSize) break;
+      }
       // A corrupt local library must stop cloud-side deletion and merge as well.
       let local = movieRead();
       let deletedIds = readMovieTombstones();
