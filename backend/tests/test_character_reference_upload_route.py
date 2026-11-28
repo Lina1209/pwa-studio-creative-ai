@@ -71,6 +71,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-storage-failure"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("portrait.png", png_bytes(), "image/png")},
         )
         self.assertEqual(response.status_code, 503)
@@ -88,6 +89,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-object-exists"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("portrait.png", png_bytes(), "image/png")},
         )
         self.assertEqual(response.status_code, 409)
@@ -124,6 +126,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-0002"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("portrait.png", png_bytes(), "image/png")},
         )
         self.assertEqual(response.status_code, 404)
@@ -135,6 +138,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-0003"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("large.png", b"x" * (8 * 1024 * 1024 + 1), "image/png")},
         )
         self.assertEqual(response.status_code, 413)
@@ -145,6 +149,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-0004"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("fake.png", b"not an image", "image/png")},
         )
         self.assertEqual(response.status_code, 422)
@@ -154,6 +159,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
     def test_idempotency_key_is_required(self, lookup):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("portrait.png", png_bytes(), "image/png")},
         )
         self.assertEqual(response.status_code, 422)
@@ -179,6 +185,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-0005"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("portrait.png", png_bytes(), "image/png")},
         )
         self.assertEqual(response.status_code, 401)
