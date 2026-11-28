@@ -38,6 +38,9 @@ def _rpc(settings, function_name, payload):
         raise HTTPException(status_code=503, detail="Character storage is not configured.")
     headers = {"apikey": settings.supabase_service_role_key,
                       "Content-Type": "application/json", "Accept": "application/json"}
+    # sb_secret keys are apikey-only; legacy service-role JWTs also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.post(
             f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/{function_name}",
@@ -64,6 +67,9 @@ def _request(settings, method, params=None, payload=None):
     headers = {"apikey": settings.supabase_service_role_key,
                       "Content-Type": "application/json", "Accept": "application/json",
                "Prefer": "return=representation"}
+    # sb_secret keys are apikey-only; legacy service-role JWTs also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.request(method, f"{settings.supabase_url.rstrip('/')}/rest/v1/characters",
                                  headers=headers, params=params, json=payload, timeout=12.0)
@@ -103,10 +109,7 @@ def create_owned_character(settings, owner_id, source_local_id, name, descriptio
         "p_name": name,
         "p_description": normalized_description,
         "p_reference_data": data,
- 
-    # sb_secret keys are apikey-only; legacy service-role JWTs also use Bearer.
-    if settings.supabase_service_role_key.startswith("eyJ"):
-        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"   })
+    })
     if row.get("owner_id") != owner or row.get("source_local_id") != local_id:
         raise HTTPException(status_code=502, detail="Character creation returned an invalid ownership mapping.")
     if row.get("name") != name or row.get("description") != normalized_description or row.get("reference_data") != data:
