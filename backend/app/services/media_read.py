@@ -56,7 +56,14 @@ def plan_private_media_read(*, authenticated_owner_id: str, asset: dict) -> Medi
         raise ValueError("Invalid server-stored media object key.")
     if segments[0] != owner or segments[1] not in ALLOWED_RESOURCE_KINDS:
         raise ValueError("Media object key owner or resource mismatch.")
-    _uuid(segments[2], "resource")
+    resource_id = _uuid(segments[2], "resource")
+    # Bind the immutable Storage key to the exact linked row, not merely to
+    # an allowed resource kind. This prevents a corrupted metadata row from
+    # redirecting an otherwise-owned asset to another object namespace.
+    resource_field = {"characters": "character_id", "projects": "project_id"}.get(segments[1])
+    linked_resource_id = asset.get(resource_field) if resource_field else None
+    if linked_resource_id is None or _uuid(linked_resource_id, "linked resource") != resource_id:
+        raise ValueError("Media object key does not match its linked resource.")
     filename = segments[3]
     if filename.count(".") != 1:
         raise ValueError("Invalid media object filename.")
