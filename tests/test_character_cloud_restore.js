@@ -42,6 +42,12 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(plan.unchanged.length,1);
     assert.equal(plan.conflicts.length,0);
   });
+  await run("restore planning uses a stable local snapshot across awaits",async()=>{
+    const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[],cloudBackup:{characterId:cloudId}};
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>{local.name="edited while fetching";return page([row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[]}})]);}});
+    assert.equal(plan.unchanged.length,1);
+    assert.equal(local.name,"edited while fetching");
+  });
   await run("different local content becomes a conflict, not an overwrite",async()=>{
     const local={id:localId,name:"Локальная версия",description:"",referenceImages:[]};
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
