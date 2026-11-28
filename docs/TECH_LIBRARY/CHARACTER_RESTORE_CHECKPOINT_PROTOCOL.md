@@ -319,3 +319,8 @@ The simulated crash-recovery browser scenario now navigates to a separate recove
 ### Recovery account-switch fence
 
 Recovery now rechecks the active-account fence after loading the durable journal, after acquiring the lease, after reading local metadata, and immediately before changing the journal state. A browser test flips the account fence after the metadata read: recovery refuses to checkpoint, leaves the operation in `activating`, and succeeds only after the correct account context is restored. GitHub Actions run `46108991587` on `db04ed6` passed backend unit tests, disposable PostgreSQL integration, and the complete browser/IndexedDB suite.
+
+
+### Recovery boundary matrix
+
+Recovery browser coverage now exercises all three outcomes: (1) the exact merged digest plus expected operation markers becomes `committed`; (2) the untouched base digest becomes `paused_retryable`; (3) any third metadata state becomes `conflict` without rollback or overwrite. The journal transition table explicitly allows `activating → conflict` for the third case. GitHub Actions run `46109097295` on `960f620` passed backend unit tests, disposable PostgreSQL integration, and the complete browser/IndexedDB suite.
