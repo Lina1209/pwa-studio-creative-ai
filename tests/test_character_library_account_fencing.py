@@ -8,6 +8,7 @@ import unittest
 
 
 APP = (Path(__file__).resolve().parents[1] / "app.js").read_text(encoding="utf-8")
+JOURNAL = (Path(__file__).resolve().parents[1] / "character-backup-journal.js").read_text(encoding="utf-8")
 
 
 class CharacterLibraryAccountFencingTests(unittest.TestCase):
@@ -116,6 +117,24 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         backup = APP[start:end]
         self.assertIn("if(!stillOwner())return;", backup)
         self.assertIn('if(button){button.disabled=false;button.textContent="☁ Создать облачную копию";}', backup)
+
+    def test_character_backup_journal_uses_bounded_owner_index_pages(self):
+        self.assertIn("const DB_VERSION = 2;", JOURNAL)
+        self.assertIn('createIndex("byOwner", "ownerId"', JOURNAL)
+        self.assertIn("async function listPage(ownerIdValue, options = {})", JOURNAL)
+        self.assertIn("index.openCursor(IDBKeyRange.only(ownerId), \"next\")", JOURNAL)
+        self.assertIn("limit > 100", JOURNAL)
+        self.assertIn("listPage(ownerIdValue, {limit:100})", JOURNAL)
+        self.assertIn("use listPage() to traverse every page", JOURNAL)
+        self.assertNotIn(".getAll()", JOURNAL)
+
+    def test_character_backup_journal_validates_persisted_identity_and_proofs(self):
+        self.assertIn("function assertRecord(record)", JOURNAL)
+        self.assertIn("record.id !== keyFor(ownerId, localCharacterId)", JOURNAL)
+        self.assertIn("Verified reference is missing its cloud proof.", JOURNAL)
+        self.assertIn("assertRecord(row);", JOURNAL)
+        self.assertNotIn("fetch(", JOURNAL)
+        self.assertNotIn("XMLHttpRequest", JOURNAL)
 
     def test_guest_and_authenticated_metadata_use_separate_keys(self):
         self.assertIn(
