@@ -84,6 +84,7 @@ assert.match(app, /\.eq\("settings", JSON\.stringify\(item\.expectedSettings\)\)
 assert.match(app, /\.eq\("title", item\.expectedTitle\)[\s\S]*\.eq\("description", item\.expectedDescription\)/);
 assert.match(app, /if \(!contextIsCurrent\(\) \|\| !writeMovieStorage\(nextLocal\)\)/);
 assert.match(app, /movieCloudState\.pending = true/);
+assert.match(app, /window\.addEventListener\("online",\s*\(\)\s*=>\s*\{\s*if \(authSession\?\.user\?\.id\) scheduleMovieCloudSync\(\);/);
 assert.match(app, /return PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(\[candidate\]\)\)\[0\]/);
 assert.doesNotMatch(app, /versions: Array\.isArray\(saved\.versions\) \? saved\.versions : \[\]/);
 assert.doesNotMatch(app, /completedSteps: Array\.isArray\(saved\.completedSteps\) \? saved\.completedSteps : \[\]/);
