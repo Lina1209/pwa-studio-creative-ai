@@ -36,7 +36,7 @@
   await test("missing or invalid confirmation is rejected before journal access or download",async()=>{
    const op=await planned();let downloads=0,reads=0;
    const media=adapters({onDownload:()=>downloads++});
-   const journal={...api,async get(){reads++;return api.get(owner,op.operationId)}};
+   const journal={get:async(...args)=>{reads++;return api.get(...args)},acquireLease:api.acquireLease,checkpoint:api.checkpoint,releaseLease:api.releaseLease,renewLease:api.renewLease};
    await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal,plan:{},preview:{},confirmation:{},validateConfirmation:()=>false,adapters:media}),"invalid confirmation was accepted");
    await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal,adapters:media}),"missing confirmation was accepted");
    ok(downloads===0&&reads===0,"invalid confirmation reached journal or media adapter");
@@ -77,7 +77,7 @@
   });
   await test("real IndexedDB journal + Blob staging reaches ready_to_activate",async()=>{
    const op=await planned();
-   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:adapters()});
+   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,...gate,adapters:adapters()});
    const row=await api.get(owner,op.operationId);
    ok(result.state==="ready_to_activate"&&result.activationRequired,"coordinator did not report staging-only result");
    ok(row.state==="ready_to_activate"&&row.references[0].state==="verified_staged","verified checkpoint missing");
@@ -85,7 +85,7 @@
   });
   await test("real journal rejects tampered staged Blob and keeps retryable checkpoint",async()=>{
    const op=await planned();
-   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:adapters({tamper:true})}),"tampered Blob accepted");
+   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,...gate,adapters:adapters({tamper:true})}),"tampered Blob accepted");
    const row=await api.get(owner,op.operationId);
    ok(row.state==="paused_retryable"&&row.references[0].state==="pending","failed verification did not pause safely");
    ok(row.lease===null,"failed staging left lease held");
@@ -93,7 +93,7 @@
   await test("real journal fences account switch during download",async()=>{
    const op=await planned();let current=true;
    const media=adapters({onDownload:()=>{current=false}});
-   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:media,isCurrent:()=>current}),"account switch was not fenced");
+   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,...gate,adapters:media,isCurrent:()=>current}),"account switch was not fenced");
    const row=await api.get(owner,op.operationId);
    ok(row.state==="staging"&&row.references[0].state==="pending","account-switch checkpoint changed unexpectedly");
    ok(row.lease===null,"account-switch path did not release lease");
@@ -106,7 +106,7 @@
     stageBlob:blobStore.stageBlob,
     readStagedBlob:blobStore.readStagedBlob
    };
-   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:media});
+   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,...gate,adapters:media});
    const row=await api.get(owner,op.operationId);
    ok(result.state==="ready_to_activate"&&row.references[0].state==="verified_staged","real Blob adapter did not reach verified checkpoint");
    const stagedId=row.references[0].localStagedBlobId;
@@ -115,7 +115,7 @@
   });
    await test("retry resumes a paused operation and reuses verified staged media",async()=>{
     const op=await planned();
-    await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:adapters({tamper:true})}),"initial tampered staging unexpectedly succeeded");
+    await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,...gate,adapters:adapters({tamper:true})}),"initial tampered staging unexpectedly succeeded");
     const paused=await api.get(owner,op.operationId);
     ok(paused.state==="paused_retryable","failed operation was not paused");
     const goodStore=PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore();
@@ -125,7 +125,7 @@
      stageBlob(input){return goodStore.stageBlob(input)},
      readStagedBlob(input){return goodStore.readStagedBlob(input)}
     };
-    const resumed=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:paused.revision,journal:api,adapters:media});
+    const resumed=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:paused.revision,journal:api,...gate,adapters:media});
     const final=await api.get(owner,op.operationId);
     ok(resumed.state==="ready_to_activate"&&final.references[0].state==="verified_staged","paused operation did not resume to verified state");
    });
@@ -140,7 +140,7 @@
      const op=await planned();let staged=0;
      const base=adapters();
      const media={...base,async stageBlob(input){staged++;return base.stageBlob(input)}};
-     await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest:[badRef],expectedRevision:op.revision,journal:api,adapters:media}),"invalid media manifest proof was accepted");
+     await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest:[badRef],expectedRevision:op.revision,journal:api,...gate,adapters:media}),"invalid media manifest proof was accepted");
      const row=await api.get(owner,op.operationId);
      ok(row.state==="paused_retryable"&&staged===0,"invalid media reached persistent staging");
     }
