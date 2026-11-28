@@ -278,7 +278,7 @@ create or replace function public.list_ai_budget_reconciliation_candidates(
 )
 language plpgsql security definer
 set search_path = pg_catalog, public, pg_temp
-as $
+as $$
 begin
   if p_limit is null or p_limit < 1 or p_limit > 1000 then
     raise exception 'invalid_ai_budget_reconciliation_limit' using errcode = '22023';
@@ -291,7 +291,7 @@ begin
     order by r.created_at
     limit p_limit;
 end;
-$;
+$$;
 
 create or replace function public.mark_stale_ai_budget_reservations_unknown(
   p_created_before timestamptz,
