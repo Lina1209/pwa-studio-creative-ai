@@ -85,6 +85,38 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("deleteCharacterImage(ref.id,deleteOwnerId)", APP)
 
 
+    def test_character_cloud_backup_is_authenticated_metadata_only(self):
+        start = APP.index("const backupCharacterLibrary = async () =>")
+        end = APP.index('$("#backupCharacterLibrary")?.addEventListener', start)
+        backup = APP[start:end]
+        self.assertIn("const session=authSession,ownerId=session?.user?.id,contextVersion=authContextVersion;", backup)
+        self.assertIn("const stillOwner=()=>authContextVersion===contextVersion&&authSession?.user?.id===ownerId;", backup)
+        self.assertIn('apiRequest("/api/characters?"+query.toString())', backup)
+        self.assertIn('method:"POST",body:JSON.stringify(payload)', backup)
+        self.assertIn('method:"PATCH",body:JSON.stringify({expected_version:existing.version', backup)
+        self.assertIn("if(error.status===409||error.code===", backup)
+        self.assertIn("do{", backup)
+        self.assertIn("}while(cursor);", backup)
+        self.assertIn("stableCharacterJson(existing.reference_data||{})", backup)
+        self.assertIn("Локальная библиотека сохранена.", backup)
+        self.assertIn("Изображения-референсы пока остаются только на этом устройстве.", backup)
+
+    def test_character_cloud_backup_never_uploads_or_deletes_image_blobs(self):
+        start = APP.index("const backupCharacterLibrary = async () =>")
+        end = APP.index('$("#backupCharacterLibrary")?.addEventListener', start)
+        backup = APP[start:end]
+        self.assertNotIn("getCharacterImage(", backup)
+        self.assertNotIn("saveCharacterImage(", backup)
+        self.assertNotIn("deleteCharacterImage(", backup)
+        self.assertNotIn("supabaseClient.storage", backup)
+
+    def test_character_cloud_backup_restores_button_after_account_switch(self):
+        start = APP.index("const backupCharacterLibrary = async () =>")
+        end = APP.index('$("#backupCharacterLibrary")?.addEventListener', start)
+        backup = APP[start:end]
+        self.assertIn("if(!stillOwner())return;", backup)
+        self.assertIn('if(button){button.disabled=false;button.textContent="☁ Создать облачную копию";}', backup)
+
     def test_guest_and_authenticated_metadata_use_separate_keys(self):
         self.assertIn(
             '"pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest")',
