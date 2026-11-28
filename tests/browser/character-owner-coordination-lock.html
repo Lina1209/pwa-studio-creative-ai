@@ -35,6 +35,25 @@
   assert(afterRelease.epoch===takeover.epoch+1,"owner epoch reset after a successful release");
   await api.release(afterRelease);
   passed.push("expiry takeover, release tombstone, and monotonic stale-holder fencing");
+  // Corrupt persisted state must fail closed rather than concatenate/reset an epoch.
+  const corruptOwner="44444444-4444-4444-8444-444444444444";
+  const db=await new Promise((resolve,reject)=>{
+   const request=indexedDB.open("pwa-studio-character-owner-coordination-v1",1);
+   request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error);
+  });
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction("locks","readwrite");
+   tx.objectStore("locks").put({ownerId:corruptOwner,token:null,epoch:"7",expiresAt:0,protocolVersion:1});
+   tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error);
+  });
+  await rejects(()=>api.acquire(corruptOwner,{ttlMs:3000}));
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction("locks","readwrite");
+   tx.objectStore("locks").delete(corruptOwner);
+   tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error);
+  });
+  db.close();
+  passed.push("malformed persisted lock records fail closed");
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
   document.documentElement.dataset.testResult="passed";
  }catch(error){out.textContent="FAIL\n"+passed.join("\n")+"\n"+(error.stack||error);document.documentElement.dataset.testResult="failed"}
