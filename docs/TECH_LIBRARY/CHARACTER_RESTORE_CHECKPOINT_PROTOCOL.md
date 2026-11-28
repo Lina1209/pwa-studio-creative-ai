@@ -299,3 +299,8 @@ This is still an isolated foundation. No application UI or automatic cloud resto
 ### Validation result
 
 The activation coordinator and journal changes passed GitHub Actions run `46108551390` on feature-branch commit `e1c4d4a`: backend unit tests, disposable PostgreSQL integration, all existing IndexedDB/browser suites, activation browser integration (4 scenarios), and frontend syntax/account-switch checks. The activation browser scenarios cover successful staged-media verification and additive activation, tampered dimensions rejected before metadata mutation, storage quota failure preserving the original library with a retryable checkpoint, and recovery after a simulated crash between metadata write and journal commit. This validation is feature-branch CI only; it does not authorize UI wiring or production deployment.
+
+
+### Additional account-switch validation
+
+A fifth activation browser scenario now switches the active-account fence immediately after the staged Blob is read. The coordinator refuses to continue, leaves local metadata byte-for-byte unchanged, and does not advance the operation beyond `ready_to_activate`. GitHub Actions run `46108643132` on commit `693e65a` passed all three jobs: backend unit tests, disposable PostgreSQL integration, and the full browser/IndexedDB suite including all five activation scenarios.
