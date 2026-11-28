@@ -80,7 +80,7 @@ def plan_character_reference_replacement(
         id=cleanup_event_id,
         owner_id=replacement.owner_id,
         asset_id=replacement.old_asset_id,
-        event_type="media_cleanup_requested",
+        event_type="media_reference_replacement_cleanup_requested",
         idempotency_key=cleanup_idempotency_key,
         status=OutboxStatus.PENDING,
     )
