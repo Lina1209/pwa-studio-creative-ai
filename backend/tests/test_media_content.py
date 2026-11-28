@@ -20,7 +20,7 @@ OBJECT = "33333333-3333-4333-8333-333333333333"
 def settings():
     return Settings(
         supabase_url="https://example.supabase.co",
-        supabase_service_role_key="server-secret",
+        supabase_service_role_key="eyJserver.secret",
     )
 
 
@@ -54,7 +54,25 @@ class MediaContentTests(unittest.TestCase):
         args, kwargs = stream.call_args
         self.assertEqual(args[0], "GET")
         self.assertIn("/storage/v1/object/studio-media/", args[1])
-        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer server-secret")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer eyJserver.secret")
+
+    @patch("app.services.media_content.httpx.stream")
+    def test_modern_secret_key_is_apikey_only(self, stream):
+        response = Mock()
+        response.headers = {"content-length": str(len(png_bytes()))}
+        response.iter_bytes.return_value = [png_bytes()]
+        stream.return_value = nullcontext(response)
+        modern = Settings(
+            supabase_url="https://example.supabase.co",
+            supabase_service_role_key="sb_secret_test_only",
+        )
+        download_private_media_image(
+            modern, plan(), file_name="portrait.png",
+            expected_mime_type="image/png",
+        )
+        headers = stream.call_args.kwargs["headers"]
+        self.assertEqual(headers["apikey"], "sb_secret_test_only")
+        self.assertNotIn("Authorization", headers)
 
     @patch("app.services.media_content.httpx.stream")
     def test_rejects_declared_oversized_object_before_reading(self, stream):
