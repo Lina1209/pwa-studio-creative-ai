@@ -1,9 +1,12 @@
 const fs = require("fs");
 const app = fs.readFileSync("app.js", "utf8");
+const sw = fs.readFileSync("sw.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
 const lockTag = html.indexOf('src="./character-owner-coordination-lock.js');
 const appTag = html.indexOf('src="./app.js');
 if (lockTag < 0 || appTag < 0 || lockTag > appTag) throw new Error("Owner lock must load before app.js");
+if (!sw.includes("./character-owner-coordination-lock.js?v=20261128-1")) throw new Error("Owner lock must be precached for offline shell startup");
+if (!sw.includes("/character-owner-coordination-lock.js")) throw new Error("Owner lock must be handled as a shell asset");
 if (!app.includes("const acquireCharacterLibraryLock = async")) throw new Error("Missing UI owner-lock helper");
 if (!app.includes("ownerLock=await acquireCharacterLibraryLock(deleteOwnerId,deleteContextVersion)")) throw new Error("Card deletion is not fenced");
 if (!app.includes("ownerLock=await acquireCharacterLibraryLock(ownerId,contextVersion)")) throw new Error("Card save is not fenced");
