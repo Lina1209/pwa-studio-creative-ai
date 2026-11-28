@@ -50,6 +50,9 @@
   assert(updateCalls === 1, "updates only this origin's /sw.js registration");
   assert(localStorageTouches === 0 && indexedDbTouches === 0, "does not access localStorage or IndexedDB");
   assert(document.getElementById("clearSiteCache") && document.getElementById("clearSiteCacheStatus"), "settings controls exist for all account roles");
+  registration.update = async () => { throw new Error("offline update check"); };
+  const updateFailure = await window.PWAStudioCacheTools.clearSiteCache();
+  assert(updateFailure.deleted === 2 && updateFailure.serviceWorkerUpdateFailed, "reports successful cache deletion separately from failed service-worker update");
   const failingCaches = { async keys(){ return ["pwa-studio-shell-fail"]; }, async delete(){ return false; } };
   Object.defineProperty(window, "caches", { configurable:true, value:failingCaches });
   let failedClosed = false;
