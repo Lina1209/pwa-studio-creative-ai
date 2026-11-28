@@ -19,10 +19,12 @@ def _request(settings: Settings, method: str, *, params=None, payload=None, pref
         raise HTTPException(status_code=503, detail="Profile storage is not configured.")
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Prefer": prefer,
     }
+    # Supabase sb_secret keys are sent only as apikey; legacy JWT keys also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.request(
             method, f"{settings.supabase_url.rstrip('/')}/rest/v1/user_profiles",
