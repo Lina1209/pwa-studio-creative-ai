@@ -193,6 +193,12 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         self.assertEqual(recovered.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(recovered.result_asset_id)
 
+    def test_rejects_invalid_persisted_error_codes(self):
+        for invalid_code in ("", "contains space", "slash/path", "кириллица", "x" * 81, 123):
+            with self.subTest(error_code=invalid_code):
+                with self.assertRaisesRegex(ValueError, "error_code"):
+                    new_job(error_code=invalid_code)
+
     def test_rejects_invalid_provider_submission_outcome_values(self):
         for invalid_outcome in ("accepted", "unknown", None):
             with self.subTest(outcome=invalid_outcome):
