@@ -198,6 +198,20 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(planner.validateRestoreConfirmation({ownerId:owner,plan:{...plan},preview,confirmation}),false);
     assert.throws(()=>planner.confirmRestorePreview({ownerId:owner,plan,preview:{...preview},confirmed:true}),/exact reviewed preview/);
   });
+  await run("restore confirmation tokens expire when planner module is reloaded",async()=>{
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
+    const preview=planner.buildRestorePreview({ownerId:owner,plan});
+    const confirmation=planner.confirmRestorePreview({ownerId:owner,plan,preview,confirmed:true});
+    assert.equal(planner.validateRestoreConfirmation({ownerId:owner,plan,preview,confirmation}),true);
+    const modulePath=require.resolve("../character-cloud-restore.js");
+    delete require.cache[modulePath];
+    require("../character-cloud-restore.js");
+    const reloaded=globalThis.PWACharacterCloudRestore;
+    assert.equal(reloaded.validateRestoreConfirmation({ownerId:owner,plan,preview,confirmation}),false);
+    const freshPlan=await reloaded.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
+    const freshPreview=reloaded.buildRestorePreview({ownerId:owner,plan:freshPlan});
+    assert.equal(reloaded.validateRestoreConfirmation({ownerId:owner,plan:freshPlan,preview:freshPreview,confirmation}),false);
+  });
   await run("restore confirmation is blocked when preview contains conflicts or no restorable cards",async()=>{
     const conflictLocal={id:localId,name:"Local",description:"",referenceImages:[]};
     const conflictPlan=await planner.planRestore({ownerId:owner,existingLocalItems:[conflictLocal],fetchPage:async()=>page([row(cloudId,localId)])});
