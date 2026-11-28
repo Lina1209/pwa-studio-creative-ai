@@ -137,6 +137,52 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.throws(()=>planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:[secondCloud,secondCloud]}),/duplicate/);
     assert.throws(()=>planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:["77777777-7777-4777-8777-777777777777"]}),/outside/);
   });
+  await run("selected restore preview summarizes safe actions, conflicts and pending images without side effects",async()=>{
+    const conflictCloud="55555555-5555-4555-8555-555555555555";
+    const conflictLocal="66666666-6666-4666-8666-666666666666";
+    const conflictRecord={id:conflictLocal,name:"Локальная Катти",description:"локально",referenceImages:[]};
+    const cloudWithImage=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{},referenceImages:[{id:referenceId,name:"front.png",type:"image/png"}]}});
+    const conflictRow=row(conflictCloud,conflictLocal);
+    const plan=await planner.planRestore({
+      ownerId:owner,existingLocalItems:[conflictRecord],
+      fetchPage:async()=>page([cloudWithImage,conflictRow]),
+      fetchReferences:async ids=>{assert.deepEqual(ids,[cloudId]);return [referenceAsset()];}
+    });
+    const selected=planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:[cloudId,conflictCloud]});
+    const preview=planner.buildRestorePreview({ownerId:owner,plan:selected});
+    assert.equal(preview.selectedCount,2);
+    assert.equal(preview.restorableCount,1);
+    assert.equal(preview.conflictCount,1);
+    assert.equal(preview.unchangedCount,0);
+    assert.equal(preview.referenceCount,1);
+    assert.equal(preview.canContinue,false);
+    assert.equal(preview.requiresExplicitConfirmation,true);
+    assert.equal(preview.writesPerformed,false);
+    assert.equal(preview.downloadsPerformed,false);
+    assert.equal(preview.items[0].status,"ready_to_stage");
+    assert.equal(preview.items[0].referenceStatusLabel,"Изображения проверены по облачному каталогу; загрузка ещё не выполнена.");
+    assert.equal(preview.items[1].status,"conflict");
+    assert.match(preview.items[1].conflictMessage,/локальной и облачной карточек/);
+    assert.equal(Object.isFrozen(preview),true);
+    assert.equal(Object.isFrozen(preview.items[0]),true);
+    assert.equal(plan.proposedItems.length,1);
+    assert.equal(conflictRecord.name,"Локальная Катти");
+    assert.throws(()=>planner.buildRestorePreview({ownerId:owner,plan:{...selected}}),/issued complete plan/);
+    assert.throws(()=>planner.buildRestorePreview({ownerId:localId,plan:selected}),/issued complete plan/);
+  });
+  await run("restore preview reports already-current cards and empty image manifests",async()=>{
+    const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[],cloudBackup:{characterId:cloudId}};
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:local.passport,referenceImages:[]}});
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([cloudRow])});
+    const preview=planner.buildRestorePreview({ownerId:owner,plan});
+    assert.equal(preview.unchangedCount,1);
+    assert.equal(preview.restorableCount,0);
+    assert.equal(preview.conflictCount,0);
+    assert.equal(preview.canContinue,false);
+    assert.equal(preview.requiresExplicitConfirmation,false);
+    assert.equal(preview.items[0].statusLabel,"Уже актуальна");
+    assert.equal(preview.items[0].referenceStatusLabel,"Изображений для восстановления нет.");
+  });
   await run("restore commit refuses stale local state and performs no write",async()=>{
     let stored=[];
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
