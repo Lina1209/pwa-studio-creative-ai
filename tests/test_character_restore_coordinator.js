@@ -5,7 +5,7 @@ require("../character-cloud-restore.js");
 require("../character-restore-coordinator.js");
 const coordinator=global.PWACharacterRestoreCoordinator;
 const planner=global.PWACharacterCloudRestore;
-const gate={plan:Object.freeze({}),preview:Object.freeze({}),confirmation:Object.freeze({selectedCloudIds:["55555555-5555-4555-8555-555555555555"]}),validateConfirmation:()=>true};
+let gate;
 const owner="11111111-1111-4111-8111-111111111111";
 const operation="22222222-2222-4222-8222-222222222222";
 const asset="33333333-3333-4333-8333-333333333333";
@@ -35,6 +35,7 @@ function makeJournal(){
  };
 }
 const manifest=[{cloudAssetId:asset,characterId,sourceLocalId,localReferenceId,name:"front.png",type:"image/png",expectedSha256:sha,expectedSizeBytes:bytes.length,expectedMimeType:"image/png",width:32,height:24}];
+gate={plan:{proposedItems:[{id:sourceLocalId,cloudBackup:{characterId,referenceManifest:[{cloudAssetId:asset,localReferenceId,name:"front.png",type:"image/png",expectedSha256:sha,expectedSizeBytes:bytes.length,expectedMimeType:"image/png",width:32,height:24}]}}]},preview:Object.freeze({}),confirmation:Object.freeze({selectedCloudIds:[characterId]}),validateConfirmation:()=>true};
 async function issuedGate(){
  const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>({items:[{id:characterId,source_local_id:sourceLocalId,version:1,name:"Катти",description:"",created_at:"2026-11-28T00:00:00.000Z",reference_data:{kind:"character",representation:"2d",voice:"",passport:{},referenceImages:[{id:localReferenceId,name:"front.png",type:"image/png"}]}}],next_cursor:null}),fetchReferences:async()=>[{id:asset,character_id:characterId,local_reference_id:localReferenceId,status:"ready",file_name:"front.png",file_type:"image/png",size_bytes:bytes.length,content_sha256:sha,width:32,height:24}]});
  const selected=planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:[characterId]});
