@@ -378,10 +378,6 @@ comment on table public.ai_budget_ledger is
   'Append-only audit events for reserve, settlement, release, and unknown outcomes.';
 comment on function public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric) is
   'Serializes reservation decisions and enforces active platform/provider/user caps. Backend service_role only.';
-)
-  ),
-  constraint ai_budget_policy_unique_period unique(scope_type, scope_key, period_start, period_end)
-);
 
 create index if not exists ai_budget_policies_active_idx
   on public.ai_budget_policies(scope_type, scope_key, period_start, period_end)
