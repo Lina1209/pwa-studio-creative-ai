@@ -2683,9 +2683,12 @@ const movieHistoryStyle = document.createElement("style");
         const next=current.filter(x=>x.id!==item.id);
         try{
           localStorage.setItem(deleteStorageKey,JSON.stringify(next));
-          await Promise.all((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)));
+          const cleanup=await Promise.allSettled((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)));
           if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==deleteOwnerId)return;
-          $("#characterLibraryStatus").textContent="Материал удалён из локальной библиотеки.";
+          const cleanupFailed=cleanup.some(result=>result.status==="rejected");
+          $("#characterLibraryStatus").textContent=cleanupFailed
+            ?"Материал удалён из библиотеки, но часть изображений осталась в локальном хранилище. Повторите очистку позже."
+            :"Материал удалён из локальной библиотеки.";
           renderCharacterLibrary();
         }catch(error){
           if(deleteContextVersion===authContextVersion&&(authSession?.user?.id||"guest")===deleteOwnerId)
