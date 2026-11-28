@@ -78,6 +78,20 @@ When enabled, RPC/database unavailability rejects paid AI calls before provider 
 9. Disabled global switch: all paid requests rejected before provider call.
 10. RLS and grants: browser roles cannot read/write reservations, policies, or ledger; only backend service role can invoke RPC.
 
+## Operator reconciliation workflow (design-only)
+
+Reconciliation is a privileged, auditable workflow; it is not a TTL cleanup job and must never infer that an ambiguous request was free.
+
+1. An authenticated operator requests a bounded page of metadata-only candidates. The query exposes reservation ID, user ID, provider/model, endpoint, amount, status, and timestamps only—never prompts, completions, credentials, or raw provider errors.
+2. The operator verifies the reservation against authoritative provider usage/billing records or a documented provider request identifier. A timeout or missing telemetry row is not proof of no charge.
+3. Record an immutable reconciliation decision with operator ID, timestamp, evidence reference (non-secret), decision, and a short allow-listed reason code. Do not store raw billing exports or personal content in the ledger.
+4. If the provider confirms a charge, settle with the verified actual amount—even when it exceeds the original reservation. The overrun remains visible and must trigger an alert/stop review.
+5. Release only when authoritative evidence confirms no provider charge. The release RPC must be idempotent and reject a reservation that has already settled.
+6. If evidence is inconclusive, keep the reservation in `unknown`; add an audit note and revisit it later. Never auto-release unknown exposure.
+7. Every decision must be read back and verified after the RPC. A failed write, stale operator view, or competing terminal transition must be surfaced as unresolved, not reported as success.
+
+Before any route is implemented, require role/permission tests, CSRF/session protections appropriate to the admin surface, audit-log integrity tests, pagination limits, rate limits, and concurrent operator-versus-provider-settlement tests. The current RPC/store layer is only a backend foundation: no admin reconciliation endpoint, UI, scheduler, or production policy is enabled.
+
 ## Integration contract
 
 Backend orchestration should be a small service with explicit operations:
