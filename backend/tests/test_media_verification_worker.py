@@ -66,6 +66,7 @@ class MediaVerificationWorkerTests(unittest.TestCase):
             dict(CLAIM, storage_path=f"99999999-9999-4999-8999-999999999999/characters/{ASSET}/{EVENT}.png"),
             dict(CLAIM, file_name=""),
             dict(CLAIM, file_type="image/gif"),
+            dict(CLAIM, storage_path=f"{OWNER}/characters/{ASSET}/{EVENT}.jpg"),
             dict(CLAIM, size_bytes=True),
             dict(CLAIM, width=True),
             dict(CLAIM, height=0),
