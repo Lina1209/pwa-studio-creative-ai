@@ -51,7 +51,7 @@
    ok(row.references[0].state==="verified_staged","reference proof checkpoint missing");
    row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate"});
    await rejects(()=>api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating"}),"activation without durable intent accepted");
-   const intent={baseDigest:sha,mergedDigest:"b".repeat(64),intendedCount:2,operationMarker:op,preparedAt:new Date().toISOString()};
+   const intent={baseDigest:sha,mergedDigest:"b".repeat(64),intendedCount:2,restoredCount:1,operationMarker:op,preparedAt:new Date().toISOString()};
    row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating",activation:intent});
    ok(row.activation.mergedDigest===intent.mergedDigest&&row.activation.operationMarker===op,"activation intent was not persisted");
    await rejects(()=>api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"committed",activation:{...intent,mergedDigest:"bad"}}),"malformed activation digest accepted");
