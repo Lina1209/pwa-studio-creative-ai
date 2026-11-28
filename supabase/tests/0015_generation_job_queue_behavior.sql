@@ -13,6 +13,7 @@ declare
   v_job_retry uuid := gen_random_uuid();
   v_job_recovery uuid := gen_random_uuid();
   v_job_cancel uuid := gen_random_uuid();
+  v_job_cancel_failure uuid := gen_random_uuid();
   v_job_cancel_queued uuid := gen_random_uuid();
   v_job_cancel_expired uuid := gen_random_uuid();
   v_job_unknown_failure uuid := gen_random_uuid();
@@ -39,6 +40,7 @@ begin
     (v_job_retry, v_owner_a, 'test-retry-00001', repeat('b',64), 'image'),
     (v_job_recovery, v_owner_a, 'test-recovery-001', repeat('c',64), 'video'),
     (v_job_cancel, v_owner_a, 'test-cancel-00001', repeat('d',64), 'image'),
+    (v_job_cancel_failure, v_owner_a, 'test-cancel-failure', repeat('4',64), 'image'),
     (v_job_cancel_queued, v_owner_a, 'test-cancel-queue1', repeat('e',64), 'image'),
     (v_job_cancel_expired, v_owner_a, 'test-cancel-expired', repeat('1',64), 'image'),
     (v_job_unknown_failure, v_owner_a, 'test-unknown-failure', repeat('2',64), 'image'),
@@ -119,6 +121,23 @@ begin
   if not v_ok then raise exception 'TEST FAILED: matching worker could not finish cancellation'; end if;
   select status into v_status from public.generation_jobs where id = v_job_cancel;
   if v_status <> 'cancelled' then raise exception 'TEST FAILED: cancellation terminal state missing'; end if;
+
+  -- A worker may safely finish an active cancellation after proving that
+  -- the provider did not receive the request. This path must not enqueue retry.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_cancel_failure;
+  select j.lease_token into v_token
+  from public.claim_generation_job('queue-test-cancel-failure', 120) j
+  where j.id = v_job_cancel_failure;
+  select public.request_generation_job_cancel(v_job_cancel_failure, v_owner_a) into v_status;
+  if v_status <> 'cancel_requested' then raise exception 'TEST FAILED: failure-cancel request failed'; end if;
+  select public.record_generation_submission_outcome(v_job_cancel_failure, v_token, 'definitely_not_submitted') into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: failure-cancel evidence was not recorded'; end if;
+  select public.fail_generation_job(v_job_cancel_failure, v_token, 'cancelled_by_user', false, 5, null)
+    into v_status;
+  if v_status <> 'cancelled' then raise exception 'TEST FAILED: fenced failure did not finalize cancellation'; end if;
+  if exists (select 1 from public.generation_job_outbox where job_id = v_job_cancel_failure and event_type = 'job_retry_ready') then
+    raise exception 'TEST FAILED: cancelled job emitted retry event';
+  end if;
 
   -- An expired worker cannot finish a cancellation after its lease deadline,
   -- even before the recovery process rotates/clears the fencing token.
