@@ -296,6 +296,7 @@
       request.onsuccess = () => {
         const row = request.result;
         if (!row || row.ownerId !== ownerId) { try { request.transaction.abort(); } catch {} return; }
+        assertRecord(row);
         const ref = row.references.find(item => item.localReferenceId === localReferenceId);
         if (!ref) { try { request.transaction.abort(); } catch {} return; }
         if (ref.state !== nextState && !NEXT[ref.state].has(nextState)) { try { request.transaction.abort(); } catch {} return; }
@@ -313,6 +314,7 @@
       };
     });
     const row = await readRecord(id);
+    if (row) assertRecord(row);
     const ref = row?.references.find(item => item.localReferenceId === localReferenceId);
     if (!ref || ref.state !== nextState) fail("Backup reference transition was not persisted.");
     return clone(row);
