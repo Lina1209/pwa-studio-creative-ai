@@ -23,7 +23,11 @@ begin
      or has_table_privilege('service_role','public.ai_budget_ledger','UPDATE')
      or has_table_privilege('service_role','public.ai_budget_ledger','DELETE')
      or has_function_privilege('anon',
-       'public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric)','EXECUTE') then
+       'public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric)','EXECUTE')
+     or has_function_privilege('anon',
+       'public.list_ai_budget_reconciliation_candidates(integer)','EXECUTE')
+     or not has_function_privilege('service_role',
+       'public.list_ai_budget_reconciliation_candidates(integer)','EXECUTE') then
     raise exception 'browser role unexpectedly has AI budget privileges';
   end if;
   begin
