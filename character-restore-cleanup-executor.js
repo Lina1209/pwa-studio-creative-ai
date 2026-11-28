@@ -106,7 +106,7 @@
           lease=await acquire();
           manifest=await cleanupJournal.getManifest(ownerId,cleanupId);
           const current=manifest?.candidates?.find(c=>c.localStagedBlobId===candidate.localStagedBlobId);
-          if(!manifest||manifest.revision!==input.expectedRevisionForRecovery&&current?.deleteAttemptId!==candidate.deleteAttemptId)
+          if(!manifest||!current||current.state!=="delete_intent"||current.deleteAttemptId!==candidate.deleteAttemptId)
             fail("Delete-intent recovery manifest changed.");
           const finalized=await cleanupJournal.finalizeCandidateDeleted({ownerId,cleanupId,expectedRevision:manifest.revision,
             ownerLockEpoch:lease.epoch,localStagedBlobId:candidate.localStagedBlobId,deleteAttemptId:candidate.deleteAttemptId});
@@ -128,7 +128,7 @@
         const result=await blobStore.deleteStagedBlob({ownerId,operationId:candidate.operationId,cloudAssetId:candidate.cloudAssetId,
           localStagedBlobId:candidate.localStagedBlobId,inspectImage,
           proof:{sha256:candidate.sha256,sizeBytes:candidate.sizeBytes,mimeType:candidate.mimeType,width:candidate.width,height:candidate.height}});
-        if(result!=="deleted"&&result!=="missing")fail("Blob store returned an unknown deletion result.");
+        if(result!=="deleted")fail(result==="missing"?"Staged Blob disappeared before exact deletion; intent retained for manual recovery.":"Blob store returned an unknown deletion result.");
         await release(lease);lease=null;
         lease=await acquire();
         assertContext();
