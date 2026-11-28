@@ -232,3 +232,8 @@ Status: `character-restore-blob-store.js` now provides an injected, owner- and o
 The real-browser Playwright test uses actual IndexedDB and Web Crypto to check write/read, idempotent retry, owner and operation isolation, collision rejection, and malformed proof rejection. CI wiring runs this browser test and checks the adapter's JavaScript syntax.
 
 This adapter is an isolated persistence primitive, not evidence of a complete restore. It does not download media, inspect image dimensions, activate metadata, clean up staged records, or connect to the UI. Keep restore/import disabled.
+
+
+### Additional browser regression coverage
+
+The real-browser coordinator suite now also checks recovery from a retryable interruption: a failed verification is resumed with the same durable operation, and the staged media is verified before the operation returns to `ready_to_activate`. Separate negative cases verify that MIME, byte length, SHA-256, and image dimensions mismatches stop before the Blob staging adapter is called. These are deterministic browser tests against the real IndexedDB journal; they do not exercise a real cloud endpoint or production account.
