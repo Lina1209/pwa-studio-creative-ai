@@ -46,6 +46,9 @@ def claim_media_upload_verification(settings: Settings, claim_token: str, lease_
     }
     if not isinstance(result, dict) or not required.issubset(result):
         raise RuntimeError("Media verification claim returned an invalid payload.")
+    # Reject a response carrying another worker nonce before any Storage read.
+    if result.get("claim_token") != claim_token:
+        raise RuntimeError("Media verification claim returned a mismatched fencing token.")
     return result
 
 
