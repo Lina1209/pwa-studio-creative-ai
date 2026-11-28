@@ -14,6 +14,7 @@ function makeJournal(){
  return {
   async get(o,id){return o===owner&&id===operation?structuredClone(row):null;},
   async acquireLease(o,id){assert.equal(o,owner);assert.equal(id,operation);assert.equal(row.lease,null);row.leaseEpoch++;row.lease={token:"lease-token-"+row.leaseEpoch,epoch:row.leaseEpoch};row.revision++;return structuredClone(row.lease);},
+  async renewLease(o,id,lease){assert.equal(o,owner);assert.equal(id,operation);assert.equal(lease.token,row.lease.token);return structuredClone(row.lease);},
   async checkpoint(input){
    assert.equal(input.ownerId,owner);assert.equal(input.operationId,operation);
    assert.equal(input.leaseToken,row.lease.token);assert.equal(input.leaseEpoch,row.lease.epoch);
