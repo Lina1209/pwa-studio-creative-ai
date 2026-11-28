@@ -515,5 +515,5 @@
     }
   }
 
-  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,selectRestorePlan,buildRestorePreview,confirmRestorePreview,validateRestoreConfirmation,applyRestorePlan});
+  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,selectRestorePlan,buildRestorePreview,confirmRestorePreview,validateRestoreConfirmation,applyRestorePlan,serializeReferenceManifest});
 })();
