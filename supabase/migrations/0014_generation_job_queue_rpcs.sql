@@ -340,6 +340,6 @@ grant execute on function public.recover_expired_generation_jobs(integer) to ser
 grant execute on function public.finish_generation_job_cancel(uuid, uuid) to service_role;
 
 comment on function public.claim_generation_job(text, integer) is 'Atomically claims one due job and assigns a fresh lease fencing token. Backend service_role only.';
-comment on function public.recover_expired_generation_jobs(integer) is 'Recovers expired leases: cancellations complete; other jobs retry or fail at the attempt limit.';
+comment on function public.recover_expired_generation_jobs(integer) is 'Recovers expired leases: unknown or accepted provider outcomes enter reconciliation_required; only conclusive non-submission/rejection evidence permits retry or cancellation.';
 comment on function public.fail_generation_job(uuid, uuid, text, boolean, integer, numeric) is 'Fenced failure transition; retryable failures atomically enqueue a retry outbox event.';
 comment on function public.request_generation_job_cancel(uuid, uuid) is 'Owner-scoped cancellation. Backend must derive p_owner_id from the verified Supabase JWT.';
