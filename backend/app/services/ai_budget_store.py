@@ -76,6 +76,7 @@ class SupabaseAIBudgetStore:
             or not reservation_id
             or status not in {"reserved", "settled", "released", "unknown"}
             or not isinstance(row.get("reservation_created"), bool)
+            or (row["reservation_created"] and status != "reserved")
         ):
             raise AIBudgetStoreUnavailable("AI budget reserve RPC returned an invalid result.")
         return AIReservation(
