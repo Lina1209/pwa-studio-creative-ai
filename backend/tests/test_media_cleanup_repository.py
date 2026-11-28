@@ -154,7 +154,7 @@ class MediaCleanupRepositoryTests(unittest.TestCase):
             "https://example.supabase.co/rest/v1/rpc/pwa_claim_media_cleanup",
         )
         self.assertEqual(kwargs["headers"]["apikey"], "eyJserver.secret")
-        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer service-secret")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer eyJserver.secret")
         self.assertEqual(kwargs["json"], {"p_claim_token": TOKEN})
         self.assertEqual(kwargs["timeout"], 15.0)
 
