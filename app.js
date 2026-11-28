@@ -2845,6 +2845,15 @@ const movieHistoryStyle = document.createElement("style");
   window.addEventListener("pwa-studio-auth-changed",()=>{resetCharacterEditor();renderCharacterLibrary();});
   renderCharacterLibrary();
 
+  // Narrow bridge for the isolated, read-only cloud restore review module.
+  window.PWAStudioCharacterRestoreBridge = Object.freeze({
+    getSession: () => authSession,
+    getContextVersion: () => authContextVersion,
+    getLocalItems: () => readCharacterLibrary(),
+    isCurrent: (ownerId, version) => !!ownerId && authContextVersion === version && authSession?.user?.id === ownerId,
+    apiRequest
+  });
+
   renderMovieProjects();
 
   // Store only the backend URL in this browser; provider secrets stay server-side.
