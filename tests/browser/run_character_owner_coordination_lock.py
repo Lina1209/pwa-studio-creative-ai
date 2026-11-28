@@ -51,7 +51,7 @@ try:
                     failed=True
                 else:
                     winner_index=next(i for i,item in enumerate(results) if item["ok"])
-                    await outcomes[winner_index].evaluate(
+                    outcomes[winner_index].evaluate(
                         "lease => PWACharacterOwnerCoordinationLock.release(lease)",winners[0]["lease"])
                     print("PASS simultaneous cross-tab exclusive owner lock:",results)
             context.close()
