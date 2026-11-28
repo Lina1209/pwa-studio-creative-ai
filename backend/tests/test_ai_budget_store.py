@@ -125,6 +125,20 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
         self.assertTrue(client.post.call_args.args[0].endswith("/rpc/settle_ai_budget"))
         self.assertEqual(client.post.call_args.kwargs["json"]["p_actual_usd"], "0.01")
 
+    def test_settlement_rejects_non_finite_and_negative_amounts_before_rpc(self):
+        for amount in (Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity"), Decimal("-0.01")):
+            with self.subTest(amount=amount):
+                with patch("app.services.ai_budget_store.httpx.Client") as client_cls:
+                    with self.assertRaises(ValueError):
+                        self.store.settle("reservation-1", amount)
+                    client_cls.assert_not_called()
+
+    def test_settlement_rejects_non_decimal_amount_before_rpc(self):
+        with patch("app.services.ai_budget_store.httpx.Client") as client_cls:
+            with self.assertRaises(ValueError):
+                self.store.settle("reservation-1", 0.01)
+            client_cls.assert_not_called()
+
     @patch("app.services.ai_budget_store.httpx.Client")
     def test_confirmed_no_charge_uses_dedicated_release_rpc(self, client_cls):
         client = client_cls.return_value.__enter__.return_value
