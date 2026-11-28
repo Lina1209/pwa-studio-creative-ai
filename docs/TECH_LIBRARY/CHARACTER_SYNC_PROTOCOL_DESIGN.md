@@ -91,7 +91,7 @@ Draft implementation has now been added for the first two protocol layers:
 - The list API now returns `items`, `next_cursor`, and `snapshot_created_at`, with a maximum page size of 100. Cursors are owner-bound, HMAC-signed, expire after 15 minutes, and use descending keyset pagination on immutable `created_at, id`.
 - Backend unit/API tests and disposable PostgreSQL assertions have been added for version conflicts, owner isolation, cursor tampering, page bounds, and the pagination index.
 
-These changes are not yet accepted as complete: CI is still running after iterative test fixes. The browser restore workflow does not yet consume every page, and the local journal has not been connected to this API. Do not enable restore/import based on these API foundations alone.
+Validation checkpoint: CI run `46100463960` passed all three jobs (backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal tests) for the versioned-update and cursor-pagination implementation before the additional concurrent compare-and-swap race harness was added. A dedicated race harness now runs two independent PostgreSQL clients against the same expected version and requires exactly one success and one 409-style conflict; its CI run is pending. The browser restore workflow still does not consume every API page, and the local journal has not been connected to this API. Do not enable restore/import based on these API foundations alone.
 
 ## Decision
 
