@@ -248,6 +248,14 @@ begin
     insert into public.generation_job_outbox(job_id, event_type) values (p_job_id, 'job_cancel_requested');
     return 'cancel_requested';
   end if;
+  if v_job.status = 'reconciliation_required' then
+    -- Record cancellation intent without releasing the reconciliation hold:
+    -- provider acceptance/billing may already have occurred.
+    update public.generation_jobs
+    set cancel_requested_at = coalesce(cancel_requested_at, now()), updated_at = now()
+    where id = p_job_id;
+    return 'reconciliation_required';
+  end if;
   return v_job.status;
 end;
 $$;
