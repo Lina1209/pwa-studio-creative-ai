@@ -110,7 +110,7 @@
      const candidate=saved.candidates[0],deleteLease=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:30000});
      const intent=await cleanupJournal.beginCandidateDelete({ownerId:owner,cleanupId:marked.cleanupId,expectedRevision:saved.revision,ownerLockEpoch:deleteLease.epoch,localStagedBlobId:blobId,deleteAttemptId:uuid()});
      assert(intent.state==="deleting"&&intent.candidates[0].state==="delete_intent","durable delete intent was not recorded before Blob deletion");
-     const deleted=await blobStore.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId,proof:{sha256:candidate.sha256,sizeBytes:candidate.sizeBytes,mimeType:candidate.mimeType,width:candidate.width,height:candidate.height}});
+     const deleted=await blobStore.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId,inspectImage:async()=>({width:64,height:48}),proof:{sha256:candidate.sha256,sizeBytes:candidate.sizeBytes,mimeType:candidate.mimeType,width:candidate.width,height:candidate.height}});
      assert(deleted==="deleted","exact staged Blob delete failed after durable intent");
      const attempt=intent.candidates[0].deleteAttemptId;
      await PWACharacterOwnerCoordinationLock.release(deleteLease);
