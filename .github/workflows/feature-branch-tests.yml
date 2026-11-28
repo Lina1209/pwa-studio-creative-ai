@@ -84,7 +84,7 @@ jobs:
             supabase/migrations/0021_profile_avatar_catalog.sql \
             supabase/migrations/0022_ai_budget_reservations.sql \
             supabase/migrations/0023_character_versioned_updates.sql \
-            supabase/migrations/0024_character_cursor_pagination_index.sql; do
+            supabase/migrations/0024_character_cursor_pagination_index.sql \\\n            supabase/migrations/0025_character_reference_identity_binding.sql; do
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
@@ -98,7 +98,7 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0022_ai_budget_reservations.sql
-      - name: Run concurrent AI budget reservation race harness
+      - name: Verify explicit character reference identity binding RPC\n        run: |\n          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \\\n            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \\\n            -f supabase/tests/0025_character_reference_identity_binding.sql\n      - name: Run concurrent AI budget reservation race harness
         run: bash supabase/tests/0022_ai_budget_reservation_race.sh
       - name: Run character idempotency transaction harness
         run: |
