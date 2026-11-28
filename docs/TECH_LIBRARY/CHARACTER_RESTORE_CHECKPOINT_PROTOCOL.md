@@ -237,3 +237,14 @@ This adapter is an isolated persistence primitive, not evidence of a complete re
 ### Additional browser regression coverage
 
 The real-browser coordinator suite now also checks recovery from a retryable interruption: a failed verification is resumed with the same durable operation, and the staged media is verified before the operation returns to `ready_to_activate`. Separate negative cases verify that MIME, byte length, SHA-256, and image dimensions mismatches stop before the Blob staging adapter is called. These are deterministic browser tests against the real IndexedDB journal; they do not exercise a real cloud endpoint or production account.
+
+
+## 13. Mandatory explicit reference-to-asset binding gate
+
+The activation design depends on an exact join between each passport reference and its private media asset. The current API does not establish that join: passport descriptors contain a local `id`, while the upload endpoint derives an independent cloud asset UUID from an idempotency key and does not persist the local reference ID. The listing endpoint returns cloud asset IDs and integrity metadata but no local reference ID. The content proxy verifies bytes but cannot establish semantic association to a passport slot.
+
+Consequently, the current `referenceManifest[].id` is **not** a `cloudAssetId`. Do not infer equivalence or match by filename, order, MIME, dimensions, or image similarity. The activation coordinator must reject manifests unless every descriptor has a server-confirmed, owner- and character-bound mapping to exactly one ready asset.
+
+Required future API fields are `local_reference_id`, `asset_id`, `character_id`, `status`, `file_name`, `file_type`, `size_bytes`, `content_sha256`, `width`, and `height`. The local reference ID must be accepted only as a validated UUID and persisted atomically with the media reservation. The list endpoint must return the explicit mapping without exposing owner IDs, bucket names, Storage paths, internal metadata, or signed URLs. Uniqueness and ownership must be enforced in a reviewed migration and disposable PostgreSQL tests.
+
+Until this API contract and its cross-owner/idempotency tests exist, no metadata activation implementation may consume the current media manifest. Keep restore disabled; the existing staging-only coordinator remains isolated and must not be connected to the UI.
