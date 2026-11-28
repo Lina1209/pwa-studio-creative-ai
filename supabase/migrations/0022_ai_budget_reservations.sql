@@ -87,7 +87,7 @@ alter table public.ai_budget_reservations enable row level security;
 alter table public.ai_budget_ledger enable row level security;
 
 revoke all on public.ai_budget_control, public.ai_budget_policies,
-  public.ai_budget_reservations, public.ai_budget_ledger from anon, authenticated;
+  public.ai_budget_reservations, public.ai_budget_ledger from public, anon, authenticated;
 grant select, insert, update on public.ai_budget_control to service_role;
 grant select, insert, update on public.ai_budget_policies to service_role;
 grant select on public.ai_budget_reservations, public.ai_budget_ledger to service_role;
