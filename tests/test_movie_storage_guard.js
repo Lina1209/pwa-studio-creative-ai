@@ -32,6 +32,35 @@ for (const raw of ["{broken", "{}", "null", '[{"name":"Без ID"}]', '[null]', 
   assert.throws(() => guard.parse(raw), undefined, "must reject malformed data: " + raw);
 }
 
+
+const characterSnapshot = {
+  id: "character-1", name: "Катти", kind: "character", representation: "2d",
+  description: "Рыжие волосы", voice: "Тёплый голос",
+  passport: { face: "Зелёные глаза", body: "Стройный силуэт", wardrobe: "Фиолетовое худи", palette: "Рыжий и фиолетовый" },
+  referenceImages: [{ id: "ref-1", name: "Портрет", type: "image/png" }],
+  selectedReferenceIds: ["ref-1"], sceneNumbers: [1, 3]
+};
+const withCharacter = [{ id: "movie-character", characterLibrarySnapshots: [characterSnapshot], versions: [
+  { savedAt: "2026-11-28T12:00:00.000Z", data: { id: "movie-character", characterLibrarySnapshots: [characterSnapshot] } }
+] }];
+assert.equal(guard.parse(JSON.stringify(withCharacter))[0].characterLibrarySnapshots[0].selectedReferenceIds[0], "ref-1");
+for (const snapshots of [
+  [{ ...characterSnapshot, id: "" }],
+  [{ ...characterSnapshot, id: "duplicate" }, { ...characterSnapshot, id: "duplicate" }],
+  [{ ...characterSnapshot, referenceImages: [{ id: "ref-1" }, { id: "ref-1" }] }],
+  [{ ...characterSnapshot, selectedReferenceIds: ["missing-ref"] }],
+  [{ ...characterSnapshot, selectedReferenceIds: ["ref-1", "ref-1"] }],
+  [{ ...characterSnapshot, sceneNumbers: [0] }],
+  [{ ...characterSnapshot, passport: { face: 42 } }],
+  [{ ...characterSnapshot, referenceImages: "not-an-array" }]
+]) {
+  assert.throws(() => guard.parse(JSON.stringify([{ id: "movie-character", characterLibrarySnapshots: snapshots }])),
+    /Снимок персонажа|снимки персонажей/i);
+}
+assert.throws(() => guard.parse(JSON.stringify([{ id: "movie-character", versions: [
+  { savedAt: "2026-11-28T12:00:00.000Z", data: { id: "movie-character", characterLibrarySnapshots: [{ ...characterSnapshot, selectedReferenceIds: ["missing-ref"] }] } }
+] }])), /Снимок персонажа/i);
+
 const mixed = '[{"id":"valid"},{"id":"broken","storyboard":false}]';
 assert.throws(() => guard.parse(mixed), /Сохранение заблокировано/);
 assert.equal(mixed, '[{"id":"valid"},{"id":"broken","storyboard":false}]',
