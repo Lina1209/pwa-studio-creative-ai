@@ -33,6 +33,13 @@ Status: feature-branch implementation checkpoint. No importer activation, produc
 - CI run `46101439442` passed all three jobs on `b009d64`: backend unit tests, disposable PostgreSQL integration (including concurrency/cleanup stress harnesses), and real-browser IndexedDB journal/account-switch checks. The companion workflow `46101433709` also succeeded.
 - The prior restore test failure on `6e0a206` was a malformed fixture that failed the representation validator before reaching the intended voice-type assertion; `b009d64` corrected the fixture and the newest full CI run passed.
 
+## Resumable restore protocol design
+
+- Added `docs/TECH_LIBRARY/CHARACTER_RESTORE_CHECKPOINT_PROTOCOL.md` (commit `7c5633a`) as a design-only specification for durable page checkpoints, owner-bound media staging, independent Blob read-back verification, atomic metadata activation, crash recovery, and lease-safe cleanup.
+- The design explicitly accounts for the current split between owner-keyed localStorage metadata and the IndexedDB `images` object store: there is no cross-store transaction. It therefore stages and verifies Blobs first, then uses one localStorage key replacement as the activation point. Existing active records and Blobs remain untouched before activation.
+- A recovery marker on newly restored records plus a canonical merged-library digest is required to distinguish a crash before metadata activation from a crash immediately after it. An unexpected current-library digest must stop for manual conflict handling, never trigger blind rollback.
+- This is a protocol specification only. No runtime module, UI wiring, media download, schema change, or production operation was added. Restore/import remains disabled.
+
 ## Required acceptance matrix before importer activation
 
 1. Retry create after a lost HTTP response; verify exactly one cloud character and stable mapping.
