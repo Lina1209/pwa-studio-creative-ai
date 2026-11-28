@@ -4,6 +4,7 @@ This adapter is not wired to API routes. It calls only the private RPC contract
 and deliberately avoids logging response bodies, credentials, or user content.
 """
 from decimal import Decimal, InvalidOperation
+import re
 from uuid import UUID
 
 import httpx
@@ -20,6 +21,8 @@ class AIBudgetStoreUnavailable(RuntimeError):
 
 
 class SupabaseAIBudgetStore:
+    _SAFE_REASON = re.compile(r"^[a-zA-Z0-9_.-]{1,80}$")
+
     def __init__(self, settings: Settings, *, timeout_seconds: float = 5.0):
         self.settings = settings
         self.timeout_seconds = timeout_seconds
@@ -109,6 +112,8 @@ class SupabaseAIBudgetStore:
             raise AIBudgetStoreUnavailable("AI budget settlement was not confirmed.")
 
     def mark_unknown(self, reservation_id: str, safe_reason: str) -> None:
+        if not isinstance(safe_reason, str) or not self._SAFE_REASON.fullmatch(safe_reason):
+            raise ValueError("AI budget reason must contain 1-80 safe characters.")
         result = self._rpc(
             "mark_ai_budget_unknown",
             {
@@ -120,6 +125,8 @@ class SupabaseAIBudgetStore:
             raise AIBudgetStoreUnavailable("AI budget unknown state was not confirmed.")
 
     def release_confirmed_no_charge(self, reservation_id: str, safe_reason: str) -> None:
+        if not isinstance(safe_reason, str) or not self._SAFE_REASON.fullmatch(safe_reason):
+            raise ValueError("AI budget reason must contain 1-80 safe characters.")
         result = self._rpc(
             "release_ai_budget_no_charge",
             {
@@ -131,6 +138,8 @@ class SupabaseAIBudgetStore:
             raise AIBudgetStoreUnavailable("AI budget no-charge release was not confirmed.")
 
     def mark_stale_reservations_unknown(self, created_before: str, limit: int = 100) -> int:
+        if not isinstance(created_before, str) or not created_before.strip():
+            raise ValueError("Reconciliation cutoff must be a non-empty timestamp string.")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
             raise ValueError("Reconciliation batch size must be an integer between 1 and 1000.")
         result = self._rpc(
