@@ -150,10 +150,12 @@ jobs:
           node --check audio-lab.js
           node --check character-cloud-restore.js
           node --check character-restore-journal.js
+          node --check character-restore-coordinator.js
           node --check character-local-storage-adapter.js
           node tests/test_character_cloud_restore.js
           node tests/test_character_local_storage_adapter.js
           node tests/test_character_cloud_restore_adapter_integration.js
+          node tests/test_character_restore_coordinator.js
           node tests/test_profile_avatar_catalog.js
           node tests/test_katty_expression_manifest.js
           node tests/test_katty_2d_layer_manifest.js
