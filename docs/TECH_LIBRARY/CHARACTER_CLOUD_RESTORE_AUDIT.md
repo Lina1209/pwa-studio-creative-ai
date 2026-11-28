@@ -131,3 +131,7 @@ A new injected coordinator implements the metadata activation boundary without c
 Before the one synchronous owner-scoped localStorage replacement, the coordinator persists a durable intent containing base and merged digests plus total/restored record counts. It verifies the committed metadata by read-back before marking the journal committed. Recovery recognizes only the exact merged digest or untouched base digest; any third state becomes a conflict rather than triggering a blind rollback. Browser integration coverage has been added for successful activation, altered-image rejection, preservation of existing cards, and simulated post-write crash recovery.
 
 The new GitHub Actions browser job is pending validation. The coordinator is not wired into the UI, no staged-media cleanup is implemented, and no production migration/deployment has been performed.
+
+
+
+The guarded activation foundation has now passed feature-branch CI run `46108551390` on `e1c4d4a`. Backend unit tests, disposable PostgreSQL integration, browser IndexedDB suites, activation browser integration (4 scenarios), and frontend syntax checks all completed successfully. The additional quota test confirms that a failed localStorage write leaves the previous library intact and the journal retryable. This does not change the activation gate: the coordinator remains unconnected to the app UI, and production is untouched.
