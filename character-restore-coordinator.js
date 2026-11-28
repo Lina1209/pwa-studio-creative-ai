@@ -57,6 +57,10 @@
       return {cloudAssetId,characterId,sourceLocalId,localReferenceId,name:item.name,type:item.type,expectedSha256:item.expectedSha256.toLowerCase(),expectedSizeBytes:item.expectedSizeBytes,expectedMimeType:item.expectedMimeType,width:item.width,height:item.height,state:"pending",localStagedBlobId:null};
     });
     if(refs.length===0)fail("There are no media references to stage.");
+    const selectedCloudIds=confirmation.selectedCloudIds;
+    if(!Array.isArray(selectedCloudIds)||selectedCloudIds.length<1||
+       refs.some(reference=>!selectedCloudIds.includes(reference.characterId)))
+      fail("Restore media manifest is outside the explicitly confirmed character selection.");
     assertConfirmation();
     const operation=await journal.get(ownerId,operationId);
     assertConfirmation();
@@ -134,6 +138,7 @@
         const readProof=await digestHex(readBack);assertLease();proofMatches(readProof,expected);
         const readDimensions=await adapters.inspectImage(readBack);assertLease();
         if(!readDimensions||readDimensions.width!==expected.width||readDimensions.height!==expected.height)fail("Staged Blob read-back dimensions verification failed.");
+        assertConfirmation();
         saved.state="verified_staged";
         const updated=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:savedRefs});
         revision=updated.revision;staged++;
