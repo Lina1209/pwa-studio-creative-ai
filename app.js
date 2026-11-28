@@ -1488,6 +1488,7 @@ const movieHistoryStyle = document.createElement("style");
     PWAStudioMovieStorageGuard.parse(localStorage.getItem(movieStorageKey()));
     PWAStudioMovieStorageGuard.parse(JSON.stringify(projects));
     localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+    return true;
   };
   const guestArchiveKey = () => "pwa-studio-movie-archive:guest";
   const readGuestArchive = () => PWAStudioMovieStorageGuard.parse(localStorage.getItem(guestArchiveKey()));
@@ -1781,8 +1782,6 @@ const movieHistoryStyle = document.createElement("style");
             merged.set(conflictCopy.id, conflictCopy);
             loadConflictPreserved = true;
           }
-          merged.set(cloudProject.id, cloudProject);
-        } else if (sameContent) {
           merged.set(cloudProject.id, cloudProject);
         }
       });
