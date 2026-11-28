@@ -147,3 +147,6 @@ The crash-recovery scenario now crosses a real document navigation: after the me
 
 
 Recovery now has its own account-switch race protection. If the active account changes after local metadata is read, the recovery path does not update the journal; the operation remains recoverable and succeeds only when the correct owner context is active again. The corresponding browser test and all existing suites passed in GitHub Actions run `46108991587` on `db04ed6`.
+
+
+The recovery matrix is now tested end to end: an exact merged digest is committed after reload; an untouched base snapshot is marked retryable; and a third, concurrently edited metadata state is marked conflict without rollback. The `activating → conflict` journal transition is explicitly supported. GitHub Actions run `46109097295` on `960f620` passed all three CI jobs.
