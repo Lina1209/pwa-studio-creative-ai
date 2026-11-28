@@ -145,6 +145,8 @@ jobs:
         run: python tests/browser/run_character_restore_journal.py
       - name: Run real-browser restore coordinator integration tests
         run: python tests/browser/run_character_restore_coordinator.py
+      - name: Run real-browser restore Blob store tests
+        run: python tests/browser/run_character_restore_blob_store.py
       - name: Check frontend syntax and account-switch fencing
         run: |
           node --check profile-avatar-catalog.js
@@ -153,6 +155,7 @@ jobs:
           node --check character-cloud-restore.js
           node --check character-restore-journal.js
           node --check character-restore-coordinator.js
+          node --check character-restore-blob-store.js
           node --check character-local-storage-adapter.js
           node tests/test_character_cloud_restore.js
           node tests/test_character_local_storage_adapter.js
