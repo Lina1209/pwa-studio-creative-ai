@@ -138,3 +138,6 @@ The guarded activation foundation has now passed feature-branch CI run `46108551
 
 
 The activation browser suite was extended with an account-switch race: switching the active owner immediately after a staged Blob read prevents activation and leaves both local metadata and the durable state unchanged. GitHub Actions run `46108643132` on `693e65a` passed backend unit tests, disposable PostgreSQL integration, all browser/IndexedDB tests, and frontend syntax/account-switch checks.
+
+
+Activation tests now exercise real browser `window.localStorage` in addition to real IndexedDB and Blob storage. The quota failure test injects only a failing `setItem` while preserving the real read path; the base library remains unchanged and the journal becomes retryable. GitHub Actions run `46108806956` on `df458f6` passed backend unit tests, disposable PostgreSQL integration, all browser/IndexedDB tests, and frontend syntax/account-switch checks.
