@@ -124,7 +124,7 @@ set search_path = pg_catalog, public, pg_temp
 as $$
 declare v_count integer;
 begin
-  if p_outcome not in ('unknown','definitely_not_submitted','definitely_rejected','accepted') then
+  if p_outcome is null or p_outcome not in ('unknown','definitely_not_submitted','definitely_rejected','accepted') then
     raise exception 'invalid_provider_submission_outcome' using errcode = '22023';
   end if;
   -- Evidence is monotonic: once conclusive evidence is recorded it cannot be
