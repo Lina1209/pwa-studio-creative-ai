@@ -33,7 +33,7 @@ class MediaOutboxEvent:
     def __post_init__(self):
         for field_name in ("id", "owner_id", "asset_id"):
             _uuid(getattr(self, field_name), field_name)
-        if self.event_type not in {"media_cleanup_requested", "media_upload_verify_requested"}:
+        if self.event_type not in {"media_cleanup_requested", "media_upload_verify_requested", "media_reference_replacement_cleanup_requested"}:
             raise ValueError("Unsupported media outbox event type.")
         if not isinstance(self.idempotency_key, str) or not 8 <= len(self.idempotency_key) <= 160:
             raise ValueError("idempotency_key must contain between 8 and 160 characters.")
