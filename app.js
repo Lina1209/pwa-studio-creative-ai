@@ -1562,9 +1562,11 @@ const movieHistoryStyle = document.createElement("style");
       updated_at: project.updatedAt || new Date().toISOString()
     };
   };
-  const movieFromCloudRow = row => {
-    if (!row || !row.settings || typeof row.settings !== "object" || Array.isArray(row.settings)) {
-      throw new Error("Облачная запись фильма имеет неверный формат. Локальные данные не будут заменены.");
+  const movieFromCloudRow = (row, expectedOwnerId = authSession?.user?.id) => {
+    if (!row || !isUuid(row.id) || row.owner_id !== expectedOwnerId || row.project_type !== "movie" ||
+        !row.settings || typeof row.settings !== "object" || Array.isArray(row.settings) ||
+        typeof row.updated_at !== "string" || !Number.isFinite(Date.parse(row.updated_at))) {
+      throw new Error("Облачная запись фильма имеет неверный формат или принадлежит другому пространству. Локальные данные не будут заменены.");
     }
     const saved = row.settings;
     const priorId = saved.id || row.id;
@@ -1617,9 +1619,77 @@ const movieHistoryStyle = document.createElement("style");
         writeMovieStorage(localProjects);
         if (!contextIsCurrent()) return;
         if (rows.length) {
-          const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
-          if (error) throw error;
+          // Optimistic concurrency: never blindly upsert over a version another device may have changed.
+          const { data: remoteRows, error: remoteError } = await supabaseClient.from("projects")
+            .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
+            .eq("owner_id", userId).eq("project_type", "movie")
+            .in("id", rows.map(row => row.id));
+          if (remoteError) throw remoteError;
           if (!contextIsCurrent()) return;
+          const remoteById = new Map((remoteRows || []).map(row => [row.id, row]));
+          const currentLocal = movieRead();
+          const inserts = [];
+          const updates = [];
+          let preservedConflict = false;
+          for (const row of rows) {
+            const remote = remoteById.get(row.id);
+            if (!remote) {
+              inserts.push(row);
+              continue;
+            }
+            const localProject = currentLocal.find(project => project.id === row.id);
+            if (!localProject) continue;
+            const localTime = Date.parse(localProject.updatedAt || localProject.createdAt || 0);
+            const remoteTime = Date.parse(remote.updated_at || 0);
+            if (!Number.isFinite(localTime) || !Number.isFinite(remoteTime)) {
+              throw new Error("Не удалось сравнить версии фильма. Синхронизация остановлена без перезаписи.");
+            }
+            if (remoteTime > localTime) {
+              // Preserve the device's newer unsynced draft as a separate project before accepting cloud state.
+              const conflictId = movieId();
+              const conflictCopy = {
+                ...localProject,
+                id: conflictId,
+                name: (localProject.name || "Фильм") + " — локальная копия при конфликте",
+                versionLabel: "Сохранённая копия с другого устройства",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                versions: (localProject.versions || []).map(version => ({
+                  ...version, data: { ...version.data, id: conflictId }
+                }))
+              };
+              const cloudProject = movieFromCloudRow(remote, userId);
+              const nextLocal = currentLocal.map(project => project.id === row.id ? cloudProject : project);
+              nextLocal.unshift(conflictCopy);
+              if (!contextIsCurrent() || !writeMovieStorage(nextLocal)) {
+                throw new Error("Конфликт обнаружен. Не удалось безопасно сохранить локальную копию; облачная версия не изменена.");
+              }
+              preservedConflict = true;
+              continue;
+            }
+            if (remoteTime === localTime) continue;
+            updates.push({ row, expectedUpdatedAt: remote.updated_at });
+          }
+          if (inserts.length) {
+            const { error } = await supabaseClient.from("projects").insert(inserts);
+            if (error) throw new Error("Новый фильм мог быть создан на другом устройстве одновременно. Обновите список и повторите синхронизацию.");
+            if (!contextIsCurrent()) return;
+          }
+          for (const item of updates) {
+            if (!contextIsCurrent()) return;
+            const { data: changed, error } = await supabaseClient.from("projects").update(item.row)
+              .eq("id", item.row.id).eq("owner_id", userId).eq("project_type", "movie")
+              .eq("updated_at", item.expectedUpdatedAt).select("id");
+            if (error) throw error;
+            if (!changed || changed.length !== 1) {
+              throw new Error("Фильм изменился на другом устройстве во время сохранения. Ни одна версия не перезаписана; повторите синхронизацию.");
+            }
+          }
+          if (!contextIsCurrent()) return;
+          if (preservedConflict) {
+            const feedback = $("#movieFeedback");
+            if (feedback) feedback.textContent = "Обнаружен конфликт между устройствами. Облачная версия загружена, а локальный вариант сохранён отдельной копией.";
+          }
         }
         if (!contextIsCurrent()) return;
         const feedback = $("#movieFeedback");
