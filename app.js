@@ -1653,11 +1653,17 @@ const movieHistoryStyle = document.createElement("style");
           if (remoteError) throw remoteError;
           if (!contextIsCurrent()) return;
           const remoteById = new Map((remoteRows || []).map(row => [row.id, row]));
+          // The local library may change while the remote lookup is in flight.
+          // Rebuild outgoing rows from the latest local snapshot, never from the pre-request copy.
           const currentLocal = movieRead();
+          const requestedIds = new Set(rows.map(row => row.id));
+          const currentRows = currentLocal
+            .filter(project => requestedIds.has(project.id))
+            .map(project => movieToCloudRow(project, userId));
           const inserts = [];
           const updates = [];
           let preservedConflict = false;
-          for (const row of rows) {
+          for (const row of currentRows) {
             const remote = remoteById.get(row.id);
             if (!remote) {
               inserts.push(row);
