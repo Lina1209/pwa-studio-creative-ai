@@ -268,7 +268,7 @@ create or replace function public.mark_stale_ai_budget_reservations_unknown(
 ) returns integer
 language plpgsql security definer
 set search_path = pg_catalog, public, pg_temp
-as $
+as $$
 declare
   v_count integer := 0;
   v_res public.ai_budget_reservations%rowtype;
@@ -297,7 +297,7 @@ begin
   end loop;
   return v_count;
 end;
-$;
+$$;
 
 create or replace function public.release_ai_budget_no_charge(
   p_reservation_id uuid, p_safe_reason text
