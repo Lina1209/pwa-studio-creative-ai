@@ -37,7 +37,7 @@
   assert(await api.deleteStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof})==="missing","cross-operation delete did not fail closed");
   await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof:{...proof,sha256:"0".repeat(64)}}));
   const tamperDb=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-library-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
-  try{await new Promise((resolve,reject)=>{const tx=tamperDb.transaction("images","readwrite"),store=tx.objectStore("images"),q=store.get(id);q.onsuccess=()=>{const row=q.result;row.blob=new Blob(["tampered-blob-proof"],{type:"image/png"});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{tamperDb.close()}
+  try{await new Promise((resolve,reject)=>{const tx=tamperDb.transaction("images","readwrite"),store=tx.objectStore("images"),q=store.get(id);q.onsuccess=()=>{const row=q.result;row.blob=new Blob(["changed-blob-proof"],{type:"image/png"});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{tamperDb.close()}
   await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof}));
   const stillTampered=await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id});
   assert(stillTampered instanceof Blob,"checksum mismatch deleted the staged Blob");
