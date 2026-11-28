@@ -586,7 +586,7 @@ Status: an injected executor primitive now exists in `character-restore-cleanup-
 
 Before each candidate, the executor:
 - requires a reconciled manifest and an elapsed 24-hour retention timestamp;
-- acquires the owner-wide lock and checks the current account context;
+- acquires the owner-wide lock, checks the current account context, and renews the lock on a heartbeat throughout the preflight/deletion window;
 - reads the complete owner restore-journal inventory with bounded pagination (maximum 100 pages / 10,000 rows), rejecting malformed, foreign, or incomplete records;
 - recomputes the owner metadata digest and proves the exact staged reference is absent;
 - confirms the source operation is still aborted, its revision is unchanged, its lease is expired, and no other restore operation references the same staged Blob or cloud asset;
@@ -596,7 +596,7 @@ Before each candidate, the executor:
 
 The executor defaults to one candidate per invocation (hard maximum ten). It never scans or deletes ordinary image rows. A missing Blob during a normal delete attempt is treated as an uncertain/manual-recovery condition, not success. A pre-existing delete intent is recoverable only when the exact Blob lookup reports missing after a fresh complete inventory and the intent identity still matches; the journal is then finalized under a newer owner-lock epoch.
 
-Safety gate: a dedicated disposable-IndexedDB Playwright suite now exercises the injected executor against real browser storage. It covers exact staged-Blob deletion while preserving an unrelated staged Blob, account-switch fencing (including lock release when context changes during acquisition), metadata drift, and incomplete restore-journal pagination. The suite is wired into feature-branch CI. This is an initial adversarial layer, not full approval: active/paused/uncertain operation races, lease expiry, lock loss after durable intent, crash windows at every boundary, multi-tab contention, and legacy-image preservation still require expanded tests and review. Keep cleanup execution disabled and unwired until those gates pass and the caller is separately reviewed.
+Safety gate: a dedicated disposable-IndexedDB Playwright suite now exercises the injected executor against real browser storage. The initial executor suite passed CI run `46113264575` (all three jobs succeeded), covering exact staged-Blob deletion while preserving an unrelated staged Blob, account-switch fencing, metadata drift, and incomplete restore-journal pagination. The executor now renews the owner lock on a heartbeat and rechecks the fencing token immediately before deletion. A follow-up browser test explicitly simulates lock loss after the durable delete intent and verifies that the Blob remains untouched; that expanded run is pending. This is not full approval: active/paused/uncertain operation races, lease expiry, crash windows at every boundary, multi-tab contention, and legacy-image preservation still require expanded tests and review. Keep cleanup execution disabled and unwired until those gates pass and the caller is separately reviewed.
 
 
 ## 28. User-facing PWA cache maintenance
