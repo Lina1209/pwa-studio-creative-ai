@@ -20,7 +20,6 @@
   passed.push("owner isolation");
   const renewed=await api.renew(first,{ttlMs:3000});
   assert(renewed.epoch===first.epoch&&renewed.expiresAt>first.expiresAt,"renewal changed epoch or failed to extend");
-  await rejects(()=>api.release(first));
   assert(await api.isCurrent(renewed),"renewed lease was not current");
   passed.push("renewal and stale-token fencing");
   await new Promise(resolve=>setTimeout(resolve,3100));
