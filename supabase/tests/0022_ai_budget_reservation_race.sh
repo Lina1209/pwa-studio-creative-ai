@@ -203,3 +203,79 @@ if [[ "$race_final_status" != "settled" || "$race_settle_successes" != "6" || "$
 fi
 
 echo "AI budget unknown/settlement race invariant passed: final state settled with one settlement event."
+
+# Race mutually exclusive terminal outcomes: confirmed no-charge release and
+# provider-cost settlement. Row/advisory locking must allow exactly one
+# terminal ledger event; the losing operation must not overwrite that state.
+terminal_request_id='aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'
+terminal_reservation_id="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select reservation_id from public.reserve_ai_budget('$terminal_request_id','$PWA_TEST_OWNER_ID','budget-release-settle-race-0001','$(printf 'release-settle-race' | sha256sum | cut -d' ' -f1)','chat','deepseek','deepseek-flash',0.005)")"
+if [[ -z "$terminal_reservation_id" ]]; then
+  echo "Could not create reservation for release/settlement race." >&2
+  exit 1
+fi
+pids=()
+for i in $(seq 1 8); do
+  (
+    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+      -c "select public.release_ai_budget_no_charge('$terminal_reservation_id','confirmed_no_charge')" \
+      >"$tmp_dir/release-$i.out" 2>"$tmp_dir/release-$i.err"
+  ) &
+  pids+=("$!")
+done
+for i in $(seq 1 8); do
+  (
+    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+      -c "select public.settle_ai_budget('$terminal_reservation_id',0.002)" \
+      >"$tmp_dir/terminal-settle-$i.out" 2>"$tmp_dir/terminal-settle-$i.err"
+  ) &
+  pids+=("$!")
+done
+terminal_worker_failures=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || terminal_worker_failures=$((terminal_worker_failures + 1))
+done
+release_true=0
+for output_file in "$tmp_dir"/release-*.out; do
+  [[ -f "$output_file" ]] || continue
+  if grep -qx 't' "$output_file"; then
+    release_true=$((release_true + 1))
+  fi
+done
+terminal_settle_successes=0
+for output_file in "$tmp_dir"/terminal-settle-*.out; do
+  [[ -f "$output_file" ]] || continue
+  if grep -qx 'settled' "$output_file"; then
+    terminal_settle_successes=$((terminal_settle_successes + 1))
+  fi
+done
+terminal_status="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select status from public.ai_budget_reservations where id='$terminal_reservation_id'")"
+terminal_event_count="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select count(*) from public.ai_budget_ledger where reservation_id='$terminal_reservation_id' and event_type in ('settle','release')")"
+terminal_actual="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select coalesce(actual_usd::text,'null') from public.ai_budget_reservations where id='$terminal_reservation_id'")"
+echo "AI budget release/settlement race: final=$terminal_status release_confirmations=$release_true settlement_successes=$terminal_settle_successes worker_failures=$terminal_worker_failures terminal_events=$terminal_event_count actual=$terminal_actual"
+if [[ "$terminal_worker_failures" != "0" || "$terminal_event_count" != "1" ]]; then
+  echo "AI budget release/settlement race invariant failed." >&2
+  for error_file in "$tmp_dir"/release-*.err "$tmp_dir"/terminal-settle-*.err; do
+    [[ -s "$error_file" ]] && cat "$error_file" >&2
+  done
+  exit 1
+fi
+if [[ "$terminal_status" == "released" ]]; then
+  if [[ "$release_true" != "8" || "$terminal_settle_successes" != "0" || "$terminal_actual" != "null" ]]; then
+    echo "Release-winning terminal outcome is inconsistent." >&2
+    exit 1
+  fi
+elif [[ "$terminal_status" == "settled" ]]; then
+  if [[ "$release_true" != "0" || "$terminal_settle_successes" != "8" || "$terminal_actual" != "0.0020000000" ]]; then
+    echo "Settlement-winning terminal outcome is inconsistent." >&2
+    exit 1
+  fi
+else
+  echo "Unexpected terminal reservation state: $terminal_status" >&2
+  exit 1
+fi
+
+echo "AI budget release/settlement race invariant passed: exactly one terminal outcome was recorded."
