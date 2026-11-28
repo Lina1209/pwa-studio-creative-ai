@@ -10,7 +10,7 @@
  const ok=(v,m)=>{if(!v)throw Error(m)};
  const rejects=async(fn,m)=>{let yes=false;try{await fn()}catch{yes=true}ok(yes,m)};
  const test=async(n,fn)=>{await fn();passed.push(n)};
- const owner=uuid(), sha=await digest(blob);
+ const owner=uuid(), sha=await digest(blob);\n const gate={plan:Object.freeze({}),preview:Object.freeze({}),confirmation:Object.freeze({}),validateConfirmation:()=>true};
  async function planned(){
   const operationId=uuid();
   await api.create({ownerId:owner,operationId,localBaseFingerprint:sha,snapshotId:"browser-snapshot",selectedCharacterIds:[]});
@@ -33,6 +33,22 @@
  const characterId=uuid(),sourceLocalId=uuid(),localReferenceId=sourceLocalId+"-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
  const manifest=[{cloudAssetId:uuid(),characterId,sourceLocalId,localReferenceId,name:"front.png",type:"image/png",expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30}];
  try{
+  await test("missing or invalid confirmation is rejected before journal access or download",async()=>{
+   const op=await planned();let downloads=0,reads=0;
+   const media=adapters({onDownload:()=>downloads++});
+   const journal={...api,async get(){reads++;return api.get(owner,op.operationId)}};
+   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal,plan:{},preview:{},confirmation:{},validateConfirmation:()=>false,adapters:media}),"invalid confirmation was accepted");
+   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal,adapters:media}),"missing confirmation was accepted");
+   ok(downloads===0&&reads===0,"invalid confirmation reached journal or media adapter");
+  });
+  await test("confirmation is revalidated after asynchronous boundaries",async()=>{
+   const op=await planned();let valid=true,downloads=0;
+   const media=adapters({onDownload:()=>{downloads++;valid=false}});
+   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,...gate,validateConfirmation:()=>valid,adapters:media}),"confirmation invalidation during download was ignored");
+   ok(downloads===1,"expected exactly one download before invalidation");
+   const row=await api.get(owner,op.operationId);
+   ok(row.state==="paused_retryable"&&row.lease===null,"invalidated confirmation did not pause and release safely");
+  });
   await test("renewal remains fenced after a lease takeover",async()=>{
    const op=await planned();
    const old=await api.acquireLease(owner,op.operationId,{ttlMs:5000});
@@ -52,7 +68,7 @@
     stageBlob(input){return store.stageBlob(input)},
     readStagedBlob(input){return store.readStagedBlob(input)}
    };
-   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:media});
+   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,...gate,adapters:media});
    const row=await api.get(owner,op.operationId);
    const ref=row.references[0];
    const saved=await store.readStagedBlob({ownerId:owner,operationId:op.operationId,cloudAssetId:manifest[0].cloudAssetId,localStagedBlobId:ref.localStagedBlobId});
