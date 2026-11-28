@@ -96,6 +96,30 @@
    await journal.releaseLease(owner,op,lease);
    return await journal.get(owner,op);
   }
+  await run("activation cannot enter while another tab holds the owner critical section",async()=>{
+   const op=crypto.randomUUID(),cloudId=crypto.randomUUID(),localId=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),baseText=canonical(current);
+   const card={id:localId,name:"Blocked activation",referenceImages:[],cloudBackup:{characterId:cloudId,version:1,referenceManifest:[]}};
+   const blockedPlan={complete:true,ownerId:owner,baseLocalFingerprint:baseText,proposedItems:[card],unchanged:[],conflicts:[]};
+   const ready=await operationReady(op,[cloudId],[],await digest(baseText));
+   const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:5000});
+   try{
+    await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:blockedPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:1,height:1})}),"activation entered a held owner critical section");
+    const unchanged=await journal.get(owner,op);
+    ok(unchanged.state==="ready_to_activate"&&unchanged.lease===null,"blocked activation changed the operation journal");
+    ok(canonical(localAdapter.readLocalItems(owner))===baseText,"blocked activation changed local metadata");
+   }finally{await PWACharacterOwnerCoordinationLock.release(held);}
+  });
+  await run("crash recovery cannot checkpoint while another tab holds the owner critical section",async()=>{
+   const op=crypto.randomUUID(),current=localAdapter.readLocalItems(owner);
+   const ready=await activatingIntent(op,current,await digest("unwritten merged snapshot"));
+   const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:5000});
+   try{
+    await rejects(()=>window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:ready.revision,journal,localAdapter}),"recovery entered a held owner critical section");
+    const unchanged=await journal.get(owner,op);
+    ok(unchanged.state==="activating"&&unchanged.lease===null,"blocked recovery changed the journal");
+   }finally{await PWACharacterOwnerCoordinationLock.release(held);}
+  });
   await run("recovery returns untouched base snapshot to retryable state",async()=>{
    const op=crypto.randomUUID(),baseItems=localAdapter.readLocalItems(owner),baseText=canonical(baseItems);
    const ready=await activatingIntent(op,baseItems,await digest("expected merged metadata not yet written"));
