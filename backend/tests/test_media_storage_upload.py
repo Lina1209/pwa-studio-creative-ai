@@ -33,6 +33,7 @@ def upload_plan():
         character={"id": CHARACTER, "owner_id": OWNER},
         asset_id=str(uuid4()), object_id=str(uuid4()), event_id=str(uuid4()),
         idempotency_key="character-reference-upload-01",
+        local_reference_id=CHARACTER + "-66666666-6666-4666-8666-666666666666",
         content=content, filename="hero.png", declared_mime_type="image/png",
     ), content
 
