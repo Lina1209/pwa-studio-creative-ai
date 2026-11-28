@@ -66,6 +66,20 @@
    await rejects(()=>execute(owner,cleanupId));
    assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted after metadata changed");
   });
+  await test("recovers a crash after exact Blob deletion but before journal finalization",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["crash after bytes removed"],{type:"image/webp"});
+   const proof=await makeAborted(owner,op,asset,id,blob),cleanupId=await eligible(owner,op,asset,id);
+   const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:30000});
+   const before=await cleanupJournal.getManifest(owner,cleanupId),attempt=uuid();
+   await cleanupJournal.beginCandidateDelete({ownerId:owner,cleanupId,expectedRevision:before.revision,ownerLockEpoch:held.epoch,localStagedBlobId:id,deleteAttemptId:attempt});
+   const removed=await blobStore.deleteStagedBlob({ownerId:owner,operationId:op,cloudAssetId:asset,localStagedBlobId:id,proof,inspectImage:async()=>({width:64,height:48})});
+   assert(removed==="deleted","simulated crash window did not remove the exact Blob");
+   await PWACharacterOwnerCoordinationLock.release(held);
+   const result=await execute(owner,cleanupId);
+   assert(result.results[0].state==="recovered_deleted","executor did not recover the exact durable delete intent");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.state==="completed"&&manifest.candidates[0].state==="deleted","recovered manifest was not finalized");
+  });
   await test("owner lock loss after durable delete intent blocks Blob deletion",async()=>{
    const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["lock lost after intent"],{type:"image/webp"});
    await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
