@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>Site cache tools browser tests</title></head>
+<head><meta charset="utf-8"><base href="../../"><title>Site cache tools browser tests</title></head>
 <body>
 <button id="clearSiteCache" type="button">Очистить кеш</button>
 <p id="clearSiteCacheStatus"></p>
@@ -18,10 +18,15 @@
     async keys() { return [...cacheNames]; },
     async delete(name) { deleted.push(name); return true; }
   }});
-  const registration = { active: { scriptURL: location.origin + "/sw.js" }, async update() { updateCalls++; } };
+  const registration = {
+    active: { scriptURL: location.origin + "/old-app/sw.js" },
+    waiting: { scriptURL: location.origin + "/sw.js" },
+    async update() { updateCalls++; }
+  };
+  const sameOriginOtherRegistration = { active: { scriptURL: location.origin + "/another-app/sw.js" }, async update() { updateCalls += 10; } };
   const foreignRegistration = { active: { scriptURL: "https://other.example/sw.js" }, async update() { updateCalls += 100; } };
   Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: {
-    async getRegistrations() { return [registration, foreignRegistration]; }
+    async getRegistrations() { return [registration, sameOriginOtherRegistration, foreignRegistration]; }
   }});
   const originalSet = Storage.prototype.setItem;
   const originalRemove = Storage.prototype.removeItem;
@@ -30,7 +35,7 @@
   const originalOpen = indexedDB.open.bind(indexedDB);
   indexedDB.open = function(...args) { indexedDbTouches++; return originalOpen(...args); };
   const script = document.createElement("script");
-  script.src = "../../site-cache-tools.js";
+  script.src = "site-cache-tools.js";
   document.head.appendChild(script);
   await new Promise((resolve,reject) => { script.onload=resolve; script.onerror=reject; });
   let confirmCalls = 0;
