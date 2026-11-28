@@ -429,7 +429,7 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         handler = APP[start:end]
         self.assertIn("localStorage.setItem(deleteStorageKey,JSON.stringify(next));", handler)
         self.assertIn("Promise.allSettled((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)))", handler)
-        self.assertIn('cleanup.some(result=>result.status==="rejected")', handler)
+        self.assertIn('cleanup.some(result=>result.status==="rejected"||result.value===false)', handler)
         self.assertIn("if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||\"guest\")!==deleteOwnerId)return;", handler)
         self.assertIn("Материал удалён из библиотеки, но часть изображений осталась", handler)
 
