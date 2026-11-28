@@ -92,6 +92,20 @@ begin
   v_status := public.settle_ai_budget(v_first,0.01);
   if v_status <> 'settled' then raise exception 'same settlement was not idempotent'; end if;
 
+  -- A repeated settlement with a different amount must not rewrite the first
+  -- accounting result or append a second settlement event.
+  begin
+    perform public.settle_ai_budget(v_first,0.04);
+    raise exception 'conflicting settlement amount was accepted';
+  exception when unique_violation then
+    null;
+  end;
+  if (select actual_usd from public.ai_budget_reservations where id=v_first) <> 0.01
+     or (select count(*) from public.ai_budget_ledger
+         where reservation_id=v_first and event_type='settle') <> 1 then
+    raise exception 'conflicting settlement changed the original accounting record';
+  end if;
+
   select reservation_id into v_first
   from public.reserve_ai_budget(
     'cccccccc-cccc-4ccc-8ccc-cccccccccccc',v_user,'budget-test-key-0002',
