@@ -80,7 +80,7 @@ def list_owned_character_media_assets(settings: Settings, character_id: str, aut
     character = canonical_uuid(character_id, "character")
     owner = canonical_uuid(authenticated_owner_id, "owner")
     rows = _rest_get(settings, "media_assets", {
-        "select": "id,owner_id,character_id,file_name,file_type,status,size_bytes,width,height,created_at",
+        "select": "id,owner_id,character_id,local_reference_id,file_name,file_type,status,size_bytes,content_sha256,width,height,created_at",
         "owner_id": f"eq.{owner}", "character_id": f"eq.{character}",
         "bucket": "eq.studio-media", "order": "created_at.asc", "limit": "100",
     })
@@ -89,7 +89,9 @@ def list_owned_character_media_assets(settings: Settings, character_id: str, aut
     for row in rows:
         if not isinstance(row, dict) or row.get("owner_id") != owner or row.get("character_id") != character:
             raise HTTPException(status_code=404, detail="Media resource not found.")
+        if row.get("local_reference_id") is not None:
+            canonical_uuid(row.get("local_reference_id"), "local reference")
         if row.get("status") not in allowed_statuses:
             raise HTTPException(status_code=502, detail="Media metadata returned an invalid status.")
-        result.append({key: row.get(key) for key in ("id", "character_id", "file_name", "file_type", "status", "size_bytes", "width", "height", "created_at")})
+        result.append({key: row.get(key) for key in ("id", "character_id", "local_reference_id", "file_name", "file_type", "status", "size_bytes", "content_sha256", "width", "height", "created_at")})
     return result
