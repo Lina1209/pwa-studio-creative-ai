@@ -1,9 +1,11 @@
 "use strict";
 const assert=require("node:assert/strict");
 const {createHash}=require("node:crypto");
+require("../character-cloud-restore.js");
 require("../character-restore-coordinator.js");
 const coordinator=global.PWACharacterRestoreCoordinator;
-const gate={plan:Object.freeze({}),preview:Object.freeze({}),confirmation:Object.freeze({}),validateConfirmation:()=>true};
+const planner=global.PWACharacterCloudRestore;
+const gate={plan:Object.freeze({}),preview:Object.freeze({}),confirmation:Object.freeze({selectedCloudIds:["55555555-5555-4555-8555-555555555555"]}),validateConfirmation:()=>true};
 const owner="11111111-1111-4111-8111-111111111111";
 const operation="22222222-2222-4222-8222-222222222222";
 const asset="33333333-3333-4333-8333-333333333333";
@@ -33,6 +35,13 @@ function makeJournal(){
  };
 }
 const manifest=[{cloudAssetId:asset,characterId,sourceLocalId,localReferenceId,name:"front.png",type:"image/png",expectedSha256:sha,expectedSizeBytes:bytes.length,expectedMimeType:"image/png",width:32,height:24}];
+async function issuedGate(){
+ const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>({items:[{id:characterId,source_local_id:sourceLocalId,version:1,name:"Катти",description:"",created_at:"2026-11-28T00:00:00.000Z",reference_data:{kind:"character",representation:"2d",voice:"",passport:{},referenceImages:[]}}],next_cursor:null})});
+ const selected=planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:[characterId]});
+ const preview=planner.buildRestorePreview({ownerId:owner,plan:selected});
+ const confirmation=planner.confirmRestorePreview({ownerId:owner,plan:selected,preview,confirmed:true});
+ return {plan:selected,preview,confirmation,validateConfirmation:planner.validateRestoreConfirmation};
+}
 function adapters({badReadback=false}={}){
  const staged=new Map();
  const good=new Blob([bytes],{type:"image/png"});
@@ -45,8 +54,8 @@ function adapters({badReadback=false}={}){
  };
 }
 (async()=>{
- const journal=makeJournal(),store=adapters();
- const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal,...gate,adapters:store});
+ const journal=makeJournal(),store=adapters(),realGate=await issuedGate();
+ const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal,...realGate,adapters:store});
  assert.equal(result.state,"ready_to_activate");
  assert.equal(result.stagedReferences,1);
  assert.equal(journal.inspect().references[0].state,"verified_staged");
@@ -54,6 +63,12 @@ function adapters({badReadback=false}={}){
  assert.equal(journal.inspect().references[0].localReferenceId,localReferenceId);
  assert.equal(journal.inspect().lease,null);
  console.log("PASS verified download, staged Blob read-back, durable checkpoint and lease release");
+ const mismatchJournal=makeJournal(),mismatchGate=await issuedGate();let mismatchReads=0;
+ const guardedJournal={...mismatchJournal,async get(...args){mismatchReads++;return mismatchJournal.get(...args)}};
+ const wrongManifest=manifest.map(item=>({...item,characterId:"77777777-7777-4777-8777-777777777777"}));
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest:wrongManifest,expectedRevision:1,journal:guardedJournal,...mismatchGate,adapters:adapters()}),/outside the explicitly confirmed/);
+ assert.equal(mismatchReads,0);assert.equal(mismatchJournal.inspect().state,"planned");
+ console.log("PASS real planner confirmation binds coordinator manifest to selected cloud characters before journal access");
 
  const second=makeJournal(),bad=adapters({badReadback:true});
  await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:second,...gate,adapters:bad}));
