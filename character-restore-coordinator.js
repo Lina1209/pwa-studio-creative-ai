@@ -44,7 +44,7 @@
     if(refs.length===0)fail("There are no media references to stage.");
     const operation=await journal.get(ownerId,operationId);
     if(!operation||operation.ownerId!==ownerId||operation.operationId!==operationId)fail("Restore operation was not found for this owner.");
-    if(operation.revision!==expectedRevision||!["planned","staging"].includes(operation.state))fail("Restore operation is not at the expected checkpoint.");
+    if(operation.revision!==expectedRevision||!["planned","staging","paused_retryable"].includes(operation.state))fail("Restore operation is not at the expected checkpoint.");
     const lease=await journal.acquireLease(ownerId,operationId,{ttlMs:60000});
     let revision=operation.revision;
     let state=operation.state;
@@ -53,6 +53,10 @@
       if(!isCurrent())fail("Account changed before media staging.");
       if(state==="planned"){
         const row=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:refs.map(r=>({...r,localStagedBlobId:uuid(crypto.randomUUID(),"staged Blob ID")}))});
+        revision=row.revision;state=row.state;
+      } else if(state==="paused_retryable"){
+        const pausedRecord=await journal.get(ownerId,operationId);
+        const row=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:pausedRecord.references});
         revision=row.revision;state=row.state;
       }
       const persisted=await journal.get(ownerId,operationId);
