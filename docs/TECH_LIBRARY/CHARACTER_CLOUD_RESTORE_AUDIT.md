@@ -135,3 +135,6 @@ The new GitHub Actions browser job is pending validation. The coordinator is not
 
 
 The guarded activation foundation has now passed feature-branch CI run `46108551390` on `e1c4d4a`. Backend unit tests, disposable PostgreSQL integration, browser IndexedDB suites, activation browser integration (4 scenarios), and frontend syntax checks all completed successfully. The additional quota test confirms that a failed localStorage write leaves the previous library intact and the journal retryable. This does not change the activation gate: the coordinator remains unconnected to the app UI, and production is untouched.
+
+
+The activation browser suite was extended with an account-switch race: switching the active owner immediately after a staged Blob read prevents activation and leaves both local metadata and the durable state unchanged. GitHub Actions run `46108643132` on `693e65a` passed backend unit tests, disposable PostgreSQL integration, all browser/IndexedDB tests, and frontend syntax/account-switch checks.
