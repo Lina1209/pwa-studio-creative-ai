@@ -1484,7 +1484,7 @@ const movieHistoryStyle = document.createElement("style");
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
   const guestArchiveKey = () => "pwa-studio-movie-archive:guest";
-  const readGuestArchive = () => { try { const value=JSON.parse(localStorage.getItem(guestArchiveKey())||"[]"); return Array.isArray(value)?value.filter(item=>item&&typeof item==="object"&&item.id):[]; } catch { return []; } };
+  const readGuestArchive = () => PWAStudioMovieStorageGuard.parse(localStorage.getItem(guestArchiveKey()));
   const writeGuestArchive = items => { try { localStorage.setItem(guestArchiveKey(),JSON.stringify(items)); return true; } catch(error) { console.error("Guest archive write failed:",error); return false; } };
   let activeMovieId = null;
   let editingMovieId = null;
@@ -1637,43 +1637,44 @@ const movieHistoryStyle = document.createElement("style");
     }
   };
   const movieRead = () => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
-      if (!Array.isArray(raw)) return [];
-      const now = Date.now();
-      let changed = false;
-      const projects = raw.filter(item => item && typeof item === "object" && item.id).map(item => {
-        const project = {
-          ...item,
-          story: item.story || item.idea || "",
-          completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
-        };
-        if (!authSession?.user && !project.guestExpiresAt) {
-          project.guestExpiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+    // Fail closed: malformed or partially invalid records must never be
+    // interpreted as an empty library and then overwritten by a later save.
+    const projects = PWAStudioMovieStorageGuard.parse(localStorage.getItem(movieStorageKey()));
+    const now = Date.now();
+    let changed = false;
+    projects.forEach(project => {
+      if (typeof project.story !== "string" || !project.story) {
+        project.story = typeof project.idea === "string" ? project.idea : "";
+        changed = true;
+      }
+      if (!Array.isArray(project.completedSteps)) {
+        project.completedSteps = [];
+        changed = true;
+      }
+      if (!authSession?.user && !project.guestExpiresAt) {
+        project.guestExpiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+        changed = true;
+      }
+    });
+    let active = projects;
+    if (!authSession?.user) {
+      const expired = projects.filter(project => Number.isFinite(Date.parse(project.guestExpiresAt)) && Date.parse(project.guestExpiresAt) <= now);
+      active = projects.filter(project => !expired.includes(project));
+      if (expired.length) {
+        const archived = readGuestArchive();
+        const byId = new Map(archived.map(project => [project.id, project]));
+        expired.forEach(project => byId.set(project.id, { ...project, guestArchivedAt: project.guestArchivedAt || new Date(now).toISOString() }));
+        if (writeGuestArchive([...byId.values()])) {
           changed = true;
-        }
-        return project;
-      });
-      let active = projects;
-      if (!authSession?.user) {
-        const expired = projects.filter(project => Number.isFinite(Date.parse(project.guestExpiresAt)) && Date.parse(project.guestExpiresAt) <= now);
-        active = projects.filter(project => !expired.includes(project));
-        if (expired.length) {
-          const archived = readGuestArchive();
-          const byId = new Map(archived.map(project => [project.id, project]));
-          expired.forEach(project => byId.set(project.id, { ...project, guestArchivedAt: project.guestArchivedAt || new Date(now).toISOString() }));
-          if (writeGuestArchive([...byId.values()])) {
-            changed = true;
-            sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
-          } else {
-            // If archiving fails (for example, storage is full), keep expired records in the main list.
-            active = projects;
-          }
+          sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
+        } else {
+          // If archiving fails (for example, storage is full), keep expired records in the main list.
+          active = projects;
         }
       }
-      if (changed) localStorage.setItem(movieStorageKey(), JSON.stringify(active));
-      return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-    } catch { return []; }
+    }
+    if (changed) localStorage.setItem(movieStorageKey(), JSON.stringify(active));
+    return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
   };
   const movieWrite = projects => {
     try {
@@ -2148,7 +2149,17 @@ const movieHistoryStyle = document.createElement("style");
   };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
-    const projects=movieRead(); const count=$("#movieCount");
+    let projects;
+    try { projects=movieRead(); }
+    catch(error) {
+      list.replaceChildren();
+      const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");
+      warning.textContent="⚠ Проекты не загружены: "+error.message+" Исходные данные сохранены. Не создавайте, не изменяйте и не удаляйте проекты до восстановления данных.";
+      list.append(warning);
+      const feedback=$("#movieFeedback");if(feedback)feedback.textContent="Защитная проверка остановила операции с повреждёнными данными.";
+      return;
+    }
+    const count=$("#movieCount");
     if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
     if(!projects.length){
       list.innerHTML='<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
@@ -2334,7 +2345,15 @@ const movieHistoryStyle = document.createElement("style");
   };
   const renderGuestSpace = () => {
     const list=$("#guestProjectList"); if(!list)return;
-    const projects=authSession?.user?[]:movieRead();
+    let projects=[];
+    try { projects=authSession?.user?[]:movieRead(); }
+    catch(error) {
+      list.replaceChildren();
+      const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");
+      warning.textContent="⚠ Гостевые проекты не загружены: "+error.message+" Данные не перезаписаны.";
+      list.append(warning);
+      return;
+    }
     const count=$("#guestProjectCount");
     if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
     const notice=$("#guestExpiryNotice");
@@ -2460,7 +2479,12 @@ const movieHistoryStyle = document.createElement("style");
   const refreshGuestExpiry=()=>{
     if(authSession?.user)return;
     const before=localStorage.getItem(movieStorageKey());
-    const active=movieRead();
+    try { movieRead(); }
+    catch(error) {
+      const list=$("#guestProjectList");
+      if(list){list.replaceChildren();const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");warning.textContent="⚠ Автоматическая проверка остановлена: "+error.message;list.append(warning);}
+      return;
+    }
     const after=localStorage.getItem(movieStorageKey());
     if(before!==after||!$("#view-guestspace")?.hidden)renderGuestSpace();
   };
