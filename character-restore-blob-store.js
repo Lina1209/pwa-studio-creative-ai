@@ -94,10 +94,23 @@
         });
       } finally { db.close(); }
     }
-    async function deleteStagedBlob({ ownerId, operationId, cloudAssetId, localStagedBlobId, proof }) {
+    async function deleteStagedBlob({ ownerId, operationId, cloudAssetId, localStagedBlobId, proof, inspectImage }) {
       if (!validUuid(ownerId) || !validUuid(operationId) || !validUuid(cloudAssetId) ||
-          !validUuid(localStagedBlobId) || !validProof(proof))
-        fail("Invalid exact staged Blob deletion identity or proof.");
+          !validUuid(localStagedBlobId) || !validProof(proof) || typeof inspectImage !== "function")
+        fail("Invalid exact staged Blob deletion identity, proof, or image inspector.");
+      // Verify the actual immutable Blob bytes before opening the delete transaction.
+      // The caller must hold the owner-wide coordination lock throughout this method.
+      const preflight = await readStagedBlob({ ownerId, operationId, cloudAssetId, localStagedBlobId });
+      if (!preflight) return "missing";
+      if (preflight.size !== proof.sizeBytes || preflight.type !== proof.mimeType)
+        fail("Staged Blob bytes no longer match the durable deletion proof.");
+      const digest = await crypto.subtle.digest("SHA-256", await preflight.arrayBuffer());
+      const actualSha = Array.from(new Uint8Array(digest), x => x.toString(16).padStart(2, "0")).join("");
+      if (actualSha !== proof.sha256.toLowerCase())
+        fail("Staged Blob checksum no longer matches the durable deletion proof.");
+      const dimensions = await inspectImage(preflight);
+      if (!dimensions || dimensions.width !== proof.width || dimensions.height !== proof.height)
+        fail("Staged Blob dimensions no longer match the durable deletion proof.");
       const db = await open();
       try {
         return await new Promise((resolve, reject) => {
