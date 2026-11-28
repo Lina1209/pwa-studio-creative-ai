@@ -2715,7 +2715,7 @@ const movieHistoryStyle = document.createElement("style");
           await ownerLock.assertCurrent();
           const cleanup=await Promise.allSettled((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)));
           await ownerLock.assertCurrent();
-          const cleanupFailed=cleanup.some(result=>result.status==="rejected");
+          const cleanupFailed=cleanup.some(result=>result.status==="rejected"||result.value===false);
           $("#characterLibraryStatus").textContent=cleanupFailed
             ?"Материал удалён из библиотеки, но часть изображений осталась в локальном хранилище. Повторите очистку позже."
             :"Материал удалён из локальной библиотеки.";
@@ -2788,8 +2788,11 @@ const movieHistoryStyle = document.createElement("style");
       metadataCommitted=true;
       let cleanupWarning="";
       if(existing&&removedCharacterReferenceIds.size){
-        try{await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));}
-        catch(cleanupError){cleanupWarning=" Карточка сохранена, но часть старых файлов не удалось очистить: "+cleanupError.message;}
+        try{
+          await ownerLock.assertCurrent();
+          const cleanup=await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));
+          if(cleanup.some(deleted=>deleted===false))cleanupWarning=" Некоторые изображения оставлены: они ещё используются другими карточками.";
+        }catch(cleanupError){cleanupWarning=" Карточка сохранена, но часть старых файлов не удалось безопасно очистить: "+cleanupError.message;}
       }
       if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)return;
       resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера."+cleanupWarning;
@@ -2797,9 +2800,13 @@ const movieHistoryStyle = document.createElement("style");
     }catch(error){
       let cleanupWarning="";
       if(!metadataCommitted&&savedImageIds.length){
-        const cleanup=await Promise.allSettled(savedImageIds.map(imageId=>deleteCharacterImage(imageId,ownerId)));
-        if(cleanup.some(result=>result.status==="rejected"))
-          cleanupWarning=" Часть временных изображений не удалось очистить; карточка не была записана.";
+        let cleanupAllowed=false;
+        try{await ownerLock?.assertCurrent();cleanupAllowed=true;}catch(_){}
+        if(cleanupAllowed){
+          const cleanup=await Promise.allSettled(savedImageIds.map(imageId=>deleteCharacterImage(imageId,ownerId)));
+          if(cleanup.some(result=>result.status==="rejected"||result.value===false))
+            cleanupWarning=" Часть временных изображений оставлена: очистка не подтвердила безопасность удаления.";
+        }else cleanupWarning=" Временные изображения оставлены, потому что контекст аккаунта или блокировка изменились.";
       }
       if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)
         $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+(metadataCommitted?" Карточка уже записана; проверьте состояние библиотеки.":cleanupWarning||" Временные изображения очищены.");
