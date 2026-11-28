@@ -1594,7 +1594,7 @@ const movieHistoryStyle = document.createElement("style");
     const normalize = item => {
       if (Array.isArray(item)) return item.map(normalize);
       if (item && typeof item === "object") {
-        return Object.fromEntries(Object.keys(item).filter(key => key !== "updatedAt").sort().map(key => [key, normalize(item[key])]));
+        return Object.fromEntries(Object.keys(item).filter(key => key !== "updatedAt" && key !== "cloudSchemaVersion").sort().map(key => [key, normalize(item[key])]));
       }
       return item;
     };
@@ -1777,7 +1777,8 @@ const movieHistoryStyle = document.createElement("style");
         const sameContent = movieStableContent(localProject) === movieStableContent(cloudProject);
         if (cloudTime >= localTime) {
           if (!sameContent) {
-            merged.set(makeMovieConflictCopy(localProject).id, makeMovieConflictCopy(localProject));
+            const conflictCopy = makeMovieConflictCopy(localProject);
+            merged.set(conflictCopy.id, conflictCopy);
             loadConflictPreserved = true;
           }
           merged.set(cloudProject.id, cloudProject);
