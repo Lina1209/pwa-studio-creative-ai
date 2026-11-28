@@ -157,3 +157,20 @@ This specification does not authorize:
 - deploying, merging, or changing `main`.
 
 Decision: implement and test the durable journal/coordinator in isolated modules first. Keep cloud restore/import disabled until every required test and operational prerequisite above passes.
+
+
+## 10. Isolated checkpoint journal implementation (feature branch)
+
+Status: the persistence primitive is implemented in `character-restore-journal.js`; it is not wired to the restore planner, media downloader, local Blob store, activation, or UI.
+
+- Uses a dedicated IndexedDB database `pwa-studio-character-restore-journal-v1`, separate from the existing backup journal database. No migration of either existing database is required.
+- Stores owner-bound operation records with immutable operation/owner identity, protocol version, local base fingerprint, snapshot identity, bounded selected character IDs, page checkpoint, bounded per-reference verification descriptors, revision, and lifecycle state.
+- Revalidates persisted records on every read/list and before every mutation. Unknown states, malformed UUIDs, invalid digests, unsupported MIME types, oversized references, duplicate assets, invalid timestamps, and owner/key mismatches fail closed.
+- Uses atomic IndexedDB read-write transactions for lease acquisition and checkpoint compare-and-swap. Lease epochs increase monotonically; an expired lease can be replaced, but the previous token/epoch cannot advance or release the operation afterward.
+- Checkpoint updates require the current unexpired lease, exact expected revision, and an allowed state transition. The journal stores only opaque identifiers and validation metadata; it has no API/network code and accepts no bearer token or signed URL fields.
+- Owner-indexed pagination is bounded to 1–100 rows and cursors are owner-bound. The journal does not perform image downloads, Blob writes, cleanup, or localStorage activation.
+- Browser tests cover create/read persistence, owner isolation, duplicate/competing lease claims, revision CAS, illegal transitions, lease expiry/takeover and stale-holder fencing, release, reference proof validation, bounded pagination, cursor owner fencing, and tampered-record rejection.
+
+Validation: GitHub Actions run `46104006239` on commit `f7cfa3b` completed successfully; backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB/frontend checks all passed.
+
+Remaining limitations are intentional: no real process-kill recovery test, browser offline resume, actual quota exhaustion, multi-tab UI integration, cloud snapshot traversal, media staging/read-back, restore coordinator, activation recovery, or UI wiring. A journal checkpoint is not proof that an image has been downloaded or that a restore is complete. Keep restore/import disabled until the coordinator and all activation safeguards in this document are implemented and tested.
