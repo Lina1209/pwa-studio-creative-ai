@@ -4,6 +4,7 @@
 
 alter table public.generation_job_outbox
   add column if not exists claimed_by text,
+  add column if not exists claim_expires_at timestamptz,
   add column if not exists dead_lettered_at timestamptz,
   add column if not exists last_error_code text
     check (last_error_code is null or char_length(last_error_code) <= 80);
@@ -23,19 +24,20 @@ begin
   update public.generation_job_outbox
   set dead_lettered_at = now(),
       last_error_code = coalesce(last_error_code, 'delivery_attempt_limit_reached'),
-      claimed_at = null, claimed_by = null, claim_token = null
+      claimed_at = null, claimed_by = null, claim_token = null, claim_expires_at = null
   where delivered_at is null and dead_lettered_at is null and delivery_attempts >= 20
-    and (claimed_at is null or claimed_at < now() - make_interval(secs => p_lease_seconds));
+    and (claimed_at is null or claim_expires_at is null or claim_expires_at <= now());
   return query
   with candidates as (
     select o.id from public.generation_job_outbox o
     where o.delivered_at is null and o.dead_lettered_at is null
       and o.available_at <= now() and o.delivery_attempts < 20
-      and (o.claimed_at is null or o.claimed_at < now() - make_interval(secs => p_lease_seconds))
+      and (o.claimed_at is null or o.claim_expires_at is null or o.claim_expires_at <= now())
     order by o.available_at, o.id limit p_batch_size for update skip locked
   ), claimed as (
     update public.generation_job_outbox o
     set claimed_at = now(), claimed_by = p_worker_id, claim_token = gen_random_uuid(),
+        claim_expires_at = now() + make_interval(secs => p_lease_seconds),
         delivery_attempts = o.delivery_attempts + 1
     from candidates c where o.id = c.id
     returning o.id, o.job_id, o.event_type, o.claim_token, o.delivery_attempts
@@ -50,8 +52,9 @@ as $$
 declare v_count integer;
 begin
   update public.generation_job_outbox
-  set delivered_at = now(), claimed_at = null, claimed_by = null, claim_token = null
-  where id = p_outbox_id and claim_token = p_claim_token and delivered_at is null and dead_lettered_at is null;
+  set delivered_at = now(), claimed_at = null, claimed_by = null, claim_token = null, claim_expires_at = null
+  where id = p_outbox_id and claim_token = p_claim_token and delivered_at is null
+    and dead_lettered_at is null and claim_expires_at > now();
   get diagnostics v_count = row_count;
   return v_count = 1;
 end;
