@@ -19,8 +19,8 @@
  const manifest={cloudAssetId:asset,characterId:cloud,sourceLocalId:local,localReferenceId:reference.localReferenceId,name:reference.name,type:reference.type,expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30};
  const proposal={id:local,name:"Катти",description:"",kind:"character",representation:"both",voice:"",passport:{face:"зелёные глаза"},referenceImages:[],createdAt:"2026-11-28T00:00:00.000Z",updatedAt:"2026-11-28T00:00:00.000Z",cloudBackup:{characterId:cloud,version:1,referenceManifest:[manifest]}};
  const plan={complete:true,ownerId:owner,baseLocalFingerprint:baseCanonical,proposedItems:[proposal],unchanged:[],conflicts:[]};
- async function operationReady(op,selected,refs=[]){
-  await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseDigest,snapshotId:"browser-snapshot",selectedCharacterIds:selected});
+ async function operationReady(op,selected,refs=[],fingerprint=baseDigest){
+  await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:fingerprint,snapshotId:"browser-snapshot",selectedCharacterIds:selected});
   let lease=await journal.acquireLease(owner,op),row=await journal.get(owner,op);
   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging",references:refs});
@@ -58,6 +58,17 @@
    const ready=await journal.get(owner,op),before=localAdapter.readLocalItems(owner);
    await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:badPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:41,height:30})}),"dimension mismatch accepted");
    ok(canonical(localAdapter.readLocalItems(owner))===canonical(before),"metadata changed despite failed verification");
+  });
+  await run("storage quota failure preserves the base library and retryable intent",async()=>{
+   const op=crypto.randomUUID(),nextCloud=crypto.randomUUID(),nextLocal=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),base3=canonical(current),baseDigest3=await digest(base3);
+   const noRefCard={id:nextLocal,name:"Карточка без референсов",description:"",kind:"character",representation:"2d",voice:"",passport:{},referenceImages:[],cloudBackup:{characterId:nextCloud,version:1,referenceManifest:[]}};
+   const noRefPlan={complete:true,ownerId:owner,baseLocalFingerprint:base3,proposedItems:[noRefCard],unchanged:[],conflicts:[]};
+   const ready=await operationReady(op,[nextCloud],[],baseDigest3);
+   const failingAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage:{getItem:storage.getItem,setItem(){throw new DOMException("quota exceeded","QuotaExceededError")}},ownerId:owner});
+   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:noRefPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter:failingAdapter,inspectImage:async()=>({width:1,height:1})}),"quota failure did not abort activation");
+   ok(canonical(localAdapter.readLocalItems(owner))===base3,"quota failure changed existing metadata");
+   ok((await journal.get(owner,op)).state==="paused_retryable","quota failure was not left retryable");
   });
   await run("recovery recognizes a completed metadata write after a simulated crash",async()=>{
    const op=crypto.randomUUID(),newId=crypto.randomUUID();
