@@ -109,6 +109,7 @@
      const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-cleanup-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
      try{await new Promise((resolve,reject)=>{const tx=db.transaction("manifests","readwrite"),store=tx.objectStore("manifests"),q=store.get(owner+":"+marked.cleanupId);q.onsuccess=()=>{const row=q.result;row.candidates.forEach(c=>{c.markedAt=new Date(Date.now()-25*60*60*1000).toISOString();c.deleteAfter=new Date(Date.now()-1000).toISOString()});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
      localStorage.setItem("pwa-studio-character-library-v1:"+owner,JSON.stringify([{id:uuid(),name:"new card",referenceImages:[]}]));
+     const args={ownerId:owner,cleanupId:marked.cleanupId,restoreJournal:api,cleanupJournal,blobStore,localAdapter:localFor(owner),ownerLock:PWACharacterOwnerCoordinationLock,inspectImage:async()=>({width:64,height:48})};
      const result=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
      assert(result.state==="blocked_metadata_changed"&&result.eligibleCount===0,"changed metadata did not block candidate");
    });
