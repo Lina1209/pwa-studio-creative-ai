@@ -62,7 +62,7 @@ This audit records the verified boundary between current protections and the fut
 - The reserve RPC returns whether it created a new reservation. A duplicate request must not call the provider again.
 - `backend/app/services/ai_budget_store.py` is a server-only Supabase RPC adapter. It is not wired to routes.
 - `backend/app/services/ai_budget.py` remains a provider-independent orchestration contract. It requires a trusted server-calculated reservation amount; the pure estimator contract now exists, but is not yet wired to a tokenizer, rate card, or routes.
-- Disposable CI applies the migration and runs SQL checks. The current SQL suite verifies sequential cap enforcement and transaction-level invariants; it does NOT yet launch concurrent sessions, so race behavior still needs a true multi-session stress test. A global advisory transaction lock serializes reserve calls in the RPC.
+- Disposable CI applies the migration and runs SQL checks. The PostgreSQL race harness now launches 12 concurrent distinct reservations against a shared platform cap and verifies exactly three reservations are admitted; it also launches 12 concurrent calls with the same idempotency key and verifies all callers receive one reservation identity with exactly one creation. These are real multi-session database checks in disposable CI.
 - No live Supabase migration was run. No production setting, provider key, route, or billing flow was changed.
 
 ### Versioned cost-estimator contract
@@ -77,12 +77,12 @@ This audit records the verified boundary between current protections and the fut
 - Added `list_ai_budget_reconciliation_candidates`: a bounded, service-role-only read RPC exposing only reservation metadata needed for manual/provider reconciliation; it returns no prompt or response content.
 - Added a backend adapter method for invoking that RPC; no scheduler or background worker is configured.
 - Exposure aggregation now filters by both the active policy's scope and its period. Platform policies aggregate all provider/user reservations in-period; provider and user policies aggregate only matching rows.
-- SQL tests now check disabled-by-default behavior, browser-role privilege denial, idempotency, settlement, unknown exposure, confirmed no-charge release, stale reservation reconciliation, and that a provider cost overrun is recorded at its actual amount rather than clipped to the reservation.
-- The corrected migration/reconciliation SQL integration run completed successfully in CI (`46095350845`). The versioned estimator, its validation tests, and documentation workflows also completed successfully (`46095400515`, `46095412636`, `46095418512`).
+- SQL tests now check disabled-by-default behavior, browser-role privilege denial, idempotency, settlement, unknown exposure, confirmed no-charge release, stale reservation reconciliation, and that a provider cost overrun is recorded at its actual amount rather than clipped to the reservation. The multi-session race harness additionally checks concurrent cap enforcement and concurrent duplicate-key idempotency.
+- The corrected migration/reconciliation SQL integration run completed successfully in CI (`46095350845`). The versioned estimator, its validation tests, and documentation workflows also completed successfully (`46095400515`, `46095412636`, `46095418512`). The concurrent cap/idempotency harness and the full backend/browser/PostgreSQL workflow completed successfully on commit `0aa990c` (CI run `46095650781`; documentation workflow `46095655041`).
 
 ## Remaining blockers before route integration
 
-1. Add and pass a true multi-session PostgreSQL concurrency test; current SQL contract tests are sequential.
+1. Add concurrent settlement/idempotent-settlement and failure-recovery tests; reserve concurrency and duplicate-key idempotency are now covered by the multi-session harness.
 2. Select a trusted server-side tokenizer or conservative token-bound method, then review and version actual model input/output prices including retry exposure.
 3. Add an authenticated, audited reconciliation operator workflow for reservations stranded in `reserved` or `unknown`; no scheduler exists, and ambiguous provider requests must never be TTL-released.
 4. Decide how to authenticate and audit policy/control changes and how to handle user deletion under ledger retention requirements.
