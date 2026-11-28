@@ -27,10 +27,12 @@ def create_private_media_signed_url(settings: Settings, plan: MediaReadPlan) -> 
     )
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
-    }
+ 
+    # sb_secret keys are apikey-only; legacy service-role JWTs also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"   }
     try:
         response = httpx.post(
             endpoint,
