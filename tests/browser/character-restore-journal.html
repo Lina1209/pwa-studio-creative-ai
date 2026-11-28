@@ -49,6 +49,14 @@
    let row=await api.get(owner,op);
    row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging",references:[{cloudAssetId:uuid(),characterId:uuid(),sourceLocalId:uuid(),localReferenceId:uuid()+"-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"front.webp",type:"image/webp",localStagedBlobId:uuid(),expectedSha256:sha,expectedSizeBytes:2048,expectedMimeType:"image/webp",width:512,height:512,state:"verified_staged"}]});
    ok(row.references[0].state==="verified_staged","reference proof checkpoint missing");
+   row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate"});
+   await rejects(()=>api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating"}),"activation without durable intent accepted");
+   const intent={baseDigest:sha,mergedDigest:"b".repeat(64),intendedCount:2,operationMarker:op,preparedAt:new Date().toISOString()};
+   row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating",activation:intent});
+   ok(row.activation.mergedDigest===intent.mergedDigest&&row.activation.operationMarker===op,"activation intent was not persisted");
+   await rejects(()=>api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"committed",activation:{...intent,mergedDigest:"bad"}}),"malformed activation digest accepted");
+   row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"paused_retryable"});
+   ok(row.state==="paused_retryable"&&row.activation.mergedDigest===intent.mergedDigest,"interrupted activation intent was not retained");
    await api.releaseLease(owner,op,lease);
    ok((await api.get(owner,op)).lease===null,"lease not released");
    await rejects(()=>api.releaseLease(owner,op,lease),"stale lease release accepted");
