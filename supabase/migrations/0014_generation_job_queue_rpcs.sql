@@ -160,7 +160,7 @@ set search_path = pg_catalog, public, pg_temp
 as $$
 declare v_count integer;
 begin
-  if p_result_asset_id is null or (p_actual_cost_usd is not null and p_actual_cost_usd < 0) then
+  if p_result_asset_id is null or (p_actual_cost_usd is not null and (p_actual_cost_usd < 0 or p_actual_cost_usd = 'NaN'::numeric or p_actual_cost_usd = 'Infinity'::numeric or p_actual_cost_usd = '-Infinity'::numeric)) then
     raise exception 'invalid_completion_payload' using errcode = '22023';
   end if;
   update public.generation_jobs g set status = 'succeeded', result_asset_id = p_result_asset_id,
@@ -189,7 +189,7 @@ begin
   if p_safe_error_code is null or length(p_safe_error_code) not between 1 and 80
      or p_safe_error_code !~ '^[a-zA-Z0-9_.-]+$'
      or p_retryable is null or p_retry_delay_seconds is null or p_retry_delay_seconds not between 1 and 3600
-     or (p_actual_cost_usd is not null and p_actual_cost_usd < 0) then
+     or (p_actual_cost_usd is not null and (p_actual_cost_usd < 0 or p_actual_cost_usd = 'NaN'::numeric or p_actual_cost_usd = 'Infinity'::numeric or p_actual_cost_usd = '-Infinity'::numeric)) then
     raise exception 'invalid_failure_payload' using errcode = '22023';
   end if;
   select * into v_job from public.generation_jobs
