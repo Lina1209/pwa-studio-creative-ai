@@ -1,0 +1,180 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Restore activation browser integration</title></head><body><pre id="results">Running</pre>
+<script src="../../character-owner-coordination-lock.js"></script><script src="../../character-restore-journal.js"></script><script src="../../character-restore-blob-store.js"></script><script src="../../character-local-storage-adapter.js"></script><script src="../../character-restore-activation.js"></script>
+<script>
+(async()=>{
+ const out=document.getElementById("results"),passed=[];
+ const journal=window.PWACharacterRestoreJournal,blobStore=window.PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore();
+ const owner=crypto.randomUUID(),cloud=crypto.randomUUID(),local=crypto.randomUUID(),asset=crypto.randomUUID(),stagedId=crypto.randomUUID(),operation=crypto.randomUUID();
+ const bytes=new TextEncoder().encode("verified staged character image bytes"),blob=new Blob([bytes],{type:"image/png"});
+ const digest=async v=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",typeof v==="string"?new TextEncoder().encode(v):await v.arrayBuffer())),x=>x.toString(16).padStart(2,"0")).join("");
+ const canonical=v=>JSON.stringify(v,(k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,n)=>(o[n]=x[n],o),{}):x);
+ const ok=(v,m)=>{if(!v)throw Error(m)},rejects=async(fn,m)=>{let yes=false;try{await fn()}catch{yes=true}ok(yes,m)};
+ const run=async(n,fn)=>{out.textContent="RUN "+n+"\\n"+passed.join("\\n");await fn();passed.push(n);out.textContent="PASS "+passed.length+"\\n"+passed.join("\\n")};
+ const storage=window.localStorage;
+ const localAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage,ownerId:owner});
+ const original={id:crypto.randomUUID(),name:"Карточка, которую нельзя потерять",kind:"character",referenceImages:[]};
+ localAdapter.writeLocalItems(owner,[original]);
+ const base=localAdapter.readLocalItems(owner),baseCanonical=canonical(base),baseDigest=await digest(baseCanonical),sha=await digest(blob);
+ const reference={cloudAssetId:asset,characterId:cloud,sourceLocalId:local,localReferenceId:local+"-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"katty.png",type:"image/png",localStagedBlobId:stagedId,expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30,state:"verified_staged"};
+ const manifest={cloudAssetId:asset,characterId:cloud,sourceLocalId:local,localReferenceId:reference.localReferenceId,name:reference.name,type:reference.type,expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30};
+ const proposal={id:local,name:"Катти",description:"",kind:"character",representation:"both",voice:"",passport:{face:"зелёные глаза"},referenceImages:[],createdAt:"2026-11-28T00:00:00.000Z",updatedAt:"2026-11-28T00:00:00.000Z",cloudBackup:{characterId:cloud,version:1,referenceManifest:[manifest]}};
+ const plan={complete:true,ownerId:owner,baseLocalFingerprint:baseCanonical,proposedItems:[proposal],unchanged:[],conflicts:[]};
+ async function operationReady(op,selected,refs=[],fingerprint=baseDigest){
+  await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:fingerprint,snapshotId:"browser-snapshot",selectedCharacterIds:selected});
+  let lease=await journal.acquireLease(owner,op),row=await journal.get(owner,op);
+  row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
+  row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging",references:refs});
+  row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate",references:refs});
+  await journal.releaseLease(owner,op,lease);
+  return await journal.get(owner,op);
+ }
+ try{
+  await run("atomic activation verifies staged bytes and preserves existing cards",async()=>{
+   await blobStore.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:stagedId,blob,proof:{sha256:sha,sizeBytes:blob.size,mimeType:"image/png",width:40,height:30}});
+   let row=await operationReady(operation,[cloud],[reference]);
+   const result=await window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:operation,plan,expectedRevision:row.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:40,height:30})});
+   ok(result.state==="committed"&&result.restoredCount===1,"activation result incorrect");
+   const saved=localAdapter.readLocalItems(owner);
+   ok(saved.length===2&&saved[1].id===original.id,"existing local card was not preserved");
+   ok(saved[0].restoreOperationId===operation,"restore operation marker missing");
+   ok(saved[0].referenceImages.length===1&&saved[0].referenceImages[0].id===stagedId,"restored image is not linked to staged Blob key");
+   ok(saved[0].referenceImages[0].sourceReferenceId===reference.localReferenceId,"original reference mapping was not retained");
+   ok((await journal.get(owner,operation)).state==="committed","journal did not reach committed");
+  });
+  await run("tampered staged Blob blocks activation before metadata write",async()=>{
+   const op=crypto.randomUUID(),badCloud=crypto.randomUUID(),badLocal=crypto.randomUUID(),badAsset=crypto.randomUUID(),badStage=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),base2=canonical(current),baseDigest2=await digest(base2);
+   const badRef={...reference,characterId:badCloud,sourceLocalId:badLocal,cloudAssetId:badAsset,localStagedBlobId:badStage,localReferenceId:badLocal+"-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"};
+   const badManifest={...manifest,characterId:badCloud,sourceLocalId:badLocal,cloudAssetId:badAsset,localReferenceId:badRef.localReferenceId};
+   const badProposal={...proposal,id:badLocal,cloudBackup:{...proposal.cloudBackup,characterId:badCloud,referenceManifest:[badManifest]}};
+   const badPlan={complete:true,ownerId:owner,baseLocalFingerprint:base2,proposedItems:[badProposal],unchanged:[],conflicts:[]};
+   await blobStore.stageBlob({ownerId:owner,operationId:op,cloudAssetId:badAsset,localStagedBlobId:badStage,blob,proof:{sha256:sha,sizeBytes:blob.size,mimeType:"image/png",width:40,height:30}});
+   const row=await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseDigest2,snapshotId:"browser-snapshot-2",selectedCharacterIds:[badCloud]});
+   let lease=await journal.acquireLease(owner,op),jrow=await journal.get(owner,op);
+   jrow=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:jrow.revision,state:"planned"});
+   jrow=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:jrow.revision,state:"staging",references:[badRef]});
+   jrow=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:jrow.revision,state:"ready_to_activate",references:[badRef]});
+   await journal.releaseLease(owner,op,lease);
+   const ready=await journal.get(owner,op),before=localAdapter.readLocalItems(owner);
+   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:badPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:41,height:30})}),"dimension mismatch accepted");
+   ok(canonical(localAdapter.readLocalItems(owner))===canonical(before),"metadata changed despite failed verification");
+  });
+  await run("account switch during staged-media revalidation fences metadata activation",async()=>{
+   const op=crypto.randomUUID(),switchCloud=crypto.randomUUID(),switchLocal=crypto.randomUUID(),switchAsset=crypto.randomUUID(),switchStage=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),base4=canonical(current),baseDigest4=await digest(base4);
+   const switchRef={...reference,characterId:switchCloud,sourceLocalId:switchLocal,cloudAssetId:switchAsset,localStagedBlobId:switchStage,localReferenceId:switchLocal+"-cccccccc-cccc-4ccc-8ccc-cccccccccccc"};
+   const switchManifest={...manifest,characterId:switchCloud,sourceLocalId:switchLocal,cloudAssetId:switchAsset,localReferenceId:switchRef.localReferenceId};
+   const switchProposal={...proposal,id:switchLocal,cloudBackup:{...proposal.cloudBackup,characterId:switchCloud,referenceManifest:[switchManifest]}};
+   const switchPlan={complete:true,ownerId:owner,baseLocalFingerprint:base4,proposedItems:[switchProposal],unchanged:[],conflicts:[]};
+   await blobStore.stageBlob({ownerId:owner,operationId:op,cloudAssetId:switchAsset,localStagedBlobId:switchStage,blob,proof:{sha256:sha,sizeBytes:blob.size,mimeType:"image/png",width:40,height:30}});
+   const ready=await operationReady(op,[switchCloud],[switchRef],baseDigest4),before=localAdapter.readLocalItems(owner);
+   let currentAccount=true;
+   const switchingStore={async readStagedBlob(args){const result=await blobStore.readStagedBlob(args);currentAccount=false;return result;}};
+   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:switchPlan,expectedRevision:ready.revision,journal,blobStore:switchingStore,localAdapter,inspectImage:async()=>({width:40,height:30}),isCurrent:()=>currentAccount}),"account switch did not stop activation");
+   ok(canonical(localAdapter.readLocalItems(owner))===canonical(before),"account switch changed local metadata");
+   ok((await journal.get(owner,op)).state==="ready_to_activate","account switch advanced the activation checkpoint");
+  });
+  await run("storage quota failure preserves the base library and retryable intent",async()=>{
+   const op=crypto.randomUUID(),nextCloud=crypto.randomUUID(),nextLocal=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),base3=canonical(current),baseDigest3=await digest(base3);
+   const noRefCard={id:nextLocal,name:"Карточка без референсов",description:"",kind:"character",representation:"2d",voice:"",passport:{},referenceImages:[],cloudBackup:{characterId:nextCloud,version:1,referenceManifest:[]}};
+   const noRefPlan={complete:true,ownerId:owner,baseLocalFingerprint:base3,proposedItems:[noRefCard],unchanged:[],conflicts:[]};
+   const ready=await operationReady(op,[nextCloud],[],baseDigest3);
+   const failingAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage:{getItem:k=>storage.getItem(k),setItem(){throw new DOMException("quota exceeded","QuotaExceededError")}},ownerId:owner});
+   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:noRefPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter:failingAdapter,inspectImage:async()=>({width:1,height:1})}),"quota failure did not abort activation");
+   ok(canonical(localAdapter.readLocalItems(owner))===base3,"quota failure changed existing metadata");
+   const afterFailure=await journal.get(owner,op);ok(afterFailure.state==="paused_retryable","quota failure was not left retryable: "+afterFailure.state);
+  });
+  async function activatingIntent(op,baseItems,mergedDigest){
+   const cloudId=crypto.randomUUID(),baseText=canonical(baseItems),baseHash=await digest(baseText);
+   await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseHash,snapshotId:"recovery-boundary",selectedCharacterIds:[cloudId]});
+   let lease=await journal.acquireLease(owner,op),row=await journal.get(owner,op);
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating",activation:{baseDigest:baseHash,mergedDigest,intendedCount:baseItems.length+1,restoredCount:1,operationMarker:op,preparedAt:new Date().toISOString()}});
+   await journal.releaseLease(owner,op,lease);
+   return await journal.get(owner,op);
+  }
+  await run("activation cannot enter while another tab holds the owner critical section",async()=>{
+   const op=crypto.randomUUID(),cloudId=crypto.randomUUID(),localId=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),baseText=canonical(current);
+   const card={id:localId,name:"Blocked activation",referenceImages:[],cloudBackup:{characterId:cloudId,version:1,referenceManifest:[]}};
+   const blockedPlan={complete:true,ownerId:owner,baseLocalFingerprint:baseText,proposedItems:[card],unchanged:[],conflicts:[]};
+   const ready=await operationReady(op,[cloudId],[],await digest(baseText));
+   const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:5000});
+   try{
+    await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:blockedPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:1,height:1})}),"activation entered a held owner critical section");
+    const unchanged=await journal.get(owner,op);
+    ok(unchanged.state==="ready_to_activate"&&unchanged.lease===null,"blocked activation changed the operation journal");
+    ok(canonical(localAdapter.readLocalItems(owner))===baseText,"blocked activation changed local metadata");
+   }finally{await PWACharacterOwnerCoordinationLock.release(held);}
+  });
+  await run("crash recovery cannot checkpoint while another tab holds the owner critical section",async()=>{
+   const op=crypto.randomUUID(),current=localAdapter.readLocalItems(owner);
+   const ready=await activatingIntent(op,current,await digest("unwritten merged snapshot"));
+   const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:5000});
+   try{
+    await rejects(()=>window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:ready.revision,journal,localAdapter}),"recovery entered a held owner critical section");
+    const unchanged=await journal.get(owner,op);
+    ok(unchanged.state==="activating"&&unchanged.lease===null,"blocked recovery changed the journal");
+   }finally{await PWACharacterOwnerCoordinationLock.release(held);}
+  });
+  await run("recovery returns untouched base snapshot to retryable state",async()=>{
+   const op=crypto.randomUUID(),baseItems=localAdapter.readLocalItems(owner),baseText=canonical(baseItems);
+   const ready=await activatingIntent(op,baseItems,await digest("expected merged metadata not yet written"));
+   const result=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:ready.revision,journal,localAdapter});
+   ok(result.state==="paused_retryable"&&result.reason==="base_digest_matches","untouched base snapshot was not marked retryable");
+   ok(canonical(localAdapter.readLocalItems(owner))===baseText,"base recovery changed metadata");
+  });
+  await run("recovery marks an unexpected third metadata state as conflict without rollback",async()=>{
+   const op=crypto.randomUUID(),baseItems=localAdapter.readLocalItems(owner),changed=baseItems.map((x,i)=>i===0?{...x,description:"Concurrent local edit"}:x);
+   const ready=await activatingIntent(op,baseItems,await digest("expected merged result that is not present"));
+   localAdapter.writeLocalItems(owner,changed);
+   const result=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:ready.revision,journal,localAdapter});
+   ok(result.state==="conflict"&&result.reason==="metadata_matches_neither_safe_boundary","ambiguous metadata was not marked conflict");
+   ok(canonical(localAdapter.readLocalItems(owner))===canonical(changed),"recovery blindly rolled back concurrent metadata");
+   localAdapter.writeLocalItems(owner,baseItems);
+  });
+  await run("account switch fences crash recovery before journal commit",async()=>{
+   const op=crypto.randomUUID(),cloudId=crypto.randomUUID(),newId=crypto.randomUUID();
+   const baseNow=localAdapter.readLocalItems(owner),baseNowText=canonical(baseNow),baseNowDigest=await digest(baseNowText);
+   const newCard={id:newId,name:"Операция для проверки смены аккаунта",restoreOperationId:op,referenceImages:[]};
+   const merged=[newCard,...baseNow],mergedDigest=await digest(canonical(merged));
+   await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseNowDigest,snapshotId:"recovery-account-switch",selectedCharacterIds:[cloudId]});
+   let lease=await journal.acquireLease(owner,op),row=await journal.get(owner,op);
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate"});
+   const intent={baseDigest:baseNowDigest,mergedDigest,intendedCount:merged.length,restoredCount:1,operationMarker:op,preparedAt:new Date().toISOString()};
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating",activation:intent});
+   localAdapter.writeLocalItems(owner,merged);
+   await journal.releaseLease(owner,op,lease);
+   let currentAccount=true;
+   const switchingAdapter={readLocalItems(id){const items=localAdapter.readLocalItems(id);currentAccount=false;return items;},writeLocalItems:localAdapter.writeLocalItems};
+   let latest=await journal.get(owner,op);
+   await rejects(()=>window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:latest.revision,journal,localAdapter:switchingAdapter,isCurrent:()=>currentAccount}),"account switch did not stop recovery");
+   latest=await journal.get(owner,op);
+   ok(latest.state==="activating","recovery checkpoint advanced after account switch");
+   const recovered=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:latest.revision,journal,localAdapter});
+   ok(recovered.state==="committed","safe recovery did not resume after account was restored");
+  });
+  await run("recovery recognizes a completed metadata write after a simulated crash",async()=>{
+   const op=crypto.randomUUID(),newId=crypto.randomUUID();
+   const newCard={id:newId,name:"Восстановленная карточка",restoreOperationId:op,referenceImages:[]};
+   const merged=[newCard,...localAdapter.readLocalItems(owner)],mergedDigest=await digest(canonical(merged));
+   const row=await operationReady(op,[crypto.randomUUID()],[]);
+   let lease=await journal.acquireLease(owner,op),current=await journal.get(owner,op);
+   const intent={baseDigest,mergedDigest,intendedCount:merged.length,restoredCount:1,operationMarker:op,preparedAt:new Date().toISOString()};
+   current=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:current.revision,state:"activating",activation:intent});
+   localAdapter.writeLocalItems(owner,merged);
+   await journal.releaseLease(owner,op,lease);
+   const released=await journal.get(owner,op);
+   const query=new URLSearchParams({owner,operation:op,revision:String(released.revision)});
+   window.location.assign("./character-restore-activation-restart.html?"+query.toString());
+   await new Promise(()=>{});
+  });
+  out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
+ }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
+})();
+</script></body></html>

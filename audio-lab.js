@@ -198,6 +198,23 @@
     const resultBox = document.querySelector("#audioStoryResult");
     const resultText = document.querySelector("#audioStoryResultText");
     let selectedFile = null, previewUrl = null, recognition = null, latestResult = "";
+    let audioStoryRequestVersion = 0;
+    window.addEventListener("pwa-studio-auth-changed", () => {
+      audioStoryRequestVersion += 1;
+      if (recognition) {
+        const staleRecognition = recognition;
+        recognition = null;
+        try { staleRecognition.abort(); } catch {}
+      }
+      latestResult = "";
+      resultText.value = "";
+      resultBox.hidden = true;
+      generate.disabled = false;
+      if (dictate) dictate.disabled = !SpeechRecognition;
+      if (stop) stop.disabled = true;
+      if (dictateStatus) dictateStatus.textContent = "Диктовка остановлена из-за смены аккаунта.";
+      status.textContent = "Аккаунт изменился. Создайте материал заново в текущем сеансе.";
+    });
     input.addEventListener("change", () => {
       const file = input.files?.[0]; if (!file) return;
       if (!file.type.startsWith("audio/") || file.size > 25*1024*1024) {
@@ -209,6 +226,7 @@
       fileStatus.textContent = "Выбран файл: " + file.name + ". Он не загружается на сервер.";
     });
     transcript.addEventListener("input",()=>count.textContent=transcript.value.length+" / 12000");
+    resultText.addEventListener("input",()=>{latestResult=resultText.value;});
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const dictate = document.querySelector("#audioStoryDictate");
     const stop = document.querySelector("#audioStoryDictateStop");
@@ -218,18 +236,29 @@
       dictateStatus.textContent = "В этом браузере нет встроенного распознавания речи. Можно вставить готовую расшифровку вручную.";
     } else {
       dictate.addEventListener("click",()=>{
-        recognition = new SpeechRecognition(); recognition.lang = document.querySelector("#audioStoryLanguage").value==="казахский"?"kk-KZ":document.querySelector("#audioStoryLanguage").value==="английский"?"en-US":"ru-RU";
+        recognition = new SpeechRecognition();
+        const activeRecognition = recognition;
+        const recognitionVersion = audioStoryRequestVersion;
+        const recognitionIsCurrent = () => recognition === activeRecognition && recognitionVersion === audioStoryRequestVersion;
+        recognition.lang = document.querySelector("#audioStoryLanguage").value==="казахский"?"kk-KZ":document.querySelector("#audioStoryLanguage").value==="английский"?"en-US":"ru-RU";
         recognition.continuous = true; recognition.interimResults = true;
         const base = transcript.value.trim(); let finalText = "";
         recognition.onresult = event => {
+          if (!recognitionIsCurrent()) return;
           let interim = "";
           for(let i=event.resultIndex;i<event.results.length;i++){const part=event.results[i][0].transcript;if(event.results[i].isFinal)finalText += part+" ";else interim += part;}
           transcript.value = [base,finalText,interim].filter(Boolean).join(base?" ":"");
           count.textContent=transcript.value.length+" / 12000";
         };
-        recognition.onerror = event => dictateStatus.textContent = "Распознавание остановлено: "+event.error+".";
-        recognition.onend = () => {dictate.disabled=false;stop.disabled=true;dictateStatus.textContent="Диктовка завершена. Проверьте распознанный текст и исправьте ошибки."};
-        try{recognition.start();dictate.disabled=true;stop.disabled=false;dictateStatus.textContent="Слушаю речь… Говорите в микрофон."}catch(error){dictateStatus.textContent="Не удалось запустить микрофон: "+error.message}
+        recognition.onerror = event => { if (recognitionIsCurrent()) dictateStatus.textContent = "Распознавание остановлено: "+event.error+"."; };
+        recognition.onend = () => {
+          if (!recognitionIsCurrent()) return;
+          recognition = null;
+          dictate.disabled=false;stop.disabled=true;
+          dictateStatus.textContent="Диктовка завершена. Проверьте распознанный текст и исправьте ошибки.";
+        };
+        try{recognition.start();dictate.disabled=true;stop.disabled=false;dictateStatus.textContent="Слушаю речь… Говорите в микрофон."}
+        catch(error){if(recognitionIsCurrent()){recognition=null;dictate.disabled=false;stop.disabled=true;dictateStatus.textContent="Не удалось запустить микрофон: "+error.message}}
       });
       stop.addEventListener("click",()=>{if(recognition)recognition.stop()});
     }
@@ -238,12 +267,14 @@
       if(!transcript.value.trim()){status.textContent="Сначала добавьте расшифровку или описание аудио.";transcript.focus();return;}
       if(!window.PWAStudioAudioBridge){status.textContent="Модуль студии ещё загружается. Обновите страницу через минуту.";return;}
       generate.disabled=true;status.textContent="Studio AI создаёт материал…";
+      const requestVersion = audioStoryRequestVersion;
       try{
-        latestResult=await window.PWAStudioAudioBridge.generate({transcript:transcript.value,outputType:document.querySelector("#audioStoryOutput").value,language:document.querySelector("#audioStoryLanguage").value,sourceKind:document.querySelector("#audioStorySource").value,fileName:selectedFile?.name||""});
-        resultText.value=latestResult;resultBox.hidden=false;status.textContent="✓ Материал создан. Проверьте его перед сохранением.";
+        const generated = await window.PWAStudioAudioBridge.generate({transcript:transcript.value,outputType:document.querySelector("#audioStoryOutput").value,language:document.querySelector("#audioStoryLanguage").value,sourceKind:document.querySelector("#audioStorySource").value,fileName:selectedFile?.name||""});
+        if (requestVersion !== audioStoryRequestVersion) return;
+        latestResult=generated;resultText.value=latestResult;resultBox.hidden=false;status.textContent="✓ Материал создан. Проверьте его перед сохранением.";
         resultBox.scrollIntoView({behavior:"smooth",block:"start"});
-      }catch(error){status.textContent="Не удалось создать материал: "+error.message}
-      finally{generate.disabled=false;}
+      }catch(error){if(requestVersion===audioStoryRequestVersion)status.textContent="Не удалось создать материал: "+error.message}
+      finally{if(requestVersion===audioStoryRequestVersion)generate.disabled=false;}
     });
     document.querySelector("#audioStoryCopy").addEventListener("click",async()=>{
       try{await navigator.clipboard.writeText(latestResult);document.querySelector("#audioStoryResultStatus").textContent="Скопировано ✓";}

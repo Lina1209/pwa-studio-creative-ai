@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Restore activation restart recovery</title></head><body><pre id="results">Recovering persisted activation after page reload…</pre>
+<script src="../../character-owner-coordination-lock.js"></script><script src="../../character-restore-journal.js"></script><script src="../../character-local-storage-adapter.js"></script><script src="../../character-restore-activation.js"></script>
+<script>
+(async()=>{
+ const out=document.getElementById("results");
+ try{
+  const params=new URLSearchParams(location.search),ownerId=params.get("owner"),operationId=params.get("operation"),expectedRevision=Number(params.get("revision"));
+  if(!ownerId||!operationId||!Number.isSafeInteger(expectedRevision)||expectedRevision<1)throw Error("Restart recovery parameters are invalid.");
+  const localAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage:window.localStorage,ownerId});
+  const result=await window.PWACharacterRestoreActivation.recoverActivation({ownerId,operationId,expectedRevision,journal:window.PWACharacterRestoreJournal,localAdapter});
+  if(result.state!=="committed"||result.reason!=="merged_digest_matches")throw Error("Reload recovery did not prove the committed metadata.");
+  const items=localAdapter.readLocalItems(ownerId);
+  if(items.filter(x=>x?.restoreOperationId===operationId).length!==1)throw Error("Restored operation marker was not durable after reload.");
+  out.textContent="PASS page-reload recovery\n✓ IndexedDB journal survived document reload\n✓ localStorage merged digest matched activation intent\n✓ recovery marked the operation committed";
+  document.documentElement.dataset.testResult="passed";
+ }catch(e){out.textContent="FAIL page-reload recovery\n"+(e.stack||e);document.documentElement.dataset.testResult="failed";}
+})();
+</script></body></html>

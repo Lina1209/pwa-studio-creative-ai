@@ -1,5 +1,6 @@
 import httpx
 from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import HTTPException
 
 from app.core.config import Settings
@@ -11,10 +12,12 @@ def _request(settings: Settings, method: str, *, params=None, payload=None):
     base = settings.supabase_url.rstrip("/")
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
+    # Supabase sb_secret keys are sent only as apikey; legacy JWT keys also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.request(method, f"{base}/rest/v1/user_notifications",
             headers=headers, params=params, json=payload, timeout=10.0)
@@ -43,6 +46,10 @@ def list_notifications(settings: Settings, user_id: str):
 
 
 def mark_notification_read(settings: Settings, user_id: str, notification_id: str):
+    try:
+        notification_id = str(UUID(notification_id))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=422, detail="A valid notification ID is required.") from exc
     rows = _request(settings, "PATCH", params={
         "id": f"eq.{notification_id}", "user_id": f"eq.{user_id}",
         "select": "id,read_at"},

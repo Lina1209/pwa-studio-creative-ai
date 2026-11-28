@@ -11,12 +11,23 @@
     : null;
   let authSession = null;
   let authContextVersion = 0;
+  let scheduledAuthLoadContextVersion = -1;
+  let authLoadTimer = null;
   let activeAssistantConversationId = null;
+  let assistantConversationLoadVersion = 0;
+  let assistantConversationIntentVersion = 0;
+  let assistantHistoryLoadVersion = 0;
   let assistantHistoryBusy = false;
   let assistantUserId = null;
   let activeMessageThreadId = null;
   let activeMessagePartnerId = null;
   let conversationsCache = [];
+  const messageProfileCache = new Map();
+  const messageProfilePending = new Map();
+  let conversationRenderVersion = 0;
+  let conversationMessagesRequestVersion = 0;
+  let communitySearchRequestVersion = 0;
+  let communityProfileRequestVersion = 0;
   const setAuthMessage = (message, isError = false) => {
     if (authFeedback) { authFeedback.textContent = message; authFeedback.style.color = isError ? "#ff9b9b" : "#b9e6c8"; }
   };
@@ -33,7 +44,8 @@
   };
   const refreshAuthUI = session => {
     const nextUserId = session?.user?.id || null;
-    if (nextUserId !== assistantUserId) {
+    const identityChanged = nextUserId !== assistantUserId;
+    if (identityChanged) {
       const adminPanel = $("#adminPanel"); if (adminPanel) adminPanel.hidden = true;
       const notificationPanel = $("#notificationPanel"); if (notificationPanel) notificationPanel.hidden = true;
       const notificationList = $("#notificationList"); if (notificationList) notificationList.replaceChildren();
@@ -44,6 +56,8 @@
       const communityPublicProfile = $("#communityPublicProfile"); if (communityPublicProfile) { communityPublicProfile.hidden = true; communityPublicProfile.replaceChildren(); }
       const conversationList = $("#conversationList"); if (conversationList) conversationList.replaceChildren();
       conversationsCache = [];
+      messageProfileCache.clear();
+      messageProfilePending.clear();
       const directMessageList = $("#directMessageList"); if (directMessageList) directMessageList.replaceChildren();
       const directMessageForm = $("#directMessageForm"); if (directMessageForm) directMessageForm.hidden = true;
       const conversationTitle = $("#conversationTitle"); if (conversationTitle) conversationTitle.textContent = "Выберите диалог";
@@ -51,6 +65,15 @@
       activeMessagePartnerId = null;
       assistantUserId = nextUserId;
       authContextVersion += 1;
+      conversationRenderVersion += 1;
+      conversationMessagesRequestVersion += 1;
+      communitySearchRequestVersion += 1;
+      communityProfileRequestVersion += 1;
+      // Invalidate every in-flight Companion operation at the account boundary.
+      assistantConversationLoadVersion += 1;
+      assistantConversationIntentVersion += 1;
+      assistantHistoryLoadVersion += 1;
+      assistantHistoryBusy = false;
       activeAssistantConversationId = null;
       const history = $("#assistantHistoryList");
       const messages = $("#assistantMessages");
@@ -60,6 +83,9 @@
       if (status) status.textContent = nextUserId ? "Загружаем историю нового аккаунта…" : "Войдите в аккаунт, чтобы сохранять историю диалогов.";
     }
     authSession = session;
+    // Token refreshes and duplicate INITIAL_SESSION notifications are not
+    // account changes; only identity transitions should reset account-bound UI.
+    if (identityChanged) window.dispatchEvent(new Event("pwa-studio-auth-changed"));
     const user = session && session.user;
     authGate.hidden = true;
     $("#openLogin").hidden = !!user;
@@ -101,6 +127,25 @@
       if (topAvatar) topAvatar.textContent = "L";
     }
   };
+  const scheduleAuthContextLoad = () => {
+    const scheduledVersion = authContextVersion;
+    // getSession() and INITIAL_SESSION can report the same account almost
+    // simultaneously. Load account data once per identity context.
+    if (scheduledAuthLoadContextVersion === scheduledVersion) return;
+    scheduledAuthLoadContextVersion = scheduledVersion;
+    clearTimeout(authLoadTimer);
+    authLoadTimer = setTimeout(() => {
+      authLoadTimer = null;
+      if (scheduledVersion !== authContextVersion) return;
+      if (typeof renderMovieProjects === "function") renderMovieProjects();
+      if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
+      if (typeof loadAccountRole === "function") loadAccountRole();
+      if (typeof loadNotifications === "function") loadNotifications();
+      if (typeof loadConversations === "function") loadConversations();
+      if (typeof loadCommunityProfile === "function") loadCommunityProfile();
+      if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+    }, 0);
+  };
   if (!supabaseClient) {
     authGate.hidden = false;
     setAuthMessage("Не найдена конфигурация Supabase. Проверьте файл supabase-config.js.", true);
@@ -108,9 +153,12 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof loadCommunityProfile === "function") loadCommunityProfile(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
+      scheduleAuthContextLoad();
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof loadCommunityProfile === "function") loadCommunityProfile(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      refreshAuthUI(session);
+      scheduleAuthContextLoad();
+    });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
@@ -227,10 +275,23 @@ const movieHistoryStyle = document.createElement("style");
   const authLogoutButton = document.createElement("button");
   authLogoutButton.type = "button"; authLogoutButton.id = "profileLogout"; authLogoutButton.className = "auth-link"; authLogoutButton.textContent = "Выйти из аккаунта"; authLogoutButton.hidden = true;
   authLogoutButton.addEventListener("click", async () => {
-    if (!supabaseClient) return;
-    const {error} = await supabaseClient.auth.signOut();
-    if (error) setAuthMessage(error.message, true);
-    else { authGate.hidden = true; setAuthMessage(""); refreshAuthUI(null); }
+    if (!supabaseClient || !authSession?.user) return;
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
+    const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === requestUserId;
+    authLogoutButton.disabled = true;
+    try {
+      const {error} = await supabaseClient.auth.signOut();
+      // Supabase's auth-state event normally performs the transition. Never let
+      // a late logout response clear or overwrite a newer account's UI.
+      if (!contextIsCurrent()) return;
+      if (error) setAuthMessage(error.message, true);
+      else { authGate.hidden = true; setAuthMessage(""); refreshAuthUI(null); }
+    } catch (error) {
+      if (contextIsCurrent()) setAuthMessage(error.message || "Не удалось выйти из аккаунта.", true);
+    } finally {
+      if (contextIsCurrent()) authLogoutButton.disabled = false;
+    }
   });
   const profileBlock = $(".profile");
   if (profileBlock) profileBlock.appendChild(authLogoutButton);
@@ -259,11 +320,18 @@ const movieHistoryStyle = document.createElement("style");
     const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(options.headers || {}) } });
     let data = {};
     try { data = await response.json(); } catch {}
-    if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
+    if (!response.ok) {
+      const detail = data.detail;
+      const error = new Error(typeof detail === "string" ? detail : (detail?.message || "Ошибка API (" + response.status + ")."));
+      error.status = response.status;
+      error.code = typeof detail === "object" && detail ? detail.code : null;
+      throw error;
+    }
     return data;
   };
 
   // Shared bridge for Audio → Story. Uses the existing authenticated AI endpoint and movie storage.
+  let latestAudioGenerationContext = null;
   window.PWAStudioAudioBridge = {
     async generate({ transcript, outputType, language, sourceKind, fileName }) {
       const clean = String(transcript || "").trim();
@@ -280,10 +348,22 @@ const movieHistoryStyle = document.createElement("style");
         "Если исходник короткий или неясный, развей его творчески и отметь придуманные детали как художественные.",
         "\nМатериал пользователя:\n" + clean
       ].join("\n");
+      const requestUserId = authSession?.user?.id || null;
+      const requestVersion = authContextVersion;
       const result = await apiRequest("/api/chat", { method:"POST", body:JSON.stringify({message:prompt,history:[]}) });
+      if (requestVersion !== authContextVersion || (authSession?.user?.id || null) !== requestUserId) {
+        throw new Error("Аккаунт изменился во время создания материала. Повторите запрос в текущем аккаунте.");
+      }
+      latestAudioGenerationContext = { userId:requestUserId, version:requestVersion, reply:result.reply };
       return result.reply;
     },
     createMovie({ title, story, sourceLabel }) {
+      const generation = latestAudioGenerationContext;
+      if (!generation || !String(story || "").trim() ||
+          generation.version !== authContextVersion ||
+          generation.userId !== (authSession?.user?.id || null)) {
+        throw new Error("Результат создан в другом сеансе или аккаунте. Создайте материал заново.");
+      }
       const name = String(title || "История из аудио").trim().slice(0,90) || "История из аудио";
       const text = String(story || "").trim();
       if (!text) throw new Error("Сценарий пуст.");
@@ -299,7 +379,8 @@ const movieHistoryStyle = document.createElement("style");
       projects.unshift(project);
       if (!movieWrite(projects)) throw new Error("Не удалось сохранить проект фильма.");
       activeMovieId = project.id; editingMovieId = project.id;
-      renderMovieProjects();
+    
+  renderMovieProjects();
       if (!authSession?.user) renderGuestSpace();
       navigate("movie");
       setTimeout(() => openMovieStage(project.id,0), 80);
@@ -308,29 +389,122 @@ const movieHistoryStyle = document.createElement("style");
   };
 
 
+  const PROFILE_AVATAR_CATALOG = globalThis.PWAProfileAvatarCatalog.items;
+  const PROFILE_AVATAR_DEFAULT="portrait-violet";
+  let profileAvatarSavedId=PROFILE_AVATAR_DEFAULT,profileAvatarDraftId=PROFILE_AVATAR_DEFAULT,profileAvatarCategory="all";
+  const KATTY_EXPRESSIONS=[
+    ["neutral-warm","Спокойствие"],["joy","Радость"],["delight","Восторг"],["curious","Любопытство"],
+    ["focused","Работа"],["surprised","Удивление"],["empathetic","Поддержка"],["thinking","Размышление"]
+  ];
+  let kattyExpressionDraft="neutral-warm";
+
+  const profileAvatarPath=id=>{
+    return globalThis.PWAProfileAvatarCatalog.getAssetPath(id);
+  };
+  const applyProfileAvatarChrome=id=>{
+    const src=profileAvatarPath(id);
+    ["#accountAvatar","#topAvatar",".profile .avatar"].forEach(selector=>{
+      const node=$(selector);if(!node)return;
+      const img=document.createElement("img");img.src=src;img.alt="Аватар профиля";img.loading="lazy";
+      img.onerror=()=>{node.replaceChildren();node.textContent="✦";};
+      node.replaceChildren(img);
+    });
+  };
+  const profileAvatarNode=(profile,large=false)=>{
+    const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profile.avatar_catalog_id);
+    const node=document.createElement("div");
+    node.className="community-user-avatar"+(large?" community-user-avatar-large":"");
+    if(item){
+      const img=document.createElement("img");img.src=profileAvatarPath(item.id);img.alt="Аватар: "+item.name;img.loading="lazy";
+      img.onerror=()=>{node.replaceChildren();node.textContent=(profile.display_name||"?").trim().charAt(0).toUpperCase();};
+      node.append(img);
+    }else node.textContent=(profile.display_name||"?").trim().charAt(0).toUpperCase();
+    return node;
+  };
+  const renderProfileAvatarPicker=()=>{
+    const grid=$("#profileAvatarGrid"),categories=$("#profileAvatarCategories"),preview=$("#profileAvatarPreview"),apply=$("#profileAvatarApply");
+    if(!grid||!categories)return;
+    if(preview){const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarDraftId);const isKatty=profileAvatarDraftId==="katty-assistant";preview.src=isKatty?"assets/characters/katty/expressions/"+kattyExpressionDraft+".svg":profileAvatarPath(profileAvatarDraftId);preview.alt=isKatty?"Катти: "+(KATTY_EXPRESSIONS.find(([id])=>id===kattyExpressionDraft)?.[1]||"Спокойствие"):"Предпросмотр аватара: "+(item?.name||"Стандартный");}
+    const expressionPicker=$("#kattyExpressionPicker");
+    if(expressionPicker){expressionPicker.hidden=profileAvatarDraftId!=="katty-assistant";expressionPicker.replaceChildren();if(profileAvatarDraftId==="katty-assistant"){const title=document.createElement("p");title.className="katty-expression-title";title.textContent="Выражение Катти · только предпросмотр";expressionPicker.append(title);KATTY_EXPRESSIONS.forEach(([id,label])=>{const button=document.createElement("button");button.type="button";button.className="katty-expression-option"+(kattyExpressionDraft===id?" is-selected":"");button.textContent=label;button.setAttribute("aria-pressed",String(kattyExpressionDraft===id));button.addEventListener("click",()=>{kattyExpressionDraft=id;renderProfileAvatarPicker();});expressionPicker.append(button);});}}
+    categories.replaceChildren();
+    const groups=[["all","Все"],...Array.from(new Map(PROFILE_AVATAR_CATALOG.map(item=>[item.category,[item.category,item.group]])).values())];
+    groups.forEach(([id,label])=>{const button=document.createElement("button");button.className="profile-avatar-category";button.textContent=label;button.type="button";button.classList.toggle("is-active",profileAvatarCategory===id);button.setAttribute("aria-pressed",String(profileAvatarCategory===id));button.addEventListener("click",()=>{profileAvatarCategory=id;renderProfileAvatarPicker();});categories.append(button);});
+    grid.replaceChildren();
+    PROFILE_AVATAR_CATALOG.filter(item=>profileAvatarCategory==="all"||item.category===profileAvatarCategory).forEach(item=>{
+      const button=document.createElement("button");button.type="button";button.className="profile-avatar-option"+(profileAvatarDraftId===item.id?" is-selected":"");button.setAttribute("aria-pressed",String(profileAvatarDraftId===item.id));button.setAttribute("aria-label",item.name);
+      const img=document.createElement("img");img.src=profileAvatarPath(item.id);img.alt="";img.loading="lazy";
+      const label=document.createElement("span");label.textContent=item.name;button.append(img,label);
+      button.addEventListener("click",()=>{profileAvatarDraftId=item.id;if(item.id!=="katty-assistant")kattyExpressionDraft="neutral-warm";renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран образ «"+item.name+"». Нажмите «Применить аватар», чтобы сохранить.";});
+      grid.append(button);
+    });
+    if(apply)apply.disabled=profileAvatarDraftId===profileAvatarSavedId;
+  };
+  const initializeGuestProfileAvatar=()=>{
+    if(authSession?.user)return;
+    let stored=PROFILE_AVATAR_DEFAULT;
+    try{const value=localStorage.getItem("pwa_studio_guest_profile_avatar_v1");if(PROFILE_AVATAR_CATALOG.some(item=>item.id===value))stored=value;}catch(_){}
+    profileAvatarSavedId=stored;profileAvatarDraftId=stored;profileAvatarCategory="all";
+    renderProfileAvatarPicker();applyProfileAvatarChrome(stored);
+    const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Гостевой аватар хранится только в этом браузере.";
+  };
   const communityFeedback = message => { const el=$("#communityProfileFeedback"); if(el)el.textContent=message; };
+  $("#profileAvatarReset")?.addEventListener("click",()=>{profileAvatarDraftId=PROFILE_AVATAR_DEFAULT;profileAvatarCategory="all";renderProfileAvatarPicker();const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Выбран стандартный аватар. Нажмите «Применить аватар», чтобы сохранить.";});
+  initializeGuestProfileAvatar();
+  $("#profileAvatarApply")?.addEventListener("click",async()=>{
+    const userId=authSession?.user?.id,button=$("#profileAvatarApply");
+    if(!userId){
+      try{
+        localStorage.setItem("pwa_studio_guest_profile_avatar_v1",profileAvatarDraftId);
+        profileAvatarSavedId=profileAvatarDraftId;renderProfileAvatarPicker();applyProfileAvatarChrome(profileAvatarSavedId);
+        const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="✓ Гостевой аватар сохранён только на этом устройстве.";
+      }catch(error){const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Не удалось сохранить гостевой выбор в браузере.";}
+      return;
+    }
+    const version=authContextVersion;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;
+    button.disabled=true;
+    const feedback=$("#profileAvatarFeedback");if(feedback)feedback.textContent="Сохраняем аватар…";
+    try{
+      const saved=await apiRequest("/api/community/profile",{method:"PATCH",body:JSON.stringify({avatar_catalog_id:profileAvatarDraftId,avatar_representation:"2d"})});
+      if(version!==authContextVersion||authSession?.user?.id!==userId||saved.user_id!==userId)return;
+      profileAvatarSavedId=saved.avatar_catalog_id||PROFILE_AVATAR_DEFAULT;profileAvatarDraftId=profileAvatarSavedId;renderProfileAvatarPicker();applyProfileAvatarChrome(profileAvatarSavedId);
+      if(feedback)feedback.textContent="✓ Аватар сохранён и будет использоваться в карточке сообщества.";
+      const item=PROFILE_AVATAR_CATALOG.find(entry=>entry.id===profileAvatarSavedId);
+      if($("#profileAvatarPreview"))$("#profileAvatarPreview").alt="Текущий аватар профиля: "+(item?.name||"Стандартный");
+    }catch(error){if(contextIsCurrent()&&feedback)feedback.textContent="Не удалось сохранить аватар: "+error.message;}
+    finally{
+      // Only the account that started this save may update the shared picker button.
+      if(contextIsCurrent())button.disabled=profileAvatarDraftId===profileAvatarSavedId;
+    }
+  });
   const loadCommunityProfile = async () => {
+    const requestVersion=++communityProfileRequestVersion;
     const version=authContextVersion,userId=authSession?.user?.id;
+    const contextIsCurrent=()=>requestVersion===communityProfileRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId;
     const panel=$("#communityPanel");
     if(!panel)return;
     panel.hidden=!userId;
-    if(!userId)return;
+    if(!userId){initializeGuestProfileAvatar();return;}
     try{
       const profile=await apiRequest("/api/community/profile");
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
+      profileAvatarSavedId=PROFILE_AVATAR_CATALOG.some(item=>item.id===profile.avatar_catalog_id)?profile.avatar_catalog_id:PROFILE_AVATAR_DEFAULT;
+      profileAvatarDraftId=profileAvatarSavedId;profileAvatarCategory="all";renderProfileAvatarPicker();applyProfileAvatarChrome(profileAvatarSavedId);
       $("#communityDisplayName").value=profile.display_name||"";
       $("#communityUsername").value=profile.username||"";
       $("#communityBio").value=profile.bio||"";
       $("#communityPublic").checked=profile.visibility==="public";
       $("#communityListed").checked=!!profile.show_in_directory;
       communityFeedback("Профиль загружен. Управляйте публичностью в настройках ниже.");
-    }catch(error){if(version===authContextVersion)communityFeedback("Не удалось загрузить профиль: "+error.message);}
+    }catch(error){if(contextIsCurrent())communityFeedback("Не удалось загрузить профиль: "+error.message);}
   };
   $("#communityProfileForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
     if(!authSession?.user)return;
     const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
-    const version=authContextVersion;
+    const version=authContextVersion,userId=authSession.user.id;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;
     const payload={
       display_name:$("#communityDisplayName").value.trim(),
       username:$("#communityUsername").value.trim().toLowerCase(),
@@ -344,8 +518,11 @@ const movieHistoryStyle = document.createElement("style");
       if(version!==authContextVersion||authSession?.user?.id!==saved.user_id)return;
       $("#communityUsername").value=saved.username;
       communityFeedback("✓ Карточка сохранена. "+(saved.visibility==="public"&&saved.show_in_directory?"Она доступна в каталоге.":"Профиль не показывается в каталоге."));
-    }catch(error){if(version===authContextVersion)communityFeedback("Не удалось сохранить профиль: "+error.message);}
-    finally{button.disabled=false;}
+    }catch(error){if(contextIsCurrent())communityFeedback("Не удалось сохранить профиль: "+error.message);}
+    finally{
+      // A save started by another account must not unlock this account's form.
+      if(contextIsCurrent())button.disabled=false;
+    }
   });
   const renderCommunityResults = profiles => {
     const list=$("#communityResults");if(!list)return;
@@ -353,7 +530,7 @@ const movieHistoryStyle = document.createElement("style");
     if(!profiles.length){list.append(adminNode("div","admin-empty","По этому запросу авторы не найдены."));return;}
     profiles.forEach(profile=>{
       const card=adminNode("article","community-user-card");
-      const avatar=adminNode("div","community-user-avatar",(profile.display_name||"?").trim().charAt(0).toUpperCase());
+      const avatar=profileAvatarNode(profile);
       const details=adminNode("div","community-user-details");
       details.append(adminNode("b","",profile.display_name||"Автор"));
       details.append(adminNode("small","","@"+profile.username));
@@ -373,6 +550,7 @@ const movieHistoryStyle = document.createElement("style");
     });
   };
   const searchCommunity = async () => {
+    const requestVersion=++communitySearchRequestVersion;
     if(!authSession?.user)return;
     const q=$("#communitySearchInput").value.trim();
     if(q.length<2){$("#communityResults").replaceChildren(adminNode("div","admin-empty","Введите не менее 2 символов."));return;}
@@ -380,21 +558,22 @@ const movieHistoryStyle = document.createElement("style");
     $("#communityResults").replaceChildren(adminNode("div","admin-empty","Ищем авторов…"));
     try{
       const profiles=await apiRequest("/api/community/users?q="+encodeURIComponent(q));
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(requestVersion!==communitySearchRequestVersion||version!==authContextVersion||authSession?.user?.id!==userId)return;
       renderCommunityResults(profiles);
-    }catch(error){if(version===authContextVersion)$("#communityResults").replaceChildren(adminNode("div","admin-empty","Поиск недоступен: "+error.message));}
+    }catch(error){if(requestVersion===communitySearchRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId)$("#communityResults").replaceChildren(adminNode("div","admin-empty","Поиск недоступен: "+error.message));}
   };
   const openCommunityProfile = async profileUserId => {
+    const requestVersion=++communityProfileRequestVersion;
     const version=authContextVersion,userId=authSession?.user?.id;
     if(!userId)return;
     const box=$("#communityPublicProfile");
     box.hidden=false;box.replaceChildren(adminNode("div","admin-empty","Загружаем карточку автора…"));
     try{
       const profile=await apiRequest("/api/community/profiles/"+encodeURIComponent(profileUserId));
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(requestVersion!==communityProfileRequestVersion||version!==authContextVersion||authSession?.user?.id!==userId)return;
       box.replaceChildren();
       const head=adminNode("div","community-profile-card");
-      head.append(adminNode("div","community-user-avatar community-user-avatar-large",(profile.display_name||"?").trim().charAt(0).toUpperCase()));
+      head.append(profileAvatarNode(profile,true));
       const info=adminNode("div","community-user-details");
       info.append(adminNode("b","",profile.display_name||"Автор"));
       info.append(adminNode("small","","@"+profile.username));
@@ -416,7 +595,7 @@ const movieHistoryStyle = document.createElement("style");
         $("#reportDescription").focus();
       });
       actions.append(message,report);box.append(actions);
-    }catch(error){if(version===authContextVersion)box.replaceChildren(adminNode("div","admin-empty","Карточка недоступна: "+error.message));}
+    }catch(error){if(requestVersion===communityProfileRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId)box.replaceChildren(adminNode("div","admin-empty","Карточка недоступна: "+error.message));}
   };
   $("#communitySearchButton")?.addEventListener("click",searchCommunity);
   $("#communitySearchInput")?.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();searchCommunity();}});
@@ -450,22 +629,25 @@ const movieHistoryStyle = document.createElement("style");
       list.append(card);
     });
   };
+  let notificationLoadRequestVersion = 0;
   const loadNotifications = async () => {
+    const requestVersion=++notificationLoadRequestVersion;
     const panel = $("#notificationPanel");
     if (!panel) return;
     if (!authSession?.user) { panel.hidden = true; return; }
     panel.hidden = false;
     const version = authContextVersion, userId = authSession.user.id;
+    const contextIsCurrent=()=>requestVersion===notificationLoadRequestVersion&&version===authContextVersion&&authSession?.user?.id===userId;
     notificationFeedback("Проверяем новые сообщения…");
     const list = $("#notificationList");
     if (list) list.replaceChildren(adminNode("div","admin-empty","Загружаем уведомления…"));
     try {
       const items = await apiRequest("/api/notifications");
-      if (version !== authContextVersion || authSession?.user?.id !== userId) return;
+      if (!contextIsCurrent()) return;
       renderNotifications(items);
       notificationFeedback(items.length ? "Уведомления синхронизированы с вашим аккаунтом." : "Новых сообщений пока нет.");
     } catch (error) {
-      if (version !== authContextVersion || authSession?.user?.id !== userId) return;
+      if (!contextIsCurrent()) return;
       notificationFeedback("Не удалось загрузить уведомления: " + error.message);
       if (list) list.replaceChildren(adminNode("div","admin-empty","Центр уведомлений временно недоступен."));
     }
@@ -473,32 +655,36 @@ const movieHistoryStyle = document.createElement("style");
   const markOneNotificationRead = async (id, button) => {
     const version = authContextVersion, userId = authSession?.user?.id;
     if (!userId) return;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     button.disabled = true;
     try {
       await apiRequest("/api/notifications/" + encodeURIComponent(id) + "/read", {method:"POST"});
-      if (version === authContextVersion && authSession?.user?.id === userId) loadNotifications();
+      if (contextIsCurrent()) loadNotifications();
     } catch (error) {
-      if (version === authContextVersion) notificationFeedback("Не удалось отметить уведомление: " + error.message);
-      button.disabled = false;
+      if (contextIsCurrent()) {
+        notificationFeedback("Не удалось отметить уведомление: " + error.message);
+        button.disabled = false;
+      }
     }
   };
   $("#notificationRefresh")?.addEventListener("click", loadNotifications);
   $("#notificationReadAll")?.addEventListener("click", async event => {
     const button = event.currentTarget, version = authContextVersion, userId = authSession?.user?.id;
     if (!userId) return;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     button.disabled = true;
     try {
       await apiRequest("/api/notifications/read-all", {method:"POST"});
-      if (version === authContextVersion && authSession?.user?.id === userId) loadNotifications();
+      if (contextIsCurrent()) loadNotifications();
     } catch (error) {
-      if (version === authContextVersion) notificationFeedback("Не удалось обновить уведомления: " + error.message);
-      button.disabled = false;
+      if (contextIsCurrent()) {
+        notificationFeedback("Не удалось обновить уведомления: " + error.message);
+        button.disabled = false;
+      }
     }
   });
 
   const messagesFeedback = message => { const el = $("#messagesFeedback"); if (el) el.textContent = message; };
-  const messageProfileCache = new Map();
-  const messageProfilePending = new Map();
   const messageDisplayName = userId => {
     const profile = messageProfileCache.get(userId);
     return profile?.display_name || profile?.username || ("Пользователь · " + String(userId || "").slice(0, 8) + "…");
@@ -506,10 +692,12 @@ const movieHistoryStyle = document.createElement("style");
   const loadMessageProfile = async userId => {
     if (!userId || messageProfileCache.has(userId)) return messageProfileCache.get(userId);
     if (messageProfilePending.has(userId)) return messageProfilePending.get(userId);
+    const requestVersion=authContextVersion,requestOwnerId=authSession?.user?.id;
+    const contextIsCurrent=()=>requestVersion===authContextVersion&&authSession?.user?.id===requestOwnerId;
     const pending = apiRequest("/api/community/profiles/" + encodeURIComponent(userId))
-      .then(profile => { messageProfileCache.set(userId, profile || {}); return profile; })
-      .catch(() => { messageProfileCache.set(userId, {}); return null; })
-      .finally(() => messageProfilePending.delete(userId));
+      .then(profile => { if(contextIsCurrent())messageProfileCache.set(userId, profile || {}); return profile; })
+      .catch(() => { if(contextIsCurrent())messageProfileCache.set(userId, {}); return null; })
+      .finally(() => { if(messageProfilePending.get(userId)===pending)messageProfilePending.delete(userId); });
     messageProfilePending.set(userId, pending);
     return pending;
   };
@@ -517,9 +705,12 @@ const movieHistoryStyle = document.createElement("style");
   const renderConversations = threads => {
     conversationsCache = Array.isArray(threads) ? threads : [];
     const list = $("#conversationList"); if (!list) return;
+    const renderVersion = ++conversationRenderVersion;
+    const contextVersion = authContextVersion;
+    const userId = authSession?.user?.id;
     list.replaceChildren();
-    if (!threads.length) { list.append(adminNode("div","admin-empty","Пока нет диалогов. Начните переписку с первого сообщения.")); return; }
-    threads.forEach(thread => {
+    if (!conversationsCache.length) { list.append(adminNode("div","admin-empty","Пока нет диалогов. Начните переписку с первого сообщения.")); return; }
+    conversationsCache.forEach(thread => {
       const partnerId = messagePartnerId(thread);
       const button = adminNode("button","conversation-button");
       button.type = "button";
@@ -527,7 +718,12 @@ const movieHistoryStyle = document.createElement("style");
       button.append(adminNode("b","", messageDisplayName(partnerId)));
       button.append(adminNode("small","",thread.last_message_at ? "Последнее сообщение · "+formatAdminDate(thread.last_message_at) : "Диалог создан"));
       button.addEventListener("click",()=>openConversation(thread.id,partnerId));
-      loadMessageProfile(partnerId).then(()=>{const title=button.querySelector("b");if(title)title.textContent=messageDisplayName(partnerId);if(thread.id===activeMessageThreadId)$( "#conversationTitle" ).textContent="Диалог с "+messageDisplayName(partnerId);});
+      loadMessageProfile(partnerId).then(()=>{
+        if(renderVersion!==conversationRenderVersion||contextVersion!==authContextVersion||authSession?.user?.id!==userId||!button.isConnected)return;
+        const title=button.querySelector("b");
+        if(title)title.textContent=messageDisplayName(partnerId);
+        if(thread.id===activeMessageThreadId)$("#conversationTitle").textContent="Диалог с "+messageDisplayName(partnerId);
+      });
       list.append(button);
     });
   };
@@ -538,11 +734,13 @@ const movieHistoryStyle = document.createElement("style");
     panel.hidden=false;
     const version=authContextVersion,userId=authSession.user.id;
     const list=$("#conversationList");
-    if(list)list.replaceChildren(adminNode("div","admin-empty","Загружаем диалоги…"));
+    const requestVersion=list?(Number(list.dataset.requestVersion)||0)+1:1;
+    if(list){list.dataset.requestVersion=String(requestVersion);list.replaceChildren(adminNode("div","admin-empty","Загружаем диалоги…"));}
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&(!list||Number(list.dataset.requestVersion)===requestVersion);
     loadBlockedUsers();
     try{
       const threads=await apiRequest("/api/conversations");
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       renderConversations(Array.isArray(threads)?threads:[]);
       if(activeMessageThreadId && !(threads||[]).some(item=>item.id===activeMessageThreadId)){
         activeMessageThreadId=null;activeMessagePartnerId=null;
@@ -552,19 +750,20 @@ const movieHistoryStyle = document.createElement("style");
       }
       messagesFeedback(threads.length ? "Диалоги загружены. Переписка доступна только её участникам." : "Создайте первый диалог.");
     }catch(error){
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       messagesFeedback("Не удалось загрузить диалоги: "+error.message);
       if(list)list.replaceChildren(adminNode("div","admin-empty","Список диалогов временно недоступен."));
     }
   };
   const loadConversationMessages = async (threadId) => {
-    const version=authContextVersion,userId=authSession?.user?.id;
+    const version=authContextVersion,userId=authSession?.user?.id,requestVersion=++conversationMessagesRequestVersion;
     if(!userId||!threadId)return;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessageThreadId===threadId&&requestVersion===conversationMessagesRequestVersion;
     const list=$("#directMessageList");
     if(list)list.replaceChildren(adminNode("div","admin-empty","Загружаем сообщения…"));
     try{
       const messages=await apiRequest("/api/conversations/"+encodeURIComponent(threadId)+"/messages");
-      if(version!==authContextVersion||authSession?.user?.id!==userId||activeMessageThreadId!==threadId)return;
+      if(!contextIsCurrent())return;
       list.replaceChildren();
       if(!messages.length)list.append(adminNode("div","admin-empty","Пока нет сообщений. Напишите первым."));
       messages.forEach(message=>{
@@ -578,14 +777,17 @@ const movieHistoryStyle = document.createElement("style");
           edit.addEventListener("click",async()=>{
             const next=window.prompt("Изменить сообщение:",message.body||"");
             if(next===null||!next.trim()||next.trim()===message.body)return;
-            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"PATCH",body:JSON.stringify({body:next.trim()})});loadConversationMessages(threadId);}
-            catch(error){messagesFeedback("Не удалось изменить сообщение: "+error.message);}
+            const actionIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessageThreadId===threadId;
+            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"PATCH",body:JSON.stringify({body:next.trim()})});if(actionIsCurrent())loadConversationMessages(threadId);}
+            catch(error){if(actionIsCurrent())messagesFeedback("Не удалось изменить сообщение: "+error.message);}
           });
           const remove=adminNode("button","message-action is-danger","Удалить у себя");remove.type="button";
           remove.addEventListener("click",async()=>{
             if(!window.confirm("Скрыть это сообщение только в вашей переписке? У собеседника оно останется."))return;
-            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"DELETE"});loadConversationMessages(threadId);}
-            catch(error){messagesFeedback("Не удалось удалить сообщение: "+error.message);}
+            const actionVersion=authContextVersion,actionUserId=userId,actionThreadId=threadId;
+            const actionIsCurrent=()=>actionVersion===authContextVersion&&authSession?.user?.id===actionUserId&&activeMessageThreadId===actionThreadId;
+            try{await apiRequest("/api/messages/"+encodeURIComponent(message.id),{method:"DELETE"});if(actionIsCurrent())loadConversationMessages(threadId);}
+            catch(error){if(actionIsCurrent())messagesFeedback("Не удалось удалить сообщение: "+error.message);}
           });
           actions.append(edit,remove);item.append(actions);
         }
@@ -593,9 +795,9 @@ const movieHistoryStyle = document.createElement("style");
       });
       list.scrollTop=list.scrollHeight;
       await apiRequest("/api/conversations/"+encodeURIComponent(threadId)+"/read",{method:"POST"});
-      if(version===authContextVersion&&authSession?.user?.id===userId)loadConversations();
+      if(contextIsCurrent())loadConversations();
     }catch(error){
-      if(version===authContextVersion&&authSession?.user?.id===userId)messagesFeedback("Не удалось загрузить переписку: "+error.message);
+      if(contextIsCurrent())messagesFeedback("Не удалось загрузить переписку: "+error.message);
     }
   };
   const openConversation = (threadId,partnerId) => {
@@ -609,16 +811,17 @@ const movieHistoryStyle = document.createElement("style");
   $("#blockConversationUser")?.addEventListener("click",async()=>{
     if(!activeMessagePartnerId||!authSession?.user)return;
     if(!window.confirm("Заблокировать пользователя? Он не сможет отправлять вам сообщения, и вы не сможете писать ему."))return;
-    const button=$("#blockConversationUser"),version=authContextVersion;
+    const button=$("#blockConversationUser"),version=authContextVersion,userId=authSession.user.id,partnerId=activeMessagePartnerId,threadId=activeMessageThreadId;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessagePartnerId===partnerId&&activeMessageThreadId===threadId;
     button.disabled=true;
     try{
-      await apiRequest("/api/blocks",{method:"POST",body:JSON.stringify({user_id:activeMessagePartnerId})});
-      if(version!==authContextVersion)return;
+      await apiRequest("/api/blocks",{method:"POST",body:JSON.stringify({user_id:partnerId})});
+      if(!contextIsCurrent())return;
       $("#directMessageForm").hidden=true;
       messagesFeedback("Пользователь заблокирован. Переписка сохранена, новые сообщения между вами недоступны.");
       button.textContent="Заблокирован";
       loadBlockedUsers();
-    }catch(error){messagesFeedback("Не удалось заблокировать пользователя: "+error.message);button.disabled=false;}
+    }catch(error){if(contextIsCurrent()){messagesFeedback("Не удалось заблокировать пользователя: "+error.message);button.disabled=false;}}
   });
 
   const blockedUsersStyle=document.createElement("style");
@@ -627,10 +830,12 @@ const movieHistoryStyle = document.createElement("style");
   const loadBlockedUsers = async () => {
     const list=$("#blockedUsersList"); if(!list||!authSession?.user)return;
     list.replaceChildren(adminNode("div","admin-empty","Загружаем список блокировок…"));
-    const version=authContextVersion,userId=authSession.user.id;
+    const version=authContextVersion,userId=authSession.user.id,requestVersion=(Number(list.dataset.requestVersion)||0)+1;
+    list.dataset.requestVersion=String(requestVersion);
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&Number(list.dataset.requestVersion)===requestVersion;
     try{
       const rows=await apiRequest("/api/blocks");
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       list.replaceChildren();
       if(!Array.isArray(rows)||!rows.length){list.append(adminNode("div","admin-empty","Вы никого не заблокировали."));return;}
       const selectedIds=new Set();
@@ -653,6 +858,7 @@ const movieHistoryStyle = document.createElement("style");
         button.disabled=true;
         try{
           await apiRequest("/api/blocks",{method:"DELETE",body:JSON.stringify({user_id:row.blocked_id})});
+          if(!contextIsCurrent())return false;
           item.remove();selectedIds.delete(row.blocked_id);
           if(activeMessagePartnerId===row.blocked_id){
             const blockButton=$("#blockConversationUser");
@@ -660,14 +866,14 @@ const movieHistoryStyle = document.createElement("style");
             $("#directMessageForm").hidden=false;
           }
           return true;
-        }catch(error){button.disabled=false;throw error;}
+        }catch(error){if(contextIsCurrent())button.disabled=false;throw error;}
       };
       const items=new Map();
       rows.forEach(row=>{
         const item=adminNode("div","blocked-user-item");
         const choice=document.createElement("input");choice.type="checkbox";choice.setAttribute("aria-label","Выбрать пользователя "+String(row.blocked_id||"").slice(0,8));
         const label=adminNode("span","",messageDisplayName(row.blocked_id));
-        loadMessageProfile(row.blocked_id).then(()=>{if(item.isConnected)label.textContent=messageDisplayName(row.blocked_id);});
+        loadMessageProfile(row.blocked_id).then(()=>{if(contextIsCurrent()&&item.isConnected)label.textContent=messageDisplayName(row.blocked_id);});
         const button=adminNode("button","secondary-button","Разблокировать");button.type="button";
         choice.addEventListener("change",()=>{if(choice.checked)selectedIds.add(row.blocked_id);else selectedIds.delete(row.blocked_id);updateSelection();});
         button.addEventListener("click",async()=>{
@@ -692,17 +898,19 @@ const movieHistoryStyle = document.createElement("style");
         bulkButton.disabled=true;selectAll.disabled=true;
         let success=0;const failures=[];
         for(const row of targets){
+          if(!contextIsCurrent())return;
           const entry=items.get(row.blocked_id);if(!entry)continue;
           try{await unblockOne(row,entry.item,entry.button);success++;}
           catch(error){failures.push(String(row.blocked_id).slice(0,8)+": "+error.message);}
         }
+        if(!contextIsCurrent())return;
         if(!list.querySelector(".blocked-user-item"))list.replaceChildren(adminNode("div","admin-empty","Вы никого не заблокировали."));
         else{selectAll.disabled=false;updateSelection();}
         if(failures.length)messagesFeedback("Разблокировано: "+success+". Не удалось: "+failures.length+". "+failures.join("; "));
         else messagesFeedback("Успешно разблокировано пользователей: "+success+".");
       });
       updateSelection();
-    }catch(error){if(version===authContextVersion)list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить блокировки: "+error.message));}
+    }catch(error){if(contextIsCurrent())list.replaceChildren(adminNode("div","admin-empty","Не удалось загрузить блокировки: "+error.message));}
   };
   $("#messagesRefresh")?.addEventListener("click",()=>{loadConversations();loadBlockedUsers();if(activeMessageThreadId)loadConversationMessages(activeMessageThreadId);});
   $("#newConversationForm")?.addEventListener("submit",async event=>{
@@ -712,33 +920,35 @@ const movieHistoryStyle = document.createElement("style");
     const recipient=$("#messageRecipientId").value.trim(),body=$("#messageFirstText").value.trim();
     if(!recipient||!body)return;
     const version=authContextVersion,userId=authSession.user.id;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId;
     button.disabled=true;messagesFeedback("Открываем защищённый диалог…");
     try{
       const sent=await apiRequest("/api/conversations/"+encodeURIComponent(recipient)+"/messages",{method:"POST",body:JSON.stringify({body})});
-      if(version!==authContextVersion||authSession?.user?.id!==userId)return;
+      if(!contextIsCurrent())return;
       form.reset();activeMessageThreadId=sent.thread_id;activeMessagePartnerId=recipient;
       await loadMessageProfile(recipient);
       $("#conversationTitle").textContent="Диалог с "+messageDisplayName(recipient);
       $("#directMessageForm").hidden=false;
       await loadConversations();await loadConversationMessages(activeMessageThreadId);
       messagesFeedback("Первое сообщение отправлено.");
-    }catch(error){if(version===authContextVersion)messagesFeedback("Не удалось начать диалог: "+error.message);}
-    finally{button.disabled=false;}
+    }catch(error){if(contextIsCurrent())messagesFeedback("Не удалось начать диалог: "+error.message);}
+    finally{if(contextIsCurrent())button.disabled=false;}
   });
   $("#directMessageForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
     if(!authSession?.user||!activeMessagePartnerId)return;
     const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
     const body=$("#directMessageText").value.trim();if(!body)return;
-    const version=authContextVersion,userId=authSession.user.id,threadId=activeMessageThreadId;
+    const version=authContextVersion,userId=authSession.user.id,threadId=activeMessageThreadId,partnerId=activeMessagePartnerId;
+    const contextIsCurrent=()=>version===authContextVersion&&authSession?.user?.id===userId&&activeMessageThreadId===threadId&&activeMessagePartnerId===partnerId;
     button.disabled=true;
     try{
-      await apiRequest("/api/conversations/"+encodeURIComponent(activeMessagePartnerId)+"/messages",{method:"POST",body:JSON.stringify({body})});
-      if(version!==authContextVersion||authSession?.user?.id!==userId||activeMessageThreadId!==threadId)return;
+      await apiRequest("/api/conversations/"+encodeURIComponent(partnerId)+"/messages",{method:"POST",body:JSON.stringify({body})});
+      if(!contextIsCurrent())return;
       $("#directMessageText").value="";
       await loadConversationMessages(threadId);
-    }catch(error){if(version===authContextVersion)messagesFeedback("Не удалось отправить сообщение: "+error.message);}
-    finally{button.disabled=false;}
+    }catch(error){if(contextIsCurrent())messagesFeedback("Не удалось отправить сообщение: "+error.message);}
+    finally{if(contextIsCurrent())button.disabled=false;}
   });
 
   const reportFeedback = message => { const el = $("#reportFeedback"); if (el) el.textContent = message; };
@@ -747,7 +957,8 @@ const movieHistoryStyle = document.createElement("style");
     if (!authSession?.user) { setAuthMode("login"); authGate.hidden = false; reportFeedback("Сначала войдите в аккаунт, чтобы отправить обращение."); return; }
     const form = event.currentTarget;
     const button = form.querySelector('button[type="submit"]');
-    const version = authContextVersion;
+    const version = authContextVersion, userId = authSession.user.id;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     const description = $("#reportDescription").value.trim();
     if (description.length < 10) { reportFeedback("Добавьте немного больше подробностей (не менее 10 символов)."); return; }
     const payload = {
@@ -760,43 +971,47 @@ const movieHistoryStyle = document.createElement("style");
     reportFeedback("Отправляем обращение защищённым соединением…");
     try {
       const result = await apiRequest("/api/reports", { method: "POST", body: JSON.stringify(payload) });
-      if (version !== authContextVersion) return;
+      if (!contextIsCurrent()) return;
       form.reset();
       reportFeedback("✓ Обращение принято. Номер: " + result.id + ". Статус: " + (result.status || "new") + ". Спасибо, что помогаете поддерживать безопасную среду.");
     } catch (error) {
-      if (version === authContextVersion) reportFeedback("Не удалось отправить обращение: " + error.message);
+      if (contextIsCurrent()) reportFeedback("Не удалось отправить обращение: " + error.message);
     } finally {
-      button.disabled = false;
+      if (contextIsCurrent()) button.disabled = false;
     }
   });
 
   const adminFeedback = message => { const el = $("#adminFeedback"); if (el) el.textContent = message; };
   const adminNode = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
   const formatAdminDate = value => { if (!value) return "Без срока"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU"); };
+  let adminWorkspaceRequestVersion = 0;
   const loadAdminWorkspace = async () => {
     const reportsList = $("#adminReportsList"), suspensionsList = $("#adminSuspensionsList");
     if (!authSession?.user || !$("#adminPanel") || $("#adminPanel").hidden) return;
+    const version = authContextVersion, userId = authSession.user.id, requestVersion = ++adminWorkspaceRequestVersion;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId && requestVersion === adminWorkspaceRequestVersion;
     adminFeedback("Обновляем данные модерации…");
     if (reportsList) reportsList.replaceChildren(adminNode("div","admin-empty","Загружаем жалобы…"));
     if (suspensionsList) suspensionsList.replaceChildren(adminNode("div","admin-empty","Загружаем ограничения…"));
-    const version = authContextVersion;
     try {
       const [reports, suspensions] = await Promise.all([
         apiRequest("/api/admin/reports"),
         apiRequest("/api/admin/suspensions")
       ]);
-      if (version !== authContextVersion || !authSession?.user) return;
+      if (!contextIsCurrent()) return;
       renderAdminReports(Array.isArray(reports) ? reports : []);
       renderAdminSuspensions(Array.isArray(suspensions) ? suspensions : []);
       adminFeedback("Данные обновлены. Действия модерации записываются в журнал.");
     } catch (error) {
-      if (version !== authContextVersion) return;
+      if (!contextIsCurrent()) return;
       adminFeedback("Не удалось загрузить данные: " + error.message);
       if (reportsList) reportsList.replaceChildren(adminNode("div","admin-empty","Список жалоб временно недоступен."));
       if (suspensionsList) suspensionsList.replaceChildren(adminNode("div","admin-empty","Список ограничений временно недоступен."));
     }
   };
   const renderAdminReports = reports => {
+    const renderVersion=authContextVersion,renderUserId=authSession?.user?.id;
+    const contextIsCurrent=()=>renderVersion===authContextVersion&&authSession?.user?.id===renderUserId;
     const list = $("#adminReportsList"); if (!list) return;
     $("#adminReportCount").textContent = String(reports.length);
     list.replaceChildren();
@@ -817,14 +1032,18 @@ const movieHistoryStyle = document.createElement("style");
       status.value=["reviewing","resolved","rejected"].includes(report.status)?report.status:"reviewing";
       const save=adminNode("button","secondary-button","Сохранить решение");save.type="button";
       save.addEventListener("click",async()=>{
+        if(!contextIsCurrent())return;
         save.disabled=true;
-        try { await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})}); adminFeedback("Решение по жалобе сохранено."); await loadAdminWorkspace(); }
-        catch(error){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}
+        try { await apiRequest("/api/admin/reports/"+encodeURIComponent(report.id),{method:"PATCH",body:JSON.stringify({status:status.value,moderator_note:note.value.trim()||null})}); if(!contextIsCurrent())return;adminFeedback("Решение по жалобе сохранено."); await loadAdminWorkspace(); }
+        catch(error){if(contextIsCurrent()){adminFeedback("Не удалось сохранить решение: "+error.message);save.disabled=false;}}
+        finally{if(contextIsCurrent())save.disabled=false;}
       });
       actions.append(status,save); card.append(note,actions); list.append(card);
     });
   };
   const renderAdminSuspensions = suspensions => {
+    const renderVersion=authContextVersion,renderUserId=authSession?.user?.id;
+    const contextIsCurrent=()=>renderVersion===authContextVersion&&authSession?.user?.id===renderUserId;
     const list=$("#adminSuspensionsList");if(!list)return;
     $("#adminSuspensionCount").textContent=String(suspensions.length);
     list.replaceChildren();
@@ -837,7 +1056,7 @@ const movieHistoryStyle = document.createElement("style");
       card.append(head,adminNode("p","admin-item-meta","Пользователь: "+item.user_id),adminNode("p","admin-item-text",item.reason||"Причина не указана"),adminNode("p","admin-item-meta","Создано: "+formatAdminDate(item.created_at)+" · До: "+formatAdminDate(item.expires_at)));
       if(!item.revoked_at && (!item.expires_at || new Date(item.expires_at)>new Date())){
         const revoke=adminNode("button","secondary-button","Отменить ограничение");revoke.type="button";
-        revoke.addEventListener("click",async()=>{if(!confirm("Отменить это ограничение доступа?"))return;revoke.disabled=true;try{await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});adminFeedback("Ограничение отменено.");await loadAdminWorkspace();}catch(error){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}});
+        revoke.addEventListener("click",async()=>{if(!contextIsCurrent()||!confirm("Отменить это ограничение доступа?"))return;revoke.disabled=true;try{await apiRequest("/api/admin/suspensions/revoke",{method:"POST",body:JSON.stringify({suspension_id:item.id})});if(!contextIsCurrent())return;adminFeedback("Ограничение отменено.");await loadAdminWorkspace();}catch(error){if(contextIsCurrent()){adminFeedback("Не удалось отменить: "+error.message);revoke.disabled=false;}}finally{if(contextIsCurrent())revoke.disabled=false;}});
         card.append(revoke);
       }
       list.append(card);
@@ -847,14 +1066,17 @@ const movieHistoryStyle = document.createElement("style");
   $("#adminSuspensionForm")?.addEventListener("submit",async event=>{
     event.preventDefault();
     const button=$("#adminSuspensionForm button[type=submit]");
+    if(!authSession?.user)return;
+    const requestVersion=authContextVersion,adminUserId=authSession.user.id;
+    const contextIsCurrent=()=>requestVersion===authContextVersion&&authSession?.user?.id===adminUserId;
     const userId=$("#suspensionUserId").value.trim(), reason=$("#suspensionReason").value.trim(), expiry=$("#suspensionExpiry").value;
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)){adminFeedback("Проверьте UUID пользователя — нужен полный идентификатор Supabase Auth.");return;}
     if(authSession?.user?.id===userId){adminFeedback("Нельзя ограничить собственный аккаунт.");return;}
     const payload={user_id:userId,reason,scope:$("#suspensionScope").value,expires_at:expiry?new Date(expiry).toISOString():null};
     button.disabled=true;
-    try{await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});$("#adminSuspensionForm").reset();adminFeedback("Ограничение создано и записано в журнал.");await loadAdminWorkspace();}
-    catch(error){adminFeedback("Не удалось создать ограничение: "+error.message);}
-    finally{button.disabled=false;}
+    try{await apiRequest("/api/admin/suspensions",{method:"POST",body:JSON.stringify(payload)});if(!contextIsCurrent())return;$("#adminSuspensionForm").reset();adminFeedback("Ограничение создано и записано в журнал.");await loadAdminWorkspace();}
+    catch(error){if(contextIsCurrent())adminFeedback("Не удалось создать ограничение: "+error.message);}
+    finally{if(contextIsCurrent())button.disabled=false;}
   });
   if (authSession?.user) setTimeout(loadAccountRole, 0);
   const labels = {guestspace:"Гостевое пространство",account:"Личный кабинет",rules:"Правила и безопасность",home:"Главная",create:"Создать видео",movie:"Миникиностудия",editor:"Видеоредактор",prompts:"Prompt Studio",library:"Медиатека",voice:"Голос и музыка",scenes:"Сценарий и сцены",assistant:"AI Companion",guide:"Путеводитель",about:"О студии",settings:"Настройки"};
@@ -875,7 +1097,7 @@ const movieHistoryStyle = document.createElement("style");
   $(".profile").addEventListener("click", () => navigate("account"));
   $("#topAvatar")?.addEventListener("click", () => navigate("account"));
   $("#accountLogin").addEventListener("click", () => setAuthMode("login"));
-  $("#accountLogout").addEventListener("click", async () => { if (supabaseClient) await supabaseClient.auth.signOut(); });
+  $("#accountLogout").addEventListener("click", () => authLogoutButton.click());
   $("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   document.addEventListener("click", event => {
     if (window.innerWidth <= 720 && !event.target.closest("#sidebar") && !event.target.closest("#mobileMenu")) $("#sidebar").classList.remove("open");
@@ -927,6 +1149,9 @@ const movieHistoryStyle = document.createElement("style");
       return;
     }
     const button = $("#buildPrompt");
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
+    const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === requestUserId;
     button.disabled = true;
     button.textContent = "✦ AI готовит промт…";
     $("#promptFeedback").textContent = "Отправляем запрос на backend. Ключ AI-провайдера остаётся на сервере.";
@@ -935,13 +1160,16 @@ const movieHistoryStyle = document.createElement("style");
         method: "POST",
         body: JSON.stringify({ idea, purpose: $("#promptType").value, language: $("#promptLanguage").value, style: "Cinematic, coherent, detailed" })
       });
+      if (!contextIsCurrent()) return;
       $("#promptOutput").textContent = result.prompt;
       $("#promptFeedback").textContent = "Готово: ответ получен от " + result.provider + " · " + result.model + ".";
     } catch (error) {
-      $("#promptFeedback").textContent = error.message;
+      if (contextIsCurrent()) $("#promptFeedback").textContent = error.message;
     } finally {
-      button.disabled = false;
-      button.textContent = "✦ Сформировать промт";
+      if (contextIsCurrent()) {
+        button.disabled = false;
+        button.textContent = "✦ Сформировать промт";
+      }
     }
   });
 
@@ -956,8 +1184,11 @@ const movieHistoryStyle = document.createElement("style");
     }
   });
 
-  $$("[data-assist]").forEach(btn => btn.addEventListener("click", () => {
-    $("#assistantInput").value = btn.dataset.assist;
+  $("[data-assist]").forEach(btn => btn.addEventListener("click", () => {
+    const prompt = btn.dataset.assist || "";
+    $("#assistantInput").value = prompt;
+    setKattyAssistantMode(kattyModeForMessage(prompt));
+    setKattyAssistantExpression(kattyContextState(prompt));
     $("#assistantInput").focus();
   }));
   // AI Companion cloud history. Supabase RLS restricts every row to its owner.
@@ -965,6 +1196,53 @@ const movieHistoryStyle = document.createElement("style");
   const assistantMessages = $("#assistantMessages");
   const assistantStatus = $("#assistantHistoryStatus");
   const setAssistantStatus = message => { if (assistantStatus) assistantStatus.textContent = message || ""; };
+  const KATTY_ASSISTANT_EXPRESSIONS = {
+    neutral: ["neutral-warm", "Катти — спокойная доброжелательность"],
+    thinking: ["thinking", "Катти размышляет"],
+    joy: ["joy", "Катти рада помочь"],
+    empathetic: ["empathetic", "Катти внимательно слушает"]
+  };
+  const setKattyAssistantExpression = state => {
+    const image = $("#kattyCompanionExpression");
+    const [id, label] = KATTY_ASSISTANT_EXPRESSIONS[state] || KATTY_ASSISTANT_EXPRESSIONS.neutral;
+    if (image) { image.src = "assets/characters/katty/expressions/" + id + ".svg"; image.alt = label; }
+  };
+  const kattySupportSignal = message => /(груст|тоск|страш|тревож|устал|плохо|боль|одинок|пережива|расстро|сложно)/i.test(String(message || ""));
+  const kattyContextState = message => {
+    const value = String(message || "");
+    if (kattySupportSignal(value)) return "empathetic";
+    if (/(объясни|научи|обуч|урок|как работает|разберём|изучи|изучить)/i.test(value)) return "curious";
+    if (/(сценар|рассказ|истори|песн|стих|иде|придум|творч|фантаз)/i.test(value)) return "focused";
+    if (/(поздрав|спасибо|получилось|готово|ура|здорово)/i.test(value)) return "joy";
+    return "thinking";
+  };
+  const KATTY_ASSISTANT_MODES = {
+    companion: { label: "Собеседница", hint: "Поддерживает диалог и помогает сформулировать мысли." },
+    teacher: { label: "Учительница", hint: "Объясняет по шагам и приводит примеры." },
+    creator: { label: "Творческий партнёр", hint: "Помогает развивать сюжеты, образы и идеи." },
+    guide: { label: "Помощница", hint: "Помогает сориентироваться в инструментах PWA Studio." }
+  };
+  const kattyModeForMessage = message => {
+    const value = String(message || "");
+    if (/(объясни|научи|обуч|урок|как работает|разберём|изучи|изучить)/i.test(value)) return "teacher";
+    if (/(сценар|рассказ|истори|песн|стих|иде|придум|творч|фантаз)/i.test(value)) return "creator";
+    if (/(где найти|как открыть|как пользоваться|настройк|инструмент|в студии)/i.test(value)) return "guide";
+    return "companion";
+  };
+  const setKattyAssistantMode = mode => {
+    const image = $("#kattyCompanionExpression");
+    const badge = $("#kattyAssistantModeLabel");
+    const selected = KATTY_ASSISTANT_MODES[mode] || KATTY_ASSISTANT_MODES.companion;
+    if (image) { image.dataset.assistantMode = mode; image.title = selected.label + ". " + selected.hint; }
+    if (badge) badge.textContent = "Режим: " + selected.label;
+  };
+  const kattyResponseState = (prompt, reply) => {
+    if (kattySupportSignal(prompt)) return "empathetic";
+    if (/(вот план|шаг первый|давайте разберём|объяснение|пример)/i.test(reply)) return "curious";
+    if (/(сценар|персонаж|куплет|припев|рассказ|концепци)/i.test(reply)) return "focused";
+    return "joy";
+  };
+
   const copyAssistantText = async (content, button) => {
     try {
       if (navigator.clipboard?.writeText && window.isSecureContext) {
@@ -1004,7 +1282,11 @@ const movieHistoryStyle = document.createElement("style");
     const suggestions = document.querySelector(".assistant-panel .suggestion-row");
     if (suggestions) suggestions.hidden = true;
   };
-  const clearAssistantMessages = () => {
+  const clearAssistantMessages = (options = {}) => {
+    if (!options.preserveKattyState) {
+      setKattyAssistantMode("companion");
+      setKattyAssistantExpression("neutral");
+    }
     if (assistantMessages) assistantMessages.replaceChildren();
     const welcome = document.querySelector(".assistant-welcome");
     if (welcome) welcome.hidden = false;
@@ -1012,6 +1294,10 @@ const movieHistoryStyle = document.createElement("style");
     if (suggestions) suggestions.hidden = false;
   };
   const loadAssistantMessages = async conversationId => {
+    const loadVersion = ++assistantConversationLoadVersion;
+    const intentVersion = assistantConversationIntentVersion;
+    setKattyAssistantMode("companion");
+    setKattyAssistantExpression("neutral");
     if (!supabaseClient || !authSession?.user || !conversationId) return;
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
@@ -1019,8 +1305,10 @@ const movieHistoryStyle = document.createElement("style");
       .select("id,role,content,created_at").eq("conversation_id", conversationId)
       .eq("user_id", requestUserId).order("created_at", { ascending: true });
     if (error) throw error;
-    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
-    clearAssistantMessages();
+    if (loadVersion !== assistantConversationLoadVersion ||
+        intentVersion !== assistantConversationIntentVersion ||
+        authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+    clearAssistantMessages({ preserveKattyState: true });
     (data || []).forEach(message => renderAssistantMessage(message.role, message.content));
     activeAssistantConversationId = conversationId;
   };
@@ -1031,16 +1319,18 @@ const movieHistoryStyle = document.createElement("style");
       setAssistantStatus("Войдите в аккаунт, чтобы сохранять историю диалогов.");
       clearAssistantMessages(); activeAssistantConversationId = null; return;
     }
-    if (assistantHistoryBusy) return;
+    const historyLoadVersion = ++assistantHistoryLoadVersion;
     assistantHistoryBusy = true; setAssistantStatus("Загружаем ваши диалоги…");
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
+    const historyContextIsCurrent = () => historyLoadVersion === assistantHistoryLoadVersion &&
+      authSession?.user?.id === requestUserId && authContextVersion === requestVersion;
     try {
       const { data, error } = await supabaseClient.from("assistant_conversations")
         .select("id,title,updated_at").eq("user_id", requestUserId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
-      if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion) return;
+      if (!historyContextIsCurrent()) return;
       assistantHistoryList.replaceChildren();
       (data || []).forEach(conversation => {
         const row = document.createElement("div"); row.className = "assistant-history-row";
@@ -1048,56 +1338,103 @@ const movieHistoryStyle = document.createElement("style");
         open.className = "assistant-history-open"; open.textContent = conversation.title || "Новый диалог";
         open.title = open.textContent; open.setAttribute("aria-current", conversation.id === activeAssistantConversationId ? "true" : "false");
         open.addEventListener("click", async () => {
-          try { await loadAssistantMessages(conversation.id); renderAssistantHistory(); setAssistantStatus(""); }
-          catch (error) { setAssistantStatus("Не удалось открыть диалог: " + error.message); }
+          if (!historyContextIsCurrent()) return;
+          assistantConversationIntentVersion += 1;
+          try {
+            await loadAssistantMessages(conversation.id);
+            if (!historyContextIsCurrent() || activeAssistantConversationId !== conversation.id) return;
+            renderAssistantHistory();
+            setAssistantStatus("");
+          } catch (error) {
+            if (historyContextIsCurrent()) setAssistantStatus("Не удалось открыть диалог: " + error.message);
+          }
         });
         const rename = document.createElement("button"); rename.type = "button";
         rename.className = "assistant-history-rename"; rename.textContent = "✎";
         rename.title = "Переименовать диалог"; rename.setAttribute("aria-label", "Переименовать диалог");
         rename.addEventListener("click", async () => {
+          if (!historyContextIsCurrent()) return;
           const title = prompt("Название диалога:", conversation.title || "Новый диалог");
-          if (title === null) return;
+          if (title === null || !historyContextIsCurrent()) return;
           const cleanTitle = title.trim().slice(0, 100); if (!cleanTitle) return;
-          const { error: updateError } = await supabaseClient.from("assistant_conversations")
-            .update({ title: cleanTitle }).eq("id", conversation.id).eq("user_id", authSession.user.id);
-          if (updateError) setAssistantStatus("Не удалось переименовать: " + updateError.message);
-          else { setAssistantStatus("Название сохранено."); renderAssistantHistory(); }
+          try {
+            const { error: updateError } = await supabaseClient.from("assistant_conversations")
+              .update({ title: cleanTitle }).eq("id", conversation.id).eq("user_id", requestUserId);
+            if (!historyContextIsCurrent()) return;
+            if (updateError) setAssistantStatus("Не удалось переименовать: " + updateError.message);
+            else { setAssistantStatus("Название сохранено."); renderAssistantHistory(); }
+          } catch (error) {
+            if (historyContextIsCurrent()) setAssistantStatus("Не удалось переименовать: " + error.message);
+          }
         });
         row.append(open, rename); assistantHistoryList.appendChild(row);
       });
       if (!activeAssistantConversationId && data?.length) {
         await loadAssistantMessages(data[0].id);
+        if (!historyContextIsCurrent()) return;
       }
+      if (!historyContextIsCurrent()) return;
       setAssistantStatus((data || []).length ? "Диалоги сохраняются в вашем аккаунте." : "Пока нет сохранённых диалогов. Начните новый разговор.");
     } catch (error) {
-      setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
-    } finally { assistantHistoryBusy = false; }
+      if (historyContextIsCurrent()) setAssistantStatus("История пока недоступна. Проверьте, применена ли миграция Supabase. " + error.message);
+    } finally {
+      if (historyLoadVersion === assistantHistoryLoadVersion) assistantHistoryBusy = false;
+    }
   };
   const startAssistantConversation = async () => {
+    const intentVersion = ++assistantConversationIntentVersion;
+    setKattyAssistantMode("companion");
+    setKattyAssistantExpression("neutral");
     if (!authSession?.user || !supabaseClient) throw new Error("Сначала войдите в аккаунт.");
+    const requestUserId = authSession.user.id;
+    const requestVersion = authContextVersion;
     const { data, error } = await supabaseClient.from("assistant_conversations")
-      .insert({ user_id: authSession.user.id, title: "Новый диалог" }).select("id").single();
+      .insert({ user_id: requestUserId, title: "Новый диалог" }).select("id").single();
     if (error) throw error;
-    activeAssistantConversationId = data.id; clearAssistantMessages();
+    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion ||
+        intentVersion !== assistantConversationIntentVersion) return null;
+    activeAssistantConversationId = data.id; clearAssistantMessages({ preserveKattyState: true });
     await renderAssistantHistory();
+    // History rendering is asynchronous: a newer account or conversation intent wins.
+    if (authSession?.user?.id !== requestUserId || authContextVersion !== requestVersion ||
+        intentVersion !== assistantConversationIntentVersion ||
+        activeAssistantConversationId !== data.id) return null;
     setAssistantStatus("Создан новый диалог. Предыдущие разговоры сохранены.");
+    return data.id;
   };
   $("#assistantNewChat")?.addEventListener("click", async () => {
-    try { await startAssistantConversation(); $("#assistantInput").focus(); }
-    catch (error) { setAssistantStatus("Не удалось создать диалог: " + error.message); }
+    const requestUserId = authSession?.user?.id || null;
+    const requestVersion = authContextVersion;
+    const contextIsCurrent = () => (authSession?.user?.id || null) === requestUserId && authContextVersion === requestVersion;
+    try {
+      const conversationId = await startAssistantConversation();
+      if (conversationId && contextIsCurrent()) $("#assistantInput").focus();
+    } catch (error) {
+      if (contextIsCurrent()) setAssistantStatus("Не удалось создать диалог: " + error.message);
+    }
   });
   $("#assistantForm").addEventListener("submit", async event => {
     event.preventDefault();
     const input = $("#assistantInput"); const value = input.value.trim(); if (!value) return;
     if (!authSession?.user) { setAuthMode("signup"); setAuthMessage("Войдите или зарегистрируйтесь, чтобы общаться с AI Companion."); return; }
+    setKattyAssistantMode(kattyModeForMessage(value));
+    setKattyAssistantExpression(kattyContextState(value));
     const button = $("#assistantForm button"); button.disabled = true; input.disabled = true; input.value = "";
     const requestUserId = authSession.user.id;
     const requestVersion = authContextVersion;
     const contextIsCurrent = () => authSession?.user?.id === requestUserId && authContextVersion === requestVersion;
+    let requestConversationId = null;
     try {
-      if (!activeAssistantConversationId) await startAssistantConversation();
+      if (!activeAssistantConversationId) {
+        requestConversationId = await startAssistantConversation();
+        if (!requestConversationId || !contextIsCurrent() ||
+            activeAssistantConversationId !== requestConversationId) return;
+      } else {
+        requestConversationId = activeAssistantConversationId;
+      }
       if (!contextIsCurrent()) return;
-      const conversationId = activeAssistantConversationId;
+      const conversationId = requestConversationId;
+      const conversationIsCurrent = () => contextIsCurrent() && activeAssistantConversationId === conversationId;
       const { data: previousMessages, error: historyError } = await supabaseClient.from("assistant_messages")
         .select("role,content").eq("conversation_id", conversationId)
         .eq("user_id", requestUserId).order("created_at", { ascending: false }).limit(20);
@@ -1109,7 +1446,7 @@ const movieHistoryStyle = document.createElement("style");
       const { error: userSaveError } = await supabaseClient.from("assistant_messages")
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "user", content: value });
       if (userSaveError) throw userSaveError;
-      if (!contextIsCurrent()) return;
+      if (!conversationIsCurrent()) return;
       renderAssistantMessage("user", value);
       const { data: titleRow } = await supabaseClient.from("assistant_conversations")
         .select("title").eq("id", conversationId).eq("user_id", requestUserId).single();
@@ -1125,18 +1462,49 @@ const movieHistoryStyle = document.createElement("style");
         .insert({ conversation_id: conversationId, user_id: requestUserId, role: "assistant", content: result.reply });
       if (assistantSaveError) throw assistantSaveError;
       if (!contextIsCurrent()) return;
-      renderAssistantMessage("assistant", result.reply); await renderAssistantHistory();
-    } catch (error) { setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
-    finally { button.disabled = false; input.disabled = false; input.focus(); }
+      if (conversationIsCurrent()) {
+        renderAssistantMessage("assistant", result.reply);
+        setKattyAssistantExpression(kattyResponseState(value, result.reply));
+        await renderAssistantHistory();
+      }
+    } catch (error) {
+      if (contextIsCurrent() && (!requestConversationId || activeAssistantConversationId === requestConversationId))
+        { setKattyAssistantExpression("neutral"); setAssistantStatus("Сообщение не удалось полностью обработать: " + error.message); }
+    } finally {
+      // A stale request must not unlock or steal focus from a newer account's UI.
+      if (contextIsCurrent()) {
+        button.disabled = false; input.disabled = false;
+        input.focus();
+      }
+    }
   });
   setTimeout(() => renderAssistantHistory(), 0);
 
 
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
+  // One validated persistence path for every internal project-library write.
+  const writeMovieStorage = projects => {
+    PWAStudioMovieStorageGuard.parse(localStorage.getItem(movieStorageKey()));
+    PWAStudioMovieStorageGuard.parse(JSON.stringify(projects));
+    localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+    return true;
+  };
   const guestArchiveKey = () => "pwa-studio-movie-archive:guest";
-  const readGuestArchive = () => { try { const value=JSON.parse(localStorage.getItem(guestArchiveKey())||"[]"); return Array.isArray(value)?value.filter(item=>item&&typeof item==="object"&&item.id):[]; } catch { return []; } };
-  const writeGuestArchive = items => { try { localStorage.setItem(guestArchiveKey(),JSON.stringify(items)); return true; } catch(error) { console.error("Guest archive write failed:",error); return false; } };
+  const readGuestArchive = () => PWAStudioMovieStorageGuard.parse(localStorage.getItem(guestArchiveKey()));
+  const writeGuestArchive = items => {
+    try {
+      PWAStudioMovieStorageGuard.parse(localStorage.getItem(guestArchiveKey()));
+      PWAStudioMovieStorageGuard.parse(JSON.stringify(items));
+      localStorage.setItem(guestArchiveKey(),JSON.stringify(items));
+      return true;
+    } catch(error) {
+      console.error("Guest archive write blocked:",error);
+      const feedback=$("#movieFeedback");
+      if(feedback)feedback.textContent="Архив гостевых фильмов не изменён: "+error.message;
+      return false;
+    }
+  };
   let activeMovieId = null;
   let editingMovieId = null;
   const movieStages = [
@@ -1149,17 +1517,39 @@ const movieHistoryStyle = document.createElement("style");
   const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
   const readMovieTombstones = () => {
-    try { const value = JSON.parse(localStorage.getItem(movieDeletedKey()) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
-    catch { return []; }
+    const raw=localStorage.getItem(movieDeletedKey());
+    if(raw===null||raw==="")return [];
+    let value;
+    try { value=JSON.parse(raw); }
+    catch (_) { throw new Error("Очередь удалений фильмов повреждена. Облачная синхронизация остановлена, чтобы не восстановить удалённые проекты."); }
+    if(!Array.isArray(value)||value.some(id=>!isUuid(id))||new Set(value).size!==value.length) {
+      throw new Error("Очередь удалений фильмов имеет неверный формат. Облачная синхронизация остановлена.");
+    }
+    return value;
   };
   const writeMovieTombstones = ids => {
-    try { localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
-    catch (error) { console.error("Movie deletion queue failed:", error); return false; }
+    try {
+      readMovieTombstones();
+      if(!Array.isArray(ids)||ids.some(id=>!isUuid(id)))throw new Error("Некорректный идентификатор удаления.");
+      localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids)]));
+      return true;
+    } catch (error) {
+      console.error("Movie deletion queue write blocked:", error);
+      const feedback=$("#movieFeedback");
+      if(feedback)feedback.textContent="Очередь удалений не изменена: "+error.message;
+      return false;
+    }
   };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
   const movieToCloudRow = (project, ownerId = authSession?.user?.id) => {
     if (!ownerId) throw new Error("Облачное сохранение недоступно гостю.");
-    if (!isUuid(project.id)) project.id = movieId();
+    if (!isUuid(project.id)) {
+      project.id = movieId();
+      // Keep every historical snapshot bound to the newly assigned cloud UUID.
+      project.versions = (project.versions || []).map(version => ({
+        ...version, data: { ...version.data, id: project.id }
+      }));
+    }
     const snapshot = { ...project, cloudSchemaVersion: 1 };
     return {
       id: project.id,
@@ -1173,9 +1563,15 @@ const movieHistoryStyle = document.createElement("style");
       updated_at: project.updatedAt || new Date().toISOString()
     };
   };
-  const movieFromCloudRow = row => {
-    const saved = row.settings && typeof row.settings === "object" ? row.settings : {};
-    return {
+  const movieFromCloudRow = (row, expectedOwnerId = authSession?.user?.id) => {
+    if (!row || !isUuid(row.id) || row.owner_id !== expectedOwnerId || row.project_type !== "movie" ||
+        !row.settings || typeof row.settings !== "object" || Array.isArray(row.settings) ||
+        typeof row.updated_at !== "string" || !Number.isFinite(Date.parse(row.updated_at))) {
+      throw new Error("Облачная запись фильма имеет неверный формат или принадлежит другому пространству. Локальные данные не будут заменены.");
+    }
+    const saved = row.settings;
+    const priorId = saved.id || row.id;
+    const candidate = {
       ...saved,
       id: row.id,
       name: row.title || saved.name || "Без названия",
@@ -1184,44 +1580,157 @@ const movieHistoryStyle = document.createElement("style");
       story: saved.story || saved.idea || row.description || "",
       createdAt: saved.createdAt || row.created_at,
       updatedAt: row.updated_at || saved.updatedAt || row.created_at,
-      completedSteps: Array.isArray(saved.completedSteps) ? saved.completedSteps : [],
-      versions: Array.isArray(saved.versions) ? saved.versions : []
+      completedSteps: saved.completedSteps === undefined ? [] : saved.completedSteps,
+      versions: saved.versions === undefined ? [] : saved.versions.map(version => ({
+        ...version,
+        data: version && version.data && version.data.id === priorId
+          ? { ...version.data, id: row.id }
+          : version?.data
+      }))
+    };
+    // Do not silently replace malformed cloud history or stage data with empty defaults.
+    return PWAStudioMovieStorageGuard.parse(JSON.stringify([candidate]))[0];
+  };
+  const movieStableContent = value => {
+    const normalize = item => {
+      if (Array.isArray(item)) return item.map(normalize);
+      if (item && typeof item === "object") {
+        return Object.fromEntries(Object.keys(item).filter(key => key !== "updatedAt" && key !== "cloudSchemaVersion").sort().map(key => [key, normalize(item[key])]));
+      }
+      return item;
+    };
+    return JSON.stringify(normalize(value));
+  };
+  const makeMovieConflictCopy = project => {
+    const conflictId = movieId();
+    return {
+      ...project,
+      id: conflictId,
+      name: (project.name || "Фильм") + " — локальная копия при конфликте",
+      versionLabel: "Сохранённая копия с другого устройства",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      versions: (project.versions || []).map(version => ({
+        ...version, data: { ...version.data, id: conflictId }
+      }))
     };
   };
   const scheduleMovieCloudSync = () => {
-    const userId = authSession?.user?.id;
+    const userId = authSession?.user?.id, requestVersion = authContextVersion;
     if (!userId || !supabaseClient) return;
+    const contextIsCurrent = () => requestVersion === authContextVersion && authSession?.user?.id === userId;
     clearTimeout(movieCloudState.timer);
     movieCloudState.timer = setTimeout(async () => {
       // Never let a queued sync from one account run after switching to guest or another user.
-      if (authSession?.user?.id !== userId) return;
+      if (!contextIsCurrent()) return;
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
+        let syncConflictPreserved = false;
+        // Validate the local library before processing deletion tombstones or uploading anything.
+        movieRead();
         const deletedIds = readMovieTombstones();
         if (deletedIds.length) {
           const { error: deleteError } = await supabaseClient.from("projects").delete()
             .in("id", deletedIds).eq("owner_id", authSession.user.id).eq("project_type", "movie");
           if (deleteError) throw deleteError;
+          if (!contextIsCurrent()) return;
           writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
         }
+        if (!contextIsCurrent()) return;
         const localProjects = movieRead().filter(project => !deletedIds.includes(project.id));
         const rows = localProjects.map(project => movieToCloudRow(project, userId));
         // Persist any UUID normalization before sending rows to Supabase.
-        localStorage.setItem("pwa-studio-movie-projects:" + userId, JSON.stringify(localProjects));
-        if (authSession?.user?.id !== userId) return;
+        if (!contextIsCurrent()) return;
+        writeMovieStorage(localProjects);
+        if (!contextIsCurrent()) return;
         if (rows.length) {
-          const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
-          if (error) throw error;
+          // Optimistic concurrency: never blindly upsert over a version another device may have changed.
+          const { data: remoteRows, error: remoteError } = await supabaseClient.from("projects")
+            .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
+            .eq("owner_id", userId).eq("project_type", "movie")
+            .in("id", rows.map(row => row.id));
+          if (remoteError) throw remoteError;
+          if (!contextIsCurrent()) return;
+          const remoteById = new Map((remoteRows || []).map(row => [row.id, row]));
+          // The local library may change while the remote lookup is in flight.
+          // Rebuild outgoing rows from the latest local snapshot, never from the pre-request copy.
+          const currentLocal = movieRead();
+          const requestedIds = new Set(rows.map(row => row.id));
+          const currentRows = currentLocal
+            .filter(project => requestedIds.has(project.id))
+            .map(project => movieToCloudRow(project, userId));
+          const inserts = [];
+          const updates = [];
+          let preservedConflict = false;
+          for (const row of currentRows) {
+            const remote = remoteById.get(row.id);
+            if (!remote) {
+              inserts.push(row);
+              continue;
+            }
+            const localProject = currentLocal.find(project => project.id === row.id);
+            if (!localProject) continue;
+            const localTime = Date.parse(localProject.updatedAt || localProject.createdAt || 0);
+            const remoteTime = Date.parse(remote.updated_at || 0);
+            if (!Number.isFinite(localTime) || !Number.isFinite(remoteTime)) {
+              throw new Error("Не удалось сравнить версии фильма. Синхронизация остановлена без перезаписи.");
+            }
+            const cloudProject = movieFromCloudRow(remote, userId);
+            const sameContent = movieStableContent(localProject) === movieStableContent(cloudProject);
+            if (sameContent) continue;
+            if (remoteTime >= localTime) {
+              // Keep a divergent local draft as a separate project before accepting cloud state.
+              const conflictCopy = makeMovieConflictCopy(localProject);
+              const nextLocal = currentLocal.map(project => project.id === row.id ? cloudProject : project);
+              nextLocal.unshift(conflictCopy);
+              if (!contextIsCurrent() || !writeMovieStorage(nextLocal)) {
+                throw new Error("Конфликт обнаружен, но локальную копию не удалось надёжно сохранить. Синхронизация остановлена.");
+              }
+              renderMovieProjects();
+              preservedConflict = true;
+              syncConflictPreserved = true;
+              movieCloudState.pending = true;
+              continue;
+            }
+            updates.push({ row, expectedUpdatedAt: remote.updated_at, expectedSettings: remote.settings, expectedTitle: remote.title, expectedDescription: remote.description, expectedStatus: remote.status });
+          }
+          if (inserts.length) {
+            const { error } = await supabaseClient.from("projects").insert(inserts);
+            if (error) throw new Error("Новый фильм мог быть создан на другом устройстве одновременно. Обновите список и повторите синхронизацию.");
+            if (!contextIsCurrent()) return;
+          }
+          for (const item of updates) {
+            if (!contextIsCurrent()) return;
+            const { data: changed, error } = await supabaseClient.from("projects").update(item.row)
+              .eq("id", item.row.id).eq("owner_id", userId).eq("project_type", "movie")
+              .eq("updated_at", item.expectedUpdatedAt).eq("settings", JSON.stringify(item.expectedSettings))
+              .eq("title", item.expectedTitle).eq("description", item.expectedDescription)
+              .eq("status", item.expectedStatus).select("id");
+            if (error) throw error;
+            if (!changed || changed.length !== 1) {
+              throw new Error("Фильм изменился на другом устройстве во время сохранения. Ни одна версия не перезаписана; повторите синхронизацию.");
+            }
+          }
+          if (!contextIsCurrent()) return;
+          if (preservedConflict) {
+            const feedback = $("#movieFeedback");
+            if (feedback) feedback.textContent = "Обнаружен конфликт между устройствами. Облачная версия загружена, а локальный вариант сохранён отдельной копией.";
+          }
         }
+        if (!contextIsCurrent()) return;
         const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = deletedIds.length
-          ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
-          : "✓ Изменения сохранены в облаке Supabase.";
+        if (feedback) feedback.textContent = syncConflictPreserved
+          ? "Обнаружен конфликт между устройствами. Облачная версия загружена, локальный вариант сохранён отдельной копией."
+          : deletedIds.length
+            ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
+            : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
-        const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        if (contextIsCurrent()) {
+          const feedback = $("#movieFeedback");
+          if (feedback) feedback.textContent = "Черновик сохранён на этом устройстве, но облачная синхронизация не удалась. Проверьте соединение и повторите попытку.";
+        }
       } finally {
         movieCloudState.syncing = false;
         if (movieCloudState.pending) {
@@ -1231,98 +1740,146 @@ const movieHistoryStyle = document.createElement("style");
       }
     }, 350);
   };
+  // Retry a previously failed local-to-cloud sync when connectivity returns.
+  window.addEventListener("online", () => {
+    if (authSession?.user?.id) scheduleMovieCloudSync();
+  });
   const loadMovieProjectsFromCloud = async () => {
     const userId = authSession?.user?.id;
     if (!userId || !supabaseClient || movieCloudState.loadingUser === userId) return;
+    const version = authContextVersion;
+    const contextIsCurrent = () => version === authContextVersion && authSession?.user?.id === userId;
     movieCloudState.loadingUser = userId;
     try {
-      const { data, error } = await supabaseClient
-        .from("projects")
-        .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
-        .eq("project_type", "movie")
-        .order("updated_at", { ascending: false });
-      if (error) throw error;
-      if (authSession?.user?.id !== userId) return;
-      const deletedIds = readMovieTombstones();
+      // Read the complete owner-scoped library in bounded pages; PostgREST may cap a single response.
+      const data = [];
+      const pageSize = 100;
+      const maxRows = 10000;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data: page, error } = await supabaseClient
+          .from("projects")
+          .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
+          .eq("owner_id", userId)
+          .eq("project_type", "movie")
+          .order("updated_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        if (!contextIsCurrent()) return;
+        const rows = page || [];
+        if (offset >= maxRows && rows.length) {
+          throw new Error("В облачной библиотеке больше 10 000 фильмов. Загрузка остановлена без частичного перезаписывания локальных данных.");
+        }
+        data.push(...rows);
+        if (rows.length < pageSize) break;
+      }
+      // A corrupt local library must stop cloud-side deletion and merge as well.
+      let local = movieRead();
+      let deletedIds = readMovieTombstones();
       if (deletedIds.length) {
         const { error: deleteError } = await supabaseClient.from("projects").delete()
           .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
-        writeMovieTombstones([]);
+        if (!contextIsCurrent()) return;
+        // Remove only IDs handled by this request; preserve tombstones added while awaiting the network.
+        writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
+        // The network wait may have overlapped local edits or another deletion; merge from fresh state.
+        local = movieRead();
+        deletedIds = readMovieTombstones();
       }
       const deletedSet = new Set(deletedIds);
-      const local = movieRead().filter(project => !deletedSet.has(project.id));
-      const merged = new Map(local.map(project => [project.id, project]));
+      const survivingLocal = local.filter(project => !deletedSet.has(project.id));
+      const merged = new Map(survivingLocal.map(project => [project.id, project]));
+      let loadConflictPreserved = false;
       (data || []).filter(row => !deletedSet.has(row.id)).forEach(row => {
-        const cloudProject = movieFromCloudRow(row);
+        const cloudProject = movieFromCloudRow(row, userId);
         const localProject = merged.get(cloudProject.id);
-        if (!localProject || new Date(cloudProject.updatedAt || 0) >= new Date(localProject.updatedAt || 0)) {
+        if (!localProject) {
+          merged.set(cloudProject.id, cloudProject);
+          return;
+        }
+        const localTime = Date.parse(localProject.updatedAt || localProject.createdAt || 0);
+        const cloudTime = Date.parse(cloudProject.updatedAt || cloudProject.createdAt || 0);
+        if (!Number.isFinite(localTime) || !Number.isFinite(cloudTime)) {
+          throw new Error("Не удалось сравнить локальную и облачную версии фильма. Сохранённые данные не изменены.");
+        }
+        const sameContent = movieStableContent(localProject) === movieStableContent(cloudProject);
+        if (cloudTime >= localTime) {
+          if (!sameContent) {
+            const conflictCopy = makeMovieConflictCopy(localProject);
+            merged.set(conflictCopy.id, conflictCopy);
+            loadConflictPreserved = true;
+          }
           merged.set(cloudProject.id, cloudProject);
         }
       });
       const projects = [...merged.values()].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-      if (movieWrite(projects)) {
+      if (contextIsCurrent() && movieWrite(projects)) {
         renderMovieProjects();
         scheduleMovieCloudSync();
         const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "✓ Фильмы загружены из облака. Изменения синхронизируются автоматически.";
+        if (feedback) feedback.textContent = loadConflictPreserved
+          ? "Обнаружены разные версии фильма. Облачная версия загружена, а локальный вариант сохранён отдельной копией."
+          : "✓ Фильмы загружены из облака. Изменения синхронизируются автоматически.";
       }
     } catch (error) {
       console.error("Movie cloud load failed:", error);
       const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
+      if (contextIsCurrent() && feedback) feedback.textContent = "Не удалось загрузить фильмы из облака. Локальные черновики сохранены на устройстве.";
     } finally {
       if (movieCloudState.loadingUser === userId) movieCloudState.loadingUser = null;
     }
   };
   const movieRead = () => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(movieStorageKey()) || "[]");
-      if (!Array.isArray(raw)) return [];
-      const now = Date.now();
-      let changed = false;
-      const projects = raw.filter(item => item && typeof item === "object" && item.id).map(item => {
-        const project = {
-          ...item,
-          story: item.story || item.idea || "",
-          completedSteps: Array.isArray(item.completedSteps) ? item.completedSteps.filter(key => movieStages.some(stage => stage.key === key)) : []
-        };
-        if (!authSession?.user && !project.guestExpiresAt) {
-          project.guestExpiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+    // Fail closed: malformed or partially invalid records must never be
+    // interpreted as an empty library and then overwritten by a later save.
+    const projects = PWAStudioMovieStorageGuard.parse(localStorage.getItem(movieStorageKey()));
+    const now = Date.now();
+    let changed = false;
+    projects.forEach(project => {
+      if (typeof project.story !== "string" || !project.story) {
+        project.story = typeof project.idea === "string" ? project.idea : "";
+        changed = true;
+      }
+      if (!Array.isArray(project.completedSteps)) {
+        project.completedSteps = [];
+        changed = true;
+      }
+      if (!authSession?.user && !project.guestExpiresAt) {
+        project.guestExpiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+        changed = true;
+      }
+    });
+    let active = projects;
+    if (!authSession?.user) {
+      const expired = projects.filter(project => Number.isFinite(Date.parse(project.guestExpiresAt)) && Date.parse(project.guestExpiresAt) <= now);
+      active = projects.filter(project => !expired.includes(project));
+      if (expired.length) {
+        const archived = readGuestArchive();
+        const byId = new Map(archived.map(project => [project.id, project]));
+        expired.forEach(project => byId.set(project.id, { ...project, guestArchivedAt: project.guestArchivedAt || new Date(now).toISOString() }));
+        if (writeGuestArchive([...byId.values()])) {
           changed = true;
-        }
-        return project;
-      });
-      let active = projects;
-      if (!authSession?.user) {
-        const expired = projects.filter(project => Number.isFinite(Date.parse(project.guestExpiresAt)) && Date.parse(project.guestExpiresAt) <= now);
-        active = projects.filter(project => !expired.includes(project));
-        if (expired.length) {
-          const archived = readGuestArchive();
-          const byId = new Map(archived.map(project => [project.id, project]));
-          expired.forEach(project => byId.set(project.id, { ...project, guestArchivedAt: project.guestArchivedAt || new Date(now).toISOString() }));
-          if (writeGuestArchive([...byId.values()])) {
-            changed = true;
-            sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
-          } else {
-            // If archiving fails (for example, storage is full), keep expired records in the main list.
-            active = projects;
-          }
+          sessionStorage.setItem("pwa-studio-guest-expired-notice", "1");
+        } else {
+          // If archiving fails (for example, storage is full), keep expired records in the main list.
+          active = projects;
         }
       }
-      if (changed) localStorage.setItem(movieStorageKey(), JSON.stringify(active));
-      return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-    } catch { return []; }
+    }
+    if (changed) writeMovieStorage(active);
+    return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
   };
   const movieWrite = projects => {
     try {
-      localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+      // Never replace an untrusted existing library, even if a caller passes [].
+      writeMovieStorage(projects);
       scheduleMovieCloudSync();
       return true;
     } catch (error) {
-      console.error("Movie project storage failed:", error);
+      console.error("Movie project storage write blocked:", error);
       const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось сохранить изменения в памяти браузера. Проверьте свободное место и настройки приватности.";
+      if (feedback) feedback.textContent = "Сохранение остановлено для защиты проектов: " + error.message;
       return false;
     }
   };
@@ -1452,6 +2009,101 @@ const movieHistoryStyle = document.createElement("style");
       const textarea=document.createElement("textarea"); textarea.rows=(key==="story"||key==="storyboard")?7:6; textarea.maxLength=30000; textarea.placeholder=placeholder; textarea.style.cssText="display:block;width:100%;min-height:150px;padding:13px;border:1px solid rgba(166,154,187,.35);border-radius:9px;background:#0f0e1d;color:#eee9fa;font:inherit;font-size:14px;line-height:1.55;resize:vertical;visibility:visible;opacity:1;";
       textarea.value=project[key]||(key==="story"?project.idea||"":""); inputs[key]=textarea; wrap.append(label,textarea); form.append(wrap);
     });
+    let selectedLibrarySnapshots=Array.isArray(project.characterLibrarySnapshots)?project.characterLibrarySnapshots.map(item=>({...item})).filter(item=>item&&typeof item.id==="string"):[];
+    if(stage.key==="characters"){
+      let libraryItems=[],libraryReadError=null;
+      try { libraryItems=readCharacterLibrary(); } catch(error) { libraryReadError=error; }
+      const picker=document.createElement("section");picker.className="movie-character-picker movie-stage-field";
+      const pickerTitle=document.createElement("strong");pickerTitle.textContent="Персонажи из вашей библиотеки";
+      const pickerNote=document.createElement("p");pickerNote.className="movie-stage-note";
+      pickerNote.textContent=libraryReadError
+        ? "⚠ Выбор персонажей временно заблокирован: "+libraryReadError.message
+        : libraryItems.length?"Выберите сохранённых персонажей или локации. В фильм попадёт снимок их паспорта; мастер-карточка останется независимой. Сами файлы изображений пока остаются в библиотеке и не копируются в проект.":"В библиотеке пока нет карточек. Можно продолжить с текстовым описанием или сначала добавить персонажа в Prompt Studio.";
+      picker.append(pickerTitle,pickerNote);
+      if(libraryItems.length&&!libraryReadError){
+        const select=document.createElement("select");select.multiple=true;select.size=Math.min(5,Math.max(2,libraryItems.length));select.setAttribute("aria-label","Выберите персонажей и локации из библиотеки");select.style.cssText="width:100%;min-height:100px;padding:10px;border-radius:9px;background:#0f0e1d;color:#eee9fa;border:1px solid rgba(166,154,187,.35);";
+        libraryItems.forEach(item=>{const option=document.createElement("option");option.value=item.id;option.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name+(selectedLibrarySnapshots.some(saved=>saved.id===item.id)?" · уже добавлен":"");select.append(option);});
+        const add=document.createElement("button");add.type="button";add.className="secondary-button";add.textContent="＋ Добавить выбранных в фильм";
+        const selectedStatus=document.createElement("p");selectedStatus.className="movie-stage-note";selectedStatus.setAttribute("role","status");
+        add.addEventListener("click",()=>{
+          const chosen=libraryItems.filter(item=>Array.from(select.selectedOptions).some(option=>option.value===item.id));
+          if(!chosen.length){selectedStatus.textContent="Сначала выберите хотя бы одну карточку.";return;}
+          const added=[];
+          chosen.forEach(item=>{
+            if(selectedLibrarySnapshots.some(saved=>saved.id===item.id))return;
+            const snapshot={id:item.id,name:item.name,kind:item.kind||"character",representation:item.representation||"2d",description:item.description||"",voice:item.voice||"",passport:item.passport||{},referenceImages:(item.referenceImages||[]).map(ref=>({id:ref.id,name:ref.name||"",type:ref.type||""}))};
+            selectedLibrarySnapshots.push(snapshot);added.push(snapshot);
+          });
+          if(!added.length){selectedStatus.textContent="Выбранные карточки уже добавлены.";return;}
+          const identityText=added.map(item=>[
+            "[[PWA_LIBRARY_ITEM:"+item.id+"]]",
+            (item.kind==="scene"?"ЛОКАЦИЯ":"ПЕРСОНАЖ")+": "+item.name,
+            "Тип представления: "+(item.representation==="both"?"2D + 3D":item.representation==="3d"?"3D-паспорт":"2D"),
+            "Описание: "+item.description,
+            "Лицо и профиль: "+(item.passport.face||"—"),
+            "Силуэт: "+(item.passport.body||"—"),
+            "Одежда и аксессуары: "+(item.passport.wardrobe||"—"),
+            "Палитра и эмоции: "+(item.passport.palette||"—"),
+            "Голос: "+(item.voice||"—"),
+            "Референсы (файлы пока не прикреплены к проекту): "+(item.referenceImages.length?item.referenceImages.map(ref=>ref.name).join(", "):"не указаны"),
+            "[[/PWA_LIBRARY_ITEM:"+item.id+"]]"
+          ].join("\n")).join("\n\n");
+          const currentText=inputs.characters.value.trim();
+          inputs.characters.value=(currentText?currentText+"\n\n":"")+identityText;
+          inputs.characters.dispatchEvent(new Event("input",{bubbles:true}));
+          selectedStatus.textContent="Добавлено в снимок фильма: "+added.map(item=>item.name).join(", ")+". Нажмите «Сохранить черновик» или завершите этап.";
+        });
+        picker.append(select,add,selectedStatus);
+      }
+      const linked=document.createElement("div");linked.className="movie-character-linked";
+      const refreshLinked=()=>{
+        linked.replaceChildren();
+        if(!selectedLibrarySnapshots.length){const empty=document.createElement("p");empty.className="movie-stage-note";empty.textContent="К этому фильму пока не привязаны карточки из библиотеки.";linked.append(empty);return;}
+        const caption=document.createElement("p");caption.className="movie-stage-note";caption.textContent="Снимки паспортов и выбранные референсы для будущих сцен:";linked.append(caption);
+        selectedLibrarySnapshots.forEach(item=>{
+          const card=document.createElement("section");card.className="movie-character-reference-card";
+          const row=document.createElement("div");row.className="movie-character-linked-row";
+          const name=document.createElement("strong");name.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;
+          const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать из фильма";
+          remove.addEventListener("click",()=>{selectedLibrarySnapshots=selectedLibrarySnapshots.filter(saved=>saved.id!==item.id);const startMarker="[[PWA_LIBRARY_ITEM:"+item.id+"]]",endMarker="[[/PWA_LIBRARY_ITEM:"+item.id+"]]",parts=inputs.characters.value.split(startMarker);if(parts.length>1){const rest=parts.slice(1).map(part=>{const endAt=part.indexOf(endMarker);return endAt>=0?part.slice(endAt+endMarker.length):part;}).join("");inputs.characters.value=parts[0]+rest;inputs.characters.dispatchEvent(new Event("input",{bubbles:true}));}refreshLinked();});
+          row.append(name,remove);card.append(row);
+          const referenceList=document.createElement("div");referenceList.className="movie-character-reference-list";
+          const refs=(item.referenceImages||[]).filter(ref=>ref.id);
+          if(refs.length){
+            const hint=document.createElement("p");hint.className="movie-stage-note";hint.textContent="Отметьте изображения, которые нужно использовать как визуальные ориентиры. Файлы остаются в вашей библиотеке.";referenceList.append(hint);
+            refs.forEach(ref=>{
+              const label=document.createElement("label");label.className="movie-character-reference-option";
+              const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=(item.selectedReferenceIds||[]).includes(ref.id);
+              checkbox.addEventListener("change",()=>{item.selectedReferenceIds=Array.isArray(item.selectedReferenceIds)?item.selectedReferenceIds:[];item.selectedReferenceIds=checkbox.checked?[...new Set([...item.selectedReferenceIds,ref.id])]:item.selectedReferenceIds.filter(id=>id!==ref.id);});
+              const textLabel=document.createElement("span");textLabel.textContent=ref.name||"Референс";
+              label.append(checkbox,textLabel);referenceList.append(label);
+            });
+          }else{const empty=document.createElement("p");empty.className="movie-stage-note";empty.textContent="У этой карточки пока нет изображений-референсов.";referenceList.append(empty);}
+          const sceneLabel=document.createElement("label");sceneLabel.className="movie-character-scene-assignment";
+          const sceneCaption=document.createElement("span");sceneCaption.textContent="Номера сцен для этого образа (например: 1, 2, 4):";
+          const sceneInput=document.createElement("input");sceneInput.type="text";sceneInput.maxLength=80;sceneInput.placeholder="Все сцены — оставьте пустым";sceneInput.value=Array.isArray(item.sceneNumbers)?item.sceneNumbers.join(", "):"";
+          sceneInput.addEventListener("input",()=>{item.sceneNumbers=[...new Set(sceneInput.value.split(/[;,\\s]+/).map(value=>Number(value)).filter(value=>Number.isInteger(value)&&value>0&&value<=999))];});
+          sceneLabel.append(sceneCaption,sceneInput);referenceList.append(sceneLabel);card.append(referenceList);linked.append(card);
+        });
+      };
+      refreshLinked();picker.append(linked);form.append(picker);
+    }
+    if(stage.key==="story"){
+      const assigned=(Array.isArray(project.characterLibrarySnapshots)?project.characterLibrarySnapshots:[]).filter(item=>Array.isArray(item.selectedReferenceIds)&&item.selectedReferenceIds.length);
+      if(assigned.length){
+        const continuity=document.createElement("aside");continuity.className="movie-scene-reference-guidance";
+        const title=document.createElement("strong");title.textContent="Визуальные ориентиры для раскадровки";
+        const intro=document.createElement("p");intro.textContent="Учитывайте эти утверждённые референсы при описании кадров. Номера сцен указаны в настройках персонажей. Это подсказка для автора: файлы ещё не отправляются в видеогенератор.";
+        continuity.append(title,intro);
+        assigned.forEach(item=>{
+          const line=document.createElement("p");const sceneText=Array.isArray(item.sceneNumbers)&&item.sceneNumbers.length?"Сцены "+item.sceneNumbers.join(", "):"Все сцены";
+          const selected=(item.referenceImages||[]).filter(ref=>item.selectedReferenceIds.includes(ref.id)).map(ref=>ref.name).filter(Boolean);
+          line.textContent=(item.kind==="scene"?"Локация: ":"Персонаж: ")+item.name+" · "+sceneText+" · "+(selected.length?selected.join(", "):"выбранные референсы");
+          continuity.append(line);
+        });
+        form.append(continuity);
+      }
+    }
     let showTitlesControl=null;
     if(stage.key==="edit"){
       const titlesWrap=document.createElement("label");
@@ -1482,6 +2134,8 @@ const movieHistoryStyle = document.createElement("style");
       aiStatus.textContent=stageHints[stage.key];
       manualButton.addEventListener("click",()=>{const first=Object.values(inputs)[0];first?.focus();aiStatus.textContent="Можно заполнить материалы самостоятельно. Ваш текст сохранится после нажатия кнопки сохранения.";});
       aiButton.addEventListener("click",async()=>{
+        const requestAuthVersion=authContextVersion,requestUserId=authSession?.user?.id||"guest";
+        const contextIsCurrent=()=>requestAuthVersion===authContextVersion&&(authSession?.user?.id||"guest")===requestUserId;
         aiButton.disabled=true;manualButton.disabled=true;aiButton.textContent="Studio AI работает…";
         aiStatus.textContent="Изучаю материалы фильма и готовлю результат для этого этапа…";
         const latest=movieRead().find(item=>item.id===projectId)||project;
@@ -1492,11 +2146,36 @@ const movieHistoryStyle = document.createElement("style");
         const characters=String(latest.characters||"").slice(0,7000);
         const voices=String(latest.voices||"").slice(0,9000);
         const edit=String(latest.edit||"").slice(0,7000);
+        // Text-only continuity brief. Image blobs in IndexedDB are never sent through /api/chat.
+        const continuityBrief=(Array.isArray(latest.characterLibrarySnapshots)?latest.characterLibrarySnapshots:[])
+          .map(item=>{
+            if(!item||typeof item!=="object")return "";
+            const selected=(Array.isArray(item.referenceImages)?item.referenceImages:[])
+              .filter(ref=>ref&&Array.isArray(item.selectedReferenceIds)&&item.selectedReferenceIds.includes(ref.id))
+              .map(ref=>String(ref.name||"визуальный референс").slice(0,100));
+            const scenes=Array.isArray(item.sceneNumbers)&&item.sceneNumbers.length
+              ?"Только сцены: "+item.sceneNumbers.filter(n=>Number.isInteger(n)&&n>0&&n<=999).join(", ")
+              :"Все сцены";
+            const passport=item.passport&&typeof item.passport==="object"?item.passport:{};
+            return [
+              (item.kind==="scene"?"ЛОКАЦИЯ: ":"ПЕРСОНАЖ: ")+String(item.name||"Без имени").slice(0,100),
+              "Образ: "+String(item.representation||"2d"),
+              "Описание: "+String(item.description||"").slice(0,500),
+              "Идентичность/лицо: "+String(passport.face||"").slice(0,500),
+              "Силуэт: "+String(passport.body||"").slice(0,300),
+              "Одежда и аксессуары: "+String(passport.wardrobe||"").slice(0,400),
+              "Палитра и эмоции: "+String(passport.palette||"").slice(0,300),
+              "Привязка: "+scenes,
+              "Выбранные референсы (названия, не файлы): "+(selected.join(", ")||"не выбраны")
+            ].join("\n");
+          }).filter(Boolean).join("\n\n").slice(0,6000);
         let prompt="";
         if(stage.key==="story"){
           prompt=[
             "Ты — сценарист и режиссёр раскадровки PWA Studio.",
             "Разработай сценарий фильма «"+title+"» и подробную раскадровку.",
+            "Сохраняй утверждённые паспорта персонажей как канонические. Не меняй лицо, волосы, цвет глаз, силуэт, отличительные детали и базовую палитру; меняй позу, эмоцию и ракурс только по действию сцены. Учитывай номера сцен, назначенные автором.",
+            "Для каждой сцены явно указывай присутствующих персонажей и локации, не смешивай их идентичности.",
             "Исходная идея: "+(idea||"Пользователь пока не добавил отдельное описание идеи. Развивай название и имеющиеся материалы бережно."),
             "Жанр: "+String(latest.genre||"не указан")+". Заявленная длительность: "+String(latest.duration||5)+" минут. Кадр: "+String(latest.frame||"16:9")+".",
             "Если ниже уже есть сценарий или раскадровка, улучшай и развивай их, сохраняя имена, факты, сюжетные решения и авторский замысел. Не переписывай без необходимости уже готовый материал.",
@@ -1504,6 +2183,7 @@ const movieHistoryStyle = document.createElement("style");
             "В сценарии: логлайн, персонажи в кратком виде, сцены по порядку, место/время, действия и диалоги, кульминация и финал. Соблюдай заявленную длительность; если история длиннее, честно укажи ориентировочный хронометраж.",
             "В раскадровке: для каждой сцены нумерованные кадры, крупность, композиция, движение камеры, действие, свет/цвет, переход и ориентировочная длительность. Учитывай, что это план, а не готовое видео.",
             "Пиши по-русски. Не добавляй опасных инструкций, не выдавай вымысел за реальные факты.",
+            "\nПАСПОРТА И ВИЗУАЛЬНЫЕ ОГРАНИЧЕНИЯ (только текст):\n"+continuityBrief,
             "\nТЕКУЩИЙ СЦЕНАРИЙ:\n"+story,
             "\nТЕКУЩАЯ РАСКАДРОВКА:\n"+storyboard
           ].join("\n");
@@ -1511,12 +2191,14 @@ const movieHistoryStyle = document.createElement("style");
           prompt=[
             "Ты — художник-постановщик и специалист по дизайну персонажей PWA Studio.",
             "Создай подробную библию персонажей фильма «"+title+"» на основе сценария и раскадровки.",
+            "Сначала сохрани утверждённые паспорта из библиотеки как канонические. Не переосмысливай лицо, волосы, силуэт, палитру и отличительные признаки. Если сценарий расходится с паспортом, отметь конфликт отдельно и не исправляй паспорт молча.",
             "Не меняй сюжет, имена, возраст и отношения, если они уже указаны. Не добавляй новых важных героев без необходимости. Для каждого героя опиши роль, возраст (только если известен), лицо, телосложение, волосы, одежду, обувь, аксессуары, характер, пластику, мимику, манеру держаться и отличительные детали.",
             "Добавь отдельные блоки: визуальные референсы словами для генерации; палитра и материалы; правила постоянства внешности между сценами; что нельзя менять от кадра к кадру; варианты одежды только если они обоснованы сценой.",
             "Если персонаж появляется только голосом, явно отметь это и не придумывай ему видимую внешность. Не приписывай реальным людям неуказанные особенности.",
             "Пиши по-русски, структурированно и практически, чтобы описание можно было использовать как основу для генерации изображений и видео.",
             "\nСЦЕНАРИЙ:\n"+story,
             "\nРАСКАДРОВКА:\n"+storyboard,
+            "\nКАНОНИЧЕСКИЕ ПАСПОРТА И ВЫБРАННЫЕ РЕФЕРЕНСЫ (только текст):\n"+continuityBrief,
             "\nТЕКУЩИЕ ОПИСАНИЯ ПЕРСОНАЖЕЙ:\n"+String(inputs.characters?.value||characters).slice(0,7000)
           ].join("\n");
         }else if(stage.key==="voices"){
@@ -1549,6 +2231,7 @@ const movieHistoryStyle = document.createElement("style");
         }
         try{
           const result=await apiRequest("/api/chat",{method:"POST",body:JSON.stringify({message:prompt,history:[]})});
+          if(!contextIsCurrent())return;
           const generated=String(result.reply||"").trim();
           if(!generated)throw new Error("Studio AI вернул пустой ответ.");
           if(stage.key==="story"){
@@ -1571,9 +2254,9 @@ const movieHistoryStyle = document.createElement("style");
           if(!aiStatus.textContent.startsWith("✓ Черновик сценария"))aiStatus.textContent="✓ Материалы этапа подготовлены. Проверь их, при необходимости отредактируй и нажми «Сохранить черновик» или кнопку завершения этапа.";
           Object.values(inputs)[0]?.focus();
         }catch(error){
-          aiStatus.textContent="Не удалось создать материалы: "+(error?.message||"ошибка соединения")+". Можно заполнить поля самостоятельно.";
+          if(contextIsCurrent())aiStatus.textContent="Не удалось создать материалы: "+(error?.message||"ошибка соединения")+". Можно заполнить поля самостоятельно.";
         }finally{
-          aiButton.disabled=false;manualButton.disabled=false;aiButton.textContent="✦ Создать с Studio AI";
+          if(contextIsCurrent()){aiButton.disabled=false;manualButton.disabled=false;aiButton.textContent="✦ Создать с Studio AI";}
         }
       });
       aiTools.append(aiButton,manualButton,aiStatus);
@@ -1591,6 +2274,7 @@ const movieHistoryStyle = document.createElement("style");
         if(index<0){draftStatus.textContent="Не удалось найти этот фильм. Вернитесь к проекту и откройте этап снова.";return;}
         const current=latest[index]; addMovieVersion(current);
         stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+        if(stage.key==="characters")current.characterLibrarySnapshots=selectedLibrarySnapshots.map(item=>({...item}));
         if(stage.key==="edit"&&showTitlesControl)current.showTitles=showTitlesControl.checked;
         if(stage.key==="story" && current.story) current.idea=current.story;
         current.updatedAt=new Date().toISOString();
@@ -1612,6 +2296,7 @@ const movieHistoryStyle = document.createElement("style");
       const latest=movieRead(); const index=latest.findIndex(item=>item.id===projectId); if(index<0)return;
       const current=latest[index]; addMovieVersion(current);
       stage.fields.forEach(([key])=>{current[key]=inputs[key].value.trim();});
+      if(stage.key==="characters")current.characterLibrarySnapshots=selectedLibrarySnapshots.map(item=>({...item}));
       if(stage.key==="edit"&&showTitlesControl)current.showTitles=showTitlesControl.checked;
       current.completedSteps=(Array.isArray(current.completedSteps)?current.completedSteps:[]).filter(key=>movieStages.findIndex(item=>item.key===key)<=stageIndex);
       if(!current.completedSteps.includes(stage.key))current.completedSteps.push(stage.key);
@@ -1659,7 +2344,17 @@ const movieHistoryStyle = document.createElement("style");
   };
   const renderMovieProjects = () => {
     const list=$("#movieProjectList"); if(!list)return;
-    const projects=movieRead(); const count=$("#movieCount");
+    let projects;
+    try { projects=movieRead(); }
+    catch(error) {
+      list.replaceChildren();
+      const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");
+      warning.textContent="⚠ Проекты не загружены: "+error.message+" Исходные данные сохранены. Не создавайте, не изменяйте и не удаляйте проекты до восстановления данных.";
+      list.append(warning);
+      const feedback=$("#movieFeedback");if(feedback)feedback.textContent="Защитная проверка остановила операции с повреждёнными данными.";
+      return;
+    }
+    const count=$("#movieCount");
     if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
     if(!projects.length){
       list.innerHTML='<div class="movie-empty"><span>✧</span><b>Здесь появятся ваши фильмы</b><small>Создайте первый проект, чтобы начать свою кинематографическую историю.</small></div>';
@@ -1706,6 +2401,8 @@ const movieHistoryStyle = document.createElement("style");
       const version=makeAction("↶ История версий ("+(project.versions||[]).length+")","secondary-button",()=>{
         const current=movieRead().find(item=>item.id===project.id); if(!current)return;
         const versions=Array.isArray(current.versions)?current.versions:[];
+        const historyContextVersion=authContextVersion;
+        const historyOwnerId=authSession?.user?.id||null;
         if(!versions.length){$("#movieFeedback").textContent="Пока нет сохранённых версий. Они создаются автоматически перед изменениями.";return;}
         let selectedIndex=0;
         const overlay=document.createElement("div");
@@ -1744,8 +2441,20 @@ const movieHistoryStyle = document.createElement("style");
           addSection("План монтажа",data.edit);
           const restore=makeAction("Восстановить эту версию","primary-button",()=>{
             if(!window.confirm("Восстановить версию от "+movieDate(entry.savedAt)+"? Текущая версия будет сохранена в истории перед заменой."))return;
+            if(historyContextVersion!==authContextVersion || historyOwnerId!==(authSession?.user?.id||null)) {
+              overlay.remove();
+              $("#movieFeedback").textContent="Аккаунт изменился. История закрыта, чтобы исключить восстановление в другом пространстве.";
+              return;
+            }
             const latest=movieRead(); const live=latest.find(item=>item.id===project.id); if(!live)return;
-            const restored=versions[selectedIndex].data;
+            const selected=versions[selectedIndex];
+            const liveVersion=(live.versions||[]).find(item=>item.savedAt===selected.savedAt && JSON.stringify(item.data)===JSON.stringify(selected.data));
+            if(!liveVersion) {
+              overlay.remove();
+              $("#movieFeedback").textContent="Эта версия уже изменилась или больше недоступна. Откройте историю заново.";
+              return;
+            }
+            const restored=liveVersion.data;
             addMovieVersion(live); const keepVersions=live.versions;
             latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
             if(movieWrite(latest)){overlay.remove();renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
@@ -1772,7 +2481,7 @@ const movieHistoryStyle = document.createElement("style");
         if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
         const latest=movieRead().filter(item=>item.id!==project.id);
         const deletedIds=readMovieTombstones();
-        if(isUuid(project.id) && !deletedIds.includes(project.id)) writeMovieTombstones([...deletedIds,project.id]);
+        if(isUuid(project.id) && !deletedIds.includes(project.id) && !writeMovieTombstones([...deletedIds,project.id]))return;
         if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён. Удаление отправлено в облако.":"Проект удалён с этого устройства.";}
       });
       const allStagesDone=movieStages.every(stage=>(project.completedSteps||[]).includes(stage.key));
@@ -1845,7 +2554,17 @@ const movieHistoryStyle = document.createElement("style");
   };
   const renderGuestSpace = () => {
     const list=$("#guestProjectList"); if(!list)return;
-    const projects=authSession?.user?[]:movieRead();
+    let projects=[], archivedProjects=[];
+    try {
+      projects=authSession?.user?[]:movieRead();
+      archivedProjects=authSession?.user?[]:readGuestArchive();
+    } catch(error) {
+      list.replaceChildren();
+      const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");
+      warning.textContent="⚠ Гостевые проекты или архив не загружены: "+error.message+" Данные не перезаписаны.";
+      list.append(warning);
+      return;
+    }
     const count=$("#guestProjectCount");
     if(count)count.textContent=projects.length+(projects.length===1?" проект":projects.length>1&&projects.length<5?" проекта":" проектов");
     const notice=$("#guestExpiryNotice");
@@ -1876,7 +2595,7 @@ const movieHistoryStyle = document.createElement("style");
       const download=document.createElement("button");download.type="button";download.className="secondary-button";download.textContent="⇩ Скачать проект";download.addEventListener("click",()=>downloadGuestProject(project));
       actions.append(open,download);card.append(head,meta,expiry,actions);list.append(card);
     });
-    const archived=authSession?.user?[]:readGuestArchive();
+    const archived=archivedProjects;
     if(archived.length){
       const archiveHeading=document.createElement("h3");archiveHeading.textContent="Архив гостевых проектов";archiveHeading.style.margin="22px 0 10px";list.append(archiveHeading);
       archived.forEach((project,index)=>{
@@ -1921,10 +2640,15 @@ const movieHistoryStyle = document.createElement("style");
           reader.readAsText(file,"UTF-8");
         });
         const data=JSON.parse(raw);
-        const imported=[...(Array.isArray(data?.projects)?data.projects:[]),...(Array.isArray(data?.archivedProjects)?data.archivedProjects:[]),...(data?.project?[data.project]:[])];
-        if(!["PWA Studio guest project","PWA Studio guest workspace"].includes(data?.format)||!imported.length)throw new Error("Это не резервная копия PWA Studio.");
-        const valid=imported.filter(item=>item&&typeof item==="object"&&!Array.isArray(item));
-        if(!valid.length)throw new Error("В файле нет проектов для импорта.");
+        if(!["PWA Studio guest project","PWA Studio guest workspace"].includes(data?.format))throw new Error("Это не резервная копия PWA Studio.");
+        if(data.projects!==undefined&&!Array.isArray(data.projects))throw new Error("Раздел активных проектов в копии повреждён.");
+        if(data.archivedProjects!==undefined&&!Array.isArray(data.archivedProjects))throw new Error("Архив проектов в копии повреждён.");
+        if(data.project!==undefined&&(!data.project||typeof data.project!=="object"||Array.isArray(data.project)))throw new Error("Проект в копии повреждён.");
+        const imported=[...(data.projects||[]),...(data.archivedProjects||[]),...(data.project?[data.project]:[])];
+        if(!imported.length)throw new Error("В файле нет проектов для импорта.");
+        // Reject the entire backup if even one record or nested version is malformed.
+        PWAStudioMovieStorageGuard.parse(JSON.stringify(imported));
+        const valid=imported;
         const current=movieRead();
         const now=new Date().toISOString();
         const used=new Set(current.map(item=>item.id));
@@ -1933,15 +2657,16 @@ const movieHistoryStyle = document.createElement("style");
           copy.id=movieId();
           while(used.has(copy.id))copy.id=movieId();
           used.add(copy.id);
-          copy.name=String(copy.name||"Импортированный фильм").slice(0,160);
-          copy.idea=String(copy.idea||copy.story||"").slice(0,20000);
-          copy.story=String(copy.story||copy.idea||"").slice(0,30000);
-          copy.storyboard=String(copy.storyboard||"").slice(0,30000);
-          copy.characters=String(copy.characters||"").slice(0,30000);
-          copy.voices=String(copy.voices||"").slice(0,30000);
-          copy.edit=String(copy.edit||"").slice(0,30000);
-          copy.completedSteps=Array.isArray(copy.completedSteps)?copy.completedSteps.filter(key=>movieStages.some(stage=>stage.key===key)):[];
-          copy.versions=Array.isArray(copy.versions)?copy.versions.slice(0,20):[];
+          copy.name=copy.name||"Импортированный фильм";
+          copy.idea=copy.idea||copy.story||"";
+          copy.story=copy.story||copy.idea||"";
+          copy.storyboard=copy.storyboard||"";
+          copy.characters=copy.characters||"";
+          copy.voices=copy.voices||"";
+          copy.edit=copy.edit||"";
+          // The complete backup was validated above; preserve all content and history exactly.
+          copy.completedSteps=copy.completedSteps||[];
+          copy.versions=(copy.versions||[]).map(version=>({...version,data:{...version.data,id:copy.id}}));
           copy.createdAt=now;copy.updatedAt=now;
           copy.guestExpiresAt=new Date(Date.now()+24*60*60*1000).toISOString();
           copy.workflowStep=Math.max(0,Math.min(3,Number(copy.workflowStep)||0));
@@ -1961,17 +2686,27 @@ const movieHistoryStyle = document.createElement("style");
   }
   $("#guestCreateMovie")?.addEventListener("click",()=>navigate("movie"));
   $("#guestExportAll")?.addEventListener("click",()=>{
-    const projects=movieRead(); const archivedProjects=readGuestArchive();
-    if(!projects.length&&!archivedProjects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
-    const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:2,exportedAt:new Date().toISOString(),projects,archivedProjects},null,2)],{type:"application/json;charset=utf-8"});
-    const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    try {
+      const projects=movieRead(); const archivedProjects=readGuestArchive();
+      if(!projects.length&&!archivedProjects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
+      const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:2,exportedAt:new Date().toISOString(),projects,archivedProjects},null,2)],{type:"application/json;charset=utf-8"});
+      const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    } catch(error) {
+      const status=$("#guestImportStatus");if(status){status.hidden=false;status.textContent="Экспорт остановлен для защиты данных: "+error.message;}
+      window.alert("Не удалось создать копию: "+error.message+" Исходные данные не изменены.");
+    }
   });
   renderGuestSpace();
   // Re-check expiry on a timer and whenever the tab becomes active again.
   const refreshGuestExpiry=()=>{
     if(authSession?.user)return;
     const before=localStorage.getItem(movieStorageKey());
-    const active=movieRead();
+    try { movieRead(); }
+    catch(error) {
+      const list=$("#guestProjectList");
+      if(list){list.replaceChildren();const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");warning.textContent="⚠ Автоматическая проверка остановлена: "+error.message;list.append(warning);}
+      return;
+    }
     const after=localStorage.getItem(movieStorageKey());
     if(before!==after||!$("#view-guestspace")?.hidden)renderGuestSpace();
   };
@@ -1979,6 +2714,440 @@ const movieHistoryStyle = document.createElement("style");
   window.addEventListener("focus",refreshGuestExpiry);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshGuestExpiry();});
   window.addEventListener("pageshow",refreshGuestExpiry);
+
+  // Character Library cloud backup v2: explicit, metadata-only, resumable-by-retry.
+  // Local records and image Blobs are never deleted or rewritten by this operation.
+  const makeCharacterUuid = () => {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+    return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
+  };
+  const isCharacterUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || "");
+  const stableCharacterJson = value => JSON.stringify(value, (key,item) => {
+    if(item&&typeof item==="object"&&!Array.isArray(item))return Object.keys(item).sort().reduce((out,name)=>(out[name]=item[name],out),{});
+    return item;
+  });
+  const backupCharacterLibrary = async () => {
+    const status=$("#characterLibraryStatus"),button=$("#backupCharacterLibrary");
+    const session=authSession,ownerId=session?.user?.id,contextVersion=authContextVersion;
+    const stillOwner=()=>authContextVersion===contextVersion&&authSession?.user?.id===ownerId;
+    if(!ownerId||!session?.access_token){if(status)status.textContent="Для облачной копии войдите в свой аккаунт. Гостевая библиотека останется на этом устройстве.";return;}
+    if(!isCharacterUuid(ownerId)){if(status)status.textContent="Не удалось проверить идентификатор аккаунта. Локальные материалы не изменены.";return;}
+    if(button){button.disabled=true;button.textContent="⏳ Создаём копию…";}
+    const say=message=>{if(stillOwner()&&status)status.textContent=message;};
+    try{
+      const localItems=readCharacterLibrary();
+      if(!Array.isArray(localItems)||localItems.length>100){throw new Error("Локальная библиотека содержит недопустимое число записей.");}
+      if(!localItems.length){say("Библиотека пуста — пока нечего копировать.");return;}
+      say("Получаю список облачных паспортов…");
+      const cloudItems=[];
+      let cursor=null,pages=0;
+      do{
+        const query=new URLSearchParams({limit:"100"});
+        if(cursor)query.set("cursor",cursor);
+        const page=await apiRequest("/api/characters?"+query.toString());
+        if(!stillOwner())return;
+        if(!page||!Array.isArray(page.items)||!(page.next_cursor===null||typeof page.next_cursor==="string"))throw new Error("Сервер вернул неполную страницу библиотеки.");
+        cloudItems.push(...page.items);
+        if(cloudItems.length>10000)throw new Error("Облачная библиотека превышает безопасный предел обхода.");
+        cursor=page.next_cursor;
+        pages++;
+        if(pages>100)throw new Error("Слишком много страниц. Операция остановлена без изменения локальных данных.");
+      }while(cursor);
+      const byLocalId=new Map();
+      for(const item of cloudItems){
+        if(!isCharacterUuid(item.source_local_id)||!isCharacterUuid(item.id))throw new Error("Облачная запись содержит некорректную связь ID.");
+        if(byLocalId.has(item.source_local_id))throw new Error("Найдены повторяющиеся связи локального и облачного ID. Нужна проверка, автоматическое объединение запрещено.");
+        byLocalId.set(item.source_local_id,item);
+      }
+      let created=0,updated=0,unchanged=0;
+      for(let index=0;index<localItems.length;index++){
+        if(!stillOwner())return;
+        const local=localItems[index];
+        if(!local||!isCharacterUuid(local.id)||typeof local.name!=="string"||!local.name.trim())throw new Error("Локальная карточка содержит некорректные данные.");
+        const referenceManifest=globalThis.PWACharacterCloudRestore.serializeReferenceManifest(
+          Array.isArray(local.referenceImages)?local.referenceImages:[],
+          Array.isArray(local.cloudBackup?.referenceManifest)?local.cloudBackup.referenceManifest:[]
+        );
+        const referenceData={
+          kind:local.kind==="scene"?"scene":"character",
+          representation:["2d","3d","both"].includes(local.representation)?local.representation:"2d",
+          voice:String(local.voice||"").slice(0,500),
+          passport:{
+            face:String(local.passport?.face||"").slice(0,1200),
+            body:String(local.passport?.body||"").slice(0,1200),
+            wardrobe:String(local.passport?.wardrobe||"").slice(0,1200),
+            palette:String(local.passport?.palette||"").slice(0,1200)
+          },
+          referenceImages:referenceManifest
+        };
+        const payload={source_local_id:local.id,name:local.name.trim().slice(0,120),description:String(local.description||"").slice(0,5000),reference_data:referenceData};
+        if(new TextEncoder().encode(JSON.stringify(payload.reference_data)).length>24000)throw new Error("Паспорт «"+payload.name+"» слишком велик для безопасной облачной копии.");
+        const existing=byLocalId.get(local.id);
+        if(!existing){
+          const createdRow=await apiRequest("/api/characters",{method:"POST",body:JSON.stringify(payload)});
+          if(!stillOwner())return;
+          if(!createdRow||createdRow.source_local_id!==local.id||!isCharacterUuid(createdRow.id)||!Number.isInteger(createdRow.version)||createdRow.version<1)throw new Error("Сервер не подтвердил создание облачного паспорта.");
+          byLocalId.set(local.id,createdRow);created++;
+        }else{
+          if(!Number.isInteger(existing.version)||existing.version<1)throw new Error("У облачного паспорта отсутствует версия. Обновление остановлено.");
+          const same=existing.name===payload.name&&String(existing.description||"")===String(payload.description||"")&&stableCharacterJson(existing.reference_data||{})===stableCharacterJson(payload.reference_data);
+          if(same){unchanged++;continue;}
+          try{
+            const updatedRow=await apiRequest("/api/characters/"+encodeURIComponent(existing.id),{
+              method:"PATCH",body:JSON.stringify({expected_version:existing.version,name:payload.name,description:payload.description,reference_data:payload.reference_data})
+            });
+            if(!stillOwner())return;
+            if(!updatedRow||updatedRow.id!==existing.id||updatedRow.version!==existing.version+1)throw new Error("Сервер не подтвердил новую версию паспорта.");
+            byLocalId.set(local.id,updatedRow);updated++;
+          }catch(error){
+            if(error.status===409||error.code==="character_version_conflict"||/409|conflict|конфликт|уже измен/i.test(String(error.message)))throw new Error("Паспорт «"+payload.name+"» изменён в облаке на другом устройстве. Ничего не перезаписано; обновите данные и разрешите конфликт вручную.");
+            throw error;
+          }
+        }
+        say("Обработано "+(index+1)+" из "+localItems.length+" паспортов…");
+      }
+      say("Облачная копия паспортов готова: новых — "+created+", обновлено — "+updated+", без изменений — "+unchanged+". Изображения-референсы пока остаются только на этом устройстве. Локальная библиотека сохранена.");
+    }catch(error){
+      say("Копирование не завершено: "+error.message+" Локальные карточки и изображения сохранены; повторный запуск безопасен.");
+    }finally{
+      if(button){button.disabled=false;button.textContent="☁ Создать облачную копию";}
+    }
+  };
+  $("#backupCharacterLibrary")?.addEventListener("click",backupCharacterLibrary);
+
+  // Character Library v1: owner-scoped metadata in localStorage and image blobs in IndexedDB.
+  const characterLibraryDbName = "pwa-studio-character-library-v1";
+  const characterLibraryKey = () => "pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest");
+  const characterOwnerIsUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value||""));
+  const acquireCharacterLibraryLock = async (ownerId,contextVersion) => {
+    const contextIsCurrent=()=>contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId;
+    const assertContext=()=>{if(!contextIsCurrent())throw new Error("Аккаунт изменился. Операция остановлена.");};
+    if(ownerId==="guest")return {assertCurrent:async()=>assertContext(),release:async()=>{}};
+    if(!characterOwnerIsUuid(ownerId))throw new Error("Не удалось подтвердить владельца библиотеки.");
+    const api=window.PWACharacterOwnerCoordinationLock;
+    if(!api)throw new Error("Защитная блокировка библиотеки недоступна. Обновите страницу и повторите попытку.");
+    let lease=await api.acquire(ownerId,{ttlMs:30000}),lost=false,renewal=Promise.resolve();
+    const heartbeat=setInterval(()=>{renewal=renewal.then(async()=>{try{lease=await api.renew(lease,{ttlMs:30000});}catch(_){lost=true;}});},8000);
+    return {
+      assertCurrent:async()=>{assertContext();await renewal;if(lost||!(await api.isCurrent(lease)))throw new Error("Защитная блокировка истекла или передана другой вкладке. Повторите действие.");assertContext();},
+      release:async()=>{clearInterval(heartbeat);await renewal;try{await api.release(lease);}catch(_){}}
+    };
+  };
+  let editingCharacterId = null;
+  let removedCharacterReferenceIds = new Set();
+  const openCharacterLibraryDb = () => new Promise((resolve,reject) => {
+    if (!("indexedDB" in window)) { reject(new Error("IndexedDB недоступен в этом браузере.")); return; }
+    const request = indexedDB.open(characterLibraryDbName,1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images",{keyPath:"id"});
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Не удалось открыть локальное хранилище изображений."));
+  });
+  // Strict full-record read: never turn corruption into an apparently empty/partial
+  // library. Every write, delete, backup and restore preview must fail closed.
+  const readCharacterLibrary = () => {
+    const raw = localStorage.getItem(characterLibraryKey());
+    if (raw === null || raw === "") return [];
+    let value;
+    try { value = JSON.parse(raw); }
+    catch { throw new Error("Локальная библиотека повреждена (ошибка JSON). Данные не изменены; сначала создайте резервную копию исходного содержимого."); }
+    if (!Array.isArray(value) || value.length > 100)
+      throw new Error("Структура библиотеки недопустима или превышен лимит 100 записей. Запись и удаление остановлены.");
+    const ids = new Set();
+    for (const item of value) {
+      if (!item || typeof item !== "object" || Array.isArray(item) ||
+          typeof item.id !== "string" || !item.id.trim() ||
+          typeof item.name !== "string" || !item.name.trim() ||
+          ids.has(item.id))
+        throw new Error("В библиотеке найдена неполная или повторяющаяся карточка. Данные не изменены.");
+      ids.add(item.id);
+      if (item.referenceImages !== undefined) {
+        if (!Array.isArray(item.referenceImages) || item.referenceImages.length > 6)
+          throw new Error("У карточки повреждён список изображений. Данные не изменены.");
+        const referenceIds = new Set();
+        for (const ref of item.referenceImages) {
+          if (!ref || typeof ref !== "object" || Array.isArray(ref) ||
+              typeof ref.id !== "string" || !ref.id.trim() || referenceIds.has(ref.id))
+            throw new Error("У карточки найден повреждённый или повторяющийся референс. Данные не изменены.");
+          referenceIds.add(ref.id);
+        }
+      }
+    }
+    return value;
+  };
+  const saveCharacterImage = async (id,blob,ownerId) => {
+    const db=await openCharacterLibraryDb();
+    try {
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images");
+        let failure=null;
+        const existing=store.get(id);
+        existing.onsuccess=()=>{
+          if(existing.result){
+            failure=new Error("Идентификатор изображения уже занят. Существующий файл, включая данные восстановления, сохранён без изменений.");
+            tx.abort();
+            return;
+          }
+          store.add({id,ownerId,blob,createdAt:new Date().toISOString()});
+        };
+        existing.onerror=()=>{failure=existing.error||new Error("Не удалось проверить владельца изображения.");};
+        tx.oncomplete=resolve;
+        tx.onerror=()=>reject(failure||tx.error||new Error("Не удалось сохранить изображение."));
+        tx.onabort=()=>reject(failure||tx.error||new Error("Сохранение изображения отменено."));
+      });
+    } finally { db.close(); }
+  };
+  const getCharacterImage = async (id,ownerId) => {
+    const db=await openCharacterLibraryDb();
+    try {
+      return await new Promise((resolve,reject)=>{
+        const request=db.transaction("images","readonly").objectStore("images").get(id);
+        request.onsuccess=()=>resolve(request.result?.ownerId===ownerId?request.result.blob:null);
+        request.onerror=()=>reject(request.error);
+      });
+    } finally { db.close(); }
+  };
+  const deleteCharacterImage = async (id,ownerId) => {
+    const raw=localStorage.getItem("pwa-studio-character-library-v1:"+ownerId);
+    let cards=[];
+    if(raw!==null&&raw!==""){
+      try{cards=JSON.parse(raw);}catch{throw new Error("Метаданные библиотеки повреждены; изображение сохранено для безопасности.");}
+      if(!Array.isArray(cards)||cards.length>100)throw new Error("Состав библиотеки не подтверждён; изображение сохранено.");
+      for(const card of cards){
+        if(!card||typeof card!=="object"||(card.referenceImages!=null&&!Array.isArray(card.referenceImages)))throw new Error("Структура карточки не подтверждена; изображение сохранено.");
+        if((card.referenceImages||[]).some(ref=>ref&&ref.id===id))return false;
+      }
+    }
+    const db=await openCharacterLibraryDb();
+    try{return await new Promise((resolve,reject)=>{
+      const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);let deleted=false;
+      request.onsuccess=()=>{if(request.result?.ownerId===ownerId){store.delete(id);deleted=true;}};
+      request.onerror=()=>{try{tx.abort();}catch{}};
+      tx.oncomplete=()=>resolve(deleted);
+      tx.onerror=()=>reject(tx.error||new Error("Не удалось удалить локальное изображение."));
+      tx.onabort=()=>reject(tx.error||new Error("Удаление локального изображения отменено."));
+    });}finally{db.close();}
+  };
+  const resetCharacterEditor = () => {
+    editingCharacterId=null;
+    removedCharacterReferenceIds=new Set();
+    const refsPanel=$("#characterReferenceEditor");if(refsPanel)refsPanel.replaceChildren();
+    ["#characterName","#characterDescription","#characterVoice","#characterFace","#characterBody","#characterWardrobe","#characterPalette"].forEach(id=>$(id).value="");
+    $("#characterKind").value="character";$("#characterRepresentation").value="2d";$("#characterImages").value="";
+    $("#saveCharacter").textContent="＋ Сохранить персонажа";$("#cancelCharacterEdit").hidden=true;
+  };
+  const renderCharacterReferenceEditor = item => {
+    const panel=$("#characterReferenceEditor");if(!panel)return;
+    panel.replaceChildren();
+    const refs=(item.referenceImages||[]).filter(ref=>!removedCharacterReferenceIds.has(ref.id));
+    if(!refs.length){const note=document.createElement("p");note.className="helper-text";note.textContent="Сохранённых референсов пока нет.";panel.append(note);return;}
+    const heading=document.createElement("p");heading.className="helper-text";heading.textContent="Сохранённые референсы. Удаление вступит в силу после сохранения карточки.";panel.append(heading);
+    refs.forEach(ref=>{
+      const row=document.createElement("div");row.className="character-reference-row";
+      const label=document.createElement("span");label.textContent=ref.name||"Изображение";
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Убрать";
+      remove.addEventListener("click",()=>{removedCharacterReferenceIds.add(ref.id);renderCharacterReferenceEditor(item);});
+      row.append(label,remove);panel.append(row);
+    });
+  };
+  const renderCharacterLibrary = async () => {
+    const list=$("#characterLibraryList");if(!list)return;
+    const ownerId=authSession?.user?.id||"guest";
+    const contextVersion=authContextVersion;
+    const query=($("#characterSearch")?.value||"").trim().toLocaleLowerCase();
+    let libraryItems;
+    try { libraryItems=readCharacterLibrary(); }
+    catch(error) {
+      list.replaceChildren();
+      const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");
+      warning.textContent="⚠ Библиотека не загружена полностью: "+error.message+" Не сохраняйте и не удаляйте карточки до проверки.";
+      list.append(warning);
+      const status=$("#characterLibraryStatus");if(status)status.textContent="Защитная проверка остановила операции с повреждёнными данными.";
+      return;
+    }
+    const items=libraryItems.filter(item=>!query||(item.name+" "+(item.description||"")).toLocaleLowerCase().includes(query));
+    list.replaceChildren();
+    if(!items.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent=query?"Ничего не найдено.":"Библиотека пока пуста. Добавьте первого персонажа.";list.append(empty);return;}
+    for(const item of items){
+      const card=document.createElement("article");card.className="character-card";
+      const title=document.createElement("h3");title.textContent=(item.kind==="scene"?"Локация · ":"Персонаж · ")+item.name;
+      const meta=document.createElement("div");meta.className="character-meta";meta.textContent=(item.representation==="both"?"2D + 3D":item.representation==="3d"?"3D-паспорт":"2D")+" · "+(item.referenceImages?.length||0)+" референсов";
+      const description=document.createElement("p");description.textContent=item.description||"Описание не добавлено.";
+      card.append(title,meta,description);
+      if(item.passport){const passport=document.createElement("p");passport.className="character-meta";passport.textContent=["Лицо: "+(item.passport.face||"—"),"Силуэт: "+(item.passport.body||"—"),"Одежда: "+(item.passport.wardrobe||"—"),"Палитра/эмоции: "+(item.passport.palette||"—")].join(" · ");card.append(passport);}
+      if(item.voice){const voice=document.createElement("p");voice.className="character-meta";voice.textContent="Голос: "+item.voice;card.append(voice);}
+      const gallery=document.createElement("div");gallery.className="character-card-gallery";
+      for(const ref of (item.referenceImages||[]).slice(0,6)){
+        try{
+          const blob=await getCharacterImage(ref.id,ownerId);
+          if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)return;
+          if(!blob||!card.isConnected)continue;
+          const img=document.createElement("img");img.alt="Референс "+item.name;img.loading="lazy";
+          const url=URL.createObjectURL(blob);img.src=url;img.addEventListener("load",()=>URL.revokeObjectURL(url),{once:true});img.addEventListener("error",()=>URL.revokeObjectURL(url),{once:true});gallery.append(img);
+        }catch(error){console.warn("Character image preview:",error);}
+      }
+      if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)return;
+      if(gallery.childElementCount)card.append(gallery);
+      const actions=document.createElement("div");actions.className="character-card-actions";
+      const edit=document.createElement("button");edit.type="button";edit.className="secondary-button";edit.textContent="Изменить";
+      edit.addEventListener("click",()=>{
+        editingCharacterId=item.id;removedCharacterReferenceIds=new Set();$("#characterName").value=item.name;$("#characterDescription").value=item.description||"";
+        $("#characterKind").value=item.kind||"character";$("#characterRepresentation").value=item.representation||"2d";$("#characterVoice").value=item.voice||"";
+        $("#characterFace").value=item.passport?.face||"";$("#characterBody").value=item.passport?.body||"";
+        $("#characterWardrobe").value=item.passport?.wardrobe||"";$("#characterPalette").value=item.passport?.palette||"";
+        $("#characterImages").value="";$("#saveCharacter").textContent="Сохранить изменения";$("#cancelCharacterEdit").hidden=false;
+        renderCharacterReferenceEditor(item);
+        $("#characterName").scrollIntoView({behavior:"smooth",block:"center"});
+      });
+      const remove=document.createElement("button");remove.type="button";remove.className="secondary-button";remove.textContent="Удалить";
+      remove.addEventListener("click",async()=>{
+        const deleteContextVersion=authContextVersion;
+        const deleteOwnerId=ownerId;
+        const deleteStorageKey=characterLibraryKey();
+        if(!window.confirm("Удалить «"+item.name+"» и его локальные изображения?"))return;
+        if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==deleteOwnerId)return;
+        let ownerLock=null;
+        try{
+          ownerLock=await acquireCharacterLibraryLock(deleteOwnerId,deleteContextVersion);
+          await ownerLock.assertCurrent();
+          const current=readCharacterLibrary(),found=current.find(x=>x.id===item.id);if(!found)return;
+          const next=current.filter(x=>x.id!==item.id);
+          localStorage.setItem(deleteStorageKey,JSON.stringify(next));
+          await ownerLock.assertCurrent();
+          const cleanup=await Promise.allSettled((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)));
+          await ownerLock.assertCurrent();
+          const cleanupFailed=cleanup.some(result=>result.status==="rejected"||result.value===false);
+          $("#characterLibraryStatus").textContent=cleanupFailed
+            ?"Материал удалён из библиотеки, но часть изображений осталась в локальном хранилище. Повторите очистку позже."
+            :"Материал удалён из локальной библиотеки.";
+          renderCharacterLibrary();
+        }catch(error){
+          if(deleteContextVersion===authContextVersion&&(authSession?.user?.id||"guest")===deleteOwnerId)
+            $("#characterLibraryStatus").textContent="Не удалось безопасно завершить удаление: "+error.message;
+        }finally{if(ownerLock)await ownerLock.release();}
+      });
+      actions.append(edit,remove);card.append(actions);list.append(card);
+    }
+  };
+  $("#characterKittyPreset")?.addEventListener("click",()=>{
+    if(editingCharacterId && !window.confirm("Заменить текущие поля карточки данными стартового паспорта Катти? Сохранённая запись изменится только после нажатия «Сохранить изменения»."))return;
+    editingCharacterId=null;
+    removedCharacterReferenceIds=new Set();
+    const refsPanel=$("#characterReferenceEditor");if(refsPanel)refsPanel.replaceChildren();
+    $("#characterName").value="Катти";
+    $("#characterKind").value="character";
+    $("#characterRepresentation").value="both";
+    $("#characterDescription").value="Добрая, выразительная мультяшная девушка с веснушками, большими зелёными глазами и длинными кудрявыми огненно-рыжими волосами. У неё тёплая улыбка, фиолетовое худи, чёрная футболка с логотипом PWA Studio, большие наушники и украшения со звёздами.";
+    $("#characterFace").value="Большие зелёные глаза, заметные веснушки, добрая выразительная улыбка, длинные кудрявые огненно-рыжие волосы.";
+    $("#characterBody").value="Стилизованный дружелюбный мультяшный образ. Точные пропорции и силуэт уточняются по утверждённым референсам.";
+    $("#characterWardrobe").value="Фиолетовое худи, чёрная футболка с логотипом PWA Studio, большие наушники, украшения со звёздами.";
+    $("#characterPalette").value="Огненно-рыжий, фиолетовый и чёрный; зелёные глаза. Эмоции: доброжелательность, любопытство, воодушевление.";
+    $("#characterVoice").value="";
+    $("#characterImages").value="";
+    $("#saveCharacter").textContent="＋ Сохранить персонажа";
+    $("#cancelCharacterEdit").hidden=false;
+    $("#characterLibraryStatus").textContent="Стартовый паспорт Катти заполнен. Добавьте утверждённые изображения-референсы и нажмите «Сохранить персонажа».";
+    $("#characterName").scrollIntoView({behavior:"smooth",block:"center"});
+  });
+  $("#saveCharacter")?.addEventListener("click",async()=>{
+    const ownerId=authSession?.user?.id||"guest",contextVersion=authContextVersion,storageKey=characterLibraryKey();
+    const name=$("#characterName").value.trim(),description=$("#characterDescription").value.trim();
+    const kind=$("#characterKind").value,representation=$("#characterRepresentation").value,files=Array.from($("#characterImages").files||[]);
+    if(!name||!description){$("#characterLibraryStatus").textContent="Укажите имя и основное описание.";return;}
+    if(!["character","scene"].includes(kind)||!["2d","3d","both"].includes(representation)){return;}
+    let current;
+    try { current=readCharacterLibrary(); }
+    catch(error) { $("#characterLibraryStatus").textContent="Сохранение остановлено: "+error.message; return; }
+    const existing=editingCharacterId?current.find(x=>x.id===editingCharacterId):null;
+    if(editingCharacterId&&!existing){resetCharacterEditor();$("#characterLibraryStatus").textContent="Запись больше не найдена. Обновите библиотеку.";return;}
+    if(!existing&&current.length>=100){$("#characterLibraryStatus").textContent="Достигнут лимит в 100 материалов.";return;}
+    const retainedReferences=(existing?.referenceImages||[]).filter(ref=>!removedCharacterReferenceIds.has(ref.id));
+    if(files.length+retainedReferences.length>6){$("#characterLibraryStatus").textContent="У одного материала может быть не более 6 референсов.";return;}
+    if(files.some(file=>!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>8*1024*1024)){ $("#characterLibraryStatus").textContent="Поддерживаются PNG, JPEG и WebP до 8 МБ каждый.";return; }
+    const id=existing?.id||makeCharacterUuid();
+    const refs=files.map(file=>({id:id+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)),name:file.name.slice(0,120),type:file.type}));
+    const updated={...(existing||{}),id,name:name.slice(0,80),description:description.slice(0,5000),kind,representation,voice:$("#characterVoice").value.trim().slice(0,500),
+      passport:{face:$("#characterFace").value.trim().slice(0,1200),body:$("#characterBody").value.trim().slice(0,1200),wardrobe:$("#characterWardrobe").value.trim().slice(0,1200),palette:$("#characterPalette").value.trim().slice(0,1200)},
+      referenceImages:[...retainedReferences,...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const button=$("#saveCharacter");button.disabled=true;
+    const savedImageIds=[];
+    let metadataCommitted=false,ownerLock=null;
+    try{
+      ownerLock=await acquireCharacterLibraryLock(ownerId,contextVersion);
+      await ownerLock.assertCurrent();
+      const freshLibrary=readCharacterLibrary();
+      if(JSON.stringify(freshLibrary)!==JSON.stringify(current))throw new Error("Библиотека изменилась в другой вкладке. Обновите список и повторите сохранение.");
+      for(let i=0;i<files.length;i++){
+        await ownerLock.assertCurrent();
+        if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
+          throw new Error("Аккаунт изменился во время сохранения. Повторите действие в текущем аккаунте.");
+        await saveCharacterImage(refs[i].id,files[i],ownerId);
+        savedImageIds.push(refs[i].id);
+      }
+      if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
+        throw new Error("Аккаунт изменился во время сохранения. Локальная карточка не была записана в другой аккаунт.");
+      const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
+      await ownerLock.assertCurrent();
+      localStorage.setItem(storageKey,JSON.stringify(next));
+      metadataCommitted=true;
+      let cleanupWarning="";
+      if(existing&&removedCharacterReferenceIds.size){
+        try{
+          await ownerLock.assertCurrent();
+          const cleanup=await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));
+          if(cleanup.some(deleted=>deleted===false))cleanupWarning=" Некоторые изображения оставлены: они ещё используются другими карточками.";
+        }catch(cleanupError){cleanupWarning=" Карточка сохранена, но часть старых файлов не удалось безопасно очистить: "+cleanupError.message;}
+      }
+      if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)return;
+      resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера."+cleanupWarning;
+      await renderCharacterLibrary();
+    }catch(error){
+      let cleanupWarning="";
+      if(!metadataCommitted&&savedImageIds.length){
+        let cleanupAllowed=false;
+        try{await ownerLock?.assertCurrent();cleanupAllowed=true;}catch(_){}
+        if(cleanupAllowed){
+          const cleanup=await Promise.allSettled(savedImageIds.map(imageId=>deleteCharacterImage(imageId,ownerId)));
+          if(cleanup.some(result=>result.status==="rejected"||result.value===false))
+            cleanupWarning=" Часть временных изображений оставлена: очистка не подтвердила безопасность удаления.";
+        }else cleanupWarning=" Временные изображения оставлены, потому что контекст аккаунта или блокировка изменились.";
+      }
+      if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)
+        $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+(metadataCommitted?" Карточка уже записана; проверьте состояние библиотеки.":cleanupWarning||" Временные изображения очищены.");
+    }finally{if(ownerLock)await ownerLock.release();if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}
+  });
+  $("#cancelCharacterEdit")?.addEventListener("click",()=>{resetCharacterEditor();$("#characterLibraryStatus").textContent="Редактирование отменено.";});
+  $("#characterSearch")?.addEventListener("input",renderCharacterLibrary);
+  window.addEventListener("pwa-studio-auth-changed",()=>{resetCharacterEditor();renderCharacterLibrary();});
+  renderCharacterLibrary();
+
+  // Narrow bridge for the isolated, read-only cloud restore review module.
+  window.PWAStudioCharacterRestoreBridge = Object.freeze({
+    getSession: () => authSession,
+    getContextVersion: () => authContextVersion,
+    getLocalItems: () => readCharacterLibrary(),
+    getLocalImageBlob: async (referenceId, ownerId, version) => {
+      if (!ownerId || !isCharacterUuid(ownerId) || !isCurrent(ownerId, version))
+        throw new Error("Account context is not current; local image access was denied.");
+      if (typeof referenceId !== "string" || !referenceId.trim())
+        throw new Error("A valid local reference ID is required.");
+      const blob = await getCharacterImage(referenceId, ownerId);
+      if (!isCurrent(ownerId, version))
+        throw new Error("Account context changed during local image access.");
+      if (blob !== null && blob !== undefined &&
+          (typeof blob.arrayBuffer !== "function" || typeof blob.type !== "string"))
+        throw new Error("Local image data is not a valid Blob.");
+      return blob || null;
+    },
+    isCurrent: (ownerId, version) => !!ownerId && authContextVersion === version && authSession?.user?.id === ownerId,
+    apiRequest
+  });
 
   renderMovieProjects();
 

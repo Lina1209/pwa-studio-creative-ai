@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><base href="/"><title>Site cache tools browser tests</title></head>
+<body>
+<button id="clearSiteCache" type="button">Очистить кеш</button>
+<p id="clearSiteCacheStatus"></p>
+<pre id="results"></pre>
+<script>
+(async () => {
+  const results = [];
+  const assert = (condition, message) => { if (!condition) throw new Error(message); results.push("PASS: " + message); };
+  const cacheNames = ["pwa-studio-shell-v34", "pwa-studio-shell-v35", "third-party-cache", "image-transform-cache"];
+  const deleted = [];
+  let updateCalls = 0;
+  let localStorageTouches = 0;
+  let indexedDbTouches = 0;
+  Object.defineProperty(window, "caches", { configurable: true, value: {
+    async keys() { return [...cacheNames]; },
+    async delete(name) { deleted.push(name); return true; }
+  }});
+  const registration = {
+    active: { scriptURL: location.origin + "/old-app/sw.js" },
+    waiting: { scriptURL: location.origin + "/sw.js" },
+    async update() { updateCalls++; }
+  };
+  const sameOriginOtherRegistration = { active: { scriptURL: location.origin + "/another-app/sw.js" }, async update() { updateCalls += 10; } };
+  const foreignRegistration = { active: { scriptURL: "https://other.example/sw.js" }, async update() { updateCalls += 100; } };
+  Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: {
+    async getRegistrations() { return [registration, sameOriginOtherRegistration, foreignRegistration]; }
+  }});
+  const originalSet = Storage.prototype.setItem;
+  const originalRemove = Storage.prototype.removeItem;
+  Storage.prototype.setItem = function(...args) { localStorageTouches++; return originalSet.apply(this,args); };
+  Storage.prototype.removeItem = function(...args) { localStorageTouches++; return originalRemove.apply(this,args); };
+  const originalOpen = indexedDB.open.bind(indexedDB);
+  indexedDB.open = function(...args) { indexedDbTouches++; return originalOpen(...args); };
+  const script = document.createElement("script");
+  script.src = "site-cache-tools.js";
+  document.head.appendChild(script);
+  await new Promise((resolve,reject) => { script.onload=resolve; script.onerror=reject; });
+  let confirmCalls = 0;
+  window.confirm = () => { confirmCalls++; return false; };
+  document.getElementById("clearSiteCache").click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert(confirmCalls === 1 && deleted.length === 0, "cancelled confirmation performs no cache deletion");
+  const result = await window.PWAStudioCacheTools.clearSiteCache();
+  assert(result.deleted === 2, "returns exact number of owned shell caches");
+  assert(deleted.join(",") === "pwa-studio-shell-v34,pwa-studio-shell-v35", "deletes only PWA Studio shell cache keys");
+  assert(!deleted.includes("third-party-cache") && !deleted.includes("image-transform-cache"), "leaves unrelated caches untouched");
+  assert(updateCalls === 1, "updates only this origin's /sw.js registration (calls=" + updateCalls + ", expected=" + new URL("./sw.js", document.baseURI).href + ")");
+  assert(localStorageTouches === 0 && indexedDbTouches === 0, "does not access localStorage or IndexedDB");
+  assert(document.getElementById("clearSiteCache") && document.getElementById("clearSiteCacheStatus"), "settings controls exist for all account roles");
+  registration.update = async () => { throw new Error("offline update check"); };
+  const updateFailure = await window.PWAStudioCacheTools.clearSiteCache();
+  assert(updateFailure.deleted === 2 && updateFailure.serviceWorkerUpdateFailed, "reports successful cache deletion separately from failed service-worker update");
+  const swResponse = await fetch("sw.js");
+  assert(swResponse.ok, "service worker source is available to the cache audit test");
+  const swSource = await swResponse.text();
+  const nonShellSource = swSource.slice(swSource.indexOf("  // Everything outside the explicit app-shell allowlist"));
+  assert(nonShellSource.includes("return;") && !nonShellSource.includes("caches.") && !nonShellSource.includes("cache.put"), "non-shell requests do not accumulate dynamic or large media in Cache Storage");
+  assert(swSource.includes('cache.match(request, { ignoreSearch: true })'), "offline shell fallback matches precached assets despite cache-busting query strings");
+  const indexText = await fetch("index.html").then(response => response.text());
+  const indexDoc = new DOMParser().parseFromString(indexText, "text/html");
+  const coreStart = swSource.indexOf("const CORE_ASSETS = [");
+  const coreEnd = swSource.indexOf("];", coreStart);
+  const coreBlock = coreStart >= 0 && coreEnd > coreStart ? swSource.slice(coreStart, coreEnd) : "";
+  const coreAssets = [...coreBlock.matchAll(/"([^"]+)"/g)].map(match => new URL(match[1], location.origin + "/").pathname);
+  const shellStart = swSource.indexOf('const isShellAsset = request.mode === "navigate" ||');
+  const shellEnd = swSource.indexOf("].some(asset", shellStart);
+  const shellBlock = shellStart >= 0 && shellEnd > shellStart ? swSource.slice(shellStart, shellEnd) : "";
+  const shellPaths = [...shellBlock.matchAll(/"([^"]+)"/g)].map(match => match[1]);
+  assert(coreAssets.includes("/assets/icon.svg") && shellPaths.includes("/assets/icon.svg"), "manifest app icon is both precached and served by the offline shell strategy");
+  const localScripts = [...indexDoc.querySelectorAll("script[src]")].map(script => new URL(script.getAttribute("src"), location.origin + "/")).filter(url => url.origin === location.origin);
+  assert(localScripts.every(url => coreAssets.includes(url.pathname)), "every same-origin script in index.html is included in the offline precache");
+  assert(localScripts.every(url => shellPaths.some(path => url.pathname.endsWith(path))), "every same-origin script is handled by the shell network-first strategy");
+  const failingCaches = { async keys(){ return ["pwa-studio-shell-fail"]; }, async delete(){ return false; } };
+  Object.defineProperty(window, "caches", { configurable:true, value:failingCaches });
+  let failedClosed = false;
+  try { await window.PWAStudioCacheTools.clearSiteCache(); } catch (error) { failedClosed = /не все кеши/i.test(error.message); }
+  assert(failedClosed, "reports failed cache deletion instead of claiming success");
+  document.getElementById("results").textContent = results.join("\n");
+  document.documentElement.dataset.testResult = "passed";
+})().catch(error => {
+  document.getElementById("results").textContent += "\nFAIL: " + (error.stack || error);
+  document.documentElement.dataset.testResult = "failed";
+});
+</script>
+</body></html>

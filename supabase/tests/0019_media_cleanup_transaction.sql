@@ -1,0 +1,436 @@
+-- Disposable-database transaction harness for migration 0019.
+-- Run ONLY against a disposable Supabase/Postgres database with migrations
+-- 0005, 0012, 0017, 0018, and 0019 applied.
+--
+-- Required:
+--   PWA_TEST_OWNER_ID=<existing auth.users UUID>
+-- Example:
+--   psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
+--     -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+--     -f supabase/tests/0019_media_cleanup_transaction.sql
+--
+-- This harness simulates a successful Storage delete by calling the completion
+-- RPC. It does not contact Storage. All database fixtures roll back.
+
+\set ON_ERROR_STOP on
+begin;
+select set_config('pwa.test_owner_id', :'PWA_TEST_OWNER_ID', true);
+
+do $$
+declare
+  v_owner uuid := current_setting('pwa.test_owner_id')::uuid;
+  v_foreign_owner uuid := gen_random_uuid();
+  v_character uuid := gen_random_uuid();
+  v_asset uuid := gen_random_uuid();
+  v_busy_character uuid := gen_random_uuid();
+  v_busy_asset uuid := gen_random_uuid();
+  v_retry_character uuid := gen_random_uuid();
+  v_retry_asset uuid := gen_random_uuid();
+  v_retry_object uuid := gen_random_uuid();
+  v_retry_operation uuid := gen_random_uuid();
+  v_retry_token_a uuid := gen_random_uuid();
+  v_retry_token_b uuid := gen_random_uuid();
+  v_retry_claim_a jsonb;
+  v_retry_claim_b jsonb;
+  v_empty_character uuid := gen_random_uuid();
+  v_dead_character uuid := gen_random_uuid();
+  v_dead_asset uuid := gen_random_uuid();
+  v_dead_object uuid := gen_random_uuid();
+  v_dead_operation uuid := gen_random_uuid();
+  v_dead_token uuid := gen_random_uuid();
+  v_dead_claim jsonb;
+  v_retry_result jsonb;
+  v_unindexed_character uuid := gen_random_uuid();
+  v_referenced_character uuid := gen_random_uuid();
+  v_referencing_asset uuid := gen_random_uuid();
+  v_referenced_asset uuid := gen_random_uuid();
+  v_referenced_path text;
+  v_object uuid := gen_random_uuid();
+  v_operation uuid := gen_random_uuid();
+  v_token_a uuid := gen_random_uuid();
+  v_token_b uuid := gen_random_uuid();
+  v_path text;
+  v_request jsonb;
+  v_claim_a jsonb;
+  v_claim_b jsonb;
+  v_final jsonb;
+  v_status text;
+  v_character_exists boolean;
+begin
+  if not exists (select 1 from auth.users where id=v_owner) then
+    raise exception 'PWA_TEST_OWNER_ID must identify an existing disposable auth user';
+  end if;
+
+  insert into auth.users(id) values (v_foreign_owner);
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_character,v_owner,'Disposable cleanup harness','{}'::jsonb);
+
+  -- A different account cannot reserve cleanup for this character, even when
+  -- it knows the character UUID. The owner marker must remain untouched.
+  begin
+    perform public.pwa_request_character_media_cleanup(
+      v_foreign_owner,v_character,gen_random_uuid()
+    );
+    raise exception 'foreign owner unexpectedly reserved character cleanup';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_character) is not null then
+    raise exception 'foreign-owner attempt changed the cleanup marker';
+  end if;
+
+  v_path := v_owner::text || '/characters/' || v_character::text || '/' || v_object::text || '.png';
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_asset,v_owner,v_character,'fixture.png','image/png','studio-media','ready',v_path,
+    '{"source":"disposable-cleanup-test"}'::jsonb,1,v_operation,128,
+    repeat('a',64),8,8
+  );
+
+  -- Simulate an authenticated JWT role and prove it cannot set the
+  -- server-managed deletion intent even when SQL privileges are elevated.
+  perform set_config('request.jwt.claim.role','authenticated',true);
+  begin
+    update public.characters
+    set cleanup_operation_id=gen_random_uuid(),cleanup_requested_at=clock_timestamp()
+    where id=v_character and owner_id=v_owner;
+    raise exception 'browser role unexpectedly changed cleanup intent';
+  exception when sqlstate '42501' then
+    null;
+  end;
+  perform set_config('request.jwt.claim.role','service_role',true);
+
+  v_request := public.pwa_request_character_media_cleanup(v_owner,v_character,v_operation);
+  if (v_request->>'assets_enqueued')::integer <> 1
+     or v_request->>'status' <> 'cleanup_pending' then
+    raise exception 'cleanup reservation did not enqueue exactly one asset: %',v_request;
+  end if;
+
+  -- Browser clients cannot create unindexed studio-media objects. The API's
+  -- character-reference uploader uses service_role after a DB reservation.
+  if exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and cmd='INSERT' and roles @> array['authenticated']::name[]
+      and coalesce(with_check,'') ilike '%studio-media%'
+  ) then
+    raise exception 'an authenticated Storage INSERT policy still exposes studio-media';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and policyname='Users upload own studio exports' and cmd='INSERT'
+  ) then
+    raise exception 'owner-scoped studio-exports upload policy is missing';
+  end if;
+
+  -- Authenticated users must not bypass the media cleanup outbox by deleting
+  -- private studio-media objects directly. Export deletion remains owner-scoped.
+  if exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and cmd='DELETE' and coalesce(qual,'') ilike '%studio-media%'
+  ) then
+    raise exception 'a direct Storage DELETE policy still exposes studio-media';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and policyname='Users delete own studio exports' and cmd='DELETE'
+  ) then
+    raise exception 'owner-scoped studio-exports deletion policy is missing';
+  end if;
+
+  if exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and cmd='UPDATE' and coalesce(qual,'') ilike '%studio-media%'
+  ) then
+    raise exception 'a direct Storage UPDATE policy still exposes studio-media';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and policyname='Users update own studio exports' and cmd='UPDATE'
+  ) then
+    raise exception 'owner-scoped studio-exports update policy is missing';
+  end if;
+
+  -- The browser role cannot forge, update, or delete server-managed media rows.
+  if has_table_privilege('authenticated','public.media_assets','INSERT')
+     or has_table_privilege('authenticated','public.media_assets','UPDATE')
+     or has_table_privilege('authenticated','public.media_assets','DELETE')
+     or has_table_privilege('authenticated','public.characters','DELETE') then
+    raise exception 'browser role retains an unsafe media/character write privilege';
+  end if;
+
+  -- A late upload reservation is blocked by the character deletion marker.
+  begin
+    perform public.pwa_reserve_character_reference_upload(
+      v_owner,v_character,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
+      'late-upload-' || gen_random_uuid()::text,'late.png','image/png',
+      'studio-media',
+      v_owner::text || '/characters/' || v_character::text || '/' || gen_random_uuid()::text || '.png',
+      128,repeat('b',64),8,8
+    );
+    raise exception 'late media upload unexpectedly succeeded';
+  exception when sqlstate '23514' then
+    null;
+  end;
+
+  -- Same operation is idempotent and must not create a second event.
+  v_request := public.pwa_request_character_media_cleanup(v_owner,v_character,v_operation);
+  if (select count(*) from public.media_asset_outbox
+      where owner_id=v_owner and asset_id=v_asset
+        and operation_id=v_operation and event_type='media_cleanup_requested') <> 1 then
+    raise exception 'cleanup reservation created duplicate outbox events';
+  end if;
+
+  -- A private object path embedded in a passport without a matching media
+  -- row is ambiguous; do not delete the character and orphan the object.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (
+    v_unindexed_character,v_owner,'Unindexed path fixture',
+    jsonb_build_object(
+      'reference',
+      v_owner::text || '/characters/' || v_unindexed_character::text || '/' ||
+      gen_random_uuid()::text || '.png'
+    )
+  );
+  begin
+    perform public.pwa_request_character_media_cleanup(
+      v_owner,v_unindexed_character,gen_random_uuid()
+    );
+    raise exception 'cleanup unexpectedly accepted an unindexed passport path';
+  exception when sqlstate '23514' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_unindexed_character) is not null then
+    raise exception 'unindexed passport path rejection did not roll back deletion intent';
+  end if;
+
+  -- A different media row's JSON metadata is also a live reference.
+  -- Cleanup must fail closed rather than deleting an object still referenced
+  -- outside the character's own passport.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_referenced_character,v_owner,'Metadata reference fixture','{}'::jsonb);
+  v_referenced_path := v_owner::text || '/characters/' || v_referenced_character::text || '/' ||
+    gen_random_uuid()::text || '.png';
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_referenced_asset,v_owner,v_referenced_character,'target.png','image/png',
+    'studio-media','ready',v_referenced_path,'{}'::jsonb,1,gen_random_uuid(),
+    128,repeat('d',64),8,8
+  );
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_referencing_asset,v_owner,null,'pointer.png','image/png',
+    'studio-media','ready',
+    v_owner::text || '/misc/' || gen_random_uuid()::text || '.png',
+    jsonb_build_object('linked_object',v_referenced_path),1,gen_random_uuid(),
+    128,repeat('e',64),8,8
+  );
+  begin
+    perform public.pwa_request_character_media_cleanup(
+      v_owner,v_referenced_character,gen_random_uuid()
+    );
+    raise exception 'cleanup unexpectedly accepted an external metadata reference';
+  exception when sqlstate '23514' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_referenced_character) is not null
+     or (select status from public.media_assets where id=v_referenced_asset) <> 'ready' then
+    raise exception 'metadata-reference rejection did not roll back cleanup reservation';
+  end if;
+
+  -- A character with an upload still in flight cannot enter cleanup. The
+  -- failed reservation must roll back its deletion-intent marker.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_busy_character,v_owner,'Busy upload fixture','{}'::jsonb);
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_busy_asset,v_owner,v_busy_character,'busy.png','image/png','studio-media','pending_upload',
+    v_owner::text || '/characters/' || v_busy_character::text || '/' || gen_random_uuid()::text || '.png',
+    '{}'::jsonb,1,gen_random_uuid(),128,repeat('c',64),8,8
+  );
+  begin
+    perform public.pwa_request_character_media_cleanup(v_owner,v_busy_character,gen_random_uuid());
+    raise exception 'cleanup unexpectedly raced an in-flight upload';
+  exception when sqlstate '23514' then
+    null;
+  end;
+  if (select cleanup_operation_id from public.characters where id=v_busy_character) is not null
+     or (select status from public.media_assets where id=v_busy_asset) <> 'pending_upload' then
+    raise exception 'failed in-flight-upload cleanup reservation did not roll back';
+  end if;
+
+  v_claim_a := public.pwa_claim_media_cleanup(v_token_a,120);
+  if v_claim_a is null or v_claim_a->>'asset_id' <> v_asset::text then
+    raise exception 'first cleanup worker failed to claim fixture';
+  end if;
+
+  update public.media_asset_outbox
+  set claim_expires_at=clock_timestamp()-interval '1 second'
+  where id=(v_claim_a->>'event_id')::uuid and claim_token=v_token_a;
+
+  v_claim_b := public.pwa_claim_media_cleanup(v_token_b,120);
+  if v_claim_b is null or v_claim_b->>'asset_id' <> v_asset::text
+     or v_claim_b->>'claim_token' <> v_token_b::text
+     or (v_claim_b->>'attempts')::integer <> 2 then
+    raise exception 'second worker did not reclaim with a fresh fencing token';
+  end if;
+
+  begin
+    perform public.pwa_complete_media_cleanup(
+      v_owner,v_asset,(v_claim_a->>'event_id')::uuid,v_token_a
+    );
+    raise exception 'stale worker A unexpectedly completed cleanup';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+
+  begin
+    perform public.pwa_retry_media_cleanup(
+      v_owner,v_asset,(v_claim_a->>'event_id')::uuid,v_token_a,30
+    );
+    raise exception 'stale worker A unexpectedly scheduled retry';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+
+  -- Represents a Storage DELETE success/404; actual Storage is not contacted.
+  perform public.pwa_complete_media_cleanup(
+    v_owner,v_asset,(v_claim_b->>'event_id')::uuid,v_token_b
+  );
+
+  select status into v_status from public.media_assets where id=v_asset and owner_id=v_owner;
+  if v_status <> 'deleted' then
+    raise exception 'media tombstone was not finalized';
+  end if;
+  if exists (select 1 from public.media_assets where id=v_asset and character_id is not null) then
+    raise exception 'deleted media tombstone remains attached to character';
+  end if;
+  if not exists (
+    select 1 from public.media_asset_outbox
+    where id=(v_claim_b->>'event_id')::uuid and status='delivered'
+      and claim_token is null and claim_expires_at is null
+  ) then
+    raise exception 'cleanup event was not atomically acknowledged';
+  end if;
+
+  v_final := public.pwa_finalize_character_media_cleanup(v_owner,v_character);
+  if v_final->>'status' <> 'deleted' then
+    raise exception 'character finalization failed';
+  end if;
+  select exists(select 1 from public.characters where id=v_character) into v_character_exists;
+  if v_character_exists then
+    raise exception 'character row still exists after finalization';
+  end if;
+
+  -- An empty character can be finalized without inventing a media event.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_empty_character,v_owner,'Empty cleanup fixture','{}'::jsonb);
+  v_request := public.pwa_request_character_media_cleanup(
+    v_owner,v_empty_character,gen_random_uuid()
+  );
+  if v_request->>'status' <> 'ready_to_finalize'
+     or (v_request->>'assets_enqueued')::integer <> 0 then
+    raise exception 'empty character cleanup should be immediately finalizable';
+  end if;
+  v_final := public.pwa_finalize_character_media_cleanup(v_owner,v_empty_character);
+  if v_final->>'status' <> 'deleted' then
+    raise exception 'empty character finalization failed';
+  end if;
+
+  -- Exercise a current worker's transient retry, due-time recovery, and a
+  -- second successful claim with a fresh fencing token.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_retry_character,v_owner,'Retry cleanup fixture','{}'::jsonb);
+  v_path := v_owner::text || '/characters/' || v_retry_character::text || '/' ||
+    v_retry_object::text || '.png';
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_retry_asset,v_owner,v_retry_character,'retry.png','image/png','studio-media','ready',
+    v_path,'{}'::jsonb,1,v_retry_operation,128,repeat('f',64),8,8
+  );
+  perform public.pwa_request_character_media_cleanup(
+    v_owner,v_retry_character,v_retry_operation
+  );
+  v_retry_claim_a := public.pwa_claim_media_cleanup(v_retry_token_a,120);
+  if v_retry_claim_a is null or v_retry_claim_a->>'asset_id' <> v_retry_asset::text then
+    raise exception 'retry fixture was not claimed';
+  end if;
+  perform public.pwa_retry_media_cleanup(
+    v_owner,v_retry_asset,(v_retry_claim_a->>'event_id')::uuid,v_retry_token_a,1
+  );
+  update public.media_asset_outbox
+  set available_at=clock_timestamp()
+  where id=(v_retry_claim_a->>'event_id')::uuid and status='pending';
+  v_retry_claim_b := public.pwa_claim_media_cleanup(v_retry_token_b,120);
+  if v_retry_claim_b is null
+     or v_retry_claim_b->>'asset_id' <> v_retry_asset::text
+     or v_retry_claim_b->>'claim_token' <> v_retry_token_b::text
+     or (v_retry_claim_b->>'attempts')::integer <> 2 then
+    raise exception 'retry event was not reclaimed with a fresh token';
+  end if;
+  perform public.pwa_complete_media_cleanup(
+    v_owner,v_retry_asset,(v_retry_claim_b->>'event_id')::uuid,v_retry_token_b
+  );
+  v_final := public.pwa_finalize_character_media_cleanup(v_owner,v_retry_character);
+  if v_final->>'status' <> 'deleted' then
+    raise exception 'retried character cleanup finalization failed';
+  end if;
+
+  -- Exhausted retries move the event to dead-letter but must retain both the
+  -- cleanup-pending tombstone and the character for operator recovery.
+  insert into public.characters(id,owner_id,name,reference_data)
+  values (v_dead_character,v_owner,'Dead-letter cleanup fixture','{}'::jsonb);
+  v_path := v_owner::text || '/characters/' || v_dead_character::text || '/' ||
+    v_dead_object::text || '.png';
+  insert into public.media_assets(
+    id,owner_id,character_id,file_name,file_type,bucket,status,storage_path,
+    metadata,version,operation_id,size_bytes,content_sha256,width,height
+  ) values (
+    v_dead_asset,v_owner,v_dead_character,'dead.png','image/png','studio-media','ready',
+    v_path,'{}'::jsonb,1,v_dead_operation,128,repeat('9',64),8,8
+  );
+  perform public.pwa_request_character_media_cleanup(
+    v_owner,v_dead_character,v_dead_operation
+  );
+  update public.media_asset_outbox
+  set max_attempts=1
+  where asset_id=v_dead_asset and event_type='media_cleanup_requested';
+  v_dead_claim := public.pwa_claim_media_cleanup(v_dead_token,120);
+  if v_dead_claim is null or v_dead_claim->>'asset_id' <> v_dead_asset::text
+     or (v_dead_claim->>'attempts')::integer <> 1 then
+    raise exception 'dead-letter fixture was not claimed at its retry limit';
+  end if;
+  v_retry_result := public.pwa_retry_media_cleanup(
+    v_owner,v_dead_asset,(v_dead_claim->>'event_id')::uuid,v_dead_token,30
+  );
+  if v_retry_result->>'event_status' <> 'dead_letter'
+     or (select status from public.media_asset_outbox where id=(v_dead_claim->>'event_id')::uuid) <> 'dead_letter'
+     or (select status from public.media_assets where id=v_dead_asset) <> 'cleanup_pending'
+     or not exists (select 1 from public.characters where id=v_dead_character) then
+    raise exception 'dead-letter cleanup did not preserve the character and tombstone';
+  end if;
+  begin
+    perform public.pwa_finalize_character_media_cleanup(v_owner,v_dead_character);
+    raise exception 'dead-letter character unexpectedly finalized';
+  exception when sqlstate '23514' then
+    null;
+  end;
+end;
+$$;
+
+rollback;

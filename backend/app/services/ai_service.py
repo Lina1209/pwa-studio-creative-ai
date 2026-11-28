@@ -70,6 +70,8 @@ def ask_ai(settings: Settings, messages: list[dict[str, str]]) -> AIResult:
         "api_key": api_key,
         "timeout": 90,
         "max_retries": 1,
+        # Bound provider output so a single request cannot generate an unbounded bill.
+        "max_tokens": 2048,
     }
     if settings.ai_provider.lower() == "ollama":
         completion_options["api_base"] = settings.ollama_api_base.rstrip("/")

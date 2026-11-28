@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChatTurn(BaseModel):
@@ -11,6 +11,15 @@ class ChatTurn(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=12000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def enforce_total_context_budget(self):
+        # Per-field limits alone still allow 20 x 12,000 characters per request.
+        # Bound the complete provider input to reduce accidental and abusive cost spikes.
+        total_chars = len(self.message) + sum(len(turn.content) for turn in self.history)
+        if total_chars > 24000:
+            raise ValueError("The complete chat context must not exceed 24000 characters.")
+        return self
 
 
 class ChatResponse(BaseModel):
@@ -106,3 +115,5 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=500)
     visibility: str | None = Field(default=None, pattern=r"^(public|private)$")
     show_in_directory: bool | None = None
+    avatar_catalog_id: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]+$")
+    avatar_representation: str | None = Field(default=None, pattern=r"^(2d|3d)$")

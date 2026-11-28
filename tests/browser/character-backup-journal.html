@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Character backup journal browser tests</title></head>
+<body>
+<pre id="results">Running…</pre>
+<script src="../../character-backup-journal.js"></script>
+<script>
+(async () => {
+  const output = document.getElementById("results");
+  const passed = [];
+  const params = new URLSearchParams(location.search);
+  if (params.has("verify-restart")) {
+    try {
+      const row = await window.PWACharacterBackupJournal.get(params.get("owner"), params.get("character"));
+      if (!row || row.references.length !== 1 || row.references[0].state !== "verified") throw new Error("Persisted journal was not restored after browser restart.");
+      document.documentElement.dataset.testResult = "passed";
+      output.textContent = "PASS persistent IndexedDB journal restored after browser restart";
+    } catch (error) {
+      document.documentElement.dataset.testResult = "failed";
+      output.textContent = "FAIL browser restart recovery\n" + (error.stack || error);
+    }
+    return;
+  }
+  if (params.has("worker")) { document.documentElement.dataset.workerReady = "true"; output.textContent = "Ready for cross-tab IndexedDB tests"; return; }
+  const uuid = () => crypto.randomUUID();
+  const sha = "a".repeat(64);
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const rejects = async (fn, message) => {
+    let rejected = false;
+    try { await fn(); } catch { rejected = true; }
+    check(rejected, message);
+  };
+  const test = async (name, fn) => {
+    await fn(); passed.push(name);
+  };
+  const readLocalImageFixture = async (id) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("pwa-studio-character-library-v1", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images", {keyPath:"id"});
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction("images", "readonly");
+        const request = tx.objectStore("images").get(id);
+        request.onsuccess = async () => {
+          const row = request.result;
+          resolve(row ? {id:row.id, ownerId:row.ownerId, type:row.blob.type, bytes:Array.from(new Uint8Array(await row.blob.arrayBuffer()))} : null);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    } finally { db.close(); }
+  };
+  const seedLocalImageFixture = async (id, ownerId) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("pwa-studio-character-library-v1", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images", {keyPath:"id"});
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("images", "readwrite");
+        tx.objectStore("images").put({id, ownerId, blob:new Blob(["original-local-image"], {type:"image/png"}), createdAt:"test-fixture"});
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error("Local image fixture write aborted"));
+      });
+    } finally { db.close(); }
+  };
+  try {
+    const api = window.PWACharacterBackupJournal;
+    check(!!api, "journal module did not load");
+    const owner = uuid(), otherOwner = uuid(), localCharacter = uuid();
+    const localRef = "local-ref-" + uuid();
+    const cloudCharacter = uuid(), cloudAsset = uuid();
+    const journalInput = {
+      ownerId: owner, localCharacterId: localCharacter, passportFingerprint: sha,
+      references: [{
+        localReferenceId: localRef, sha256: sha, sizeBytes: 1024,
+        mimeType: "image/png", fileName: "reference.png", idempotencyKey: "idem-" + uuid()
+      }]
+    };
+
+    await test("version-one journal database upgrades with records preserved and owner index created", async () => {
+      const legacyOwner = uuid();
+      const legacyCharacter = uuid();
+      const legacyId = legacyOwner + ":" + legacyCharacter;
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase("pwa-studio-character-backup-journal-v1");
+        request.onsuccess = resolve;
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error("Could not reset isolated journal database for migration test."));
+      });
+      const legacyDb = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("pwa-studio-character-backup-journal-v1", 1);
+        request.onupgradeneeded = () => request.result.createObjectStore("journals", {keyPath:"id"});
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = legacyDb.transaction("journals", "readwrite");
+          tx.objectStore("journals").add({
+            id:legacyId, protocolVersion:1, ownerId:legacyOwner, localCharacterId:legacyCharacter,
+            cloudCharacterId:null, passportFingerprint:sha, references:[],
+            createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
+          });
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error("Legacy journal seed aborted."));
+        });
+      } finally { legacyDb.close(); }
+      const upgraded = await api.get(legacyOwner, legacyCharacter);
+      check(upgraded && upgraded.localCharacterId === legacyCharacter, "version-one journal record was lost during upgrade");
+      const page = await api.listPage(legacyOwner,{limit:10});
+      check(page.items.some(row=>row.localCharacterId===legacyCharacter), "owner index did not expose upgraded legacy record");
+    });
+    await test("create persists journal without changing local image Blob", async () => {
+      const imageId = "local-image-fixture-" + uuid();
+      await seedLocalImageFixture(imageId, owner);
+      const before = await readLocalImageFixture(imageId);
+      const created = await api.create(journalInput);
+      check(created.ownerId === owner && created.references.length === 1, "journal fields mismatch");
+      const read = await api.get(owner, localCharacter);
+      check(JSON.stringify(read) === JSON.stringify(created), "journal read-back mismatch");
+      const after = await readLocalImageFixture(imageId);
+      check(JSON.stringify(after) === JSON.stringify(before), "journal operation changed the source image Blob");
+    });
+    await test("duplicate journal creation is rejected", async () => {
+      await rejects(() => api.create(journalInput), "duplicate journal unexpectedly accepted");
+    });    await test("malformed passport fingerprint is rejected", async () => {
+      await rejects(() => api.create({...journalInput, localCharacterId: uuid(), passportFingerprint: "not-a-sha256"}), "malformed passport fingerprint unexpectedly accepted");
+    });
+    await test("simultaneous duplicate creation has one winner", async () => {
+      const racingCharacter = uuid();
+      const racingInput = {...journalInput, localCharacterId: racingCharacter, references: []};
+      const results = await Promise.allSettled([api.create(racingInput), api.create(racingInput)]);
+      check(results.filter(item => item.status === "fulfilled").length === 1, "concurrent create did not have exactly one winner");
+      check(results.filter(item => item.status === "rejected").length === 1, "concurrent duplicate was not rejected");
+      check(!!(await api.get(owner, racingCharacter)), "winning concurrent journal was not persisted");
+    });
+    await test("late IndexedDB success closes connection after blocked upgrade", async () => {
+      const originalOpen = indexedDB.open;
+      let lateConnectionClosed = false;
+      const failedCharacter = uuid();
+      try {
+        indexedDB.open = () => {
+          const fakeDb = { close: () => { lateConnectionClosed = true; } };
+          const request = { result: fakeDb, error: null };
+          setTimeout(() => request.onblocked && request.onblocked(), 0);
+          setTimeout(() => request.onsuccess && request.onsuccess(), 10);
+          return request;
+        };
+        await rejects(
+          () => api.create({...journalInput, localCharacterId: failedCharacter}),
+          "blocked IndexedDB upgrade unexpectedly succeeded"
+        );
+      } finally {
+        indexedDB.open = originalOpen;
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+      check(lateConnectionClosed, "late IndexedDB connection remained open after blocked upgrade");
+    });
+    await test("aborted IndexedDB write leaves no partial journal", async () => {
+      const abortedCharacter = uuid();
+      const abortedId = owner + ":" + abortedCharacter;
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("pwa-studio-character-backup-journal-v1", 2);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        await new Promise(resolve => {
+          const tx = db.transaction("journals", "readwrite");
+          tx.objectStore("journals").put({
+            id: abortedId, protocolVersion: 1, ownerId: owner,
+            localCharacterId: abortedCharacter, references: [],
+            passportFingerprint: sha, createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          tx.onabort = resolve;
+          tx.onerror = resolve;
+          tx.abort();
+        });
+      } finally { db.close(); }
+      check(await api.get(owner, abortedCharacter) === null, "aborted write left a partial journal record");
+    });
+    await test("simulated IndexedDB quota failure preserves source image", async () => {
+      const imageId = "quota-fixture-" + uuid();
+      const failedCharacter = uuid();
+      await seedLocalImageFixture(imageId, owner);
+      const before = await readLocalImageFixture(imageId);
+      const originalOpen = indexedDB.open;
+      let observedQuotaError = false;
+      try {
+        indexedDB.open = () => { throw new DOMException("Simulated storage quota exceeded", "QuotaExceededError"); };
+        await rejects(async () => {
+          try {
+            await api.create({...journalInput, localCharacterId: failedCharacter});
+          } catch (error) {
+            observedQuotaError = error?.name === "QuotaExceededError";
+            throw error;
+          }
+        }, "simulated quota failure unexpectedly created a journal");
+      } finally {
+        indexedDB.open = originalOpen;
+      }
+      const after = await readLocalImageFixture(imageId);
+      check(observedQuotaError, "simulated quota failure did not preserve QuotaExceededError");
+      check(JSON.stringify(after) === JSON.stringify(before), "quota failure changed the source image Blob");
+      check(await api.get(owner, failedCharacter) === null, "quota failure left a journal record");
+    });
+    await test("owner boundary prevents foreign reads", async () => {
+      check(await api.get(otherOwner, localCharacter) === null, "foreign owner read returned a record");
+      const rows = await api.list(owner);
+      check(rows.length === 2 && rows.every(row => row.ownerId === owner), "owner list leaked or omitted journal");
+      check((await api.list(otherOwner)).length === 0, "foreign list leaked a journal");
+    });
+    await test("same local character ID is isolated across different owners", async () => {
+      const sharedLocalCharacterId = uuid();
+      const secondOwner = uuid();
+      await api.create({
+        ownerId: owner, localCharacterId: sharedLocalCharacterId,
+        passportFingerprint: sha, references: []
+      });
+      await api.create({
+        ownerId: secondOwner, localCharacterId: sharedLocalCharacterId,
+        passportFingerprint: "c".repeat(64), references: []
+      });
+      const first = await api.get(owner, sharedLocalCharacterId);
+      const second = await api.get(secondOwner, sharedLocalCharacterId);
+      check(first && second, "one owner could not retrieve its own same-ID journal");
+      check(first.ownerId === owner && second.ownerId === secondOwner, "same-ID journals crossed owner boundary");
+      check((await api.list(owner)).every(row => row.ownerId === owner), "first owner's list exposed another owner's journal");
+      check((await api.list(secondOwner)).length === 1, "second owner's list did not return only its own journal");
+    });
+    await test("owner-indexed journal pagination is bounded and complete", async () => {
+      const pageOwner = uuid();
+      const ids = [];
+      for (let index = 0; index < 7; index++) {
+        const id = uuid();
+        ids.push(id);
+        await api.create({ownerId:pageOwner,localCharacterId:id,passportFingerprint:sha,references:[]});
+      }
+      const seen = [];
+      let cursor = null;
+      let pageCount = 0;
+      do {
+        const page = await api.listPage(pageOwner,{limit:2,cursor});
+        check(page.items.length <= 2, "journal page exceeded requested bound");
+        seen.push(...page.items.map(row=>row.localCharacterId));
+        cursor = page.nextCursor;
+        pageCount++;
+        check(pageCount <= 10, "journal pagination did not terminate");
+      } while(cursor);
+      check(seen.length === 7 && new Set(seen).size === 7, "journal pagination omitted or duplicated records");
+      check(ids.every(id=>seen.includes(id)), "journal pagination missed an inserted record");
+    });
+    await test("journal cursor is owner-bound and tamper-resistant", async () => {
+      const pageOwner = uuid(), foreignOwner = uuid();
+      for(let index=0;index<3;index++) await api.create({ownerId:pageOwner,localCharacterId:uuid(),passportFingerprint:sha,references:[]});
+      const page = await api.listPage(pageOwner,{limit:1});
+      check(!!page.nextCursor, "expected a continuation cursor");
+      await rejects(()=>api.listPage(foreignOwner,{limit:1,cursor:page.nextCursor}),"foreign owner cursor was accepted");
+      await rejects(()=>api.listPage(pageOwner,{limit:1,cursor:page.nextCursor+"x"}),"tampered cursor was accepted");
+      await rejects(()=>api.listPage(pageOwner,{limit:101}),"oversized page limit was accepted");
+    });
+    await test("tampered persisted journal records fail closed", async () => {
+      const tamperedOwner=uuid(), tamperedCharacter=uuid();
+      await api.create({ownerId:tamperedOwner,localCharacterId:tamperedCharacter,passportFingerprint:sha,references:[]});
+      const db=await new Promise((resolve,reject)=>{
+        const request=indexedDB.open("pwa-studio-character-backup-journal-v1",2);
+        request.onsuccess=()=>resolve(request.result);
+        request.onerror=()=>reject(request.error);
+      });
+      try {
+        await new Promise((resolve,reject)=>{
+          const tx=db.transaction("journals","readwrite");
+          const store=tx.objectStore("journals");
+          const request=store.get(tamperedOwner+":"+tamperedCharacter);
+          request.onsuccess=()=>{
+            const row=request.result;
+            row.ownerId=otherOwner;
+            store.put(row);
+          };
+          tx.oncomplete=resolve;
+          tx.onerror=()=>reject(tx.error);
+          tx.onabort=()=>reject(tx.error||new Error("Tamper fixture write aborted"));
+        });
+      } finally { db.close(); }
+      await rejects(()=>api.get(tamperedOwner,tamperedCharacter),"tampered owner mapping was accepted");
+    });
+    await test("cloud character mapping is immutable", async () => {
+      await api.setCloudCharacter(owner, localCharacter, cloudCharacter);
+      await rejects(() => api.setCloudCharacter(owner, localCharacter, uuid()), "cloud mapping replacement unexpectedly accepted");
+    });
+    await test("illegal state transition is rejected", async () => {
+      await rejects(() => api.transition({
+        ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "verified", cloudAssetId: cloudAsset
+      }), "local_only to verified unexpectedly accepted");
+      await api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state:"reserved"});
+      await rejects(() => api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state:"object_uploaded"}), "reserved to object_uploaded skipped upload_pending");
+      await rejects(() => api.transition({
+        ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "verified", cloudAssetId: cloudAsset
+      }), "reserved to verified unexpectedly accepted");
+    });
+    await test("valid lifecycle reaches verified only with cloud asset mapping", async () => {
+      for (const state of ["reserved", "upload_pending", "object_uploaded"]) {
+        await api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state});
+      }
+      await api.transition({ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state:"verified", cloudAssetId:cloudAsset});
+      const row = await api.get(owner, localCharacter);
+      const status = api.completionStatus(row);
+      check(status.complete && status.verifiedReferences === 1 && status.totalReferences === 1, "completion criteria mismatch");
+    });
+    await test("verified state is terminal", async () => {
+      await rejects(() => api.transition({
+        ownerId: owner, localCharacterId: localCharacter, localReferenceId: localRef, state: "retryable_error"
+      }), "verified state was allowed to move backwards");
+    });
+    output.textContent = "PASS " + passed.length + " tests\n" + passed.map(x => "✓ " + x).join("\n");
+    document.documentElement.dataset.persistOwner = owner;
+    document.documentElement.dataset.persistCharacter = localCharacter;
+    document.documentElement.dataset.testResult = "passed";
+  } catch (error) {
+    output.textContent = "FAIL after " + passed.length + " tests\n" + passed.map(x => "✓ " + x).join("\n") + "\n" + (error.stack || error);
+    document.documentElement.dataset.testResult = "failed";
+  }
+})();
+</script>
+</body></html>

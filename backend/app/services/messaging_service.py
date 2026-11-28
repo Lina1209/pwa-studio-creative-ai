@@ -11,10 +11,12 @@ def _request(settings: Settings, method: str, table: str, *, params=None, payloa
         raise HTTPException(status_code=503, detail="Messaging storage is not configured.")
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Prefer": prefer,
     }
+    # Supabase sb_secret keys are sent only as apikey; legacy JWT keys also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.request(
             method, f"{settings.supabase_url.rstrip('/')}/rest/v1/{table}",
@@ -89,8 +91,13 @@ def send_message(settings: Settings, sender_id: str, recipient_id: str, body: st
     if not rows:
         raise HTTPException(status_code=502, detail="Message could not be sent.")
     message = rows[0]
+    # Service-role requests bypass RLS: retain participant scope on the
+    # thread update itself, not only on the earlier thread lookup/create.
     _request(settings, "PATCH", "conversation_threads",
-        params={"id": f"eq.{thread['id']}"},
+        params={
+            "id": f"eq.{thread['id']}",
+            "or": f"(user_a_id.eq.{sender_id},user_b_id.eq.{sender_id})",
+        },
         payload={"last_message_at": message["created_at"], "updated_at": message["created_at"]})
     return message
 
@@ -149,10 +156,10 @@ def ensure_target_not_owner(settings: Settings, target_id: str):
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Administrator protection is temporarily unavailable.")
 
-    headers = {
-        "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-    }
+    headers = {"apikey": settings.supabase_service_role_key}
+    # New sb_secret keys are not JWTs; only legacy service-role JWTs use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.get(
             f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{target}",
@@ -227,8 +234,13 @@ def delete_message_for_self(settings: Settings, user_id: str, message_id: str):
     if not rows:
         raise HTTPException(status_code=404, detail="Message not found.")
     column = "deleted_for_sender_at" if rows[0]["sender_id"] == user_id else "deleted_for_recipient_at"
+    # Keep the participant predicate on the write itself as well as the
+    # preceding read. The service-role client bypasses RLS, so this second
+    # owner/participant check must be part of the UPDATE filter.
     _request(settings, "PATCH", "direct_messages", params={
-        "id": f"eq.{message_uuid}", "select": "id",
+        "id": f"eq.{message_uuid}",
+        "or": f"(sender_id.eq.{user_id},recipient_id.eq.{user_id})",
+        "select": "id",
     }, payload={column: datetime.now(timezone.utc).isoformat()})
     return {"deleted_for_you": True}
 

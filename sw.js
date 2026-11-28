@@ -1,13 +1,19 @@
-const CACHE_NAME = "pwa-studio-shell-v33";
+const CACHE_NAME = "pwa-studio-shell-v36";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./movie-storage-guard.js",
+  "./character-cloud-restore.js?v=20261128-1",
+  "./character-restore-review-ui.js?v=20261128-1",
+  "./character-owner-coordination-lock.js?v=20261128-1",
+  "./profile-avatar-catalog.js?v=20261127-1",
   "./audio-lab.js",
   "./supabase-config.js",
   "./manifest.webmanifest",
-  "./assets/icon.svg"
+  "./assets/icon.svg",
+  "./site-cache-tools.js?v=20261128-1"
 ];
 
 self.addEventListener("install", event => {
@@ -37,7 +43,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   const isShellAsset = request.mode === "navigate" ||
-    ["/index.html", "/app.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
+    ["/index.html", "/app.js", "/movie-storage-guard.js", "/character-cloud-restore.js", "/character-restore-review-ui.js", "/character-owner-coordination-lock.js", "/profile-avatar-catalog.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/site-cache-tools.js", "/manifest.webmanifest", "/assets/icon.svg"].some(asset => url.pathname.endsWith(asset));
 
   if (isShellAsset) {
     event.respondWith(
@@ -50,23 +56,18 @@ self.addEventListener("fetch", event => {
           return response;
         })
         .catch(async () => {
-          const cached = await caches.match(request);
-          return cached || (request.mode === "navigate" ? (await caches.match("./index.html")) : null) || Response.error();
+          const cache = await caches.open(CACHE_NAME);
+          // Shell assets are precached without cache-busting query strings.
+          const cached = await cache.match(request, { ignoreSearch: true });
+          const appIndex = new URL("./index.html", self.registration.scope).href;
+          return cached || (request.mode === "navigate" ? (await cache.match(appIndex)) : null) || Response.error();
         })
     );
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached;
-      return fetch(request).then(response => {
-        if (response && response.ok && response.type === "basic") {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
-        }
-        return response;
-      });
-    })
-  );
+  // Everything outside the explicit app-shell allowlist is network-only.
+  // In particular, never accumulate generated images, audio, video, or user files
+  // in Cache Storage: large media can exhaust device storage and make the PWA sluggish.
+  return;
 });

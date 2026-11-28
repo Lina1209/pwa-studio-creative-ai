@@ -5,6 +5,12 @@ from uuid import UUID
 import httpx
 from fastapi import HTTPException
 
+PROFILE_AVATAR_CATALOG = frozenset({
+    "portrait-violet", "forest-elf", "fox-scout", "robo-buddy", "katty-assistant",
+    "comic-star", "cosmo-pilot", "sun-garden", "prism-orbit",
+})
+PROFILE_AVATAR_DEFAULT = "portrait-violet"
+
 from app.core.config import Settings
 
 
@@ -13,10 +19,12 @@ def _request(settings: Settings, method: str, *, params=None, payload=None, pref
         raise HTTPException(status_code=503, detail="Profile storage is not configured.")
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Prefer": prefer,
     }
+    # Supabase sb_secret keys are sent only as apikey; legacy JWT keys also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.request(
             method, f"{settings.supabase_url.rstrip('/')}/rest/v1/user_profiles",
@@ -45,7 +53,8 @@ def _public(row: dict) -> dict:
         "username": row["username"],
         "display_name": row["display_name"],
         "bio": row.get("bio") or "",
-        "avatar_path": row.get("avatar_path"),
+        "avatar_catalog_id": row.get("avatar_catalog_id") or PROFILE_AVATAR_DEFAULT,
+        "avatar_representation": row.get("avatar_representation") or "2d",
         "updated_at": row.get("updated_at"),
     }
 
@@ -53,7 +62,7 @@ def _public(row: dict) -> dict:
 def get_own_profile(settings: Settings, user_id: str) -> dict:
     uid = _valid_user_id(user_id)
     rows = _request(settings, "GET", params={
-        "select": "user_id,username,display_name,bio,visibility,show_in_directory,avatar_path,updated_at",
+        "select": "user_id,username,display_name,bio,visibility,show_in_directory,avatar_path,avatar_catalog_id,avatar_representation,avatar_updated_at,updated_at",
         "user_id": f"eq.{uid}", "limit": "1",
     })
     if rows:
@@ -62,6 +71,7 @@ def get_own_profile(settings: Settings, user_id: str) -> dict:
     rows = _request(settings, "POST", payload={
         "user_id": uid, "username": username, "display_name": "Новый участник",
         "bio": "", "visibility": "public", "show_in_directory": True,
+        "avatar_catalog_id": PROFILE_AVATAR_DEFAULT, "avatar_representation": "2d",
     })
     if rows:
         return rows[0]
@@ -88,11 +98,24 @@ def update_own_profile(settings: Settings, user_id: str, changes: dict) -> dict:
         raise HTTPException(status_code=422, detail="Invalid profile visibility.")
     if "show_in_directory" in payload and not isinstance(payload["show_in_directory"], bool):
         raise HTTPException(status_code=422, detail="Directory visibility must be true or false.")
+    if "avatar_catalog_id" in payload:
+        catalog_id = str(payload["avatar_catalog_id"]).strip()
+        if catalog_id not in PROFILE_AVATAR_CATALOG:
+            raise HTTPException(status_code=422, detail="Choose an avatar from the published standard catalog.")
+        if payload.get("avatar_representation", "2d") != "2d":
+            raise HTTPException(status_code=422, detail="3D profile avatars are not available yet.")
+        payload["avatar_catalog_id"] = catalog_id
+        payload["avatar_representation"] = "2d"
+        payload["avatar_updated_at"] = datetime.now(timezone.utc).isoformat()
+    if "avatar_representation" in payload and payload["avatar_representation"] != "2d":
+        raise HTTPException(status_code=422, detail="3D profile avatars are not available yet.")
+    if "avatar_representation" in payload and "avatar_catalog_id" not in payload:
+        raise HTTPException(status_code=422, detail="Select a published avatar catalog item.")
     payload["updated_at"] = datetime.now(timezone.utc).isoformat()
     try:
         rows = _request(settings, "PATCH", params={
             "user_id": f"eq.{uid}",
-            "select": "user_id,username,display_name,bio,visibility,show_in_directory,avatar_path,updated_at",
+            "select": "user_id,username,display_name,bio,visibility,show_in_directory,avatar_path,avatar_catalog_id,avatar_representation,avatar_updated_at,updated_at",
         }, payload=payload)
     except HTTPException as exc:
         if exc.status_code == 502 and "rejected" in str(exc.detail).lower():
@@ -113,7 +136,7 @@ def search_public_profiles(settings: Settings, query: str, current_user_id: str)
     # Search only fields explicitly intended for public discovery.
     safe = term.replace("%", "").replace("*", "")
     rows = _request(settings, "GET", params={
-        "select": "user_id,username,display_name,bio,avatar_path,updated_at",
+        "select": "user_id,username,display_name,bio,avatar_catalog_id,avatar_representation,updated_at",
         "visibility": "eq.public", "show_in_directory": "eq.true",
         "or": f"(username.ilike.*{safe}*,display_name.ilike.*{safe}*)",
         "user_id": f"neq.{uid}", "order": "username.asc", "limit": "30",
@@ -127,7 +150,7 @@ def get_public_profile(settings: Settings, target_user_id: str, current_user_id:
     if target == current:
         return get_own_profile(settings, current)
     rows = _request(settings, "GET", params={
-        "select": "user_id,username,display_name,bio,avatar_path,updated_at",
+        "select": "user_id,username,display_name,bio,avatar_catalog_id,avatar_representation,updated_at",
         "user_id": f"eq.{target}", "visibility": "eq.public",
         "show_in_directory": "eq.true", "limit": "1",
     })
