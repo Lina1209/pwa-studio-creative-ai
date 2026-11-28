@@ -94,7 +94,38 @@
         });
       } finally { db.close(); }
     }
-    return Object.freeze({ stageBlob, readStagedBlob });
+    async function deleteStagedBlob({ ownerId, operationId, cloudAssetId, localStagedBlobId, proof }) {
+      if (!validUuid(ownerId) || !validUuid(operationId) || !validUuid(cloudAssetId) ||
+          !validUuid(localStagedBlobId) || !validProof(proof))
+        fail("Invalid exact staged Blob deletion identity or proof.");
+      const db = await open();
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE, "readwrite");
+          const store = tx.objectStore(STORE);
+          let result = "missing";
+          const request = store.get(localStagedBlobId);
+          request.onsuccess = () => {
+            const row = request.result;
+            if (!row) return;
+            const stage = row.restoreStage;
+            if (row.ownerId !== ownerId || !stage ||
+                stage.operationId !== operationId || stage.cloudAssetId !== cloudAssetId ||
+                !sameProof(stage.proof, proof)) {
+              try { tx.abort(); } catch {}
+              return;
+            }
+            store.delete(localStagedBlobId);
+            result = "deleted";
+          };
+          request.onerror = () => { try { tx.abort(); } catch {} };
+          tx.oncomplete = () => resolve(result);
+          tx.onerror = () => reject(tx.error || new Error("Exact staged Blob deletion failed."));
+          tx.onabort = () => reject(tx.error || new Error("Staged Blob identity mismatch; nothing was deleted."));
+        });
+      } finally { db.close(); }
+    }
+    return Object.freeze({ stageBlob, readStagedBlob, deleteStagedBlob });
   }
   globalThis.PWACharacterRestoreBlobStore = Object.freeze({ createCharacterRestoreBlobStore });
 })();
