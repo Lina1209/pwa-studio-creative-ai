@@ -50,9 +50,11 @@ def _validate_claim(event: dict) -> None:
     if len(parts) != 4 or parts[0] != event["owner_id"] or parts[1] != "characters":
         raise ValueError("Media verification claim object key is outside the character namespace.")
     try:
-        UUID(parts[2])
+        character_id = UUID(parts[2])
         object_name, extension = parts[3].rsplit(".", 1)
-        UUID(object_name)
+        object_id = UUID(object_name)
+        if str(character_id) != parts[2] or str(object_id) != object_name:
+            raise ValueError
     except (ValueError, TypeError, IndexError) as exc:
         raise ValueError("Media verification claim contains a malformed object key.") from exc
     mime_to_extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
