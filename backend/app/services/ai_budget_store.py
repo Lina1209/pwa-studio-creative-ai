@@ -147,8 +147,8 @@ class SupabaseAIBudgetStore:
         return result
 
     def list_reconciliation_candidates(self, limit: int = 100) -> list[dict]:
-        if not 1 <= limit <= 1000:
-            raise ValueError("Reconciliation batch size must be between 1 and 1000.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("Reconciliation batch size must be an integer between 1 and 1000.")
         result = self._rpc(
             "list_ai_budget_reconciliation_candidates",
             {"p_limit": limit},
