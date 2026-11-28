@@ -172,6 +172,7 @@ jobs:
           node --check character-owner-coordination-lock.js
           node --check character-restore-cleanup-journal.js
           node --check character-restore-cleanup.js
+          node --check character-restore-cleanup-executor.js
           node --check character-local-storage-adapter.js
           node tests/test_character_cloud_restore.js
           node tests/test_character_local_storage_adapter.js
