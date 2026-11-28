@@ -3139,6 +3139,19 @@ const movieHistoryStyle = document.createElement("style");
     getSession: () => authSession,
     getContextVersion: () => authContextVersion,
     getLocalItems: () => readCharacterLibrary(),
+    getLocalImageBlob: async (referenceId, ownerId, version) => {
+      if (!ownerId || !isCharacterUuid(ownerId) || !isCurrent(ownerId, version))
+        throw new Error("Account context is not current; local image access was denied.");
+      if (typeof referenceId !== "string" || !referenceId.trim())
+        throw new Error("A valid local reference ID is required.");
+      const blob = await getCharacterImage(referenceId, ownerId);
+      if (!isCurrent(ownerId, version))
+        throw new Error("Account context changed during local image access.");
+      if (blob !== null && blob !== undefined &&
+          (typeof blob.arrayBuffer !== "function" || typeof blob.type !== "string"))
+        throw new Error("Local image data is not a valid Blob.");
+      return blob || null;
+    },
     isCurrent: (ownerId, version) => !!ownerId && authContextVersion === version && authSession?.user?.id === ownerId,
     apiRequest
   });
