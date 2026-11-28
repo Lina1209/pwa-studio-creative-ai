@@ -15,7 +15,7 @@ update public.generation_job_outbox
 set claim_expires_at = now()
 where claimed_at is not null and claim_token is not null and claim_expires_at is null;
 
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_constraint
@@ -31,7 +31,7 @@ begin
       ) not valid;
   end if;
 end;
-$;
+$$;
 
 alter table public.generation_job_outbox
   validate constraint generation_job_outbox_claim_expiry_consistency;
