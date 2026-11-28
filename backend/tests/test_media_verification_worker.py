@@ -33,6 +33,47 @@ def image(content=PNG, mime="image/png", width=4, height=3):
 
 
 class MediaVerificationWorkerTests(unittest.TestCase):
+    @patch("app.services.media_content.httpx.stream")
+    def test_worker_verifies_real_decoded_image_from_private_storage(self, stream):
+        # Exercise the real worker -> Storage downloader -> image decoder path.
+        # Only the HTTP transport is mocked; no external Storage request is made.
+        from io import BytesIO
+        from PIL import Image
+        from app.core.config import Settings
+
+        buffer = BytesIO()
+        Image.new("RGB", (4, 3), (12, 34, 56)).save(buffer, format="PNG")
+        png_bytes = buffer.getvalue()
+        digest = hashlib.sha256(png_bytes).hexdigest()
+        event = dict(
+            CLAIM,
+            size_bytes=len(png_bytes),
+            content_sha256=digest,
+            width=4,
+            height=3,
+        )
+
+        response = stream.return_value.__enter__.return_value
+        response.headers = {"content-length": str(len(png_bytes))}
+        response.iter_bytes.return_value = iter([png_bytes])
+        response.raise_for_status.return_value = None
+
+        settings = Settings(
+            supabase_url="https://storage.example.test",
+            supabase_service_role_key="server-only-test-key",
+        )
+        verified = verify_claimed_media(settings, event)
+
+        self.assertEqual(verified.content, png_bytes)
+        self.assertEqual(verified.mime_type, "image/png")
+        self.assertEqual(verified.size_bytes, len(png_bytes))
+        self.assertEqual((verified.width, verified.height), (4, 3))
+        self.assertEqual(
+            stream.call_args.args[1],
+            "https://storage.example.test/storage/v1/object/studio-media/"
+            + event["storage_path"],
+        )
+
     @patch("app.workers.media_outbox_worker.download_private_media_image", return_value=image())
     def test_verifies_exact_bytes_and_reserved_metadata(self, download):
         result = verify_claimed_media(object(), CLAIM)
