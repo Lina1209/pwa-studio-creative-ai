@@ -103,6 +103,7 @@ def mark_succeeded(job: GenerationJob, result_asset_id: str) -> GenerationJob:
         return replace(
             job, status=JobStatus.RECONCILIATION_REQUIRED, lease_expires_at=None,
             result_asset_id=None, error_code="provider_completed_after_cancel",
+            provider_submission_outcome=ProviderSubmissionOutcome.ACCEPTED,
         )
     if job.status != JobStatus.PROCESSING:
         raise ValueError("Only a processing job can succeed.")
