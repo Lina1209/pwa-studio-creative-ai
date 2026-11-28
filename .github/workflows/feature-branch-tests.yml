@@ -96,7 +96,7 @@ jobs:
             supabase/migrations/0022_ai_budget_reservations.sql \
             supabase/migrations/0023_character_versioned_updates.sql \
             supabase/migrations/0024_character_cursor_pagination_index.sql \
-            supabase/migrations/0025_character_reference_identity_binding.sql; do
+            supabase/migrations/0025_character_reference_identity_binding.sql \\\n            supabase/migrations/0026_media_cleanup_cross_scope_fence.sql; do
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
@@ -136,6 +136,11 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0025_character_reference_identity_binding.sql
+      - name: Verify cross-scope media cleanup uniqueness fence (disposable PostgreSQL only)
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \\
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \\
+            -f supabase/tests/0026_media_cleanup_cross_scope_fence.sql
       - name: Run character idempotency transaction harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
