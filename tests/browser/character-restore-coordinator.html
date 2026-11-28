@@ -10,7 +10,8 @@
  const ok=(v,m)=>{if(!v)throw Error(m)};
  const rejects=async(fn,m)=>{let yes=false;try{await fn()}catch{yes=true}ok(yes,m)};
  const test=async(n,fn)=>{await fn();passed.push(n)};
- const owner=uuid(), sha=await digest(blob);\n const gate={plan:Object.freeze({}),preview:Object.freeze({}),confirmation:Object.freeze({}),validateConfirmation:()=>true};
+ const owner=uuid(), sha=await digest(blob);
+ const gate={plan:Object.freeze({}),preview:Object.freeze({}),confirmation:Object.freeze({}),validateConfirmation:()=>true};
  async function planned(){
   const operationId=uuid();
   await api.create({ownerId:owner,operationId,localBaseFingerprint:sha,snapshotId:"browser-snapshot",selectedCharacterIds:[]});
