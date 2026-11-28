@@ -14,9 +14,9 @@
     planned:["staging","paused_retryable","conflict","aborted"],
     staging:["ready_to_activate","paused_retryable","conflict","aborted"],
     ready_to_activate:["activating","paused_retryable","conflict","aborted"],
-    activating:["committed","activation_uncertain"],
+    activating:["committed","activation_uncertain","paused_retryable"],
     paused_retryable:["planning","planned","staging","ready_to_activate","conflict","aborted"],
-    activation_uncertain:["committed","conflict"],
+    activation_uncertain:["committed","conflict","paused_retryable"],
     committed:[], conflict:[], aborted:[]
   };
   const fail = message => { throw new Error(message); };
@@ -67,6 +67,14 @@
       if(x.width!==null && (!Number.isInteger(x.width)||x.width<1||x.width>12000)) fail("Invalid reference width.");
       if(x.height!==null && (!Number.isInteger(x.height)||x.height<1||x.height>12000)) fail("Invalid reference height.");
     }
+    if(r.activation!==null){
+      const a=r.activation;
+      if(!a||typeof a!=="object"||!/^[a-f0-9]{64}$/i.test(a.baseDigest||"")||!/^[a-f0-9]{64}$/i.test(a.mergedDigest||"")||
+         !Number.isSafeInteger(a.intendedCount)||a.intendedCount<1||a.intendedCount>100||
+         a.operationMarker!==r.operationId) fail("Invalid activation intent.");
+      iso(a.preparedAt,"activation preparation timestamp");
+    }
+    if(r.state==="activating" && !r.activation) fail("Activating operation requires a durable activation intent.");
     if(r.lease!==null){
       if(!r.lease || typeof r.lease!=="object") fail("Invalid operation lease.");
       str(r.lease.token,"lease token",128); iso(r.lease.expiresAt,"lease expiry");
@@ -116,7 +124,7 @@
       localBaseFingerprint:str(input.localBaseFingerprint,"local base fingerprint",128),
       snapshotId:str(input.snapshotId,"snapshot identity",200),
       selectedCharacterIds:(input.selectedCharacterIds||[]).map(x=>uuid(x,"selected cloud character ID")),
-      page:{count:0,cursor:null,digest:null},references:[],createdAt:stamp,updatedAt:stamp};
+      page:{count:0,cursor:null,digest:null},references:[],activation:null,createdAt:stamp,updatedAt:stamp};
     validate(row);
     await transaction("readwrite",store=>store.add(row));
     const saved=await read(row.id); if(!saved) fail("Restore journal create read-back failed.");
@@ -199,6 +207,7 @@
           r.page=clone(p);
         }
         if(input.references!==undefined)r.references=clone(input.references);
+        if(input.activation!==undefined)r.activation=clone(input.activation);
         r.state=next;r.revision+=1;r.updatedAt=now();validate(r);store.put(r);updated=clone(r);
       };
     });
