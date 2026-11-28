@@ -309,3 +309,8 @@ A fifth activation browser scenario now switches the active-account fence immedi
 ### Real localStorage integration
 
 The activation browser suite now uses the browser's actual `window.localStorage` implementation rather than an in-memory Map shim. The quota-failure adapter wraps the real read path and injects a failing write, confirming that the exact base library remains intact and the durable operation is retryable. GitHub Actions run `46108806956` on `df458f6` passed all three jobs, including the five activation scenarios and frontend checks.
+
+
+### Full document-reload recovery proof
+
+The simulated crash-recovery browser scenario now navigates to a separate recovery document after persisting the activation intent and writing the merged metadata, but before marking the operation committed. The new document reopens the IndexedDB journal, reconstructs the owner-scoped localStorage adapter, and invokes recovery using only the durable operation ID and revision. It proves that the merged digest and restore-operation marker survive a full page reload before committing the journal. GitHub Actions run `46108898647` on `0fcfd1f` passed backend unit tests, disposable PostgreSQL integration, all IndexedDB/browser tests, and frontend checks.
