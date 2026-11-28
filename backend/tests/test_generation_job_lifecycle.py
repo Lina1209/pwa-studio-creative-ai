@@ -186,6 +186,12 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         self.assertEqual(recovered.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(recovered.result_asset_id)
 
+    def test_rejects_invalid_provider_submission_outcome_values(self):
+        for invalid_outcome in ("accepted", "unknown", None):
+            with self.subTest(outcome=invalid_outcome):
+                with self.assertRaisesRegex(ValueError, "provider_submission_outcome"):
+                    new_job(provider_submission_outcome=invalid_outcome)
+
     def test_rejects_naive_timestamps_and_invalid_limits(self):
         with self.assertRaises(ValueError):
             new_job(created_at=datetime(2026, 11, 27))
