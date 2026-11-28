@@ -14,7 +14,7 @@
     planned:["staging","paused_retryable","conflict","aborted"],
     staging:["ready_to_activate","paused_retryable","conflict","aborted"],
     ready_to_activate:["activating","paused_retryable","conflict","aborted"],
-    activating:["committed","activation_uncertain","paused_retryable"],
+    activating:["committed","activation_uncertain","paused_retryable","conflict"],
     paused_retryable:["planning","planned","staging","ready_to_activate","committed","conflict","aborted"],
     activation_uncertain:["committed","conflict","paused_retryable"],
     committed:[], conflict:[], aborted:[]
