@@ -86,3 +86,21 @@ This audit records the verified boundary between current protections and the fut
 2. Select a trusted server-side tokenizer or conservative token-bound method, then review and version actual model input/output prices including retry exposure.
 3. Decide how to authenticate and audit policy/control changes and how to handle user deletion under ledger retention requirements.
 4. Only after numerical limits are approved, implement route integration and an explicit staged rollout.
+
+
+## Latest verification and current decision (2026-11-28)
+
+- Full feature-branch CI passed on commit `52a446b` (run `46098849243`): backend unit tests, PostgreSQL integration, and real-browser IndexedDB/account-switch tests all completed successfully.
+- The PostgreSQL job applied the feature migrations only to its disposable Supabase-compatible database and passed the AI budget RPC checks, concurrent reservation race harness, character idempotency harness, cleanup rollback/claim/reference race checks, and the 50-event five-worker cleanup stress harness.
+- Private media reads now bind the Storage object path to the exact linked `character_id` or `project_id`; tests reject a path whose linked resource does not match the metadata row.
+- Private image download now follows the same Supabase credential compatibility rule as the other audited services: modern `sb_secret` keys are sent only as `apikey`; legacy JWT service-role keys also use `Authorization: Bearer`. Both key formats have regression coverage.
+- The earlier code-only run `46098844078` failed because its backend test fixture still expected a Bearer header for a modern secret key. The follow-up test commit `52a446b` corrected the fixture and the complete run `46098849243` passed. The failed intermediate run is superseded, not hidden.
+
+### Route-integration blockers remain unchanged
+
+- `POST /api/chat` and `POST /api/prompts` still call the provider before best-effort usage telemetry; neither route invokes `execute_reserved_ai_call` or `SupabaseAIBudgetStore`.
+- No reviewed production rate card/tokenizer, numerical platform/user cap, or approved credit policy exists. The estimator therefore cannot safely calculate a real reservation amount.
+- The reconciliation RPCs exist, but there is no authenticated, audited operator workflow to resolve `unknown` reservations against authoritative provider billing records.
+- The reservation migration remains disabled-by-default design/implementation code on this feature branch; it has not been applied to the live Supabase project.
+
+**Decision:** keep the financial reservation system unwired and fail-safe until pricing/token bounds, policy limits, and operator reconciliation are explicitly approved and implemented. Do not interpret passing SQL tests as active production budget protection.
