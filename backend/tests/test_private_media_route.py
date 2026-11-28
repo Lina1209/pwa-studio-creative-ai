@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services.auth import StudioUser, get_current_user
+from app.services.auth import StudioUser, get_current_user, get_platform_active_user
 from app.core.config import Settings
 from app.services.image_reference_validation import ValidatedReference
 
@@ -42,6 +42,8 @@ class PrivateMediaRouteTests(unittest.TestCase):
         app.dependency_overrides[get_current_user] = lambda: StudioUser(
             user_id=OWNER, email="creator@example.test", role="creator"
         )
+
+        app.dependency_overrides[get_platform_active_user] = lambda: app.dependency_overrides[get_current_user]()
 
     def tearDown(self):
         app.dependency_overrides.clear()
