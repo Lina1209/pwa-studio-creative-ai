@@ -35,7 +35,7 @@ class ModerationAtomicAuditTests(unittest.TestCase):
 
     @patch.object(moderation_service.httpx, "request")
     def test_legacy_service_role_jwt_is_sent_as_bearer(self, request):
-        request.return_value = SimpleNamespace(content=b"[]", json=lambda: [])
+        request.return_value = SimpleNamespace(content=b"[]", json=lambda: [], raise_for_status=lambda: None)
         settings = SimpleNamespace(
             supabase_url="https://example.supabase.co",
             supabase_service_role_key="eyJlegacy.jwt",
