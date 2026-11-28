@@ -72,7 +72,7 @@ echo "AI budget concurrency invariant passed: 12 concurrent reservations, exactl
 pids=()
 for i in $(seq 1 12); do
   (
-    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At -F '|'  -c "select reservation_id,reservation_created from public.reserve_ai_budget('88888888-8888-4888-8888-888888888888','$PWA_TEST_OWNER_ID','budget-race-duplicate-0001','$(printf 'duplicate-race' | sha256sum | cut -d' ' -f1)','chat','deepseek','deepseek-flash',0.005)"  >"$tmp_dir/duplicate-$i.out" 2>"$tmp_dir/duplicate-$i.err"
+    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At -F '|'  -c "select reservation_id,reservation_created from public.reserve_ai_budget('88888888-8888-4888-8888-888888888888','$PWA_TEST_OWNER_ID','budget-race-duplicate-0001','$(printf 'duplicate-race' | sha256sum | cut -d' ' -f1)','chat','deepseek','deepseek-flash',0.005)" >"$tmp_dir/duplicate-$i.out" 2>"$tmp_dir/duplicate-$i.err"
   ) &
   pids+=("$!")
 done
