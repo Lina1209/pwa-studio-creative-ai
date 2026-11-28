@@ -19,6 +19,9 @@ begin
   end if;
   if has_table_privilege('anon','public.ai_budget_reservations','SELECT')
      or has_table_privilege('authenticated','public.ai_budget_ledger','SELECT')
+     or has_table_privilege('service_role','public.ai_budget_ledger','INSERT')
+     or has_table_privilege('service_role','public.ai_budget_ledger','UPDATE')
+     or has_table_privilege('service_role','public.ai_budget_ledger','DELETE')
      or has_function_privilege('anon',
        'public.reserve_ai_budget(uuid,uuid,text,text,text,text,text,numeric)','EXECUTE') then
     raise exception 'browser role unexpectedly has AI budget privileges';
