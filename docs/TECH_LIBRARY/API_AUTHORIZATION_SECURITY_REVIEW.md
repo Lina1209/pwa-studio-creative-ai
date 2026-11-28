@@ -205,7 +205,15 @@ The original review above was written before the Character Library media API was
 - Review, suspension creation, and revocation each use a single SECURITY DEFINER RPC with a fixed search path and service-role-only EXECUTE grants. State mutation and append-only audit insertion occur in the same transaction; disposable-database fault-injection tests verify rollback if the audit insert fails.
 - The current generation input guard is explicitly a conservative regex/keyword first layer, not complete moderation. It does not provide semantic classification, generated-output review, image/video moderation, or a complete appeals workflow. Reports are stored and can be reviewed, but there is no end-to-end automated moderation pipeline or appeals endpoint established by this review.
 - Suspension enforcement is currently explicit at selected community routes and should not be assumed to cover every generation, messaging, upload, or media operation. A route-by-route policy matrix and central enforcement design are still required before treating restrictions as platform-wide.
-- Report abuse controls (per-user quotas/rate limits, duplicate clustering, evidence retention/deletion policy, reviewer access workflow, and escalation/appeal handling) remain product/security design work. Do not add a broad output regex filter as a substitute: it would create false positives without a policy, appeal path, and test corpus.
+- Report abuse controls (durable per-user quotas/rate limits, duplicate clustering, evidence retention/deletion policy, reviewer access workflow, and escalation/appeal handling) remain product/security design work. The 2026-11-28 route review confirmed that `POST /api/reports` currently has no rate-limit or idempotency guard. Do not add a broad output regex filter as a substitute: it would create false positives without a policy, appeal path, and test corpus.
+
+#### Report endpoint abuse review — 2026-11-28
+
+- `POST /api/reports` requires a verified user session and uses the authenticated subject as `reporter_user_id`; clients cannot choose the reporter identity.
+- The request schema caps the description at 4,000 characters and content reference at 500 characters, and restricts categories to a fixed allowlist.
+- Unlike `/api/chat` and `/api/prompts`, report creation currently has no rate-limit/quota call and no idempotency key. A signed-in account can therefore submit repeated reports within the schema limits. Authentication and field validation do not prevent report flooding.
+- Do not add a process-local limiter and call it sufficient: multiple API workers/instances would each have an independent counter. A durable per-user quota or shared atomic limiter should be designed with explicit retry semantics, duplicate handling, and audit-safe retention before implementation.
+- Keep report submission available to suspended users so they can still report abuse; suspension checks should not accidentally close the safety/reporting channel. Reviewer access and evidence lifecycle still need a documented policy.
 
 #### Remaining blockers and decision
 
