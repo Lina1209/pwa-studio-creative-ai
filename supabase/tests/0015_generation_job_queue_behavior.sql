@@ -121,8 +121,16 @@ begin
   if v_ok then raise exception 'TEST FAILED: completion succeeded without provider acceptance evidence'; end if;
   select public.record_generation_submission_outcome(v_job_success, v_token, 'accepted') into v_ok;
   if not v_ok then raise exception 'TEST FAILED: provider acceptance evidence was not recorded'; end if;
+
+  -- An uploaded but not yet verified media object must not complete a job.
+  update public.media_assets set status='object_uploaded' where id=v_asset_a and owner_id=v_owner_a;
   select public.complete_generation_job(v_job_success, v_token, v_asset_a, 0.001) into v_ok;
-  if not v_ok then raise exception 'TEST FAILED: owner-matched accepted result asset was rejected'; end if;
+  if v_ok then raise exception 'TEST FAILED: unverified media asset completed a generation job'; end if;
+
+  -- Only the verification worker's ready state may be used as a result.
+  update public.media_assets set status='ready' where id=v_asset_a and owner_id=v_owner_a;
+  select public.complete_generation_job(v_job_success, v_token, v_asset_a, 0.001) into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: owner-matched verified result asset was rejected'; end if;
 
   select status into v_status from public.generation_jobs where id = v_job_success;
   if v_status <> 'succeeded' then raise exception 'TEST FAILED: success status not persisted'; end if;
