@@ -120,3 +120,14 @@ The validated mapping now also carries card/reference identity through staging: 
 The restore journal now persists a strictly validated activation intent before an operation may enter `activating`. It binds the base local-library SHA-256, intended merged-library SHA-256, intended record count, immutable restore operation marker, and preparation timestamp. Interrupted activation may be moved to `paused_retryable` without discarding that intent. Browser tests cover missing-intent rejection, valid persistence, malformed-digest rejection, and retention across a retryable interruption.
 
 This closes only the journal-record portion of the activation protocol. No code yet recomputes the merged digest from fresh planner output, revalidates every staged Blob at activation, performs the synchronous owner-scoped localStorage write, or recognizes post-write crashes. Restore remains disabled and the UI remains unchanged.
+
+
+
+
+## Guarded metadata activation coordinator (feature-branch only)
+
+A new injected coordinator implements the metadata activation boundary without connecting it to the app UI. It requires a fresh conflict-free planner result, exact base-snapshot digest match, exact staged-reference identity mapping, and a second read-back of every staged Blob with SHA-256/size/MIME/dimension verification. It creates additive cards only, links each visible reference to the staged Blob's real local key, preserves the original cloud reference key separately, and tags restored cards with the operation UUID.
+
+Before the one synchronous owner-scoped localStorage replacement, the coordinator persists a durable intent containing base and merged digests plus total/restored record counts. It verifies the committed metadata by read-back before marking the journal committed. Recovery recognizes only the exact merged digest or untouched base digest; any third state becomes a conflict rather than triggering a blind rollback. Browser integration coverage has been added for successful activation, altered-image rejection, preservation of existing cards, and simulated post-write crash recovery.
+
+The new GitHub Actions browser job is pending validation. The coordinator is not wired into the UI, no staged-media cleanup is implemented, and no production migration/deployment has been performed.
