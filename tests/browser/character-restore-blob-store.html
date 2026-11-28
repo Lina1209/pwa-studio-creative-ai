@@ -33,14 +33,21 @@
   await rejects(()=>api.stageBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof}));
   await rejects(()=>api.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof:{...proof,sha256:"0".repeat(64)}}));
   passed.push("collision and invalid proof rejected");
-  await rejects(()=>api.deleteStagedBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof}));
-  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id,proof}));
-  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof:{...proof,sha256:"0".repeat(64)}}));
+  await rejects(()=>api.deleteStagedBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof}));
+  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof}));
+  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof:{...proof,sha256:"0".repeat(64)}}));
+  const tamperDb=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-library-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+  try{await new Promise((resolve,reject)=>{const tx=tamperDb.transaction("images","readwrite"),store=tx.objectStore("images"),q=store.get(id);q.onsuccess=()=>{const row=q.result;row.blob=new Blob(["tampered-blob-proof"],{type:"image/png"});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{tamperDb.close()}
+  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof}));
+  const stillTampered=await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id});
+  assert(stillTampered instanceof Blob,"checksum mismatch deleted the staged Blob");
+  const restoreDb=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-library-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+  try{await new Promise((resolve,reject)=>{const tx=restoreDb.transaction("images","readwrite"),store=tx.objectStore("images"),q=store.get(id);q.onsuccess=()=>{const row=q.result;row.blob=blob;store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{restoreDb.close()}
   assert(await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id}) instanceof Blob,"rejected deletion changed the stored Blob");
-  const deleted=await api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof});
+  const deleted=await api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof});
   assert(deleted==="deleted","exact owner/operation/asset/proof deletion failed");
   assert(await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id})===null,"exactly deleted Blob remains readable");
-  assert(await api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,proof})==="missing","exact delete retry was not idempotent");
+  assert(await api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof})==="missing","exact delete retry was not idempotent");
   passed.push("exact-key deletion rejects cross-owner, cross-operation, and proof mismatch; retry is idempotent");
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
   document.documentElement.dataset.testResult="passed";
