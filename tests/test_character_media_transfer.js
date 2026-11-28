@@ -21,8 +21,8 @@ function harness(fetchImpl,isCurrent=()=>true){
 }
 (async()=>{
  let calls=[];
- const uploadResponse=()=>new Response(JSON.stringify({asset:{id:asset,character_id:character,local_reference_id:reference,file_type:"image/png",size_bytes:blob.size,status:"ready"},verification:"complete"}),{status:202,headers:{"Content-Type":"application/json"}});
- const h=harness(async(url,init)=>{calls.push({url,init});return uploadResponse();});
+ const uploadResponse=localReferenceId=>new Response(JSON.stringify({asset:{id:asset,character_id:character,local_reference_id:localReferenceId,file_type:"image/png",size_bytes:blob.size,status:"ready"},verification:"complete"}),{status:202,headers:{"Content-Type":"application/json"}});
+ const h=harness(async(url,init)=>{calls.push({url,init});return uploadResponse(init.body.get("local_reference_id"));});
  const fallbackReference=character+"-"+Date.now().toString(36)+Math.random().toString(36).slice(2);
  const fallback=await h.adapter.uploadAsset({characterId:character,localReferenceId:fallbackReference,fileName:"fallback.png",blob});
  assert.equal(fallback.localReferenceId,fallbackReference,"legacy non-UUID suffix generated without crypto.randomUUID must remain accepted");
@@ -45,9 +45,9 @@ function harness(fetchImpl,isCurrent=()=>true){
  const expectedDigest=await digest(blob);
  await assert.rejects(()=>badDigest.adapter.downloadAsset({cloudAssetId:asset,expectedSha256:expectedDigest,expectedSizeBytes:blob.size,expectedMimeType:"image/png"}),/headers/);
  let current=true;
- const fenced=harness(async()=>{current=false;return uploadResponse();},()=>current);
+ const fenced=harness(async(url,init)=>{current=false;return uploadResponse(init.body.get("local_reference_id"));},()=>current);
  await assert.rejects(()=>fenced.adapter.uploadAsset({characterId:character,localReferenceId:reference,fileName:"reference.png",blob}),/Account changed/);
- const invalid=harness(async()=>uploadResponse());
+ const invalid=harness(async(url,init)=>uploadResponse(init.body.get("local_reference_id")));
  await assert.rejects(()=>invalid.adapter.downloadAsset({cloudAssetId:"not-uuid",expectedSha256:"a".repeat(64),expectedSizeBytes:blob.size,expectedMimeType:"image/png"}),/descriptor/);
  console.log("PASS owner-fenced character media transfer: auth, stable idempotency, multipart upload, binary digest verification, invalid descriptor and account-switch fencing");
 })().catch(error=>{console.error(error);process.exitCode=1;});
