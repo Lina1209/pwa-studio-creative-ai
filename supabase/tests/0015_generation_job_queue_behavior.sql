@@ -46,6 +46,15 @@ begin
     (v_asset_a, v_owner_a, 'owner-a-result.png', 'image/png', v_owner_a::text || '/test/owner-a-result.png'),
     (v_asset_b, v_owner_b, 'owner-b-result.png', 'image/png', v_owner_b::text || '/test/owner-b-result.png');
 
+  -- The new explicit expiry invariant rejects partially populated leases.
+  begin
+    insert into public.generation_job_outbox(job_id, event_type, claimed_at, claim_token)
+    values (v_job_success, 'job_queued', now(), gen_random_uuid());
+    raise exception 'TEST FAILED: outbox claim without expiry was accepted';
+  exception when check_violation then
+    null;
+  end;
+
   -- Keep unrelated jobs out of the claim pool so each assertion targets
   -- exactly the job named in that test section.
   update public.generation_jobs
