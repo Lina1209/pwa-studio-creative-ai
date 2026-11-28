@@ -578,3 +578,22 @@ The exact Blob delete adapter now requires an injected image inspector and perfo
 
 
 The final exact-byte deletion adapter test run is CI `46112211648` on commit `3add0af`: all three jobs succeeded (backend unit tests, disposable PostgreSQL integration, and the full browser/IndexedDB suite). The browser suite includes a same-size Blob byte-tampering attempt, and verifies checksum mismatch prevents deletion. Cross-owner and cross-operation delete attempts fail closed as `missing` without touching the real owner's staged Blob.
+
+
+## 27. Isolated exact-key cleanup executor (feature branch)
+
+Status: an injected executor primitive now exists in `character-restore-cleanup-executor.js`. It is not connected to the app, UI, a worker, a scheduler, or any production resource. No cleanup has been run against user data.
+
+Before each candidate, the executor:
+- requires a reconciled manifest and an elapsed 24-hour retention timestamp;
+- acquires the owner-wide lock and checks the current account context;
+- reads the complete owner restore-journal inventory with bounded pagination (maximum 100 pages / 10,000 rows), rejecting malformed, foreign, or incomplete records;
+- recomputes the owner metadata digest and proves the exact staged reference is absent;
+- confirms the source operation is still aborted, its revision is unchanged, its lease is expired, and no other restore operation references the same staged Blob or cloud asset;
+- compares the source checkpoint's complete image proof to the manifest;
+- writes a durable per-candidate delete intent before calling the exact-key Blob deletion adapter;
+- releases and reacquires the owner lock before journal finalization, requiring a newer fencing epoch and the same delete-attempt identity.
+
+The executor defaults to one candidate per invocation (hard maximum ten). It never scans or deletes ordinary image rows. A missing Blob during a normal delete attempt is treated as an uncertain/manual-recovery condition, not success. A pre-existing delete intent is recoverable only when the exact Blob lookup reports missing after a fresh complete inventory and the intent identity still matches; the journal is then finalized under a newer owner-lock epoch.
+
+Important limitation: this commit adds the executor and a CI syntax check only. It does not yet have a dedicated real-browser adversarial test harness. Therefore it is not approved for activation or invocation. The next gate is a disposable-IndexedDB multi-tab test suite covering active/paused/uncertain operations, retention, changed metadata, incomplete pagination, account switching, lock loss, crash windows, and legacy image preservation. Until those tests pass and the caller is separately reviewed, keep cleanup execution disabled.
