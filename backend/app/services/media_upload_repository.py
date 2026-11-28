@@ -93,8 +93,12 @@ def reserve_character_reference_upload(settings: Settings, plan) -> dict:
     })
     if isinstance(result, list):
         result = result[0] if result else None
-    if not isinstance(result, dict) or result.get("id") != plan.asset_id:
-        raise HTTPException(status_code=502, detail="Media upload reservation returned an invalid result.")
+    if (not isinstance(result, dict)
+            or result.get("id") != plan.asset_id
+            or result.get("owner_id") != plan.owner_id
+            or result.get("character_id") != plan.character_id
+            or result.get("local_reference_id") != plan.local_reference_id):
+        raise HTTPException(status_code=502, detail="Media upload reservation returned an invalid identity mapping.")
     return result
 
 
