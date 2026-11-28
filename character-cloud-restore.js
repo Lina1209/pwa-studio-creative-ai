@@ -80,6 +80,40 @@
       referenceManifest: manifest
     };
   };
+  // Preserve v2 logical-slot and immutable-upload identities when a local
+  // backup is serialized again. Cloud-only entries are merged first so a
+  // local v2 edit can deliberately replace the asset binding for that slot.
+  const serializeReferenceManifest = (localReferences = [], cloudBackupReferences = []) => {
+    if (!Array.isArray(localReferences) || !Array.isArray(cloudBackupReferences)) fail("Reference manifests must be arrays.");
+    const bySlot = new Map();
+    const add = ref => {
+      if (!ref || typeof ref !== "object" || Array.isArray(ref)) fail("Reference descriptor is invalid.");
+      const explicitAsset = ref.asset_local_reference_id !== undefined || ref.assetLocalReferenceId !== undefined;
+      const slotId = text(ref.slot_id || ref.slotId || ref.id, 180, "reference slot ID");
+      const assetId = text(ref.asset_local_reference_id || ref.assetLocalReferenceId || ref.id, 180, "reference asset identity");
+      if (!LOCAL_REFERENCE_KEY.test(slotId) || !LOCAL_REFERENCE_KEY.test(assetId)) fail("Reference identity is invalid.");
+      const previous = bySlot.get(slotId);
+      bySlot.set(slotId, {
+        slotId,
+        assetLocalReferenceId: explicitAsset || !previous ? assetId : previous.assetLocalReferenceId,
+        name: optionalText(ref.name, 120, "reference name") || previous?.name || "",
+        type: optionalText(ref.type, 80, "reference type") || previous?.type || ""
+      });
+    };
+    cloudBackupReferences.forEach(add);
+    localReferences.forEach(add);
+    const entries = [...bySlot.values()];
+    if (entries.length > 6) fail("Reference manifest exceeds the six-image limit.");
+    const seenAssets = new Set();
+    return entries.map(ref => {
+      if (seenAssets.has(ref.assetLocalReferenceId)) fail("Reference manifest contains duplicate asset identities.");
+      seenAssets.add(ref.assetLocalReferenceId);
+      return ref.slotId === ref.assetLocalReferenceId
+        ? {id:ref.slotId,name:ref.name,type:ref.type}
+        : {slot_id:ref.slotId,asset_local_reference_id:ref.assetLocalReferenceId,name:ref.name,type:ref.type};
+    });
+  };
+
   const localProjection = local => ({
     kind: local.kind === "scene" ? "scene" : "character",
     representation: ["2d", "3d", "both"].includes(local.representation) ? local.representation : "2d",
