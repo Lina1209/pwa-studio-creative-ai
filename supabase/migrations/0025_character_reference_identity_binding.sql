@@ -9,7 +9,7 @@ alter table public.media_assets
   drop constraint if exists media_assets_local_reference_requires_character;
 alter table public.media_assets
   add constraint media_assets_local_reference_requires_character
-  check (local_reference_id is null or (character_id is not null and local_reference_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?
+  check (local_reference_id is null or (character_id is not null and local_reference_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(-[a-z0-9_-]{8,80})?
 
 create unique index if not exists media_assets_owner_character_local_reference_unique
   on public.media_assets(owner_id, character_id, local_reference_id)
@@ -47,7 +47,7 @@ declare
   v_updated integer;
 begin
   if p_local_reference_id is null
-     or p_local_reference_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?
+     or p_local_reference_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(-[a-z0-9_-]{8,80})?
     raise exception 'local reference identifier is required' using errcode='22023';
   end if;
 
