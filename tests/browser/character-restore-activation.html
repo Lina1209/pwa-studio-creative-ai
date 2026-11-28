@@ -85,6 +85,29 @@
    ok(canonical(localAdapter.readLocalItems(owner))===base3,"quota failure changed existing metadata");
    const afterFailure=await journal.get(owner,op);ok(afterFailure.state==="paused_retryable","quota failure was not left retryable: "+afterFailure.state);
   });
+  await run("account switch fences crash recovery before journal commit",async()=>{
+   const op=crypto.randomUUID(),cloudId=crypto.randomUUID(),newId=crypto.randomUUID();
+   const baseNow=localAdapter.readLocalItems(owner),baseNowText=canonical(baseNow),baseNowDigest=await digest(baseNowText);
+   const newCard={id:newId,name:"Операция для проверки смены аккаунта",restoreOperationId:op,referenceImages:[]};
+   const merged=[newCard,...baseNow],mergedDigest=await digest(canonical(merged));
+   await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseNowDigest,snapshotId:"recovery-account-switch",selectedCharacterIds:[cloudId]});
+   let lease=await journal.acquireLease(owner,op),row=await journal.get(owner,op);
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate"});
+   const intent={baseDigest:baseNowDigest,mergedDigest,intendedCount:merged.length,restoredCount:1,operationMarker:op,preparedAt:new Date().toISOString()};
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating",activation:intent});
+   localAdapter.writeLocalItems(owner,merged);
+   await journal.releaseLease(owner,op,lease);
+   let currentAccount=true;
+   const switchingAdapter={readLocalItems(id){const items=localAdapter.readLocalItems(id);currentAccount=false;return items;},writeLocalItems:localAdapter.writeLocalItems};
+   let latest=await journal.get(owner,op);
+   await rejects(()=>window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:latest.revision,journal,localAdapter:switchingAdapter,isCurrent:()=>currentAccount}),"account switch did not stop recovery");
+   latest=await journal.get(owner,op);
+   ok(latest.state==="activating","recovery checkpoint advanced after account switch");
+   const recovered=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:latest.revision,journal,localAdapter});
+   ok(recovered.state==="committed","safe recovery did not resume after account was restored");
+  });
   await run("recovery recognizes a completed metadata write after a simulated crash",async()=>{
    const op=crypto.randomUUID(),newId=crypto.randomUUID();
    const newCard={id:newId,name:"Восстановленная карточка",restoreOperationId:op,referenceImages:[]};
