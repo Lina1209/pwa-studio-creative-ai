@@ -39,7 +39,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Case A: verifier owns the media row first. Cleanup must wait, then see ready.
+# Case A: verifier takes the character KEY SHARE lock before its media row. Cleanup's
+# FOR UPDATE must wait, then see ready after verification commits.
 CHAR_A="$(uuid)"; ASSET_A="$(uuid)"; OP_A="$(uuid)"; EVENT_A="$(uuid)"
 OBJECT_A="$(uuid)"; CLAIM_A="$(uuid)"
 PATH_A="$PWA_TEST_OWNER_ID/characters/$CHAR_A/$OBJECT_A.png"
@@ -63,6 +64,7 @@ PGAPPNAME=pwa_upload_verify_race_a psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_E
   -v owner="$PWA_TEST_OWNER_ID" -v asset="$ASSET_A" -v event="$EVENT_A" \
   -v claim="$CLAIM_A" -v digest="$DIGEST_A" <<'SQL' >"$TMP/a.out" 2>&1 &
 begin;
+select id from public.characters where id=:'character' and owner_id=:'owner' for key share;
 update public.media_assets set version=version where id=:'asset';
 select pg_sleep(8);
 select public.pwa_complete_media_upload_verification(
@@ -93,7 +95,7 @@ select 1 / ((select count(*)=1 from public.media_asset_outbox
 delete from public.media_assets where id=:'asset';
 delete from public.characters where id=:'character';
 SQL
-echo "PASS: verifier locks first; cleanup waits and sees ready media"
+echo "PASS: verifier follows character-to-media lock order; cleanup waits and sees ready media"
 
 # Case B: upload reservation owns the character row first. Cleanup must wait,
 # then reject the still-pending upload and roll back its deletion marker.
