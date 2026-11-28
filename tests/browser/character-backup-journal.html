@@ -87,8 +87,9 @@
     };
 
     await test("version-one journal database upgrades with records preserved and owner index created", async () => {
+      const legacyOwner = uuid();
       const legacyCharacter = uuid();
-      const legacyId = owner + ":" + legacyCharacter;
+      const legacyId = legacyOwner + ":" + legacyCharacter;
       await new Promise((resolve, reject) => {
         const request = indexedDB.deleteDatabase("pwa-studio-character-backup-journal-v1");
         request.onsuccess = resolve;
@@ -105,7 +106,7 @@
         await new Promise((resolve, reject) => {
           const tx = legacyDb.transaction("journals", "readwrite");
           tx.objectStore("journals").add({
-            id:legacyId, protocolVersion:1, ownerId:owner, localCharacterId:legacyCharacter,
+            id:legacyId, protocolVersion:1, ownerId:legacyOwner, localCharacterId:legacyCharacter,
             cloudCharacterId:null, passportFingerprint:sha, references:[],
             createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
           });
@@ -114,9 +115,9 @@
           tx.onabort = () => reject(tx.error || new Error("Legacy journal seed aborted."));
         });
       } finally { legacyDb.close(); }
-      const upgraded = await api.get(owner, legacyCharacter);
+      const upgraded = await api.get(legacyOwner, legacyCharacter);
       check(upgraded && upgraded.localCharacterId === legacyCharacter, "version-one journal record was lost during upgrade");
-      const page = await api.listPage(owner,{limit:10});
+      const page = await api.listPage(legacyOwner,{limit:10});
       check(page.items.some(row=>row.localCharacterId===legacyCharacter), "owner index did not expose upgraded legacy record");
     });
     await test("create persists journal without changing local image Blob", async () => {
