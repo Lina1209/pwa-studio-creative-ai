@@ -1,8 +1,8 @@
-"""Unit tests for the moderation service's single-transaction RPC boundary.
+"""Unit tests for moderation RPC boundaries and suspension-filter safety.
 
 Run from backend/: python -m unittest discover -s tests -p 'test_*.py'
-These tests verify routing/wiring only; the disposable-Supabase SQL test plan separately
-verifies rollback when the audit insert fails.
+These tests verify routing/wiring only; disposable-Supabase SQL tests verify
+transaction rollback when an audit insert fails.
 """
 import unittest
 from types import SimpleNamespace
@@ -95,6 +95,39 @@ class ModerationAtomicAuditTests(unittest.TestCase):
                 SimpleNamespace(status="resolved", moderator_note=None),
             )
         request.assert_called_once()
+
+
+class SuspensionFilterSafetyTests(unittest.TestCase):
+    @patch.object(moderation_service, "_request", return_value=[])
+    def test_platform_guard_queries_only_platform_scope(self, request):
+        moderation_service.ensure_user_not_suspended(SETTINGS, TARGET, "platform")
+        params = request.call_args.kwargs["params"]
+        self.assertEqual(params["user_id"], f"eq.{TARGET}")
+        self.assertEqual(params["scope"], "eq.platform")
+
+    @patch.object(moderation_service, "_request", return_value=[])
+    def test_feature_guard_includes_platform_and_requested_scope(self, request):
+        moderation_service.ensure_user_not_suspended(SETTINGS, TARGET, "community")
+        self.assertEqual(request.call_args.kwargs["params"]["scope"], "in.(platform,community)")
+
+    @patch.object(moderation_service, "_request", return_value=[])
+    def test_assistant_guard_includes_platform_and_assistant_scope(self, request):
+        moderation_service.ensure_user_not_suspended(SETTINGS, TARGET, "assistant")
+        self.assertEqual(request.call_args.kwargs["params"]["scope"], "in.(platform,assistant)")
+
+    @patch.object(moderation_service, "_request")
+    def test_unknown_scope_is_rejected_before_database_query(self, request):
+        with self.assertRaises(HTTPException) as caught:
+            moderation_service.ensure_user_not_suspended(SETTINGS, TARGET, "community),or=(id.not.is.null")
+        self.assertEqual(caught.exception.status_code, 500)
+        request.assert_not_called()
+
+    @patch.object(moderation_service, "_request")
+    def test_non_uuid_user_identity_is_rejected_before_database_query(self, request):
+        with self.assertRaises(HTTPException) as caught:
+            moderation_service.ensure_user_not_suspended(SETTINGS, "not-a-uuid", "community")
+        self.assertEqual(caught.exception.status_code, 422)
+        request.assert_not_called()
 
 
 if __name__ == "__main__":
