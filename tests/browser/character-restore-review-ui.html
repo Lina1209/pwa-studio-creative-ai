@@ -35,13 +35,8 @@
   window.__reviewTest={calls,assert,owner};
   window.PWAStudioCharacterRestoreBridge.apiRequest=async(path,options={})=>{
     calls.push({path,method:options.method||"GET"});
-    return {items:[{id:"22222222-2222-4222-8222-222222222222"}],next_cursor:null};
-  };
-  const originalApi=window.PWAStudioCharacterRestoreBridge.apiRequest;
-  window.PWAStudioCharacterRestoreBridge.apiRequest=async(path,options={})=>{
-    calls.push({path,method:options.method||"GET"});
     if(path.startsWith("/api/media/character-references"))return [{id:"99999999-9999-4999-8999-999999999999"}];
-    return originalApi(path,options);
+    return {items:[{id:"22222222-2222-4222-8222-222222222222"}],next_cursor:null};
   };
 })();
 </script>
