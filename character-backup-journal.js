@@ -7,7 +7,7 @@
   "use strict";
 
   const DB_NAME = "pwa-studio-character-backup-journal-v1";
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE = "journals";
   const PROTOCOL_VERSION = 1;
   const STATES = new Set([
@@ -48,7 +48,10 @@
       let settled = false;
       request.onupgradeneeded = () => {
         const db = request.result;
-        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+        const store = db.objectStoreNames.contains(STORE)
+          ? request.transaction.objectStore(STORE)
+          : db.createObjectStore(STORE, { keyPath: "id" });
+        if (!store.indexNames.contains("byOwner")) store.createIndex("byOwner", "ownerId", { unique: false });
       };
       request.onsuccess = () => {
         const db = request.result;
@@ -163,22 +166,77 @@
     return clone(record);
   }
 
-  async function list(ownerIdValue) {
+  const encodeCursor = value => {
+    const bytes = new TextEncoder().encode(JSON.stringify(value));
+    let binary = "";
+    bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+  };
+  const decodeCursor = value => {
+    if (typeof value !== "string" || value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) fail("Invalid journal cursor.");
+    const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4));
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    if (!parsed || parsed.v !== 1 || typeof parsed.ownerId !== "string" || typeof parsed.lastId !== "string") fail("Invalid journal cursor.");
+    return parsed;
+  };
+
+  async function listPage(ownerIdValue, options = {}) {
     const ownerId = uuid(ownerIdValue, "owner ID");
+    const limit = options.limit === undefined ? 50 : options.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail("Journal page limit must be between 1 and 100.");
+    let lastId = "";
+    if (options.cursor) {
+      const decoded = decodeCursor(options.cursor);
+      if (decoded.ownerId !== ownerId || !decoded.lastId.startsWith(ownerId + ":")) fail("Journal cursor owner boundary mismatch.");
+      lastId = decoded.lastId;
+    }
     const db = await openDb();
     try {
       return await new Promise((resolve, reject) => {
-        const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+        const tx = db.transaction(STORE, "readonly");
+        const index = tx.objectStore(STORE).index("byOwner");
+        const request = index.openCursor(IDBKeyRange.only(ownerId), "next");
+        const rows = [];
+        let hasMore = false;
         request.onsuccess = () => {
           try {
-            const rows = request.result.filter(row => row.ownerId === ownerId);
-            rows.forEach(assertRecord);
-            resolve(clone(rows));
+            const cursor = request.result;
+            if (!cursor) {
+              rows.forEach(assertRecord);
+              resolve({
+                items: clone(rows),
+                nextCursor: hasMore && rows.length
+                  ? encodeCursor({v:1, ownerId, lastId:rows[rows.length - 1].id})
+                  : null
+              });
+              return;
+            }
+            if (cursor.primaryKey > lastId) {
+              if (rows.length === limit) {
+                hasMore = true;
+                rows.forEach(assertRecord);
+                resolve({
+                  items: clone(rows),
+                  nextCursor: encodeCursor({v:1, ownerId, lastId:rows[rows.length - 1].id})
+                });
+                return;
+              }
+              const row = cursor.value;
+              if (row.ownerId !== ownerId || row.id !== keyFor(ownerId, row.localCharacterId)) fail("Backup journal owner boundary mismatch.");
+              rows.push(row);
+            }
+            cursor.continue();
           } catch (error) { reject(error); }
         };
         request.onerror = () => reject(request.error || new Error("Could not list backup journals."));
       });
     } finally { db.close(); }
+  }
+
+  // Compatibility helper: returns the first bounded page only.
+  async function list(ownerIdValue) {
+    return (await listPage(ownerIdValue, {limit:100})).items;
   }
 
   async function setCloudCharacter(ownerIdValue, localCharacterIdValue, cloudCharacterIdValue) {
@@ -244,7 +302,7 @@
   }
 
   globalThis.PWACharacterBackupJournal = Object.freeze({
-    protocolVersion: PROTOCOL_VERSION, create, get, list, setCloudCharacter,
+    protocolVersion: PROTOCOL_VERSION, create, get, list, listPage, setCloudCharacter,
     transition, completionStatus
   });
 })();
