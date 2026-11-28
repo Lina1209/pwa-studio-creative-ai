@@ -79,6 +79,7 @@ def list_user_reports(settings: Settings):
         },
     )
 
+
 def review_user_report(settings: Settings, report_id: str, moderator_id: str, payload):
     report_id = _validated_uuid(report_id, "report")
     result = _request(settings, "POST", "rpc/pwa_review_user_report",
@@ -116,11 +117,17 @@ def revoke_suspension(settings: Settings, moderator_id: str, suspension_id: str)
 
 
 def ensure_user_not_suspended(settings: Settings, user_id: str, scope: str):
+    # Both values feed directly into a PostgREST filter. Keep the scope closed
+    # to the platform's known capabilities and canonicalize the signed user ID.
+    if scope not in {"platform", "assistant", "community"}:
+        raise HTTPException(status_code=500, detail="Suspension scope configuration is invalid.")
+    user_id = _validated_uuid(user_id, "user")
     now = datetime.now(timezone.utc).isoformat()
+    scope_filter = "eq.platform" if scope == "platform" else f"in.(platform,{scope})"
     rows = _request(settings, "GET", "user_suspensions",
         params={"select": "id,reason,expires_at",
                 "user_id": f"eq.{user_id}",
-                "scope": f"in.(platform,{scope})",
+                "scope": scope_filter,
                 "revoked_at": "is.null",
                 "or": f"(expires_at.is.null,expires_at.gt.{now})",
                 "limit": "1"})
