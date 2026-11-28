@@ -126,6 +126,39 @@ class CharacterMediaAssetListTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 422)
         get.assert_not_called()
 
+    @patch("app.services.media_repository._rest_get")
+    def test_list_requests_one_extra_row_and_rejects_truncated_catalog(self, get):
+        get.return_value = [{}] * 101
+        with self.assertRaises(HTTPException) as caught:
+            media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
+        self.assertEqual(caught.exception.status_code, 502)
+        self.assertEqual(get.call_args.args[2]["limit"], "101")
+
+    @patch("app.services.media_repository._rest_get")
+    def test_list_rejects_duplicate_asset_ids(self, get):
+        row = {
+            "id": ASSET, "owner_id": OWNER, "character_id": CHARACTER,
+            "status": "ready",
+        }
+        get.return_value = [row, row]
+        with self.assertRaises(HTTPException) as caught:
+            media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
+        self.assertEqual(caught.exception.status_code, 502)
+
+    @patch("app.services.media_repository._rest_get")
+    def test_list_rejects_duplicate_local_reference_mapping(self, get):
+        reference_id = "55555555-5555-4555-8555-555555555555-66666666-6666-4666-8666-666666666666"
+        row = {
+            "id": ASSET, "owner_id": OWNER, "character_id": CHARACTER,
+            "local_reference_id": reference_id, "file_name": "hero.png",
+            "file_type": "image/png", "status": "ready", "size_bytes": 27,
+            "content_sha256": "a" * 64, "width": 3, "height": 3,
+        }
+        get.return_value = [row, {**row, "id": PROJECT}]
+        with self.assertRaises(HTTPException) as caught:
+            media_repository.list_owned_character_media_assets(self.settings, CHARACTER, OWNER)
+        self.assertEqual(caught.exception.status_code, 502)
+
 class CharacterUploadOwnershipLookupTests(unittest.TestCase):
     def setUp(self):
         self.settings = Settings(supabase_url="https://example.supabase.co",
