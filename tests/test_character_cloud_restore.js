@@ -123,6 +123,20 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(stored[0].cloudBackup.characterId,cloudId);
     assert.deepEqual(stored[0].referenceImages,[]);
   });
+  await run("selection creates an issued subset plan without mutating the full preview",async()=>{
+    const secondCloud="55555555-5555-4555-8555-555555555555";
+    const secondLocal="66666666-6666-4666-8666-666666666666";
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId),row(secondCloud,secondLocal)])});
+    const selected=planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:[secondCloud]});
+    assert.equal(selected.cloudCount,1);
+    assert.deepEqual(selected.selectedCloudIds,[secondCloud]);
+    assert.equal(selected.proposedItems.length,1);
+    assert.equal(selected.proposedItems[0].cloudBackup.characterId,secondCloud);
+    assert.equal(plan.proposedItems.length,2);
+    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:{...selected},readLocalItems:()=>[],writeLocalItems:()=>{}}),/completion proof/);
+    assert.throws(()=>planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:[secondCloud,secondCloud]}),/duplicate/);
+    assert.throws(()=>planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:["77777777-7777-4777-8777-777777777777"]}),/outside/);
+  });
   await run("restore commit refuses stale local state and performs no write",async()=>{
     let stored=[];
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
