@@ -58,3 +58,25 @@ Status: feature-branch implementation checkpoint. No importer activation, produc
 ## Current decision
 
 Keep cloud restore/import disabled. Versioned updates, paginated reads, a side-effect-free restore planner, and a guarded injected commit helper now exist on the feature branch. Remaining blockers include wiring the planner to the actual local storage adapters, durable resumable checkpoints, conflict-resolution UX, deletion/tombstone semantics, safe image transfer and validation, worker deployment/monitoring, and end-to-end browser interruption/account-switch tests. No production resources were touched.
+
+
+## Media identity mapping gate (2026-11-28)
+
+A source-level audit found that the current server API does **not** yet provide a provable mapping from a passport reference descriptor to a private media asset:
+
+- Character `reference_data` stores reference descriptors with the local shape `{ id, name, type }`; the descriptor ID is a browser-local reference ID.
+- `POST /api/characters/{character_id}/references` accepts an image plus an `Idempotency-Key`, but it does not accept or persist the browser reference ID. The asset ID is derived from the idempotency key and is a separate UUID namespace.
+- `GET /api/characters/{character_id}/references` lists asset ID, character ID, file name/type, status, size, dimensions, and creation time. It does not return a local reference ID or the stored SHA-256.
+- `GET /api/media/{asset_id}/content` returns verified bytes and an `X-Content-SHA256` response header, but the restore client still cannot determine which passport reference descriptor that asset belongs to.
+
+Therefore, matching by filename, array order, MIME, dimensions, or image similarity would be unsafe and is explicitly prohibited. The existing planner's `referenceManifest` is descriptive metadata only; its `id` must not be treated as a cloud asset ID.
+
+### Required contract before activation work
+
+1. Extend the authenticated upload contract with a validated client reference UUID (or an equally strong immutable reference key) and persist it server-side on the media asset as an explicit association. Bind that association to the authenticated owner and exact cloud character in the same reservation transaction.
+2. Make the character reference listing return an explicit mapping tuple: `local_reference_id`, `asset_id`, `character_id`, `status`, `file_name`, `file_type`, `size_bytes`, `content_sha256`, `width`, `height`. Keep owner, bucket, Storage path, metadata internals, and signed URLs private.
+3. Reject duplicate local reference IDs per character and duplicate asset associations; enforce uniqueness/foreign keys in a reviewed migration and verify the behavior in disposable PostgreSQL only.
+4. The restore planner must join only on that explicit mapping and compare the cloud passport descriptor to the mapped asset record. Require status `ready`, then independently verify downloaded bytes against SHA-256, byte size, MIME, width, and height.
+5. Add route, repository, migration, cross-owner, duplicate, retry/idempotency, and browser end-to-end tests before enabling any activation path.
+
+No migration, route, UI, worker, or production data was changed as part of this audit. Until this mapping contract exists, the media restore coordinator remains staging-only and local metadata activation remains blocked.
