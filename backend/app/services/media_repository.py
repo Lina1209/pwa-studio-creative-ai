@@ -37,6 +37,64 @@ def _rest_get(settings: Settings, table: str, params: dict) -> list[dict]:
         raise HTTPException(status_code=503, detail="Media metadata is temporarily unavailable.") from exc
 
 
+def list_owned_character_media_assets_for_characters(
+    settings: Settings, character_ids: list[str], authenticated_owner_id: str
+) -> list[dict]:
+    """Return a bounded owner-scoped media catalog for up to 100 characters."""
+    owner = canonical_uuid(authenticated_owner_id, "owner")
+    if not isinstance(character_ids, list) or not 1 <= len(character_ids) <= 100:
+        raise HTTPException(status_code=422, detail="Between 1 and 100 character IDs are required.")
+    normalized = [canonical_uuid(value, "character") for value in character_ids]
+    if len(set(normalized)) != len(normalized):
+        raise HTTPException(status_code=422, detail="Character IDs must be unique.")
+    rows = _rest_get(settings, "media_assets", {
+        "select": "id,owner_id,character_id,local_reference_id,file_name,file_type,status,size_bytes,content_sha256,width,height,created_at",
+        "owner_id": f"eq.{owner}",
+        "character_id": "in.(" + ",".join(normalized) + ")",
+        "bucket": "eq.studio-media",
+        "order": "character_id.asc,created_at.asc,id.asc",
+        "limit": "601",
+    })
+    if len(rows) > 600:
+        raise HTTPException(status_code=502, detail="Character media catalog exceeds the safe limit.")
+    allowed_statuses = {"pending_upload", "object_uploaded", "ready", "upload_failed", "cleanup_pending", "deleted"}
+    seen_assets = set()
+    seen_references = set()
+    result = []
+    for row in rows:
+        if (not isinstance(row, dict) or row.get("owner_id") != owner
+                or row.get("character_id") not in set(normalized)):
+            raise HTTPException(status_code=404, detail="Media resource not found.")
+        asset_id = canonical_uuid(row.get("id"), "media asset")
+        if asset_id in seen_assets:
+            raise HTTPException(status_code=502, detail="Media catalog contains duplicate asset IDs.")
+        seen_assets.add(asset_id)
+        local_reference_id = row.get("local_reference_id")
+        if local_reference_id is not None:
+            local_reference_id = canonical_local_reference_id(local_reference_id)
+            mapping_key = (row["character_id"], local_reference_id)
+            if mapping_key in seen_references:
+                raise HTTPException(status_code=502, detail="Media catalog contains duplicate reference mappings.")
+            seen_references.add(mapping_key)
+            digest = row.get("content_sha256")
+            if (not isinstance(digest, str) or len(digest) != 64
+                    or any(char not in "0123456789abcdef" for char in digest)
+                    or row.get("file_type") not in {"image/png", "image/jpeg", "image/webp"}
+                    or isinstance(row.get("size_bytes"), bool)
+                    or not isinstance(row.get("size_bytes"), int)
+                    or not 1 <= row["size_bytes"] <= 8 * 1024 * 1024
+                    or isinstance(row.get("width"), bool) or not isinstance(row.get("width"), int)
+                    or isinstance(row.get("height"), bool) or not isinstance(row.get("height"), int)
+                    or not 1 <= row["width"] <= 8192 or not 1 <= row["height"] <= 8192):
+                raise HTTPException(status_code=502, detail="Media identity mapping returned invalid integrity metadata.")
+        if row.get("status") not in allowed_statuses:
+            raise HTTPException(status_code=502, detail="Media metadata returned an invalid status.")
+        result.append({key: row.get(key) for key in (
+            "id", "character_id", "local_reference_id", "file_name", "file_type",
+            "status", "size_bytes", "content_sha256", "width", "height", "created_at"
+        )})
+    return result
+
 def get_owned_media_asset(settings: Settings, asset_id: str, authenticated_owner_id: str) -> dict:
     """Load a media row by both its UUID and the verified JWT subject."""
     asset = canonical_uuid(asset_id, "media asset")
