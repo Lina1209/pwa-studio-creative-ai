@@ -189,5 +189,65 @@ class CharacterReferenceBindingRepositoryTests(unittest.TestCase):
             media_upload_repository.reserve_character_reference_upload(self.settings, self.plan)
         self.assertEqual(caught.exception.status_code, 502)
 
+
+class CharacterMediaBulkCatalogTests(unittest.TestCase):
+    def setUp(self):
+        self.settings = Settings(supabase_url="https://example.supabase.co", supabase_service_role_key="test-only")
+
+    @patch("app.services.media_repository._rest_get")
+    def test_bulk_catalog_filters_owner_and_character_set_and_returns_explicit_mapping(self, get):
+        get.return_value = [{
+            "id": ASSET, "owner_id": OWNER, "character_id": CHARACTER,
+            "local_reference_id": "55555555-5555-4555-8555-555555555555-66666666-6666-4666-8666-666666666666",
+            "file_name": "hero.png", "file_type": "image/png", "status": "ready",
+            "size_bytes": 27, "content_sha256": "a" * 64, "width": 3, "height": 3,
+            "created_at": "now", "bucket": "studio-media", "storage_path": "private",
+            "owner_id_internal": "hidden",
+        }]
+        rows = media_repository.list_owned_character_media_assets_for_characters(
+            self.settings, [CHARACTER, PROJECT], OWNER
+        )
+        params = get.call_args.args[2]
+        self.assertEqual(params["owner_id"], f"eq.{OWNER}")
+        self.assertEqual(params["character_id"], f"in.({CHARACTER},{PROJECT})")
+        self.assertEqual(params["bucket"], "eq.studio-media")
+        self.assertEqual(rows[0]["local_reference_id"], "55555555-5555-4555-8555-555555555555-66666666-6666-4666-8666-666666666666")
+        self.assertEqual(rows[0]["content_sha256"], "a" * 64)
+        for hidden in ("owner_id", "bucket", "storage_path", "owner_id_internal"):
+            self.assertNotIn(hidden, rows[0])
+
+    @patch("app.services.media_repository._rest_get")
+    def test_bulk_catalog_rejects_duplicate_character_ids_before_database_access(self, get):
+        with self.assertRaises(HTTPException) as caught:
+            media_repository.list_owned_character_media_assets_for_characters(
+                self.settings, [CHARACTER, CHARACTER], OWNER
+            )
+        self.assertEqual(caught.exception.status_code, 422)
+        get.assert_not_called()
+
+    @patch("app.services.media_repository._rest_get")
+    def test_bulk_catalog_rejects_duplicate_local_reference_mapping(self, get):
+        row = {
+            "id": ASSET, "owner_id": OWNER, "character_id": CHARACTER,
+            "local_reference_id": "55555555-5555-4555-8555-555555555555-66666666-6666-4666-8666-666666666666",
+            "file_name": "hero.png", "file_type": "image/png", "status": "ready",
+            "size_bytes": 27, "content_sha256": "a" * 64, "width": 3, "height": 3,
+        }
+        get.return_value = [row, {**row, "id": PROJECT}]
+        with self.assertRaises(HTTPException) as caught:
+            media_repository.list_owned_character_media_assets_for_characters(
+                self.settings, [CHARACTER], OWNER
+            )
+        self.assertEqual(caught.exception.status_code, 502)
+
+    @patch("app.services.media_repository._rest_get")
+    def test_bulk_catalog_rejects_rows_outside_requested_owner_or_character_set(self, get):
+        get.return_value = [{"id": ASSET, "owner_id": OTHER, "character_id": CHARACTER, "status": "ready"}]
+        with self.assertRaises(HTTPException) as caught:
+            media_repository.list_owned_character_media_assets_for_characters(
+                self.settings, [CHARACTER], OWNER
+            )
+        self.assertEqual(caught.exception.status_code, 404)
+
 if __name__ == "__main__":
     unittest.main()
