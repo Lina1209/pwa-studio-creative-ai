@@ -40,7 +40,35 @@
       if(!asset||!UUID.test(asset.id||"")||asset.character_id!==characterId||asset.local_reference_id!==localReferenceId||asset.file_type!==blob.type||asset.size_bytes!==blob.size||!["pending_upload","object_uploaded","ready"].includes(asset.status)||!["pending","complete"].includes(data.verification))fail("Server did not confirm the exact uploaded image.");
       return Object.freeze({assetId:asset.id,characterId,localReferenceId,status:asset.status,verification:data.verification,sha256:digest,sizeBytes:blob.size,mimeType:blob.type});
     };
-    return Object.freeze({downloadAsset,uploadAsset});
+    const waitForReady=async({characterId,assetId,localReferenceId,expectedSha256,expectedSizeBytes,expectedMimeType,timeoutMs=30000,pollIntervalMs=1000}={})=>{
+      const ctx=capture();
+      if(typeof characterId!=="string"||!UUID.test(characterId)||typeof assetId!=="string"||!UUID.test(assetId)||typeof localReferenceId!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-[a-z0-9_-]{8,80})?$/i.test(localReferenceId)||!/^[a-f0-9]{64}$/i.test(expectedSha256||"")||!Number.isSafeInteger(expectedSizeBytes)||expectedSizeBytes<1||expectedSizeBytes>MAX_BYTES||!MIME.has(expectedMimeType)||!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000||!Number.isSafeInteger(pollIntervalMs)||pollIntervalMs<100||pollIntervalMs>5000)fail("Cloud verification descriptor is invalid.");
+      const deadline=Date.now()+timeoutMs;
+      while(true){
+        const response=await request("/api/characters/"+encodeURIComponent(characterId)+"/references",{method:"GET"},ctx);
+        if(!response.ok)fail("Cloud image verification status could not be loaded (HTTP "+response.status+").");
+        let rows;try{rows=await response.json();}catch{fail("Cloud image verification response is invalid.");}
+        assertCurrent(ctx);
+        if(!Array.isArray(rows))fail("Cloud image verification response is invalid.");
+        const matches=rows.filter(row=>row?.local_reference_id===localReferenceId);
+        if(matches.length>1)fail("Cloud image verification returned duplicate reference mappings.");
+        if(matches.length===1){
+          const row=matches[0];
+          if(row.id!==assetId||row.character_id!==characterId)fail("Cloud image identity does not match the upload reservation.");
+          if(["upload_failed","cleanup_pending","deleted"].includes(row.status))fail("Cloud image upload did not reach a usable state ("+row.status+").");
+          if(row.status==="ready"){
+            if(row.content_sha256!==expectedSha256.toLowerCase()||row.size_bytes!==expectedSizeBytes||row.file_type!==expectedMimeType)fail("Verified cloud image does not match the uploaded bytes.");
+            return Object.freeze({assetId,characterId,localReferenceId,status:"ready",sha256:row.content_sha256,sizeBytes:row.size_bytes,mimeType:row.file_type});
+          }
+          if(!["pending_upload","object_uploaded"].includes(row.status))fail("Cloud image verification returned an unknown state.");
+        }
+        const remaining=deadline-Date.now();
+        if(remaining<=0)fail("Cloud image verification timed out before the asset became ready.");
+        await new Promise(resolve=>setTimeout(resolve,Math.min(pollIntervalMs,remaining)));
+        assertCurrent(ctx);
+      }
+    };
+    return Object.freeze({downloadAsset,uploadAsset,waitForReady});
   }
   globalThis.PWACharacterMediaTransfer=Object.freeze({createCharacterMediaTransferAdapter});
 })();
