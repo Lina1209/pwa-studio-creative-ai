@@ -97,12 +97,17 @@
       if(state==="planned"){
         const row=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:refs.map(r=>({...r,localStagedBlobId:uuid(crypto.randomUUID(),"staged Blob ID")}))});
         revision=row.revision;state=row.state;
+        assertConfirmation();
       } else if(state==="paused_retryable"){
         const pausedRecord=await journal.get(ownerId,operationId);
         const row=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:pausedRecord.references});
         revision=row.revision;state=row.state;
+        assertConfirmation();
       }
       const persisted=await journal.get(ownerId,operationId);
+      assertConfirmation();
+      assertLease();
+      if(!isCurrent())fail("Account changed before staging checkpoint verification.");
       if(!persisted||persisted.revision!==revision||persisted.state!=="staging")fail("Restore checkpoint changed before staging.");
       const savedRefs=persisted.references;
       if(savedRefs.length!==refs.length)fail("Persisted restore manifest does not match the requested media.");
@@ -142,6 +147,7 @@
         saved.state="verified_staged";
         const updated=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:savedRefs});
         revision=updated.revision;staged++;
+        assertConfirmation();
       }
       await renewalInFlight;
       assertLease();
