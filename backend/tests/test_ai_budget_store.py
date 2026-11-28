@@ -139,6 +139,22 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
                 self.store.settle("reservation-1", 0.01)
             client_cls.assert_not_called()
 
+    def test_safe_reasons_reject_invalid_input_before_rpc(self):
+        for reason in ("", "contains spaces", "private/user-data", "x" * 81, None):
+            with self.subTest(reason=reason):
+                with patch("app.services.ai_budget_store.httpx.Client") as client_cls:
+                    with self.assertRaises(ValueError):
+                        self.store.mark_unknown("reservation-1", reason)
+                    with self.assertRaises(ValueError):
+                        self.store.release_confirmed_no_charge("reservation-1", reason)
+                    client_cls.assert_not_called()
+
+    def test_stale_reconciliation_rejects_empty_cutoff_before_rpc(self):
+        with patch("app.services.ai_budget_store.httpx.Client") as client_cls:
+            with self.assertRaises(ValueError):
+                self.store.mark_stale_reservations_unknown("  ", 10)
+            client_cls.assert_not_called()
+
     @patch("app.services.ai_budget_store.httpx.Client")
     def test_confirmed_no_charge_uses_dedicated_release_rpc(self, client_cls):
         client = client_cls.return_value.__enter__.return_value
