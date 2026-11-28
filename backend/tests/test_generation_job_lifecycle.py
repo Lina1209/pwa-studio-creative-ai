@@ -92,6 +92,7 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         cancelled = mark_succeeded(requested, "asset-should-not-be-published")
         self.assertEqual(cancelled.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(cancelled.result_asset_id)
+        self.assertEqual(cancelled.provider_submission_outcome, ProviderSubmissionOutcome.ACCEPTED)
 
     def test_cancel_during_reconciliation_records_intent_without_releasing_hold(self):
         running = claim_job(new_job(), NOW)
