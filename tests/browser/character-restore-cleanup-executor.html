@@ -117,7 +117,7 @@
    const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:30000});
    const before=await cleanupJournal.getManifest(owner,cleanupId),attempt=uuid();
    await cleanupJournal.beginCandidateDelete({ownerId:owner,cleanupId,expectedRevision:before.revision,ownerLockEpoch:held.epoch,localStagedBlobId:id,deleteAttemptId:attempt});
-   assert(await blobStore.deleteStagedBlob({ownerId,operationId:op,cloudAssetId:asset,localStagedBlobId:id,proof,inspectImage:async()=>({width:64,height:48})})==="deleted","simulated recovery Blob removal failed");
+   assert(await blobStore.deleteStagedBlob({ownerId:owner,operationId:op,cloudAssetId:asset,localStagedBlobId:id,proof,inspectImage:async()=>({width:64,height:48})})==="deleted","simulated recovery Blob removal failed");
    let changed=false;
    const lock={acquire:(...args)=>PWACharacterOwnerCoordinationLock.acquire(...args),
     renew:(...args)=>PWACharacterOwnerCoordinationLock.renew(...args),
