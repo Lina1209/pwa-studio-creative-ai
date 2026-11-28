@@ -43,11 +43,13 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-0001"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
             files={"file": ("portrait.png", png_bytes(), "image/png")},
         )
         self.assertEqual(response.status_code, 202)
         body = response.json()
         self.assertEqual(body["asset"]["character_id"], CHARACTER)
+        self.assertEqual(body["asset"]["local_reference_id"], "44444444-4444-4444-8444-444444444444")
         self.assertEqual(body["asset"]["status"], "object_uploaded")
         self.assertEqual(body["verification"], "pending")
         self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
@@ -157,6 +159,18 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         lookup.assert_not_called()
 
+    def test_invalid_local_reference_id_is_rejected_before_reservation(self):
+        with patch("app.main.get_owned_character_for_media_upload") as lookup, patch("app.main.reserve_character_reference_upload") as reserve:
+            response = self.client.post(
+                f"/api/characters/{CHARACTER}/references",
+                headers={"Idempotency-Key": "test-character-upload-invalid-local-id"},
+                data={"local_reference_id": "../foreign"},
+                files={"file": ("portrait.png", png_bytes(), "image/png")},
+            )
+        self.assertEqual(response.status_code, 422)
+        lookup.assert_called_once()
+        reserve.assert_not_called()
+
     @patch("app.services.auth.get_settings")
     def test_missing_authentication_is_rejected(self, get_settings):
         from app.core.config import Settings
@@ -178,7 +192,7 @@ class CharacterReferenceStatusRouteTests(unittest.TestCase):
         app.dependency_overrides[get_current_user] = lambda: StudioUser(user_id=OWNER, email="creator@example.test", role="creator")
     def tearDown(self): app.dependency_overrides.clear()
 
-    @patch("app.main.list_owned_character_media_assets", return_value=[{"id": "33333333-3333-4333-8333-333333333333", "character_id": CHARACTER, "file_name": "hero.png", "file_type": "image/png", "status": "object_uploaded", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now"}])
+    @patch("app.main.list_owned_character_media_assets", return_value=[{"id": "33333333-3333-4333-8333-333333333333", "character_id": CHARACTER, "local_reference_id": "44444444-4444-4444-8444-444444444444", "content_sha256": "a" * 64, "file_name": "hero.png", "file_type": "image/png", "status": "object_uploaded", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now"}])
     @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
     def test_status_list_is_owner_checked_private_and_no_store(self, character, assets):
         response = self.client.get(f"/api/characters/{CHARACTER}/references")
