@@ -192,7 +192,8 @@ begin
     raise exception 'invalid_failure_payload' using errcode = '22023';
   end if;
   select * into v_job from public.generation_jobs
-  where id = p_job_id and lease_token = p_lease_token and status = 'processing' and lease_expires_at > now() for update;
+  where id = p_job_id and lease_token = p_lease_token
+    and status in ('processing','cancel_requested') and lease_expires_at > now() for update;
   if not found then return 'stale_lease'; end if;
   if v_job.provider_submission_outcome in ('unknown','accepted') then
     -- A timeout or worker crash is not proof that the provider did not accept
