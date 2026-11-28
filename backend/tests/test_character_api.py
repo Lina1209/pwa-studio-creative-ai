@@ -22,11 +22,12 @@ class CharacterApiRouteTests(unittest.TestCase):
     def tearDown(self):
         app.dependency_overrides.clear()
 
-    @patch("app.character_api.list_owned_characters", return_value=[])
+    @patch("app.character_api.list_owned_characters", return_value={"items": [], "next_cursor": None, "snapshot_created_at": "2026-01-01T00:00:00Z"})
     def test_list_requires_auth_and_returns_private_no_store(self, list_rows):
         response = self.client.get("/api/characters")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.json()["items"], [])
+        self.assertIsNone(response.json()["next_cursor"])
         self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
 
     def test_client_cannot_supply_owner_id_on_create(self):
