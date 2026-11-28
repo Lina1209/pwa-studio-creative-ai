@@ -41,6 +41,23 @@ function harness(fetchImpl,isCurrent=()=>true){
  const restored=await downloader.adapter.downloadAsset({cloudAssetId:asset,expectedSha256:await digest(blob),expectedSizeBytes:blob.size,expectedMimeType:"image/png"});
  assert.equal(await digest(restored),await digest(blob));
  assert.equal(getCalls,1);
+ const readyDigest=await digest(blob);
+ let statusCalls=0;
+ const statusPoller=harness(async(url,init)=>{
+  statusCalls++;
+  assert.equal(url,"https://api.example.test/api/characters/"+character+"/references");
+  assert.equal(init.method,"GET");
+  const status=statusCalls===1?"object_uploaded":"ready";
+  return new Response(JSON.stringify([{id:asset,character_id:character,local_reference_id:reference,status,size_bytes:blob.size,content_sha256:readyDigest,file_type:"image/png"}]),{status:200,headers:{"Content-Type":"application/json"}});
+ });
+ const verified=await statusPoller.adapter.waitForReady({characterId:character,assetId:asset,localReferenceId:reference,expectedSha256:readyDigest,expectedSizeBytes:blob.size,expectedMimeType:"image/png",timeoutMs:3000,pollIntervalMs:100});
+ assert.equal(verified.status,"ready");
+ assert.equal(verified.sha256,readyDigest);
+ assert.equal(statusCalls,2,"readiness must be independently confirmed after object upload");
+ const terminal=harness(async()=>new Response(JSON.stringify([{id:asset,character_id:character,local_reference_id:reference,status:"upload_failed",size_bytes:blob.size,content_sha256:readyDigest,file_type:"image/png"}]),{status:200}));
+ await assert.rejects(()=>terminal.adapter.waitForReady({characterId:character,assetId:asset,localReferenceId:reference,expectedSha256:readyDigest,expectedSizeBytes:blob.size,expectedMimeType:"image/png",timeoutMs:1000,pollIntervalMs:100}),/did not reach a usable state/);
+ const mismatched=harness(async()=>new Response(JSON.stringify([{id:asset,character_id:character,local_reference_id:reference,status:"ready",size_bytes:blob.size,content_sha256:"0".repeat(64),file_type:"image/png"}]),{status:200}));
+ await assert.rejects(()=>mismatched.adapter.waitForReady({characterId:character,assetId:asset,localReferenceId:reference,expectedSha256:readyDigest,expectedSizeBytes:blob.size,expectedMimeType:"image/png",timeoutMs:1000,pollIntervalMs:100}),/does not match/);
  const badDigest=harness(async()=>new Response(blob,{status:200,headers:{"Content-Type":"image/png","X-Content-SHA256":"0".repeat(64)}}));
  const expectedDigest=await digest(blob);
  await assert.rejects(()=>badDigest.adapter.downloadAsset({cloudAssetId:asset,expectedSha256:expectedDigest,expectedSizeBytes:blob.size,expectedMimeType:"image/png"}),/headers/);
