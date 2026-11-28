@@ -58,6 +58,21 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     let call=0;
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>++call===1?page([row(cloudId,localId)],"next"):page([row("66666666-6666-4666-8666-666666666666",localId)])}));
   });
+
+  await run("cloud identity already attached to a different local record becomes a conflict",async()=>{
+    const otherLocalId="77777777-7777-4777-8777-777777777777";
+    const local={id:otherLocalId,name:"Старая карточка",description:"",referenceImages:[],cloudBackup:{characterId:cloudId,version:1,referenceManifest:[]}};
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
+    assert.equal(plan.proposedItems.length,0);
+    assert.equal(plan.conflicts.length,1);
+    assert.equal(plan.conflicts[0].reason,"cloud_character_already_mapped_to_another_local_id");
+    assert.equal(plan.conflicts[0].localId,otherLocalId);
+  });
+  await run("duplicate cloud identities in the local library fail closed",async()=>{
+    const one={id:localId,name:"A",cloudBackup:{characterId:cloudId}};
+    const two={id:localId2,name:"B",cloudBackup:{characterId:cloudId}};
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[one,two],fetchPage:async()=>page([])}),/duplicate cloud character mapping/);
+  });
   await run("account switch during page fetch aborts plan",async()=>{
     let checks=0;
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],isCurrent:()=>++checks<2,fetchPage:async()=>page([row(cloudId,localId)])}),/Account changed/);
