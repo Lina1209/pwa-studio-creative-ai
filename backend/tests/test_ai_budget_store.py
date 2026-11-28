@@ -140,6 +140,33 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.mark_stale_reservations_unknown("2026-11-28T00:00:00Z", 0)
 
+    @patch("app.services.ai_budget_store.httpx.Client")
+    def test_reconciliation_candidates_are_returned_without_extra_fields(self, client_cls):
+        rows = [{
+            "reservation_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "request_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "endpoint": "chat",
+            "provider": "deepseek",
+            "model": "deepseek-flash",
+            "reservation_status": "unknown",
+            "reserved_usd": "0.025",
+            "created_at": "2026-11-28T00:00:00Z",
+            "updated_at": "2026-11-28T00:01:00Z",
+        }]
+        client = client_cls.return_value.__enter__.return_value
+        client.post.return_value.json.return_value = rows
+        result = self.store.list_reconciliation_candidates(20)
+        self.assertEqual(result, rows)
+        self.assertTrue(client.post.call_args.args[0].endswith(
+            "/rpc/list_ai_budget_reconciliation_candidates"
+        ))
+        self.assertEqual(client.post.call_args.kwargs["json"], {"p_limit": 20})
+
+    def test_reconciliation_candidates_reject_invalid_limit(self):
+        with self.assertRaises(ValueError):
+            self.store.list_reconciliation_candidates(1001)
+
     def test_missing_server_credentials_fail_closed(self):
         store = SupabaseAIBudgetStore(Settings())
         with self.assertRaises(AIBudgetStoreUnavailable):
