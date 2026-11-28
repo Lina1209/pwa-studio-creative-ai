@@ -2491,6 +2491,15 @@ const movieHistoryStyle = document.createElement("style");
         if(!stillOwner())return;
         const local=localItems[index];
         if(!local||!isCharacterUuid(local.id)||typeof local.name!=="string"||!local.name.trim())throw new Error("Локальная карточка содержит некорректные данные.");
+        const referenceManifest=[];
+        const seenReferenceIds=new Set();
+        for(const ref of [...(Array.isArray(local.referenceImages)?local.referenceImages:[]),...(Array.isArray(local.cloudBackup?.referenceManifest)?local.cloudBackup.referenceManifest:[])]){
+          const refId=String(ref?.id||"").slice(0,180);
+          if(!refId||seenReferenceIds.has(refId))continue;
+          seenReferenceIds.add(refId);
+          referenceManifest.push(ref);
+          if(referenceManifest.length===6)break;
+        }
         const referenceData={
           kind:local.kind==="scene"?"scene":"character",
           representation:["2d","3d","both"].includes(local.representation)?local.representation:"2d",
@@ -2501,7 +2510,7 @@ const movieHistoryStyle = document.createElement("style");
             wardrobe:String(local.passport?.wardrobe||"").slice(0,1200),
             palette:String(local.passport?.palette||"").slice(0,1200)
           },
-          referenceImages:(Array.isArray(local.referenceImages)?local.referenceImages:[]).slice(0,6).map(ref=>({
+          referenceImages:referenceManifest.map(ref=>({
             id:String(ref.id||"").slice(0,180),name:String(ref.name||"").slice(0,120),type:String(ref.type||"").slice(0,80)
           }))
         };
