@@ -15,6 +15,8 @@ declare
   v_job_cancel uuid := gen_random_uuid();
   v_job_cancel_queued uuid := gen_random_uuid();
   v_job_cancel_expired uuid := gen_random_uuid();
+  v_job_unknown_failure uuid := gen_random_uuid();
+  v_job_accepted_recovery uuid := gen_random_uuid();
   v_job_other_owner uuid := gen_random_uuid();
   v_asset_a uuid := gen_random_uuid();
   v_asset_b uuid := gen_random_uuid();
@@ -39,6 +41,8 @@ begin
     (v_job_cancel, v_owner_a, 'test-cancel-00001', repeat('d',64), 'image'),
     (v_job_cancel_queued, v_owner_a, 'test-cancel-queue1', repeat('e',64), 'image'),
     (v_job_cancel_expired, v_owner_a, 'test-cancel-expired', repeat('1',64), 'image'),
+    (v_job_unknown_failure, v_owner_a, 'test-unknown-failure', repeat('2',64), 'image'),
+    (v_job_accepted_recovery, v_owner_a, 'test-accepted-recover', repeat('3',64), 'video'),
     (v_job_other_owner, v_owner_b, 'test-other-owner1', repeat('f',64), 'image');
 
   insert into public.media_assets (id, owner_id, file_name, file_type, storage_path)
@@ -85,6 +89,10 @@ begin
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
   where j.id = v_job_retry;
+  select public.record_generation_submission_outcome(v_job_retry, v_token, 'definitely_rejected') into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: provider rejection evidence was not recorded'; end if;
+  select public.record_generation_submission_outcome(v_job_retry, v_token, 'accepted') into v_ok;
+  if v_ok then raise exception 'TEST FAILED: contradictory provider evidence overwrote a conclusive outcome'; end if;
   select public.fail_generation_job(v_job_retry, v_token, 'temporary_provider_error', true, 5, 0.002)
     into v_status;
   if v_status <> 'retry_wait' then raise exception 'TEST FAILED: retry transition failed'; end if;
@@ -121,6 +129,8 @@ begin
   if v_token is null then raise exception 'TEST FAILED: expiring cancel job was not claimed'; end if;
   select public.request_generation_job_cancel(v_job_cancel_expired, v_owner_a) into v_status;
   if v_status <> 'cancel_requested' then raise exception 'TEST FAILED: expiring cancel request failed'; end if;
+  select public.record_generation_submission_outcome(v_job_cancel_expired, v_token, 'definitely_not_submitted') into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: safe cancellation outcome was not recorded'; end if;
   update public.generation_jobs set lease_expires_at = now() - interval '1 second'
   where id = v_job_cancel_expired and lease_token = v_token;
   select public.finish_generation_job_cancel(v_job_cancel_expired, v_token) into v_ok;
@@ -134,6 +144,8 @@ begin
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
   where j.id = v_job_recovery;
+  select public.record_generation_submission_outcome(v_job_recovery, v_token, 'definitely_not_submitted') into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: safe retry outcome was not recorded'; end if;
   update public.generation_jobs
   set lease_expires_at = now() - interval '1 second'
   where id = v_job_recovery and lease_token = v_token;
@@ -151,6 +163,8 @@ begin
   if v_outbox_token is null or v_outbox_token = v_token then
     raise exception 'TEST FAILED: recovered job did not receive a fresh lease token';
   end if;
+  select public.record_generation_submission_outcome(v_job_recovery, v_token, 'accepted') into v_ok;
+  if v_ok then raise exception 'TEST FAILED: stale worker changed provider outcome'; end if;
   select public.heartbeat_generation_job(v_job_recovery, v_token, 120) into v_ok;
   if v_ok then raise exception 'TEST FAILED: stale worker heartbeat was accepted'; end if;
   select public.complete_generation_job(v_job_recovery, v_token, v_asset_a, 0.001) into v_ok;
@@ -161,6 +175,39 @@ begin
   select lease_token into v_token from public.generation_jobs where id = v_job_recovery;
   if v_token <> v_outbox_token then
     raise exception 'TEST FAILED: stale worker changed the current lease token';
+  end if;
+
+  -- An unknown provider outcome cannot be retried after a worker failure.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_unknown_failure;
+  select j.lease_token into v_token
+  from public.claim_generation_job('queue-test-unknown-outcome', 120) j
+  where j.id = v_job_unknown_failure;
+  select public.fail_generation_job(v_job_unknown_failure, v_token, 'provider_timeout', true, 5, 0.001)
+    into v_status;
+  if v_status <> 'reconciliation_required' then
+    raise exception 'TEST FAILED: unknown provider outcome was blindly retried';
+  end if;
+  if exists (select 1 from public.generation_job_outbox where job_id = v_job_unknown_failure and event_type = 'job_retry_ready') then
+    raise exception 'TEST FAILED: unknown provider outcome emitted a retry event';
+  end if;
+
+  -- A provider-accepted request with an expired worker lease is held for
+  -- reconciliation rather than being submitted a second time.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_accepted_recovery;
+  select j.lease_token into v_token
+  from public.claim_generation_job('queue-test-accepted-outcome', 120) j
+  where j.id = v_job_accepted_recovery;
+  select public.record_generation_submission_outcome(v_job_accepted_recovery, v_token, 'accepted') into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: accepted provider outcome was not recorded'; end if;
+  update public.generation_jobs set lease_expires_at = now() - interval '1 second'
+  where id = v_job_accepted_recovery and lease_token = v_token;
+  select public.recover_expired_generation_jobs(10) into v_count;
+  select status into v_status from public.generation_jobs where id = v_job_accepted_recovery;
+  if v_status <> 'reconciliation_required' then
+    raise exception 'TEST FAILED: accepted provider outcome was blindly retried';
+  end if;
+  if exists (select 1 from public.generation_job_outbox where job_id = v_job_accepted_recovery and event_type = 'job_retry_ready') then
+    raise exception 'TEST FAILED: accepted provider outcome emitted a retry event';
   end if;
 
   -- Outbox claim/ack is fenced; a replayed acknowledgement must fail.
