@@ -114,6 +114,11 @@ Validation checkpoint: CI run `46102117483` passed all three jobs on commit `9ff
 
 Validation checkpoint: CI run `46102717078` passed all three jobs on commit `4e13a1d`. The restore planner now also checks the existing local library for cloud-character identity reuse: malformed or duplicate local cloud mappings fail closed, and a cloud character already attached to a different local record is reported as a conflict instead of creating a second local mapping. Regression tests cover both cases. This remains planner-only validation; it does not enable restore UI or mutate stored records.
 
+
+Validation checkpoint: CI run `46103022172` passed all three jobs on commit `2632892`: backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal plus frontend syntax/account-fencing checks. The restore planner now requires an explicit persisted `cloudBackup.characterId` binding before an existing local card can be classified as unchanged. Missing or mismatched bindings are conflicts even when passport content matches; matching content alone is not identity proof. The regression suite was updated to expect this stricter conflict reason. A second workflow run for the same commit was still executing at the time of this checkpoint; the completed successful run above is the validation evidence.
+
+Deletion-flow audit: removing a local character commits the metadata removal before deleting its owner-scoped IndexedDB image blobs. If blob cleanup partially fails, the record remains deleted and some unreferenced blobs may remain; this is an orphan-storage issue, not a reason to restore deleted metadata automatically. Do not add a naive orphan sweep: another tab or an in-flight save may temporarily own staged blobs not yet referenced by committed metadata. Any future cleanup must use explicit staging ownership/leases or a journaled, race-safe protocol.
+
 ## Decision
 
 Keep cloud restore/import disabled until the latest CI run passes, browser account-switch and resumable multi-page restore integration is implemented, deletion/tombstone semantics are defined, and worker deployment/monitoring is approved. No production migration or deployment is part of this work.
