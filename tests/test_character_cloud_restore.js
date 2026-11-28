@@ -295,6 +295,26 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:validPlan,readLocalItems:()=>[],writeLocalItems:()=>writes++,isCurrent:()=>false}),/Account changed/);
     assert.equal(writes,0);
   });
+  await run("backup serializer preserves a v2 slot and immutable asset identity",async()=>{
+    const slotId=localId2;
+    const manifest=planner.serializeReferenceManifest([], [{id:slotId,slotId,assetLocalReferenceId:referenceId,name:"front.png",type:"image/png"}]);
+    assert.deepEqual(manifest,[{slot_id:slotId,asset_local_reference_id:referenceId,name:"front.png",type:"image/png"}]);
+  });
+  await run("backup serializer keeps legacy reference shape when identities are equal",async()=>{
+    assert.deepEqual(planner.serializeReferenceManifest([{id:referenceId,name:"front.png",type:"image/png"}],[]),[{id:referenceId,name:"front.png",type:"image/png"}]);
+  });
+  await run("local legacy card does not erase cloud v2 asset binding",async()=>{
+    const merged=planner.serializeReferenceManifest([{id:localId2,name:"local name",type:"image/jpeg"}],[{id:localId2,slotId:localId2,assetLocalReferenceId:referenceId,name:"cloud name",type:"image/png"}]);
+    assert.deepEqual(merged,[{slot_id:localId2,asset_local_reference_id:referenceId,name:"local name",type:"image/jpeg"}]);
+  });
+  await run("explicit local v2 replacement updates only the immutable asset identity",async()=>{
+    const nextAsset=localId;
+    const merged=planner.serializeReferenceManifest([{id:localId2,slotId:localId2,assetLocalReferenceId:nextAsset,name:"new.png",type:"image/png"}],[{id:localId2,slotId:localId2,assetLocalReferenceId:referenceId,name:"old.png",type:"image/jpeg"}]);
+    assert.deepEqual(merged,[{slot_id:localId2,asset_local_reference_id:nextAsset,name:"new.png",type:"image/png"}]);
+  });
+  await run("backup serializer rejects duplicate immutable asset bindings",async()=>{
+    assert.throws(()=>planner.serializeReferenceManifest([{id:localId2,slotId:localId2,assetLocalReferenceId:referenceId},{id:localId,slotId:localId,assetLocalReferenceId:referenceId}],[]),/duplicate asset identities/);
+  });
   await run("invalid passport kind and reference identity are rejected",async()=>{
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId,{reference_data:{kind:"unknown",representation:"2d",passport:{},referenceImages:[]}})])}),/kind is invalid/);
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId,{reference_data:{kind:"character",representation:"2d",passport:{},referenceImages:[{id:"",name:"x",type:"image/png"}]}})])}),/reference descriptor is invalid/);
