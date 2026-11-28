@@ -84,7 +84,8 @@ jobs:
             supabase/migrations/0021_profile_avatar_catalog.sql \
             supabase/migrations/0022_ai_budget_reservations.sql \
             supabase/migrations/0023_character_versioned_updates.sql \
-            supabase/migrations/0024_character_cursor_pagination_index.sql \\\n            supabase/migrations/0025_character_reference_identity_binding.sql; do
+            supabase/migrations/0024_character_cursor_pagination_index.sql \
+            supabase/migrations/0025_character_reference_identity_binding.sql; do
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
