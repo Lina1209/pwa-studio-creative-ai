@@ -159,6 +159,8 @@ jobs:
         run: python tests/browser/run_character_owner_coordination_lock.py
       - name: Run real-browser staged Blob cleanup marking tests
         run: python tests/browser/run_character_restore_cleanup.py
+      - name: Run real-browser safe site cache cleanup tests
+        run: python tests/browser/run_site_cache_tools.py
       - name: Check frontend syntax and account-switch fencing
         run: |
           node --check profile-avatar-catalog.js
