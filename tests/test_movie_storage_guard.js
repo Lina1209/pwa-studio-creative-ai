@@ -68,7 +68,7 @@ assert.match(app, /archivedProjects=authSession\?\.user\?\[\]:readGuestArchive\(
 assert.match(app, /Облачная запись фильма имеет неверный формат или принадлежит другому пространству/);
 assert.match(app, /Optimistic concurrency: never blindly upsert/);
 assert.doesNotMatch(app, /from\("projects"\)\.upsert\(rows/);
-assert.match(app, /\.eq\("updated_at", item\.expectedUpdatedAt\)\.select\("id"\)/);
+assert.match(app, /\.eq\("updated_at", item\.expectedUpdatedAt\)[\s\S]*\.select\("id"\)/);
 assert.match(app, /Фильм изменился на другом устройстве во время сохранения/);
 assert.match(app, /локальная копия при конфликте/);
 assert.match(app, /writeMovieStorage\(nextLocal\)/);
@@ -80,7 +80,7 @@ assert.match(app, /const movieStableContent = value/);
 assert.match(app, /if \(cloudTime >= localTime\)/);
 assert.match(app, /Облачная версия загружена, а локальный вариант сохранён отдельной копией/);
 assert.match(app, /expectedSettings: remote\.settings/);
-assert.match(app, /\.eq\("settings", item\.expectedSettings\)/);
+assert.match(app, /\.eq\("settings", JSON\.stringify\(item\.expectedSettings\)\)/);
 assert.match(app, /\.eq\("title", item\.expectedTitle\)[\s\S]*\.eq\("description", item\.expectedDescription\)/);
 assert.match(app, /if \(!contextIsCurrent\(\) \|\| !writeMovieStorage\(nextLocal\)\)/);
 assert.match(app, /movieCloudState\.pending = true/);
