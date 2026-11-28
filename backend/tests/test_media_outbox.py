@@ -75,6 +75,10 @@ class MediaOutboxTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             event(idempotency_key="bad key value")
 
+    def test_replacement_cleanup_event_type_is_explicitly_supported(self):
+        replacement = event(event_type="media_reference_replacement_cleanup_requested")
+        self.assertEqual(replacement.event_type, "media_reference_replacement_cleanup_requested")
+
     def test_unknown_event_type_is_rejected(self):
         with self.assertRaises(ValueError):
             event(event_type="arbitrary_task")
