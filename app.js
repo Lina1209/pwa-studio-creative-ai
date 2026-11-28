@@ -11,6 +11,8 @@
     : null;
   let authSession = null;
   let authContextVersion = 0;
+  let scheduledAuthLoadContextVersion = -1;
+  let authLoadTimer = null;
   let activeAssistantConversationId = null;
   let assistantConversationLoadVersion = 0;
   let assistantConversationIntentVersion = 0;
@@ -42,7 +44,8 @@
   };
   const refreshAuthUI = session => {
     const nextUserId = session?.user?.id || null;
-    if (nextUserId !== assistantUserId) {
+    const identityChanged = nextUserId !== assistantUserId;
+    if (identityChanged) {
       const adminPanel = $("#adminPanel"); if (adminPanel) adminPanel.hidden = true;
       const notificationPanel = $("#notificationPanel"); if (notificationPanel) notificationPanel.hidden = true;
       const notificationList = $("#notificationList"); if (notificationList) notificationList.replaceChildren();
@@ -80,7 +83,9 @@
       if (status) status.textContent = nextUserId ? "Загружаем историю нового аккаунта…" : "Войдите в аккаунт, чтобы сохранять историю диалогов.";
     }
     authSession = session;
-    window.dispatchEvent(new Event("pwa-studio-auth-changed"));
+    // Token refreshes and duplicate INITIAL_SESSION notifications are not
+    // account changes; only identity transitions should reset account-bound UI.
+    if (identityChanged) window.dispatchEvent(new Event("pwa-studio-auth-changed"));
     const user = session && session.user;
     authGate.hidden = true;
     $("#openLogin").hidden = !!user;
@@ -122,6 +127,25 @@
       if (topAvatar) topAvatar.textContent = "L";
     }
   };
+  const scheduleAuthContextLoad = () => {
+    const scheduledVersion = authContextVersion;
+    // getSession() and INITIAL_SESSION can report the same account almost
+    // simultaneously. Load account data once per identity context.
+    if (scheduledAuthLoadContextVersion === scheduledVersion) return;
+    scheduledAuthLoadContextVersion = scheduledVersion;
+    clearTimeout(authLoadTimer);
+    authLoadTimer = setTimeout(() => {
+      authLoadTimer = null;
+      if (scheduledVersion !== authContextVersion) return;
+      if (typeof renderMovieProjects === "function") renderMovieProjects();
+      if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud();
+      if (typeof loadAccountRole === "function") loadAccountRole();
+      if (typeof loadNotifications === "function") loadNotifications();
+      if (typeof loadConversations === "function") loadConversations();
+      if (typeof loadCommunityProfile === "function") loadCommunityProfile();
+      if (typeof renderAssistantHistory === "function") renderAssistantHistory();
+    }, 0);
+  };
   if (!supabaseClient) {
     authGate.hidden = false;
     setAuthMessage("Не найдена конфигурация Supabase. Проверьте файл supabase-config.js.", true);
@@ -129,9 +153,12 @@
     supabaseClient.auth.getSession().then(({data,error}) => {
       if (error) setAuthMessage(error.message, true);
       refreshAuthUI(data?.session || null);
-      setTimeout(() => { if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof loadAccountRole === "function") loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof loadCommunityProfile === "function") loadCommunityProfile(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0);
+      scheduleAuthContextLoad();
     });
-    supabaseClient.auth.onAuthStateChange((_event, session) => { refreshAuthUI(session); setTimeout(() => { loadAccountRole(); if (typeof loadNotifications === "function") loadNotifications(); if (typeof loadConversations === "function") loadConversations(); if (typeof loadCommunityProfile === "function") loadCommunityProfile(); if (typeof renderMovieProjects === "function") renderMovieProjects(); if (typeof loadMovieProjectsFromCloud === "function") loadMovieProjectsFromCloud(); if (typeof renderAssistantHistory === "function") renderAssistantHistory(); }, 0); });
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      refreshAuthUI(session);
+      scheduleAuthContextLoad();
+    });
   }
   // Password visibility controls for both sign-in and registration forms.
   const passwordStyle = document.createElement("style");
