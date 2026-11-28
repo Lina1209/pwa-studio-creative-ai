@@ -36,7 +36,7 @@ class CharacterRepositoryTests(unittest.TestCase):
     @patch("app.services.character_repository.httpx.request")
     def test_list_filters_by_authenticated_owner_and_never_returns_other_rows(self, request):
         request.return_value = Mock(content=b"[]", json=lambda: [])
-        self.assertEqual(list_owned_characters(self.settings, OWNER), [])
+        self.assertEqual(list_owned_characters(self.settings, OWNER)["items"], [])
         self.assertEqual(request.call_args.kwargs["params"]["owner_id"], f"eq.{OWNER}")
 
     @patch("app.services.character_repository.httpx.request")
