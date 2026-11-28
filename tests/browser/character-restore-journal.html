@@ -47,7 +47,7 @@
   });
   await test("verified staging checkpoint and lease release",async()=>{
    let row=await api.get(owner,op);
-   row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging",references:[{cloudAssetId:uuid(),localStagedBlobId:uuid(),expectedSha256:sha,expectedSizeBytes:2048,expectedMimeType:"image/webp",width:512,height:512,state:"verified_staged"}]});
+   row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging",references:[{cloudAssetId:uuid(),characterId:uuid(),sourceLocalId:uuid(),localReferenceId:uuid()+"-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"front.webp",type:"image/webp",localStagedBlobId:uuid(),expectedSha256:sha,expectedSizeBytes:2048,expectedMimeType:"image/webp",width:512,height:512,state:"verified_staged"}]});
    ok(row.references[0].state==="verified_staged","reference proof checkpoint missing");
    await api.releaseLease(owner,op,lease);
    ok((await api.get(owner,op)).lease===null,"lease not released");
