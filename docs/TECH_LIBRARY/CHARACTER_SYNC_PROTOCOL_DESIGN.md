@@ -10,7 +10,9 @@ The Character Library UI now has an explicit metadata-only cloud backup action f
 
 The browser backup journal now upgrades to IndexedDB schema v2, adds an owner index, and exposes bounded `listPage(ownerId, {limit, cursor})` traversal (1–100 rows) with owner-bound cursors. The compatibility `list()` helper returns only its first bounded page. Journal records are validated deeply before reads and state mutations; malformed owner mappings, fingerprints, timestamps, reference metadata, cloud IDs, and verification proofs fail closed. Browser tests cover multi-page completeness, owner isolation, cursor tampering, and corrupted persisted records.
 
-This is not yet full restore or media backup. Reference-image files remain local; the local backup journal is not yet connected to the API; cloud-to-local restore, resumable page checkpoints, deletion/tombstone semantics, and end-to-end account-switch browser tests remain outstanding. Keep restore/import disabled until those paths are implemented and tested.
+A separate `character-cloud-restore.js` module now implements a side-effect-free restore planner. It fetches and validates every API page, fences account changes, rejects duplicate cloud/local identity mappings, proposes new local records using the stable local ID, preserves the cloud ID/version mapping, and reports local-vs-cloud conflicts instead of overwriting. It deliberately does not write localStorage, IndexedDB, or download media. Reference-image descriptors are retained as a manifest while `referenceImages` stays empty so the restored card does not point to missing local Blobs.
+
+This is not yet an enabled restore or media backup. The restore planner is not connected to the UI or commit layer; resumable page checkpoints, deletion/tombstone semantics, conflict resolution UX, and end-to-end browser account-switch tests remain outstanding. Keep restore/import disabled until those paths are implemented and tested.
 
 ## 1. Optimistic concurrency for edits
 
@@ -95,7 +97,9 @@ Implementation has now been added for the API foundations and the local journal 
 - The list API now returns `items`, `next_cursor`, and `snapshot_created_at`, with a maximum page size of 100. Cursors are owner-bound, HMAC-signed, expire after 15 minutes, and use descending keyset pagination on immutable `created_at, id`.
 - Backend unit/API tests and disposable PostgreSQL assertions cover version conflicts, owner isolation, cursor tampering, page bounds, and the pagination index.
 - `character-backup-journal.js` uses IndexedDB schema v2 with an owner index and bounded local cursor pagination. Browser tests cover two-row pages across seven records, owner-bound/tampered cursors, page-size limits, and fail-closed validation of modified stored records.
-- The journal remains a persistence primitive only: no network calls, no media upload, no cloud restore orchestration.
+- The journal remains a persistence primitive only: no network calls and no media upload.
+- `character-cloud-restore.js` is a separate, side-effect-free planner; it does not write to localStorage/IndexedDB or connect to the UI.
+- Node tests cover full multi-page traversal, local/cloud ID preservation, missing-media manifest handling, unchanged records, conflict reporting, duplicate mappings, malformed API rows, and account-switch aborts.
 
 Validation checkpoint: CI run `46100463960` passed all three jobs (backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal tests) for the versioned-update and cursor-pagination implementation. The additional concurrent compare-and-swap harness also passed in CI run `46100552578`: two independent PostgreSQL clients used the same expected version, exactly one update succeeded, one returned a stale-version conflict, and the stored version incremented only once. The browser restore workflow still does not consume every API page, and the local journal has not been connected to this API. Do not enable restore/import based on these API foundations alone.
 
