@@ -99,7 +99,7 @@ begin
   v_conflict := false;
   begin
     perform public.pwa_reserve_character_reference_upload_v2(
-      v_owner,(v_foreign_character->>'id')::uuid,gen_random_uuid(),
+      v_owner,(v_foreign_character->>'id')::uuid,gen_random_uuid()::text,
       gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
       'reference-binding-foreign-character','foreign.png','image/png','studio-media',
       v_owner::text || '/characters/' || (v_foreign_character->>'id') || '/' || gen_random_uuid()::text || '.png',
@@ -117,7 +117,7 @@ begin
     raise exception 'authenticated role can execute the server-only reference-binding RPC';
   end if;
   if not has_function_privilege('service_role',
-       'public.pwa_reserve_character_reference_upload_v2(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,text,text,bigint,text,integer,integer)','EXECUTE') then
+       'public.pwa_reserve_character_reference_upload_v2(uuid,uuid,text,uuid,uuid,uuid,text,text,text,text,text,bigint,text,integer,integer)','EXECUTE') then
     raise exception 'service_role cannot execute the reference-binding RPC';
   end if;
 end;
