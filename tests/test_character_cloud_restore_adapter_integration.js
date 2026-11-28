@@ -7,6 +7,7 @@ const adapterFactory=globalThis.PWACharacterLocalStorageAdapter.createCharacterL
 const owner="11111111-1111-4111-8111-111111111111";
 const cloudId="22222222-2222-4222-8222-222222222222";
 const localId="33333333-3333-4333-8333-333333333333";
+const referenceId=localId+"-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const existing={id:"44444444-4444-4444-8444-444444444444",name:"Существующая карточка",kind:"character",description:"не трогать",referenceImages:[]};
 const values=new Map();
 const storage={getItem:k=>values.has(k)?values.get(k):null,setItem:(k,v)=>values.set(k,String(v))};
@@ -14,11 +15,11 @@ const adapter=adapterFactory({storage,ownerId:owner});
 adapter.writeLocalItems(owner,[existing]);
 const cloudRow={
  id:cloudId,source_local_id:localId,version:1,name:"Катти",description:"Облачное описание",
- reference_data:{kind:"character",representation:"both",voice:"мягкий голос",passport:{face:"зелёные глаза",body:"стройный силуэт",wardrobe:"фиолетовое худи",palette:"рыжий"},referenceImages:[{id:"image-1",name:"katty.png",type:"image/png"}]},
+ reference_data:{kind:"character",representation:"both",voice:"мягкий голос",passport:{face:"зелёные глаза",body:"стройный силуэт",wardrobe:"фиолетовое худи",palette:"рыжий"},referenceImages:[{id:referenceId,name:"katty.png",type:"image/png"}]},
  created_at:"2026-11-28T00:00:00.000Z"
 };
 (async()=>{
- const plan=await planner.planRestore({ownerId:owner,existingLocalItems:adapter.readLocalItems(owner),fetchPage:async()=>({items:[cloudRow],next_cursor:null})});
+ const plan=await planner.planRestore({ownerId:owner,existingLocalItems:adapter.readLocalItems(owner),fetchPage:async()=>({items:[cloudRow],next_cursor:null}),fetchReferences:async ids=>[{id:"99999999-9999-4999-8999-999999999999",character_id:cloudId,local_reference_id:referenceId,file_name:"katty.png",file_type:"image/png",status:"ready",size_bytes:2048,content_sha256:"a".repeat(64),width:1024,height:768}]});
  assert.equal(plan.complete,true);
  const result=planner.applyRestorePlan({ownerId:owner,plan,readLocalItems:adapter.readLocalItems,writeLocalItems:adapter.writeLocalItems,isCurrent:()=>true});
  assert.deepEqual(result,{restoredCount:1,totalCount:2});
