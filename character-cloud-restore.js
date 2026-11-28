@@ -88,9 +88,13 @@
     const bySlot = new Map();
     const add = ref => {
       if (!ref || typeof ref !== "object" || Array.isArray(ref)) fail("Reference descriptor is invalid.");
+      const snakeCaseV2 = ref.slot_id !== undefined || ref.asset_local_reference_id !== undefined;
+      if (snakeCaseV2 && ref.id !== undefined) fail("Reference v2 identity must not include a legacy ID.");
       const explicitAsset = ref.asset_local_reference_id !== undefined || ref.assetLocalReferenceId !== undefined;
-      const slotId = text(ref.slot_id || ref.slotId || ref.id, 180, "reference slot ID");
-      const assetId = text(ref.asset_local_reference_id || ref.assetLocalReferenceId || ref.id, 180, "reference asset identity");
+      const rawSlotId = snakeCaseV2 ? ref.slot_id : (ref.slotId !== undefined ? ref.slotId : ref.id);
+      const rawAssetId = snakeCaseV2 ? ref.asset_local_reference_id : (ref.assetLocalReferenceId !== undefined ? ref.assetLocalReferenceId : ref.id);
+      const slotId = text(rawSlotId, 180, "reference slot ID");
+      const assetId = text(rawAssetId, 180, "reference asset identity");
       if (!LOCAL_REFERENCE_KEY.test(slotId) || !LOCAL_REFERENCE_KEY.test(assetId)) fail("Reference identity is invalid.");
       const previous = bySlot.get(slotId);
       bySlot.set(slotId, {
