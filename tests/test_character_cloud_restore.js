@@ -80,10 +80,14 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(writes,0);
   });
   await run("restore commit refuses conflicts and account changes",async()=>{
-    const conflictPlan={complete:true,ownerId:owner,proposedItems:[],conflicts:[{reason:"collision"}],baseLocalFingerprint:"[]"};
+    const conflictingLocal={id:localId,name:"Локальная версия",description:"",referenceImages:[]};
+    const conflictPlan=await planner.planRestore({ownerId:owner,existingLocalItems:[conflictingLocal],fetchPage:async()=>page([row(cloudId,localId)])});
+    const forgedPlan={complete:true,ownerId:owner,proposedItems:[],conflicts:[],baseLocalFingerprint:"[]"};
     let writes=0;
-    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:conflictPlan,readLocalItems:()=>[],writeLocalItems:()=>writes++}),/Resolve every/);
-    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:{complete:true,ownerId:owner,proposedItems:[],conflicts:[],baseLocalFingerprint:"[]"},readLocalItems:()=>[],writeLocalItems:()=>writes++,isCurrent:()=>false}),/Account changed/);
+    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:conflictPlan,readLocalItems:()=>[conflictingLocal],writeLocalItems:()=>writes++}),/Resolve every/);
+    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:forgedPlan,readLocalItems:()=>[],writeLocalItems:()=>writes++}),/completion proof/);
+    const validPlan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
+    assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:validPlan,readLocalItems:()=>[],writeLocalItems:()=>writes++,isCurrent:()=>false}),/Account changed/);
     assert.equal(writes,0);
   });
   await run("invalid passport kind and reference identity are rejected",async()=>{
