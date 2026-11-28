@@ -33,8 +33,8 @@
   await rejects(()=>api.stageBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof}));
   await rejects(()=>api.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof:{...proof,sha256:"0".repeat(64)}}));
   passed.push("collision and invalid proof rejected");
-  await rejects(()=>api.deleteStagedBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof}));
-  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof}));
+  assert(await api.deleteStagedBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof})==="missing","cross-owner delete did not fail closed");
+  assert(await api.deleteStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof})==="missing","cross-operation delete did not fail closed");
   await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof:{...proof,sha256:"0".repeat(64)}}));
   const tamperDb=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-library-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
   try{await new Promise((resolve,reject)=>{const tx=tamperDb.transaction("images","readwrite"),store=tx.objectStore("images"),q=store.get(id);q.onsuccess=()=>{const row=q.result;row.blob=new Blob(["tampered-blob-proof"],{type:"image/png"});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{tamperDb.close()}
