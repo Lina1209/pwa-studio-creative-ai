@@ -1,0 +1,68 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Restore activation browser integration</title></head><body><pre id="results">Running</pre>
+<script src="../../character-restore-journal.js"></script><script src="../../character-restore-blob-store.js"></script><script src="../../character-local-storage-adapter.js"></script><script src="../../character-restore-activation.js"></script>
+<script>
+(async()=>{
+ const out=document.getElementById("results"),passed=[];
+ const journal=window.PWACharacterRestoreJournal,blobStore=window.PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore();
+ const owner=crypto.randomUUID(),cloud=crypto.randomUUID(),local=crypto.randomUUID(),asset=crypto.randomUUID(),stagedId=crypto.randomUUID(),operation=crypto.randomUUID();
+ const bytes=new TextEncoder().encode("verified staged character image bytes"),blob=new Blob([bytes],{type:"image/png"});
+ const digest=async v=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",typeof v==="string"?new TextEncoder().encode(v):await v.arrayBuffer())),x=>x.toString(16).padStart(2,"0")).join("");
+ const canonical=v=>JSON.stringify(v,(k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,n)=>(o[n]=x[n],o),{}):x);
+ const ok=(v,m)=>{if(!v)throw Error(m)},rejects=async(fn,m)=>{let yes=false;try{await fn()}catch{yes=true}ok(yes,m)};
+ const run=async(n,fn)=>{await fn();passed.push(n)};
+ const values=new Map(),storage={getItem:k=>values.has(k)?values.get(k):null,setItem:(k,v)=>values.set(k,String(v))};
+ const localAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage,ownerId});
+ const original={id:crypto.randomUUID(),name:"Карточка, которую нельзя потерять",kind:"character",referenceImages:[]};
+ localAdapter.writeLocalItems(owner,[original]);
+ const base=localAdapter.readLocalItems(owner),baseCanonical=canonical(base),baseDigest=await digest(baseCanonical),sha=await digest(blob);
+ const reference={cloudAssetId:asset,characterId:cloud,sourceLocalId:local,localReferenceId:local+"-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"katty.png",type:"image/png",localStagedBlobId:stagedId,expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30,state:"verified_staged"};
+ const manifest={cloudAssetId:asset,characterId:cloud,sourceLocalId:local,localReferenceId:reference.localReferenceId,name:reference.name,type:reference.type,expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30};
+ const proposal={id:local,name:"Катти",description:"",kind:"character",representation:"both",voice:"",passport:{face:"зелёные глаза"},referenceImages:[],createdAt:"2026-11-28T00:00:00.000Z",updatedAt:"2026-11-28T00:00:00.000Z",cloudBackup:{characterId:cloud,version:1,referenceManifest:[manifest]}};
+ const plan={complete:true,ownerId:owner,baseLocalFingerprint:baseCanonical,proposedItems:[proposal],unchanged:[],conflicts:[]};
+ async function operationReady(op,selected,refs=[]){
+  await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseDigest,snapshotId:"browser-snapshot",selectedCharacterIds:selected});
+  let lease=await journal.acquireLease(owner,op),row=await journal.get(owner,op);
+  row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
+  row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging",references:refs});
+  row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate",references:refs});
+  await journal.releaseLease(owner,op,lease);
+  return await journal.get(owner,op);
+ }
+ try{
+  await run("atomic activation verifies staged bytes and preserves existing cards",async()=>{
+   await blobStore.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:stagedId,blob,proof:{sha256:sha,sizeBytes:blob.size,mimeType:"image/png",width:40,height:30}});
+   let row=await operationReady(operation,[cloud],[reference]);
+   const result=await window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:operation,plan,expectedRevision:row.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:40,height:30})});
+   ok(result.state==="committed"&&result.restoredCount===1,"activation result incorrect");
+   const saved=localAdapter.readLocalItems(owner);
+   ok(saved.length===2&&saved[1].id===original.id,"existing local card was not preserved");
+   ok(saved[0].restoreOperationId===operation,"restore operation marker missing");
+   ok(saved[0].referenceImages.length===1&&saved[0].referenceImages[0].id===stagedId,"restored image is not linked to staged Blob key");
+   ok(saved[0].referenceImages[0].sourceReferenceId===reference.localReferenceId,"original reference mapping was not retained");
+   ok((await journal.get(owner,operation)).state==="committed","journal did not reach committed");
+  });
+  await run("tampered staged Blob blocks activation before metadata write",async()=>{
+   const op=crypto.randomUUID(),badAsset=crypto.randomUUID(),badStage=crypto.randomUUID(),badRef={...reference,cloudAssetId:badAsset,localStagedBlobId:badStage};
+   await blobStore.stageBlob({ownerId:owner,operationId:op,cloudAssetId:badAsset,localStagedBlobId:badStage,blob,proof:{sha256:sha,sizeBytes:blob.size,mimeType:"image/png",width:40,height:30}});
+   const row=await operationReady(op,[cloud],[badRef]),before=localAdapter.readLocalItems(owner);
+   const altered={...plan,proposedItems:[{...proposal,cloudBackup:{...proposal.cloudBackup,referenceManifest:[{...manifest,cloudAssetId:badAsset}]}}]};
+   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:altered,expectedRevision:row.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:41,height:30})}),"dimension mismatch accepted");
+   ok(canonical(localAdapter.readLocalItems(owner))===canonical(before),"metadata changed despite failed verification");
+  });
+  await run("recovery recognizes a completed metadata write after a simulated crash",async()=>{
+   const op=crypto.randomUUID(),newId=crypto.randomUUID();
+   const newCard={id:newId,name:"Восстановленная карточка",restoreOperationId:op,referenceImages:[]};
+   const merged=[newCard,...localAdapter.readLocalItems(owner)],mergedDigest=await digest(canonical(merged));
+   const row=await operationReady(op,[crypto.randomUUID()],[]);
+   let lease=await journal.acquireLease(owner,op),current=await journal.get(owner,op);
+   const intent={baseDigest,mergedDigest,intendedCount:merged.length,restoredCount:1,operationMarker:op,preparedAt:new Date().toISOString()};
+   current=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:current.revision,state:"activating",activation:intent});
+   localAdapter.writeLocalItems(owner,merged);
+   await journal.releaseLease(owner,op,lease);
+   const recovered=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:current.revision,journal,localAdapter});
+   ok(recovered.state==="committed","recovery did not recognize committed metadata");
+  });
+  out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
+ }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
+})();
+</script></body></html>
