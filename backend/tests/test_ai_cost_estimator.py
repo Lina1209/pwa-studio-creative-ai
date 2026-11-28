@@ -75,6 +75,16 @@ class AICostEstimatorTests(unittest.TestCase):
                 max_input_tokens=0,
                 max_output_tokens=10,
             )
+        with self.assertRaises(ValueError):
+            AIPriceRateCard(
+                provider="test",
+                model="model",
+                version="v1",
+                input_usd_per_million_tokens=Decimal("1"),
+                output_usd_per_million_tokens=Decimal("1"),
+                max_input_tokens=True,
+                max_output_tokens=10,
+            )
 
     def test_rejects_non_finite_or_negative_rates(self):
         for rate in [Decimal("-0.01"), Decimal("NaN"), Decimal("Infinity")]:
