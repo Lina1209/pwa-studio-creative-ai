@@ -84,6 +84,5 @@ This audit records the verified boundary between current protections and the fut
 
 1. Build and test an authenticated, audited operator reconciliation workflow for reservations stranded in `reserved` or `unknown`; unknown-versus-settlement and release-versus-settlement concurrency are now covered by the multi-session harness.
 2. Select a trusted server-side tokenizer or conservative token-bound method, then review and version actual model input/output prices including retry exposure.
-3. Add an authenticated, audited reconciliation operator workflow for reservations stranded in `reserved` or `unknown`; no scheduler exists, and ambiguous provider requests must never be TTL-released.
-4. Decide how to authenticate and audit policy/control changes and how to handle user deletion under ledger retention requirements.
-5. Only after numerical limits are approved, implement route integration and an explicit staged rollout.
+3. Decide how to authenticate and audit policy/control changes and how to handle user deletion under ledger retention requirements.
+4. Only after numerical limits are approved, implement route integration and an explicit staged rollout.
