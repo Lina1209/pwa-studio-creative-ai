@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Restore Blob store browser tests</title>
+<body><pre id="results">Running…</pre>
+<script src="../../character-restore-blob-store.js"></script>
+<script>
+(async()=>{
+ const out=document.querySelector("#results"), passed=[];
+ const owner="11111111-1111-4111-8111-111111111111";
+ const other="22222222-2222-4222-8222-222222222222";
+ const operation="33333333-3333-4333-8333-333333333333";
+ const asset="44444444-4444-4444-8444-444444444444";
+ const id="55555555-5555-4555-8555-555555555555";
+ const blob=new Blob(["restore-blob-proof"],{type:"image/png"});
+ const bytes=await blob.arrayBuffer();
+ const hash=await crypto.subtle.digest("SHA-256",bytes);
+ const sha=Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,"0")).join("");
+ const proof={sha256:sha,sizeBytes:blob.size,mimeType:blob.type,width:32,height:24};
+ const api=PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore();
+ const assert=(v,m)=>{if(!v)throw Error(m)};
+ const rejects=async fn=>{let did=false;try{await fn()}catch{did=true}assert(did,"expected rejection")};
+ try{
+  const first=await api.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof});
+  assert(first.localStagedBlobId===id&&!first.reused,"new staged Blob was not written");
+  const read=await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id});
+  assert(read instanceof Blob&&read.size===blob.size&&read.type===blob.type,"owner could not read staged Blob");
+  passed.push("owner-scoped staged Blob write/read");
+  const again=await api.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof});
+  assert(again.reused,"identical operation retry was not idempotent");
+  passed.push("idempotent same-operation retry");
+  assert(await api.readStagedBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id})===null,"cross-owner read was allowed");
+  assert(await api.readStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id})===null,"cross-operation read was allowed");
+  passed.push("owner and operation isolation");
+  await rejects(()=>api.stageBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof}));
+  await rejects(()=>api.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof:{...proof,sha256:"0".repeat(64)}}));
+  passed.push("collision and invalid proof rejected");
+  out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
+  document.documentElement.dataset.testResult="passed";
+ }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
+})();
+</script></body></html>
