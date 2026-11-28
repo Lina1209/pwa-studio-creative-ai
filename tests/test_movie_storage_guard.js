@@ -41,4 +41,5 @@ assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(gue
 assert.match(app, /Очередь удалений фильмов повреждена/);
 assert.match(app, /value\.some\(id=>!isUuid\(id\)\)/);
 assert.match(app, /!writeMovieTombstones\(\[\.\.\.deletedIds,project\.id\]\)\)return/);
-\nconsole.log("Movie storage guard tests passed.");
+
+console.log("Movie storage guard tests passed.");
