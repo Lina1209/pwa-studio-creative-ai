@@ -1590,6 +1590,30 @@ const movieHistoryStyle = document.createElement("style");
     // Do not silently replace malformed cloud history or stage data with empty defaults.
     return PWAStudioMovieStorageGuard.parse(JSON.stringify([candidate]))[0];
   };
+  const movieStableContent = value => {
+    const normalize = item => {
+      if (Array.isArray(item)) return item.map(normalize);
+      if (item && typeof item === "object") {
+        return Object.fromEntries(Object.keys(item).filter(key => key !== "updatedAt").sort().map(key => [key, normalize(item[key])]));
+      }
+      return item;
+    };
+    return JSON.stringify(normalize(value));
+  };
+  const makeMovieConflictCopy = project => {
+    const conflictId = movieId();
+    return {
+      ...project,
+      id: conflictId,
+      name: (project.name || "Фильм") + " — локальная копия при конфликте",
+      versionLabel: "Сохранённая копия с другого устройства",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      versions: (project.versions || []).map(version => ({
+        ...version, data: { ...version.data, id: conflictId }
+      }))
+    };
+  };
   const scheduleMovieCloudSync = () => {
     const userId = authSession?.user?.id, requestVersion = authContextVersion;
     if (!userId || !supabaseClient) return;
@@ -1645,33 +1669,24 @@ const movieHistoryStyle = document.createElement("style");
             if (!Number.isFinite(localTime) || !Number.isFinite(remoteTime)) {
               throw new Error("Не удалось сравнить версии фильма. Синхронизация остановлена без перезаписи.");
             }
-            if (remoteTime > localTime) {
-              // Preserve the device's newer unsynced draft as a separate project before accepting cloud state.
-              const conflictId = movieId();
-              const conflictCopy = {
-                ...localProject,
-                id: conflictId,
-                name: (localProject.name || "Фильм") + " — локальная копия при конфликте",
-                versionLabel: "Сохранённая копия с другого устройства",
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                versions: (localProject.versions || []).map(version => ({
-                  ...version, data: { ...version.data, id: conflictId }
-                }))
-              };
-              const cloudProject = movieFromCloudRow(remote, userId);
+            const cloudProject = movieFromCloudRow(remote, userId);
+            const sameContent = movieStableContent(localProject) === movieStableContent(cloudProject);
+            if (sameContent) continue;
+            if (remoteTime >= localTime) {
+              // Keep a divergent local draft as a separate project before accepting cloud state.
+              const conflictCopy = makeMovieConflictCopy(localProject);
               const nextLocal = currentLocal.map(project => project.id === row.id ? cloudProject : project);
               nextLocal.unshift(conflictCopy);
-              if (!contextIsCurrent()) return;
-              writeMovieStorage(nextLocal);
+              if (!contextIsCurrent() || !writeMovieStorage(nextLocal)) {
+                throw new Error("Конфликт обнаружен, но локальную копию не удалось надёжно сохранить. Синхронизация остановлена.");
+              }
               renderMovieProjects();
               preservedConflict = true;
               syncConflictPreserved = true;
               movieCloudState.pending = true;
               continue;
             }
-            if (remoteTime === localTime) continue;
-            updates.push({ row, expectedUpdatedAt: remote.updated_at });
+            updates.push({ row, expectedUpdatedAt: remote.updated_at, expectedSettings: remote.settings, expectedTitle: remote.title, expectedDescription: remote.description, expectedStatus: remote.status });
           }
           if (inserts.length) {
             const { error } = await supabaseClient.from("projects").insert(inserts);
@@ -1682,7 +1697,9 @@ const movieHistoryStyle = document.createElement("style");
             if (!contextIsCurrent()) return;
             const { data: changed, error } = await supabaseClient.from("projects").update(item.row)
               .eq("id", item.row.id).eq("owner_id", userId).eq("project_type", "movie")
-              .eq("updated_at", item.expectedUpdatedAt).select("id");
+              .eq("updated_at", item.expectedUpdatedAt).eq("settings", item.expectedSettings)
+              .eq("title", item.expectedTitle).eq("description", item.expectedDescription)
+              .eq("status", item.expectedStatus).select("id");
             if (error) throw error;
             if (!changed || changed.length !== 1) {
               throw new Error("Фильм изменился на другом устройстве во время сохранения. Ни одна версия не перезаписана; повторите синхронизацию.");
@@ -1744,10 +1761,27 @@ const movieHistoryStyle = document.createElement("style");
       const deletedSet = new Set(deletedIds);
       const survivingLocal = local.filter(project => !deletedSet.has(project.id));
       const merged = new Map(survivingLocal.map(project => [project.id, project]));
+      let loadConflictPreserved = false;
       (data || []).filter(row => !deletedSet.has(row.id)).forEach(row => {
-        const cloudProject = movieFromCloudRow(row);
+        const cloudProject = movieFromCloudRow(row, userId);
         const localProject = merged.get(cloudProject.id);
-        if (!localProject || new Date(cloudProject.updatedAt || 0) >= new Date(localProject.updatedAt || 0)) {
+        if (!localProject) {
+          merged.set(cloudProject.id, cloudProject);
+          return;
+        }
+        const localTime = Date.parse(localProject.updatedAt || localProject.createdAt || 0);
+        const cloudTime = Date.parse(cloudProject.updatedAt || cloudProject.createdAt || 0);
+        if (!Number.isFinite(localTime) || !Number.isFinite(cloudTime)) {
+          throw new Error("Не удалось сравнить локальную и облачную версии фильма. Сохранённые данные не изменены.");
+        }
+        const sameContent = movieStableContent(localProject) === movieStableContent(cloudProject);
+        if (cloudTime >= localTime) {
+          if (!sameContent) {
+            merged.set(makeMovieConflictCopy(localProject).id, makeMovieConflictCopy(localProject));
+            loadConflictPreserved = true;
+          }
+          merged.set(cloudProject.id, cloudProject);
+        } else if (sameContent) {
           merged.set(cloudProject.id, cloudProject);
         }
       });
@@ -1756,7 +1790,9 @@ const movieHistoryStyle = document.createElement("style");
         renderMovieProjects();
         scheduleMovieCloudSync();
         const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = "✓ Фильмы загружены из облака. Изменения синхронизируются автоматически.";
+        if (feedback) feedback.textContent = loadConflictPreserved
+          ? "Обнаружены разные версии фильма. Облачная версия загружена, а локальный вариант сохранён отдельной копией."
+          : "✓ Фильмы загружены из облака. Изменения синхронизируются автоматически.";
       }
     } catch (error) {
       console.error("Movie cloud load failed:", error);
