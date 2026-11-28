@@ -11,7 +11,7 @@ NOW = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
 
 
 def new_job(**kwargs):
-    return GenerationJob(id="job-1", owner_id="user-1", idempotency_key="idem-1", **kwargs)
+    return GenerationJob(id="job-1", owner_id="user-1", idempotency_key="idem-key-0001", **kwargs)
 
 
 class GenerationJobLifecycleTests(unittest.TestCase):
@@ -197,6 +197,28 @@ class GenerationJobLifecycleTests(unittest.TestCase):
             with self.subTest(status=invalid_status):
                 with self.assertRaisesRegex(ValueError, "status"):
                     new_job(status=invalid_status)
+
+    def test_rejects_invalid_identity_and_idempotency_key_bounds(self):
+        for kwargs in (
+            {"id": 123},
+            {"owner_id": None},
+            {"idempotency_key": "short"},
+            {"idempotency_key": "x" * 161},
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ValueError):
+                    new_job(**kwargs)
+
+    def test_rejects_boolean_and_non_integer_attempt_limits(self):
+        for kwargs in (
+            {"attempt_count": True},
+            {"attempt_count": 1.5},
+            {"max_attempts": False},
+            {"max_attempts": "3"},
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ValueError):
+                    new_job(**kwargs)
 
     def test_rejects_non_datetime_and_naive_timestamps(self):
         for invalid_timestamp in ("2026-11-27T12:00:00Z", object(), datetime(2026, 11, 27)):
