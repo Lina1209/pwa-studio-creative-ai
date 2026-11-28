@@ -44,7 +44,7 @@ trap cleanup EXIT
 # Case A: replacement intent commits first. The real whole-character RPC
 # races to enqueue its event and must lose the cross-scope unique-index fence.
 CHAR_A="$(uuid)"; ASSET_A="$(uuid)"; OP_A="$(uuid)"; REPL_OP_A="$(uuid)"
-EVENT_A="$(uuid)"; OBJECT_A="$(uuid)"
+OBJECT_A="$(uuid)"
 PATH_A="$PWA_TEST_OWNER_ID/characters/$CHAR_A/$OBJECT_A.png"
 
 psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
@@ -82,12 +82,18 @@ wait_for_activity "pwa_cross_scope_replacement_a" sleeping
 PGAPPNAME=pwa_cross_scope_character_a psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
   -v owner="$PWA_TEST_OWNER_ID" -v character="$CHAR_A" -v operation="$OP_A" \
   -v asset="$ASSET_A" <<'SQL' >"$TMP/b.out" 2>&1 &
+select set_config('pwa.race.owner', :'owner', false);
+select set_config('pwa.race.character', :'character', false);
+select set_config('pwa.race.operation', :'operation', false);
+select set_config('pwa.race.asset', :'asset', false);
 do $$
 declare v_rejected boolean := false;
 begin
   begin
     perform public.pwa_request_character_media_cleanup(
-      :'owner',:'character',:'operation'
+      current_setting('pwa.race.owner')::uuid,
+      current_setting('pwa.race.character')::uuid,
+      current_setting('pwa.race.operation')::uuid
     );
   exception when unique_violation then
     v_rejected := true;
@@ -95,10 +101,13 @@ begin
   if not v_rejected then
     raise exception 'whole-character cleanup bypassed active replacement reservation';
   end if;
-  if (select cleanup_operation_id from public.characters where id=:'character') is not null
-     or (select status from public.media_assets where id=:'asset') <> 'ready'
+  if (select cleanup_operation_id from public.characters
+      where id=current_setting('pwa.race.character')::uuid) is not null
+     or (select status from public.media_assets
+         where id=current_setting('pwa.race.asset')::uuid) <> 'ready'
      or (select count(*) from public.media_asset_outbox
-         where asset_id=:'asset' and status in ('pending','claimed')
+         where asset_id=current_setting('pwa.race.asset')::uuid
+           and status in ('pending','claimed')
            and event_type in ('media_cleanup_requested','media_reference_replacement_cleanup_requested')) <> 1 then
     raise exception 'replacement-first race left partial whole-character cleanup state';
   end if;
@@ -115,8 +124,8 @@ echo "PASS: replacement-first concurrent reservation admits exactly one deletion
 # Case B: whole-character cleanup reserves first. A concurrent replacement
 # event insert must wait for that transaction and then fail with unique_violation.
 CHAR_B="$(uuid)"; ASSET_B="$(uuid)"; OP_B="$(uuid)"; REPL_OP_B="$(uuid)"
-OBJECT_B="$(uuid)"; EVENT_B="$(uuid)"
-PATH_B="$PWA_TEST_OWNER_ID/characters/$CHAR_B/$OBJECT_B.png"
+PATH_B="$PWA_TEST_OWNER_ID/characters/$CHAR_B/$(uuid).png"
+EVENT_B="$(uuid)"
 
 psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
   -v owner="$PWA_TEST_OWNER_ID" -v character="$CHAR_B" -v asset="$ASSET_B" \
@@ -172,13 +181,18 @@ fi
 
 psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
   -v asset="$ASSET_B" -v character="$CHAR_B" <<'SQL'
+select set_config('pwa.race.asset', :'asset', false);
+select set_config('pwa.race.character', :'character', false);
 do $$
 begin
   if (select count(*) from public.media_asset_outbox
-      where asset_id=:'asset' and status in ('pending','claimed')
+      where asset_id=current_setting('pwa.race.asset')::uuid
+        and status in ('pending','claimed')
         and event_type in ('media_cleanup_requested','media_reference_replacement_cleanup_requested')) <> 1
-     or (select status from public.media_assets where id=:'asset') <> 'cleanup_pending'
-     or (select cleanup_operation_id from public.characters where id=:'character') is null then
+     or (select status from public.media_assets
+         where id=current_setting('pwa.race.asset')::uuid) <> 'cleanup_pending'
+     or (select cleanup_operation_id from public.characters
+         where id=current_setting('pwa.race.character')::uuid) is null then
     raise exception 'character-first race did not preserve exactly one whole-character deletion intent';
   end if;
 end;
