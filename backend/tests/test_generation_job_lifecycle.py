@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from app.services.generation_job_lifecycle import (
@@ -40,6 +41,14 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         unresolved = mark_failed(running, NOW, "provider_timeout", True, 45)
         self.assertEqual(unresolved.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertIsNone(unresolved.next_attempt_at)
+
+    def test_conclusive_provider_evidence_cannot_be_overwritten(self):
+        running = claim_job(new_job(), NOW)
+        rejected = mark_failed(
+            running, NOW, "provider_rejected", False, 30,
+            ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+        )
+        self.assertEqual(rejected.provider_submission_outcome, ProviderSubmissionOutcome.DEFINITELY_REJECTED)
 
     def test_accepted_provider_attempt_requires_reconciliation(self):
         running = claim_job(new_job(), NOW)
@@ -91,11 +100,19 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         self.assertEqual(cancelled.status, JobStatus.RECONCILIATION_REQUIRED)
         self.assertEqual(cancelled.cancel_requested_at, NOW + timedelta(seconds=5))
 
-    def test_success_requires_processing_and_asset_id(self):
+    def test_success_requires_processing_accepted_evidence_and_asset_id(self):
         running = claim_job(new_job(), NOW)
-        self.assertEqual(mark_succeeded(running, "asset-1").status, JobStatus.SUCCEEDED)
         with self.assertRaises(ValueError):
-            mark_succeeded(running, "")
+            mark_succeeded(running, "asset-1")
+        with self.assertRaises(ValueError):
+            mark_succeeded(
+                replace(running, provider_submission_outcome=ProviderSubmissionOutcome.DEFINITELY_REJECTED),
+                "asset-1",
+            )
+        accepted = replace(running, provider_submission_outcome=ProviderSubmissionOutcome.ACCEPTED)
+        self.assertEqual(mark_succeeded(accepted, "asset-1").status, JobStatus.SUCCEEDED)
+        with self.assertRaises(ValueError):
+            mark_succeeded(accepted, "")
 
     def test_expired_lease_with_unknown_provider_outcome_requires_reconciliation(self):
         running = claim_job(new_job(), NOW, lease_seconds=10)
