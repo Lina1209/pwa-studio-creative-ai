@@ -1510,12 +1510,28 @@ const movieHistoryStyle = document.createElement("style");
   const movieCloudState = { syncing: false, pending: false, loadingUser: null, timer: null };
   const movieDeletedKey = () => "pwa-studio-movie-deleted:" + (authSession?.user?.id || "guest");
   const readMovieTombstones = () => {
-    try { const value = JSON.parse(localStorage.getItem(movieDeletedKey()) || "[]"); return Array.isArray(value) ? value.filter(isUuid) : []; }
-    catch { return []; }
+    const raw=localStorage.getItem(movieDeletedKey());
+    if(raw===null||raw==="")return [];
+    let value;
+    try { value=JSON.parse(raw); }
+    catch (_) { throw new Error("Очередь удалений фильмов повреждена. Облачная синхронизация остановлена, чтобы не восстановить удалённые проекты."); }
+    if(!Array.isArray(value)||value.some(id=>!isUuid(id))||new Set(value).size!==value.length) {
+      throw new Error("Очередь удалений фильмов имеет неверный формат. Облачная синхронизация остановлена.");
+    }
+    return value;
   };
   const writeMovieTombstones = ids => {
-    try { localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids.filter(isUuid))])); return true; }
-    catch (error) { console.error("Movie deletion queue failed:", error); return false; }
+    try {
+      readMovieTombstones();
+      if(!Array.isArray(ids)||ids.some(id=>!isUuid(id)))throw new Error("Некорректный идентификатор удаления.");
+      localStorage.setItem(movieDeletedKey(), JSON.stringify([...new Set(ids)]));
+      return true;
+    } catch (error) {
+      console.error("Movie deletion queue write blocked:", error);
+      const feedback=$("#movieFeedback");
+      if(feedback)feedback.textContent="Очередь удалений не изменена: "+error.message;
+      return false;
+    }
   };
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
   const movieToCloudRow = (project, ownerId = authSession?.user?.id) => {
@@ -2291,7 +2307,7 @@ const movieHistoryStyle = document.createElement("style");
         if(!window.confirm("Удалить фильм «"+(project.name||"Без названия")+"» вместе со всей его историей версий? Это действие нельзя отменить."))return;
         const latest=movieRead().filter(item=>item.id!==project.id);
         const deletedIds=readMovieTombstones();
-        if(isUuid(project.id) && !deletedIds.includes(project.id)) writeMovieTombstones([...deletedIds,project.id]);
+        if(isUuid(project.id) && !deletedIds.includes(project.id) && !writeMovieTombstones([...deletedIds,project.id]))return;
         if(movieWrite(latest)){if(activeMovieId===project.id)activeMovieId=latest[0]?.id||null;renderMovieProjects();const workflow=$("#movieWorkflowPanel");if(workflow)workflow.hidden=true;$("#movieFeedback").textContent=authSession?.user?"Проект удалён. Удаление отправлено в облако.":"Проект удалён с этого устройства.";}
       });
       const allStagesDone=movieStages.every(stage=>(project.completedSteps||[]).includes(stage.key));
