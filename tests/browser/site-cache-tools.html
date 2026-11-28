@@ -33,6 +33,11 @@
   script.src = "../../site-cache-tools.js";
   document.head.appendChild(script);
   await new Promise((resolve,reject) => { script.onload=resolve; script.onerror=reject; });
+  let confirmCalls = 0;
+  window.confirm = () => { confirmCalls++; return false; };
+  document.getElementById("clearSiteCache").click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert(confirmCalls === 1 && deleted.length === 0, "cancelled confirmation performs no cache deletion");
   const result = await window.PWAStudioCacheTools.clearSiteCache();
   assert(result.deleted === 2, "returns exact number of owned shell caches");
   assert(deleted.join(",") === "pwa-studio-shell-v34,pwa-studio-shell-v35", "deletes only PWA Studio shell cache keys");
