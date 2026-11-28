@@ -72,7 +72,7 @@ assert.match(app, /\.eq\("updated_at", item\.expectedUpdatedAt\)[\s\S]*\.select\
 assert.match(app, /Фильм изменился на другом устройстве во время сохранения/);
 assert.match(app, /локальная копия при конфликте/);
 assert.match(app, /writeMovieStorage\(nextLocal\)/);
-assert.match(app, /writeMovieStorage\(nextLocal\);\s*renderMovieProjects\(\)/);
+assert.match(app, /if \(!contextIsCurrent\(\) \|\| !writeMovieStorage\(nextLocal\)\)[\s\S]*?renderMovieProjects\(\)/);
 assert.match(app, /localStorage\.setItem\(movieStorageKey\(\), JSON\.stringify\(projects\)\);\s*return true;/);
 assert.match(app, /\.eq\("settings", JSON\.stringify\(item\.expectedSettings\)\)/);
 assert.doesNotMatch(app, /else if \(sameContent\)\s*\{\s*merged\.set/);
