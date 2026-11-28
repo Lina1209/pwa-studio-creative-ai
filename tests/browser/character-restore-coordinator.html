@@ -32,6 +32,16 @@
  }
  const manifest=[{cloudAssetId:uuid(),expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30}];
  try{
+  await test("renewal remains fenced after a lease takeover",async()=>{
+   const op=await planned();
+   const old=await api.acquireLease(owner,op.operationId,{ttlMs:5000});
+   const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+   try{await new Promise((resolve,reject)=>{const tx=db.transaction("operations","readwrite"),s=tx.objectStore("operations"),q=s.get(owner+":"+op.operationId);q.onsuccess=()=>{const r=q.result;r.lease.expiresAt=new Date(Date.now()-1000).toISOString();s.put(r)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+   const fresh=await api.acquireLease(owner,op.operationId,{ttlMs:5000});
+   await rejects(()=>api.renewLease(owner,op.operationId,old),"stale holder renewed a taken-over lease");
+   ok(fresh.epoch===old.epoch+1,"takeover did not advance lease epoch");
+   await api.releaseLease(owner,op.operationId,fresh);
+  });
   await test("real IndexedDB journal + Blob staging reaches ready_to_activate",async()=>{
    const op=await planned();
    const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:adapters()});
