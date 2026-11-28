@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import app
-from app.services.auth import StudioUser, get_current_user
+from app.services.auth import StudioUser, get_current_user, get_platform_active_user
 
 OWNER = "11111111-1111-4111-8111-111111111111"
 CHARACTER = "22222222-2222-4222-8222-222222222222"
@@ -29,6 +29,8 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         app.dependency_overrides[get_current_user] = lambda: StudioUser(
             user_id=OWNER, email="creator@example.test", role="creator"
         )
+
+        app.dependency_overrides[get_platform_active_user] = lambda: app.dependency_overrides[get_current_user]()
 
     def tearDown(self):
         app.dependency_overrides.clear()
@@ -197,6 +199,9 @@ class CharacterReferenceStatusRouteTests(unittest.TestCase):
     def setUpClass(cls): cls.client = TestClient(app)
     def setUp(self):
         app.dependency_overrides[get_current_user] = lambda: StudioUser(user_id=OWNER, email="creator@example.test", role="creator")
+        app.dependency_overrides[get_platform_active_user] = lambda: app.dependency_overrides[get_current_user]()
+
+        app.dependency_overrides[get_platform_active_user] = lambda: app.dependency_overrides[get_current_user]()
     def tearDown(self): app.dependency_overrides.clear()
 
     @patch("app.main.list_owned_character_media_assets", return_value=[{"id": "33333333-3333-4333-8333-333333333333", "character_id": CHARACTER, "local_reference_id": "44444444-4444-4444-8444-444444444444", "content_sha256": "a" * 64, "file_name": "hero.png", "file_type": "image/png", "status": "object_uploaded", "size_bytes": 27, "width": 3, "height": 3, "created_at": "now"}])
@@ -228,6 +233,8 @@ class CharacterReferenceBulkCatalogRouteTests(unittest.TestCase):
         app.dependency_overrides[get_current_user] = lambda: StudioUser(
             user_id=OWNER, email="creator@example.test", role="creator"
         )
+
+        app.dependency_overrides[get_platform_active_user] = lambda: app.dependency_overrides[get_current_user]()
 
     def tearDown(self):
         app.dependency_overrides.clear()
