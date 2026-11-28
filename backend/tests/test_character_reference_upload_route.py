@@ -43,7 +43,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
             headers={"Idempotency-Key": "test-character-upload-0001"},
-            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
+            data={"local_reference_id": "22222222-2222-4222-8222-222222222222-44444444-4444-4444-8444-444444444444"},
             files={"file": ("portrait.png", png_bytes(), "image/png")},
         )
         self.assertEqual(response.status_code, 202)
