@@ -67,6 +67,20 @@ begin
   set next_attempt_at = now() + interval '1 day'
   where id <> v_job_success;
 
+  -- Table constraints also reject NaN, even when writes bypass the RPC layer.
+  begin
+    update public.generation_jobs set actual_cost_usd = 'NaN'::numeric where id = v_job_success;
+    raise exception 'TEST FAILED: direct NaN actual cost update was accepted';
+  exception when check_violation then
+    null;
+  end;
+  begin
+    update public.generation_jobs set estimated_cost_usd = 'NaN'::numeric where id = v_job_success;
+    raise exception 'TEST FAILED: direct NaN estimated cost update was accepted';
+  exception when check_violation then
+    null;
+  end;
+
   -- A job cannot be completed using another user's media asset.
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
