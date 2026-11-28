@@ -3,6 +3,7 @@ const assert=require("node:assert/strict");
 const {createHash}=require("node:crypto");
 require("../character-restore-coordinator.js");
 const coordinator=global.PWACharacterRestoreCoordinator;
+const gate={plan:Object.freeze({}),preview:Object.freeze({}),confirmation:Object.freeze({}),validateConfirmation:()=>true};
 const owner="11111111-1111-4111-8111-111111111111";
 const operation="22222222-2222-4222-8222-222222222222";
 const asset="33333333-3333-4333-8333-333333333333";
@@ -45,7 +46,7 @@ function adapters({badReadback=false}={}){
 }
 (async()=>{
  const journal=makeJournal(),store=adapters();
- const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal,adapters:store});
+ const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal,...gate,adapters:store});
  assert.equal(result.state,"ready_to_activate");
  assert.equal(result.stagedReferences,1);
  assert.equal(journal.inspect().references[0].state,"verified_staged");
