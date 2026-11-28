@@ -1483,6 +1483,12 @@ const movieHistoryStyle = document.createElement("style");
 
   // Mini Movie Studio: resilient local drafts with per-project editing and staged workflow.
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
+  // One validated persistence path for every internal project-library write.
+  const writeMovieStorage = projects => {
+    PWAStudioMovieStorageGuard.parse(localStorage.getItem(movieStorageKey()));
+    PWAStudioMovieStorageGuard.parse(JSON.stringify(projects));
+    localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+  };
   const guestArchiveKey = () => "pwa-studio-movie-archive:guest";
   const readGuestArchive = () => PWAStudioMovieStorageGuard.parse(localStorage.getItem(guestArchiveKey()));
   const writeGuestArchive = items => {
@@ -1591,7 +1597,7 @@ const movieHistoryStyle = document.createElement("style");
         const rows = localProjects.map(project => movieToCloudRow(project, userId));
         // Persist any UUID normalization before sending rows to Supabase.
         if (!contextIsCurrent()) return;
-        localStorage.setItem("pwa-studio-movie-projects:" + userId, JSON.stringify(localProjects));
+        writeMovieStorage(localProjects);
         if (!contextIsCurrent()) return;
         if (rows.length) {
           const { error } = await supabaseClient.from("projects").upsert(rows, { onConflict: "id" });
@@ -1705,15 +1711,13 @@ const movieHistoryStyle = document.createElement("style");
         }
       }
     }
-    if (changed) localStorage.setItem(movieStorageKey(), JSON.stringify(active));
+    if (changed) writeMovieStorage(active);
     return active.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
   };
   const movieWrite = projects => {
     try {
       // Never replace an untrusted existing library, even if a caller passes [].
-      PWAStudioMovieStorageGuard.parse(localStorage.getItem(movieStorageKey()));
-      PWAStudioMovieStorageGuard.parse(JSON.stringify(projects));
-      localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
+      writeMovieStorage(projects);
       scheduleMovieCloudSync();
       return true;
     } catch (error) {
@@ -2464,10 +2468,15 @@ const movieHistoryStyle = document.createElement("style");
           reader.readAsText(file,"UTF-8");
         });
         const data=JSON.parse(raw);
-        const imported=[...(Array.isArray(data?.projects)?data.projects:[]),...(Array.isArray(data?.archivedProjects)?data.archivedProjects:[]),...(data?.project?[data.project]:[])];
-        if(!["PWA Studio guest project","PWA Studio guest workspace"].includes(data?.format)||!imported.length)throw new Error("Это не резервная копия PWA Studio.");
-        const valid=imported.filter(item=>item&&typeof item==="object"&&!Array.isArray(item));
-        if(!valid.length)throw new Error("В файле нет проектов для импорта.");
+        if(!["PWA Studio guest project","PWA Studio guest workspace"].includes(data?.format))throw new Error("Это не резервная копия PWA Studio.");
+        if(data.projects!==undefined&&!Array.isArray(data.projects))throw new Error("Раздел активных проектов в копии повреждён.");
+        if(data.archivedProjects!==undefined&&!Array.isArray(data.archivedProjects))throw new Error("Архив проектов в копии повреждён.");
+        if(data.project!==undefined&&(!data.project||typeof data.project!=="object"||Array.isArray(data.project)))throw new Error("Проект в копии повреждён.");
+        const imported=[...(data.projects||[]),...(data.archivedProjects||[]),...(data.project?[data.project]:[])];
+        if(!imported.length)throw new Error("В файле нет проектов для импорта.");
+        // Reject the entire backup if even one record or nested version is malformed.
+        PWAStudioMovieStorageGuard.parse(JSON.stringify(imported));
+        const valid=imported;
         const current=movieRead();
         const now=new Date().toISOString();
         const used=new Set(current.map(item=>item.id));
@@ -2484,7 +2493,7 @@ const movieHistoryStyle = document.createElement("style");
           copy.voices=String(copy.voices||"").slice(0,30000);
           copy.edit=String(copy.edit||"").slice(0,30000);
           copy.completedSteps=Array.isArray(copy.completedSteps)?copy.completedSteps.filter(key=>movieStages.some(stage=>stage.key===key)):[];
-          copy.versions=Array.isArray(copy.versions)?copy.versions.slice(0,20):[];
+          copy.versions=Array.isArray(copy.versions)?copy.versions.slice(0,20).map(version=>({...version,data:{...version.data,id:copy.id}})):[];
           copy.createdAt=now;copy.updatedAt=now;
           copy.guestExpiresAt=new Date(Date.now()+24*60*60*1000).toISOString();
           copy.workflowStep=Math.max(0,Math.min(3,Number(copy.workflowStep)||0));
@@ -2504,10 +2513,15 @@ const movieHistoryStyle = document.createElement("style");
   }
   $("#guestCreateMovie")?.addEventListener("click",()=>navigate("movie"));
   $("#guestExportAll")?.addEventListener("click",()=>{
-    const projects=movieRead(); const archivedProjects=readGuestArchive();
-    if(!projects.length&&!archivedProjects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
-    const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:2,exportedAt:new Date().toISOString(),projects,archivedProjects},null,2)],{type:"application/json;charset=utf-8"});
-    const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    try {
+      const projects=movieRead(); const archivedProjects=readGuestArchive();
+      if(!projects.length&&!archivedProjects.length){window.alert("Пока нет гостевых проектов для скачивания.");return;}
+      const blob=new Blob([JSON.stringify({format:"PWA Studio guest workspace",schemaVersion:2,exportedAt:new Date().toISOString(),projects,archivedProjects},null,2)],{type:"application/json;charset=utf-8"});
+      const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="pwa-studio-guest-projects.json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    } catch(error) {
+      const status=$("#guestImportStatus");if(status){status.hidden=false;status.textContent="Экспорт остановлен для защиты данных: "+error.message;}
+      window.alert("Не удалось создать копию: "+error.message+" Исходные данные не изменены.");
+    }
   });
   renderGuestSpace();
   // Re-check expiry on a timer and whenever the tab becomes active again.
