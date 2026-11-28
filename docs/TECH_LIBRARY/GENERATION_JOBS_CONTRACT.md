@@ -10,21 +10,21 @@ Status: design + inactive pure-Python lifecycle helper. No endpoint, database ta
 
 Image/video generation can outlive an HTTP request and needs cancellation, retry limits, worker recovery, and durable status. FastAPI's own guidance distinguishes small in-process background work from heavier computation that may need a separate worker/queue. Therefore do not use `BackgroundTasks` or an in-memory task list as the durable generation system. See the official [FastAPI Background Tasks guidance](https://fastapi.tiangolo.com/tutorial/background-tasks/).
 
-## Proposed lifecycle
+## Draft lifecycle (inactive)
 
-`queued → processing → succeeded`
+`queued → processing`
 
-`processing → retry_wait → processing` (bounded retry)
+`processing → succeeded` only after accepted provider evidence and an owner-matched media asset reaches `ready`.
 
-`queued/retry_wait → cancelled`
+`processing → retry_wait → processing` only when durable provider evidence proves the previous submission was not sent or was definitively rejected, and the attempt limit permits retry.
 
-`processing → cancel_requested → cancelled`
+`processing → reconciliation_required` when provider acceptance is unknown or accepted but completion/billing evidence is unresolved. Keep the reservation held; do not dispatch another provider request.
 
-Any active job whose worker lease expires is recovered by a scheduler:
-- ordinary processing job: retry_wait if attempts remain, otherwise failed;
-- cancel_requested job: cancelled; discard any late result.
+`queued/retry_wait → cancelled` immediately. `processing → cancel_requested` is cooperative; cancellation is terminal only with conclusive non-acceptance/rejection evidence. Unknown/accepted outcomes remain in reconciliation.
 
-Terminal states: `succeeded`, `failed`, `cancelled`.
+Expired leases follow the same evidence rules: unknown/accepted outcomes enter reconciliation; only conclusive non-acceptance/rejection may retry or finish cancellation.
+
+Terminal states: `succeeded`, `failed`, `cancelled`. `reconciliation_required` is deliberately non-terminal.
 
 ## Inactive reference implementation
 
@@ -55,10 +55,11 @@ Before endpoint implementation:
 ## Worker and retry rules
 
 - Separate worker process and bounded concurrency; do not run expensive image/video generation inside the FastAPI web worker.
-- Retry only transient errors (timeouts, rate limits, temporary provider failures), with exponential backoff + jitter and a strict maximum attempt count.
+- Retry only after durable evidence of `definitely_not_submitted` or `definitely_rejected`, with bounded backoff and a strict maximum attempt count. A timeout, connection reset, or worker crash is not proof of non-acceptance.
+- Unknown or accepted provider outcomes enter reconciliation and must not trigger a new billable submission. The SQL `p_retryable` flag is not evidence by itself; the RPC uses persisted provider-submission outcome.
 - Do not retry policy rejections, invalid inputs, ownership failures, insufficient balance, or permanent provider errors.
-- Provider idempotency support should be used when available; otherwise document the duplicate-billing window and reconcile provider request IDs.
-- Cancellation is cooperative. If provider cancellation is unavailable, stop waiting, prevent result publication, and clean up any orphaned private object.
+- Provider idempotency support should be used only after verification against the selected provider's exact endpoint contract; otherwise reconcile provider request IDs and billing evidence.
+- Cancellation is cooperative. If provider cancellation is unavailable or inconclusive, suppress result publication but retain reconciliation and cost accounting; do not assume remote work stopped.
 - A job is not considered succeeded until the private output asset is stored and ownership metadata is committed.
 
 ## Billing, consent, and data safety
