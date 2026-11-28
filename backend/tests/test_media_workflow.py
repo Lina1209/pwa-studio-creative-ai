@@ -28,6 +28,7 @@ def plan(**overrides):
         character={"id": CHARACTER, "owner_id": OWNER},
         asset_id=str(uuid4()), object_id=str(uuid4()), event_id=str(uuid4()),
         idempotency_key="character-ref-upload-0001",
+        local_reference_id="44444444-4444-4444-8444-444444444444",
         content=png(), filename="../../hero.png", declared_mime_type="image/png",
     )
     values.update(overrides)
@@ -39,6 +40,7 @@ class CharacterReferenceWorkflowTests(unittest.TestCase):
         result = plan()
         self.assertEqual(result.owner_id, OWNER)
         self.assertEqual(result.character_id, CHARACTER)
+        self.assertEqual(result.local_reference_id, "44444444-4444-4444-8444-444444444444")
         self.assertEqual(result.initial_status, MediaStatus.PENDING_UPLOAD)
         self.assertEqual(result.outbox_event.status, OutboxStatus.PENDING)
         self.assertEqual(result.outbox_event.event_type, "media_upload_verify_requested")
@@ -53,6 +55,10 @@ class CharacterReferenceWorkflowTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             plan(character={"id": CHARACTER, "owner_id": OTHER})
         self.assertEqual(caught.exception.status_code, 404)
+
+    def test_invalid_local_reference_id_is_rejected(self):
+        with self.assertRaises(HTTPException):
+            plan(local_reference_id="../other")
 
     def test_client_cannot_choose_public_bucket(self):
         with self.assertRaises(HTTPException):
