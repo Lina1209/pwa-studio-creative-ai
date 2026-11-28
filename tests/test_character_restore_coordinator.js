@@ -7,6 +7,9 @@ const owner="11111111-1111-4111-8111-111111111111";
 const operation="22222222-2222-4222-8222-222222222222";
 const asset="33333333-3333-4333-8333-333333333333";
 const blobId="44444444-4444-4444-8444-444444444444";
+const characterId="55555555-5555-4555-8555-555555555555";
+const sourceLocalId="66666666-6666-4666-8666-666666666666";
+const localReferenceId=sourceLocalId+"-77777777-7777-4777-8777-777777777777";
 const bytes=Buffer.from("fake but deterministic image bytes");
 const sha=createHash("sha256").update(bytes).digest("hex");
 function makeJournal(){
@@ -28,7 +31,7 @@ function makeJournal(){
   inspect(){return structuredClone(row);}
  };
 }
-const manifest=[{cloudAssetId:asset,expectedSha256:sha,expectedSizeBytes:bytes.length,expectedMimeType:"image/png",width:32,height:24}];
+const manifest=[{cloudAssetId:asset,characterId,sourceLocalId,localReferenceId,name:"front.png",type:"image/png",expectedSha256:sha,expectedSizeBytes:bytes.length,expectedMimeType:"image/png",width:32,height:24}];
 function adapters({badReadback=false}={}){
  const staged=new Map();
  const good=new Blob([bytes],{type:"image/png"});
@@ -46,6 +49,8 @@ function adapters({badReadback=false}={}){
  assert.equal(result.state,"ready_to_activate");
  assert.equal(result.stagedReferences,1);
  assert.equal(journal.inspect().references[0].state,"verified_staged");
+ assert.equal(journal.inspect().references[0].characterId,characterId);
+ assert.equal(journal.inspect().references[0].localReferenceId,localReferenceId);
  assert.equal(journal.inspect().lease,null);
  console.log("PASS verified download, staged Blob read-back, durable checkpoint and lease release");
 
