@@ -43,6 +43,26 @@ begin
 end;
 $$;
 
+-- Reject malformed user policy UUIDs and non-finite accounting amounts at the table boundary.
+do $
+begin
+  begin
+    insert into public.ai_budget_policies(scope_type,scope_key,period_start,period_end,limit_usd)
+    values ('user','11111111-1111-1111-1111-11111111111x',now(),now()+interval '1 day',1);
+    raise exception 'malformed user scope UUID was accepted';
+  exception when check_violation then
+    null;
+  end;
+  begin
+    insert into public.ai_budget_policies(scope_type,scope_key,period_start,period_end,limit_usd)
+    values ('provider','nan-check-provider',now(),now()+interval '1 day','NaN');
+    raise exception 'non-finite policy amount was accepted';
+  exception when check_violation then
+    null;
+  end;
+end;
+$;
+
 update public.ai_budget_control
 set enforcement_enabled=true, kill_switch_enabled=false
 where singleton=true;
