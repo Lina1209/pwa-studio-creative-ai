@@ -85,6 +85,24 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("localStorage.setItem(deleteStorageKey,JSON.stringify(next));", APP)
         self.assertIn("deleteCharacterImage(ref.id,deleteOwnerId)", APP)
 
+    def test_failed_character_metadata_save_cleans_staged_images(self):
+        start = APP.index('$("#saveCharacter")?.addEventListener')
+        end = APP.index('$("#cancelCharacterEdit")?.addEventListener', start)
+        handler = APP[start:end]
+        self.assertIn("const savedImageIds=[];", handler)
+        self.assertIn("savedImageIds.push(refs[i].id);", handler)
+        self.assertIn("let metadataCommitted=false;", handler)
+        self.assertIn("metadataCommitted=true;", handler)
+        self.assertIn("if(!metadataCommitted&&savedImageIds.length)", handler)
+        self.assertIn("Promise.allSettled(savedImageIds.map(imageId=>deleteCharacterImage(imageId,ownerId)))", handler)
+
+    def test_committed_character_metadata_is_not_rolled_back_by_image_cleanup(self):
+        start = APP.index('$("#saveCharacter")?.addEventListener')
+        end = APP.index('$("#cancelCharacterEdit")?.addEventListener', start)
+        handler = APP[start:end]
+        self.assertIn('if(!metadataCommitted&&savedImageIds.length)', handler)
+        self.assertIn('metadataCommitted?" Карточка уже записана; проверьте состояние библиотеки.":cleanupWarning', handler)
+
 
     def test_character_cloud_backup_is_authenticated_metadata_only(self):
         start = APP.index("const backupCharacterLibrary = async () =>")
