@@ -82,6 +82,13 @@ begin
   end;
 
   select public.complete_generation_job(v_job_success, v_token, v_asset_b, 0.001) into v_ok;
+  -- NaN and infinities must never enter persisted billing/cost fields.
+  begin
+    perform public.complete_generation_job(v_job_success, v_token, v_asset_a, 'NaN'::numeric);
+    raise exception 'TEST FAILED: NaN completion cost was accepted';
+  exception when invalid_parameter_value then
+    null;
+  end;
   if v_ok then raise exception 'TEST FAILED: cross-owner result asset was accepted'; end if;
 
   select public.complete_generation_job(v_job_success, v_token, v_asset_a, 0.001) into v_ok;
@@ -107,6 +114,12 @@ begin
   if not v_ok then raise exception 'TEST FAILED: provider rejection evidence was not recorded'; end if;
   select public.record_generation_submission_outcome(v_job_retry, v_token, 'accepted') into v_ok;
   if v_ok then raise exception 'TEST FAILED: contradictory provider evidence overwrote a conclusive outcome'; end if;
+  begin
+    perform public.fail_generation_job(v_job_retry, v_token, 'temporary_provider_error', true, 5, 'Infinity'::numeric);
+    raise exception 'TEST FAILED: infinite failure cost was accepted';
+  exception when invalid_parameter_value then
+    null;
+  end;
   select public.fail_generation_job(v_job_retry, v_token, 'temporary_provider_error', true, 5, 0.002)
     into v_status;
   if v_status <> 'retry_wait' then raise exception 'TEST FAILED: retry transition failed'; end if;
