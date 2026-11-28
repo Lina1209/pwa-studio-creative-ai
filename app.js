@@ -1563,8 +1563,12 @@ const movieHistoryStyle = document.createElement("style");
     };
   };
   const movieFromCloudRow = row => {
-    const saved = row.settings && typeof row.settings === "object" ? row.settings : {};
-    return {
+    if (!row || !row.settings || typeof row.settings !== "object" || Array.isArray(row.settings)) {
+      throw new Error("Облачная запись фильма имеет неверный формат. Локальные данные не будут заменены.");
+    }
+    const saved = row.settings;
+    const priorId = saved.id || row.id;
+    const candidate = {
       ...saved,
       id: row.id,
       name: row.title || saved.name || "Без названия",
@@ -1573,9 +1577,16 @@ const movieHistoryStyle = document.createElement("style");
       story: saved.story || saved.idea || row.description || "",
       createdAt: saved.createdAt || row.created_at,
       updatedAt: row.updated_at || saved.updatedAt || row.created_at,
-      completedSteps: Array.isArray(saved.completedSteps) ? saved.completedSteps : [],
-      versions: Array.isArray(saved.versions) ? saved.versions : []
+      completedSteps: saved.completedSteps === undefined ? [] : saved.completedSteps,
+      versions: saved.versions === undefined ? [] : saved.versions.map(version => ({
+        ...version,
+        data: version && version.data && version.data.id === priorId
+          ? { ...version.data, id: row.id }
+          : version?.data
+      }))
     };
+    // Do not silently replace malformed cloud history or stage data with empty defaults.
+    return PWAStudioMovieStorageGuard.parse(JSON.stringify([candidate]))[0];
   };
   const scheduleMovieCloudSync = () => {
     const userId = authSession?.user?.id, requestVersion = authContextVersion;
