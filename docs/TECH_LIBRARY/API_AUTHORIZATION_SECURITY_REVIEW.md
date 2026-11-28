@@ -207,6 +207,15 @@ The original review above was written before the Character Library media API was
 - Suspension enforcement is currently explicit at selected community routes and should not be assumed to cover every generation, messaging, upload, or media operation. A route-by-route policy matrix and central enforcement design are still required before treating restrictions as platform-wide.
 - Report abuse controls (durable per-user quotas/rate limits, duplicate clustering, evidence retention/deletion policy, reviewer access workflow, and escalation/appeal handling) remain product/security design work. The 2026-11-28 route review confirmed that `POST /api/reports` currently has no rate-limit or idempotency guard. Do not add a broad output regex filter as a substitute: it would create false positives without a policy, appeal path, and test corpus.
 
+#### Route-by-route restriction and abuse-control matrix — 2026-11-28
+
+- The current route scan confirms `community` suspension checks on community profiles/search, conversations, direct-message reads/writes, message edits/deletes, and user-block operations. Both AI routes check `assistant` scope before provider work.
+- Authenticated report submission, notification reads, and private media reads are intentionally not blocked by a community/assistant restriction in the current route code. This preserves reporting, account notices, and access to a user's own stored files. Do not indiscriminately add suspension guards to these safety/data-access routes.
+- Character-reference upload and status routes, however, currently have no explicit suspension check. Whether upload should be blocked by a platform-wide suspension is a policy decision; the current scope model has no dedicated media scope. Define that policy before changing route behavior.
+- Direct-message sending has a durable-storage count check for 20 recent messages per sender/minute, but it is a read-then-write sequence rather than an atomic quota reservation. Concurrent requests can pass the count together. The AI 10/minute limiter is process-local and explicitly not cross-worker safe. Neither should be represented as a strict global quota.
+- Report submission has no quota/idempotency guard at all. Prioritize a shared atomic per-user report quota, a bounded duplicate strategy that does not prevent legitimate distinct reports, and a retry-safe idempotency contract.
+- `admin_audit_log` is protected by RLS; authenticated/anon have no privileges, service_role has SELECT/INSERT only, and UPDATE/DELETE/TRUNCATE are revoked. Moderation state transitions append their audit event inside the same SECURITY DEFINER transaction. This is strong source-level protection, but live effective grants still require verification in the actual Supabase project.
+
 #### Report endpoint abuse review — 2026-11-28
 
 - `POST /api/reports` requires a verified user session and uses the authenticated subject as `reporter_user_id`; clients cannot choose the reporter identity.
