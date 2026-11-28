@@ -71,6 +71,7 @@
       const a=r.activation;
       if(!a||typeof a!=="object"||!/^[a-f0-9]{64}$/i.test(a.baseDigest||"")||!/^[a-f0-9]{64}$/i.test(a.mergedDigest||"")||
          !Number.isSafeInteger(a.intendedCount)||a.intendedCount<1||a.intendedCount>100||
+         !Number.isSafeInteger(a.restoredCount)||a.restoredCount<1||a.restoredCount>a.intendedCount||
          a.operationMarker!==r.operationId) fail("Invalid activation intent.");
       iso(a.preparedAt,"activation preparation timestamp");
     }
