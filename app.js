@@ -2262,6 +2262,8 @@ const movieHistoryStyle = document.createElement("style");
       const version=makeAction("↶ История версий ("+(project.versions||[]).length+")","secondary-button",()=>{
         const current=movieRead().find(item=>item.id===project.id); if(!current)return;
         const versions=Array.isArray(current.versions)?current.versions:[];
+        const historyContextVersion=authContextVersion;
+        const historyOwnerId=authSession?.user?.id||null;
         if(!versions.length){$("#movieFeedback").textContent="Пока нет сохранённых версий. Они создаются автоматически перед изменениями.";return;}
         let selectedIndex=0;
         const overlay=document.createElement("div");
@@ -2300,8 +2302,20 @@ const movieHistoryStyle = document.createElement("style");
           addSection("План монтажа",data.edit);
           const restore=makeAction("Восстановить эту версию","primary-button",()=>{
             if(!window.confirm("Восстановить версию от "+movieDate(entry.savedAt)+"? Текущая версия будет сохранена в истории перед заменой."))return;
+            if(historyContextVersion!==authContextVersion || historyOwnerId!==(authSession?.user?.id||null)) {
+              overlay.remove();
+              $("#movieFeedback").textContent="Аккаунт изменился. История закрыта, чтобы исключить восстановление в другом пространстве.";
+              return;
+            }
             const latest=movieRead(); const live=latest.find(item=>item.id===project.id); if(!live)return;
-            const restored=versions[selectedIndex].data;
+            const selected=versions[selectedIndex];
+            const liveVersion=(live.versions||[]).find(item=>item.savedAt===selected.savedAt && JSON.stringify(item.data)===JSON.stringify(selected.data));
+            if(!liveVersion) {
+              overlay.remove();
+              $("#movieFeedback").textContent="Эта версия уже изменилась или больше недоступна. Откройте историю заново.";
+              return;
+            }
+            const restored=liveVersion.data;
             addMovieVersion(live); const keepVersions=live.versions;
             latest[latest.findIndex(item=>item.id===project.id)]={...restored,versions:keepVersions,updatedAt:new Date().toISOString()};
             if(movieWrite(latest)){overlay.remove();renderMovieProjects();$("#movieFeedback").textContent="Предыдущая версия восстановлена. Текущая версия сохранена в истории.";}
@@ -2504,15 +2518,16 @@ const movieHistoryStyle = document.createElement("style");
           copy.id=movieId();
           while(used.has(copy.id))copy.id=movieId();
           used.add(copy.id);
-          copy.name=String(copy.name||"Импортированный фильм").slice(0,160);
-          copy.idea=String(copy.idea||copy.story||"").slice(0,20000);
-          copy.story=String(copy.story||copy.idea||"").slice(0,30000);
-          copy.storyboard=String(copy.storyboard||"").slice(0,30000);
-          copy.characters=String(copy.characters||"").slice(0,30000);
-          copy.voices=String(copy.voices||"").slice(0,30000);
-          copy.edit=String(copy.edit||"").slice(0,30000);
-          copy.completedSteps=Array.isArray(copy.completedSteps)?copy.completedSteps.filter(key=>movieStages.some(stage=>stage.key===key)):[];
-          copy.versions=Array.isArray(copy.versions)?copy.versions.slice(0,20).map(version=>({...version,data:{...version.data,id:copy.id}})):[];
+          copy.name=copy.name||"Импортированный фильм";
+          copy.idea=copy.idea||copy.story||"";
+          copy.story=copy.story||copy.idea||"";
+          copy.storyboard=copy.storyboard||"";
+          copy.characters=copy.characters||"";
+          copy.voices=copy.voices||"";
+          copy.edit=copy.edit||"";
+          // The complete backup was validated above; preserve all content and history exactly.
+          copy.completedSteps=copy.completedSteps||[];
+          copy.versions=(copy.versions||[]).map(version=>({...version,data:{...version.data,id:copy.id}}));
           copy.createdAt=now;copy.updatedAt=now;
           copy.guestExpiresAt=new Date(Date.now()+24*60*60*1000).toISOString();
           copy.workflowStep=Math.max(0,Math.min(3,Number(copy.workflowStep)||0));
