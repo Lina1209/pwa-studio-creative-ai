@@ -41,7 +41,8 @@ Provide a server-only authenticated replacement operation backed by one database
 - stable reference slot/key being replaced;
 - expected old asset ID;
 - new asset ID and new local reference ID;
-- expected new asset fingerprint (SHA-256, size, MIME).
+- expected new asset fingerprint (SHA-256, size, MIME);
+- a stable replacement operation/idempotency ID so a lost-response retry returns the committed result and cannot create a second cleanup event.
 
 Within the transaction, in a consistent lock order:
 
@@ -53,7 +54,7 @@ Within the transaction, in a consistent lock order:
 6. Only after the reference no longer points to the old asset, mark the old asset `cleanup_pending` and insert the canonical cleanup outbox event in the SAME transaction.
 7. Commit. The cleanup worker later claims and deletes the old Storage object, then finalizes metadata. The browser never performs Storage deletion.
 
-The implementation must follow the repository's established character-version RPC and media cleanup locking conventions. Do not introduce a second, weaker reference representation or bypass the existing reference guard.
+The implementation must be a NEW replacement-specific server-only RPC/transaction. The existing `pwa_update_character_versioned` updates the character manifest/version but does not also tombstone a media asset and enqueue cleanup; calling it separately from cleanup would create an unsafe split transaction. The existing `pwa_request_character_media_cleanup` is a WHOLE-CHARACTER deletion workflow, not a single-reference cleanup API, and must not be repurposed for replacement. The new RPC must update the manifest, old asset status, and outbox row atomically while following the established character-version and media cleanup locking conventions. Do not introduce a second, weaker reference representation or bypass the existing reference guard.
 
 ## 4. Failure and retry semantics
 
@@ -81,6 +82,7 @@ Add disposable-PostgreSQL two-session tests for:
 8. Transaction failure between manifest update and outbox insertion: rollback both changes.
 9. Lost-response retry after commit: return the committed result without duplicate outbox events.
 10. Cleanup worker failure/dead-letter after switch: new pointer remains healthy and old tombstone remains auditable.
+11. Replacement RPC must reject any new asset still in `object_uploaded`, even when its object exists in Storage; only the verification worker may transition it to `ready`.
 
 All race tests must run only against disposable CI PostgreSQL, never the live Supabase project.
 
@@ -113,6 +115,6 @@ A separate approval is required before any production migration, deployment, or 
 
 ## 8. Current implementation boundary
 
-The repository currently has immutable media upload identity, upload verification, a local backup coordinator, a pure replacement planning service, and cleanup outbox infrastructure. These pieces do NOT yet constitute an end-to-end cloud replacement feature. The user-facing atomic replacement route/RPC and UI integration remain future work.
+The repository currently has immutable media upload identity, upload verification, a local backup coordinator, a pure replacement planning service, and cleanup outbox infrastructure. The pure planner now requires the new asset to already be `ready`; it does not perform the state transition. The existing versioned character RPC and whole-character cleanup RPC cannot safely be composed to replace one image. These pieces do NOT yet constitute an end-to-end cloud replacement feature. The user-facing atomic replacement route/RPC and UI integration remain future work.
 
 This document records the required contract only. It does not claim that replacement is implemented.
