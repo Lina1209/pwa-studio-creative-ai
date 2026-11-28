@@ -59,7 +59,7 @@
       wardrobe: String(local.passport?.wardrobe || "").slice(0, 1200),
       palette: String(local.passport?.palette || "").slice(0, 1200)
     },
-    referenceManifest: (Array.isArray(local.referenceImages) ? local.referenceImages : []).slice(0, 6).map(ref => ({
+    referenceManifest: (Array.isArray(local.referenceImages) && local.referenceImages.length ? local.referenceImages : (Array.isArray(local.cloudBackup?.referenceManifest) ? local.cloudBackup.referenceManifest : [])).slice(0, 6).map(ref => ({
       id: String(ref.id || "").slice(0, 180),
       name: String(ref.name || "").slice(0, 120),
       type: String(ref.type || "").slice(0, 80)
