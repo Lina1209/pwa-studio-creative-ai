@@ -8,6 +8,8 @@ The authenticated character API in `backend/app/character_api.py` now exposes ow
 
 The Character Library UI now has an explicit metadata-only cloud backup action for signed-in users. It traverses every API page, maps local IDs to cloud IDs via `source_local_id`, creates missing passports idempotently, updates existing passports only with their current version, and stops on conflicts. Operations are fenced to the originating account. Local records and IndexedDB image Blobs are never modified by this action.
 
+The browser backup journal now upgrades to IndexedDB schema v2, adds an owner index, and exposes bounded `listPage(ownerId, {limit, cursor})` traversal (1–100 rows) with owner-bound cursors. The compatibility `list()` helper returns only its first bounded page. Journal records are validated deeply before reads and state mutations; malformed owner mappings, fingerprints, timestamps, reference metadata, cloud IDs, and verification proofs fail closed. Browser tests cover multi-page completeness, owner isolation, cursor tampering, and corrupted persisted records.
+
 This is not yet full restore or media backup. Reference-image files remain local; the local backup journal is not yet connected to the API; cloud-to-local restore, resumable page checkpoints, deletion/tombstone semantics, and end-to-end account-switch browser tests remain outstanding. Keep restore/import disabled until those paths are implemented and tested.
 
 ## 1. Optimistic concurrency for edits
@@ -85,13 +87,15 @@ This is not yet full restore or media backup. Reference-image files remain local
 
 ## Implementation status — feature branch only
 
-Draft implementation has now been added for the first two protocol layers:
+Implementation has now been added for the API foundations and the local journal safety layer:
 
 - Migration `0023_character_versioned_updates.sql` adds a positive monotonic `version` and a service-role-only compare-and-swap RPC. It also updates the idempotent create RPC response to expose the initial version.
 - The character PATCH API requires `expected_version`; stale writes return HTTP 409 with `character_version_conflict`.
 - Migration `0024_character_cursor_pagination_index.sql` adds the composite owner/created_at/ID index.
 - The list API now returns `items`, `next_cursor`, and `snapshot_created_at`, with a maximum page size of 100. Cursors are owner-bound, HMAC-signed, expire after 15 minutes, and use descending keyset pagination on immutable `created_at, id`.
-- Backend unit/API tests and disposable PostgreSQL assertions have been added for version conflicts, owner isolation, cursor tampering, page bounds, and the pagination index.
+- Backend unit/API tests and disposable PostgreSQL assertions cover version conflicts, owner isolation, cursor tampering, page bounds, and the pagination index.
+- `character-backup-journal.js` uses IndexedDB schema v2 with an owner index and bounded local cursor pagination. Browser tests cover two-row pages across seven records, owner-bound/tampered cursors, page-size limits, and fail-closed validation of modified stored records.
+- The journal remains a persistence primitive only: no network calls, no media upload, no cloud restore orchestration.
 
 Validation checkpoint: CI run `46100463960` passed all three jobs (backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal tests) for the versioned-update and cursor-pagination implementation. The additional concurrent compare-and-swap harness also passed in CI run `46100552578`: two independent PostgreSQL clients used the same expected version, exactly one update succeeded, one returned a stale-version conflict, and the stored version incremented only once. The browser restore workflow still does not consume every API page, and the local journal has not been connected to this API. Do not enable restore/import based on these API foundations alone.
 
