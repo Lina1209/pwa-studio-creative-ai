@@ -111,6 +111,28 @@
    const manifest=await cleanupJournal.getManifest(owner,cleanupId);
    assert(manifest.state==="completed"&&manifest.candidates[0].state==="deleted","recovered manifest was not finalized");
   });
+  await test("delete-intent recovery rechecks owner metadata after lock reacquisition",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["recovery metadata drift"],{type:"image/webp"});
+   const proof=await makeAborted(owner,op,asset,id,blob),cleanupId=await eligible(owner,op,asset,id);
+   const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:30000});
+   const before=await cleanupJournal.getManifest(owner,cleanupId),attempt=uuid();
+   await cleanupJournal.beginCandidateDelete({ownerId:owner,cleanupId,expectedRevision:before.revision,ownerLockEpoch:held.epoch,localStagedBlobId:id,deleteAttemptId:attempt});
+   assert(await blobStore.deleteStagedBlob({ownerId,operationId:op,cloudAssetId:asset,localStagedBlobId:id,proof,inspectImage:async()=>({width:64,height:48})})==="deleted","simulated recovery Blob removal failed");
+   let changed=false;
+   const lock={acquire:(...args)=>PWACharacterOwnerCoordinationLock.acquire(...args),
+    renew:(...args)=>PWACharacterOwnerCoordinationLock.renew(...args),
+    isCurrent:(...args)=>PWACharacterOwnerCoordinationLock.isCurrent(...args),
+    release:async lease=>{await PWACharacterOwnerCoordinationLock.release(lease);if(!changed){changed=true;localStorage.setItem("pwa-studio-character-library-v1:"+owner,JSON.stringify([{id:uuid(),name:"changed during recovery",referenceImages:[]}]))}}};
+   await PWACharacterOwnerCoordinationLock.release(held);
+   // Recreate the race at the executor's release/reacquire boundary.
+   const reacquireHeld=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:30000});
+   await PWACharacterOwnerCoordinationLock.release(reacquireHeld);
+   // Start from an existing delete intent; the injected release mutates metadata
+   // immediately before the executor's fresh post-reacquisition inventory check.
+   await rejects(()=>execute(owner,cleanupId,{ownerLock:lock}));
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.candidates[0].state==="delete_intent","recovery finalized after owner metadata drift");
+  });
   await test("owner lock loss after durable delete intent blocks Blob deletion",async()=>{
    const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["lock lost after intent"],{type:"image/webp"});
    await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
