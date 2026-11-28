@@ -61,10 +61,14 @@
   assert(swSource.includes('cache.match(request, { ignoreSearch: true })'), "offline shell fallback matches precached assets despite cache-busting query strings");
   const indexText = await fetch("index.html").then(response => response.text());
   const indexDoc = new DOMParser().parseFromString(indexText, "text/html");
-  const coreBlock = swSource.match(/const CORE_ASSETS = \\[([\\s\\S]*?)\\];/);
-  const coreAssets = coreBlock ? [...coreBlock[1].matchAll(/"([^"]+)"/g)].map(match => new URL(match[1], location.origin + "/").pathname) : [];
-  const shellBlock = swSource.match(/const isShellAsset = request.mode === "navigate" \\|\\|\\s*\\[([\\s\\S]*?)\\]\\.some\\(asset/);
-  const shellPaths = shellBlock ? [...shellBlock[1].matchAll(/"([^"]+)"/g)].map(match => match[1]) : [];
+  const coreStart = swSource.indexOf("const CORE_ASSETS = [");
+  const coreEnd = swSource.indexOf("];", coreStart);
+  const coreBlock = coreStart >= 0 && coreEnd > coreStart ? swSource.slice(coreStart, coreEnd) : "";
+  const coreAssets = [...coreBlock.matchAll(/"([^"]+)"/g)].map(match => new URL(match[1], location.origin + "/").pathname);
+  const shellStart = swSource.indexOf('const isShellAsset = request.mode === "navigate" ||');
+  const shellEnd = swSource.indexOf("].some(asset", shellStart);
+  const shellBlock = shellStart >= 0 && shellEnd > shellStart ? swSource.slice(shellStart, shellEnd) : "";
+  const shellPaths = [...shellBlock.matchAll(/"([^"]+)"/g)].map(match => match[1]);
   const localScripts = [...indexDoc.querySelectorAll("script[src]")].map(script => new URL(script.getAttribute("src"), location.origin + "/")).filter(url => url.origin === location.origin);
   assert(localScripts.every(url => coreAssets.includes(url.pathname)), "every same-origin script in index.html is included in the offline precache");
   assert(localScripts.every(url => shellPaths.some(path => url.pathname.endsWith(path))), "every same-origin script is handled by the shell network-first strategy");
