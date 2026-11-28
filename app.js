@@ -1761,7 +1761,8 @@ const movieHistoryStyle = document.createElement("style");
           .in("id", deletedIds).eq("owner_id", userId).eq("project_type", "movie");
         if (deleteError) throw deleteError;
         if (!contextIsCurrent()) return;
-        writeMovieTombstones([]);
+        // Remove only IDs handled by this request; preserve tombstones added while awaiting the network.
+        writeMovieTombstones(readMovieTombstones().filter(id => !deletedIds.includes(id)));
       }
       const deletedSet = new Set(deletedIds);
       const survivingLocal = local.filter(project => !deletedSet.has(project.id));
