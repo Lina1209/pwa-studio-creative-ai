@@ -42,11 +42,21 @@
    ok((await journal.get(owner,operation)).state==="committed","journal did not reach committed");
   });
   await run("tampered staged Blob blocks activation before metadata write",async()=>{
-   const op=crypto.randomUUID(),badAsset=crypto.randomUUID(),badStage=crypto.randomUUID(),badRef={...reference,cloudAssetId:badAsset,localStagedBlobId:badStage};
+   const op=crypto.randomUUID(),badCloud=crypto.randomUUID(),badLocal=crypto.randomUUID(),badAsset=crypto.randomUUID(),badStage=crypto.randomUUID();
+   const current=localAdapter.readLocalItems(owner),base2=canonical(current),baseDigest2=await digest(base2);
+   const badRef={...reference,characterId:badCloud,sourceLocalId:badLocal,cloudAssetId:badAsset,localStagedBlobId:badStage,localReferenceId:badLocal+"-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"};
+   const badManifest={...manifest,characterId:badCloud,sourceLocalId:badLocal,cloudAssetId:badAsset,localReferenceId:badRef.localReferenceId};
+   const badProposal={...proposal,id:badLocal,cloudBackup:{...proposal.cloudBackup,characterId:badCloud,referenceManifest:[badManifest]}};
+   const badPlan={complete:true,ownerId:owner,baseLocalFingerprint:base2,proposedItems:[badProposal],unchanged:[],conflicts:[]};
    await blobStore.stageBlob({ownerId:owner,operationId:op,cloudAssetId:badAsset,localStagedBlobId:badStage,blob,proof:{sha256:sha,sizeBytes:blob.size,mimeType:"image/png",width:40,height:30}});
-   const row=await operationReady(op,[cloud],[badRef]),before=localAdapter.readLocalItems(owner);
-   const altered={...plan,proposedItems:[{...proposal,cloudBackup:{...proposal.cloudBackup,referenceManifest:[{...manifest,cloudAssetId:badAsset}]}}]};
-   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:altered,expectedRevision:row.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:41,height:30})}),"dimension mismatch accepted");
+   const row=await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseDigest2,snapshotId:"browser-snapshot-2",selectedCharacterIds:[badCloud]});
+   let lease=await journal.acquireLease(owner,op),jrow=await journal.get(owner,op);
+   jrow=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:jrow.revision,state:"planned"});
+   jrow=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:jrow.revision,state:"staging",references:[badRef]});
+   jrow=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:jrow.revision,state:"ready_to_activate",references:[badRef]});
+   await journal.releaseLease(owner,op,lease);
+   const ready=await journal.get(owner,op),before=localAdapter.readLocalItems(owner);
+   await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:badPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter,inspectImage:async()=>({width:41,height:30})}),"dimension mismatch accepted");
    ok(canonical(localAdapter.readLocalItems(owner))===canonical(before),"metadata changed despite failed verification");
   });
   await run("recovery recognizes a completed metadata write after a simulated crash",async()=>{
@@ -59,7 +69,7 @@
    current=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:current.revision,state:"activating",activation:intent});
    localAdapter.writeLocalItems(owner,merged);
    await journal.releaseLease(owner,op,lease);
-   const recovered=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:current.revision,journal,localAdapter});
+   const recovered=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:current.revision+1,journal,localAdapter});
    ok(recovered.state==="committed","recovery did not recognize committed metadata");
   });
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
