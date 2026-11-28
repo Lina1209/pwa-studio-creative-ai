@@ -1,6 +1,6 @@
 # Character backup journal module
 
-Status: isolated browser persistence primitive in the feature branch. Its real-browser acceptance suite is now running in CI and has passed on the latest reviewed source; it is still not loaded by the application and does not enable cloud import.
+Status: isolated browser persistence primitive in the feature branch. Its real-browser acceptance suite has passed on the latest reviewed source; it is still not loaded by the application and does not enable cloud import.
 
 ## File and loading boundary
 
@@ -15,7 +15,8 @@ Status: isolated browser persistence primitive in the feature branch. Its real-b
 
 - `create({ ownerId, localCharacterId, passportFingerprint, references })`: creates one journal, rejects duplicate keys, persists it, reads it back, and compares the read-back record.
 - `get(ownerId, localCharacterId)`: retrieves one owner-scoped journal.
-- `list(ownerId)`: returns only journals for the requested authenticated UUID.
+- `listPage(ownerId, { limit, cursor })`: returns bounded owner-index pages (1–100 records) with an owner-bound cursor.
+- `list(ownerId)`: compatibility helper for the first page only; it fails rather than silently truncating when additional pages exist.
 - `setCloudCharacter(ownerId, localCharacterId, cloudCharacterId)`: stores a single immutable cloud character mapping.
 - `transition({ ownerId, localCharacterId, localReferenceId, state, cloudAssetId?, errorCategory? })`: applies only the declared state transitions; cloud asset mapping is immutable; `verified` requires a cloud asset ID.
 - `completionStatus(record)`: reports complete only when a cloud character mapping exists and every reference is verified with a cloud asset mapping and verification timestamp.
@@ -63,7 +64,12 @@ The suite simulates an IndexedDB `QuotaExceededError` at database-open time and 
 - Latest reviewed feature-branch source: `character-backup-journal.js` SHA `ac3538befb0cbecc834de925a6a0b8ba936173cc`; repository SHA `26c2fad0b89e7b7d1c32d0a868fca954c328853f`.
 - CI run `46099783129` completed successfully: backend unit tests, PostgreSQL media-cleanup integration, and real-browser character backup journal tests all passed. Run `46099779456` also completed with all three jobs successful.
 - The journal remains an isolated browser module, not loaded by the product UI. CI proves the tested browser persistence behaviors only; it does not prove a complete cloud backup/import workflow.
-- `list(ownerId)` currently reads all journal rows with IndexedDB `getAll()` before filtering by owner. This is correct for owner isolation in the current local-only design but has no pagination or record-count bound; add a suitable owner index and bounded cursor/pagination before broad rollout.
-- `assertRecord` validates protocol version, basic shape, state names, and duplicate reference identities, but does not deeply revalidate every persisted field on read. IndexedDB is same-origin client storage, not a trusted server boundary; a future cloud coordinator must validate all journal fields again before sending any request.
+- The journal now uses IndexedDB schema v2, an owner index, bounded `listPage()` cursor traversal, and deep persisted-record validation. The v1-to-v2 migration preserves legacy records; its browser regression uses a dedicated legacy owner to avoid cross-test contamination.
+- `assertRecord` validation is a local integrity check, not a trusted server boundary; a future cloud coordinator must independently validate all journal fields before sending any request.
 - Real storage exhaustion, forced browser-process termination mid-transaction, account-switch UI integration, and network/offline resume are not covered yet. Keep the source passport and image Blobs untouched; do not enable import until those cases and server read-back verification are covered.
 - No production database, Storage, or deployment operation was performed.
+
+
+- CI runs `46103404601` and `46103408877` both passed all three jobs on commit `cea8f2d`: backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal/frontend checks. The browser job passed the v1-to-v2 migration, preservation of existing records, and owner-index query checks. The PostgreSQL job completed adversarial reference-write race and 50-event/five-worker cleanup stress checks.
+- Current journal source SHA at this checkpoint: `817e64c7e86cce200393bee0d56e5f4d52398e44`. The module remains isolated and is not connected to app UI, cloud upload, or restore.
+- Remaining pre-integration gaps include forced process termination mid-transaction, real storage exhaustion, account-switch UI integration, offline/network resume, and a durable coordinator spanning cloud assets and local metadata. No restore/import activation is approved by these tests.
