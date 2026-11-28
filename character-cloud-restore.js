@@ -19,6 +19,13 @@
   };
   const optionalText = (value, max, label) =>
     value === undefined || value === null ? "" : text(value, max, label);
+  const deepFreeze = value => {
+    if (value && typeof value === "object" && !Object.isFrozen(value)) {
+      Object.values(value).forEach(deepFreeze);
+      Object.freeze(value);
+    }
+    return value;
+  };
   const canonical = value => JSON.stringify(value, (key, item) => {
     if (item && typeof item === "object" && !Array.isArray(item)) {
       return Object.keys(item).sort().reduce((out, name) => (out[name] = item[name], out), {});
@@ -157,13 +164,46 @@
     return Object.freeze({
       complete: true,
       ownerId,
+      baseLocalFingerprint: canonical(localSnapshot),
       pagesRead,
       cloudCount: cloudRows.length,
-      proposedItems: Object.freeze(proposedItems),
-      unchanged: Object.freeze(unchanged),
-      conflicts: Object.freeze(conflicts)
+      proposedItems: deepFreeze(proposedItems),
+      unchanged: deepFreeze(unchanged),
+      conflicts: deepFreeze(conflicts)
     });
   }
 
-  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore});
+  function applyRestorePlan({ownerId, plan, readLocalItems, writeLocalItems, isCurrent = () => true}) {
+    if (!isUuid(ownerId) || !plan || plan.complete !== true || plan.ownerId !== ownerId) fail("Restore plan owner or completion proof is invalid.");
+    if (typeof readLocalItems !== "function" || typeof writeLocalItems !== "function") fail("Local restore adapters are required.");
+    if (!Array.isArray(plan.proposedItems) || !Array.isArray(plan.conflicts) || plan.conflicts.length) fail("Resolve every cloud/local conflict before restoring.");
+    if (!isCurrent()) fail("Account changed before local restore commit.");
+    const current = readLocalItems(ownerId);
+    if (current && typeof current.then === "function") fail("Local restore adapters must be synchronous.");
+    if (!Array.isArray(current) || canonical(current) !== plan.baseLocalFingerprint) fail("The local library changed after planning. Rebuild the restore plan before committing.");
+    const ids = new Set(current.map(item => item?.id));
+    const cloudIds = new Set();
+    for (const item of plan.proposedItems) {
+      if (!item || !isUuid(item.id) || !item.cloudBackup || !isUuid(item.cloudBackup.characterId) ||
+          !Number.isInteger(item.cloudBackup.version) || item.cloudBackup.version < 1 ||
+          !Array.isArray(item.referenceImages) || item.referenceImages.length !== 0) {
+        fail("Restore proposal contains an invalid passport or missing-media reference.");
+      }
+      if (ids.has(item.id) || cloudIds.has(item.cloudBackup.characterId)) fail("Restore proposal contains a duplicate local or cloud identity.");
+      ids.add(item.id);
+      cloudIds.add(item.cloudBackup.characterId);
+    }
+    const merged = [...plan.proposedItems, ...current];
+    if (merged.length > 100) fail("The local library limit of 100 materials would be exceeded.");
+    if (!isCurrent()) fail("Account changed before local restore commit.");
+    const writeResult = writeLocalItems(ownerId, merged);
+    if (writeResult && typeof writeResult.then === "function") fail("Local restore adapter must commit synchronously.");
+    if (!isCurrent()) fail("Account changed during local restore commit.");
+    const readBack = readLocalItems(ownerId);
+    if (readBack && typeof readBack.then === "function") fail("Local restore adapters must be synchronous.");
+    if (canonical(readBack) !== canonical(merged)) fail("Local restore read-back verification failed.");
+    return Object.freeze({restoredCount:plan.proposedItems.length,totalCount:merged.length});
+  }
+
+  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,applyRestorePlan});
 })();
