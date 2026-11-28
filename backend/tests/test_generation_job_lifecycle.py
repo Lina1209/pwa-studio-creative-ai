@@ -1,6 +1,6 @@
 import unittest
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from app.services.generation_job_lifecycle import (
     GenerationJob, JobStatus, ProviderSubmissionOutcome, claim_job, mark_failed, mark_succeeded,
@@ -8,6 +8,11 @@ from app.services.generation_job_lifecycle import (
 )
 
 NOW = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
+
+
+class NoOffsetTimezone(tzinfo):
+    def utcoffset(self, dt):
+        return None
 
 
 def new_job(**kwargs):
@@ -227,6 +232,27 @@ class GenerationJobLifecycleTests(unittest.TestCase):
             with self.subTest(timestamp=repr(invalid_timestamp)):
                 with self.assertRaisesRegex(ValueError, "timezone-aware datetimes"):
                     new_job(created_at=invalid_timestamp)
+
+    def test_rejects_timezone_without_utc_offset(self):
+        invalid_now = datetime(2026, 11, 27, tzinfo=NoOffsetTimezone())
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            claim_job(new_job(), invalid_now)
+
+    def test_rejects_boolean_lease_and_retry_delays(self):
+        with self.assertRaisesRegex(ValueError, "lease_seconds"):
+            claim_job(new_job(), NOW, lease_seconds=True)
+        running = claim_job(new_job(), NOW)
+        with self.assertRaisesRegex(ValueError, "retry_delay_seconds"):
+            mark_failed(running, NOW, "provider_rejected", True, True,
+                        ProviderSubmissionOutcome.DEFINITELY_REJECTED)
+
+    def test_error_code_matches_sql_safe_character_contract(self):
+        running = claim_job(new_job(), NOW)
+        for invalid_code in ("", "contains space", "slash/path", "кириллица", "x" * 81):
+            with self.subTest(error_code=invalid_code):
+                with self.assertRaisesRegex(ValueError, "error code"):
+                    mark_failed(running, NOW, invalid_code, False, 30,
+                                ProviderSubmissionOutcome.DEFINITELY_REJECTED)
 
     def test_rejects_naive_timestamps_and_invalid_limits(self):
         with self.assertRaises(ValueError):
