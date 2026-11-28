@@ -129,8 +129,9 @@
        const candidates=manifest.candidates.map(c=>candidateState==="retained"
          ?{...c,state:"retained",reasonCode}
          :{...c,state:"eligible_for_delete_review",recheckedAt});
+       // The durable manifest write is the final mutation in this pass. A lease
+       // that expires after the transaction cannot authorize any further action.
        const saved=await cleanupJournal.reconcileManifest({ownerId,cleanupId,expectedRevision:manifest.revision,ownerLockEpoch:lease.epoch,candidates});
-       await assertLease();
        return Object.freeze({state:candidateState==="retained"?"blocked_"+reasonCode:"eligible_for_delete_review",revision:saved.revision,eligibleCount:saved.candidates.filter(c=>c.state==="eligible_for_delete_review").length,retainedCount:saved.candidates.filter(c=>c.state==="retained").length,candidates:saved.candidates.map(c=>({localStagedBlobId:c.localStagedBlobId,state:c.state,reasonCode:c.reasonCode||null}))});
      };
      const now=Date.now();
