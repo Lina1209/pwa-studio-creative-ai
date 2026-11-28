@@ -168,6 +168,7 @@ begin
     worker_id = null, lease_token = null, lease_expires_at = null
   where g.id = p_job_id and g.lease_token = p_lease_token
     and g.status = 'processing' and g.lease_expires_at > now()
+    and g.provider_submission_outcome = 'accepted'
     and exists (
       select 1 from public.media_assets m
       where m.id = p_result_asset_id
