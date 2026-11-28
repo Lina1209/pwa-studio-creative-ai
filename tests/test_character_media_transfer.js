@@ -32,6 +32,10 @@ function harness(fetchImpl,isCurrent=()=>true){
  assert.equal(first.sha256,await digest(blob));
  assert.equal(calls[1].init.headers.Authorization,"Bearer private-test-token");
  assert.equal(calls[1].init.headers["Idempotency-Key"],calls[2].init.headers["Idempotency-Key"],"retry key must be stable for identical owner/card/reference/bytes");
+ const changedBlob=new Blob([new TextEncoder().encode("other image fixture")],{type:"image/png"});
+ assert.equal(changedBlob.size,blob.size,"changed-content fixture keeps the same size");
+ await h.adapter.uploadAsset({characterId:character,localReferenceId:reference,fileName:"reference.png",blob:changedBlob});
+ assert.notEqual(calls[1].init.headers["Idempotency-Key"],calls[3].init.headers["Idempotency-Key"],"changed bytes must create a new idempotency key even for the same owner/card/reference");
  assert.ok(calls[1].init.body instanceof FormData);
  assert.equal(calls[1].init.body.get("local_reference_id"),reference);
  assert.equal(calls[1].init.body.get("file").size,blob.size);
@@ -66,5 +70,5 @@ function harness(fetchImpl,isCurrent=()=>true){
  await assert.rejects(()=>fenced.adapter.uploadAsset({characterId:character,localReferenceId:reference,fileName:"reference.png",blob}),/Account changed/);
  const invalid=harness(async(url,init)=>uploadResponse(init.body.get("local_reference_id")));
  await assert.rejects(()=>invalid.adapter.downloadAsset({cloudAssetId:"not-uuid",expectedSha256:"a".repeat(64),expectedSizeBytes:blob.size,expectedMimeType:"image/png"}),/descriptor/);
- console.log("PASS owner-fenced character media transfer: auth, stable idempotency, multipart upload, binary digest verification, invalid descriptor and account-switch fencing");
+ console.log("PASS owner-fenced character media transfer: stable retry key, changed-content key separation, multipart upload, binary digest verification, invalid descriptor and account-switch fencing");
 })().catch(error=>{console.error(error);process.exitCode=1;});
