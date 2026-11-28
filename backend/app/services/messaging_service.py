@@ -156,10 +156,10 @@ def ensure_target_not_owner(settings: Settings, target_id: str):
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=503, detail="Administrator protection is temporarily unavailable.")
 
-    headers = {
-        "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-    }
+    headers = {"apikey": settings.supabase_service_role_key}
+    # New sb_secret keys are not JWTs; only legacy service-role JWTs use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.get(
             f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{target}",
