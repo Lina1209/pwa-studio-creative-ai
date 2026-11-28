@@ -61,6 +61,46 @@
     if(!Array.isArray(selectedCloudIds)||selectedCloudIds.length<1||
        refs.some(reference=>!selectedCloudIds.includes(reference.characterId)))
       fail("Restore media manifest is outside the explicitly confirmed character selection.");
+
+    // Bind the staged media manifest to the exact reference inventory reviewed
+    // by the planner. Selection membership alone is insufficient: a caller
+    // must not omit, add, or substitute an image within a confirmed character.
+    if(!Array.isArray(plan.proposedItems))fail("Issued restore plan has no proposed character inventory.");
+    const reviewedReferences=[];
+    for(const character of plan.proposedItems){
+      if(!character?.cloudBackup||!selectedCloudIds.includes(character.cloudBackup.characterId)||
+         !Array.isArray(character.cloudBackup.referenceManifest))
+        fail("Issued restore plan contains an invalid reviewed reference inventory.");
+      for(const reference of character.cloudBackup.referenceManifest){
+        reviewedReferences.push({
+          cloudAssetId:reference.cloudAssetId,
+          characterId:character.cloudBackup.characterId,
+          sourceLocalId:character.id,
+          localReferenceId:reference.localReferenceId??reference.id,
+          name:reference.name,
+          type:reference.type,
+          expectedSha256:reference.expectedSha256,
+          expectedSizeBytes:reference.expectedSizeBytes,
+          expectedMimeType:reference.expectedMimeType,
+          width:reference.width,
+          height:reference.height
+        });
+      }
+    }
+    const proofFields=["cloudAssetId","characterId","sourceLocalId","localReferenceId","name","type","expectedSha256","expectedSizeBytes","expectedMimeType","width","height"];
+    const proofKey=item=>proofFields.map(field=>item[field]??null);
+    const reviewedByAsset=new Map();
+    for(const reference of reviewedReferences){
+      if(typeof reference.cloudAssetId!=="string"||reviewedByAsset.has(reference.cloudAssetId))
+        fail("Reviewed restore plan contains duplicate or invalid cloud media identities.");
+      reviewedByAsset.set(reference.cloudAssetId,reference);
+    }
+    if(reviewedByAsset.size!==refs.length)fail("Restore media manifest is incomplete or contains unreviewed assets.");
+    for(const reference of refs){
+      const reviewed=reviewedByAsset.get(reference.cloudAssetId);
+      if(!reviewed||JSON.stringify(proofKey(reviewed))!==JSON.stringify(proofKey(reference)))
+        fail("Restore media manifest differs from the exact reference inventory reviewed by the planner.");
+    }
     assertConfirmation();
     const operation=await journal.get(ownerId,operationId);
     assertConfirmation();
