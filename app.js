@@ -1571,6 +1571,7 @@ const movieHistoryStyle = document.createElement("style");
       const { data, error } = await supabaseClient
         .from("projects")
         .select("id, owner_id, title, description, project_type, status, settings, created_at, updated_at")
+        .eq("owner_id", userId)
         .eq("project_type", "movie")
         .order("updated_at", { ascending: false });
       if (error) throw error;
