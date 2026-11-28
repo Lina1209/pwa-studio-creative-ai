@@ -68,13 +68,17 @@
     if(operation.revision!==expectedRevision||!["planned","staging","paused_retryable"].includes(operation.state))fail("Restore operation is not at the expected checkpoint.");
     assertConfirmation();
     const lease=await journal.acquireLease(ownerId,operationId,{ttlMs:60000});
-    assertConfirmation();
-    const leasedOperation=await journal.get(ownerId,operationId);
-    assertConfirmation();
-    if(!leasedOperation||leasedOperation.ownerId!==ownerId||leasedOperation.operationId!==operationId||
-       leasedOperation.revision!==expectedRevision+1||leasedOperation.leaseEpoch!==lease.epoch){
+    let leasedOperation;
+    try{
+      assertConfirmation();
+      leasedOperation=await journal.get(ownerId,operationId);
+      assertConfirmation();
+      if(!leasedOperation||leasedOperation.ownerId!==ownerId||leasedOperation.operationId!==operationId||
+         leasedOperation.revision!==expectedRevision+1||leasedOperation.leaseEpoch!==lease.epoch)
+        fail("Restore operation changed while its lease was being acquired.");
+    }catch(error){
       try{await journal.releaseLease(ownerId,operationId,lease);}catch{}
-      fail("Restore operation changed while its lease was being acquired.");
+      throw error;
     }
     let revision=leasedOperation.revision;
     let state=leasedOperation.state;
