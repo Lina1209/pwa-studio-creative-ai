@@ -46,6 +46,19 @@ Before operators can safely requeue dead letters, implement a dedicated service-
 
 No such RPC, admin screen, or command exists today. Until it is implemented and reviewed, the correct response to a dead-letter event is to preserve it and escalate for engineering investigation—not to edit rows manually.
 
-## 5. Verification boundary
+## 5. Worker process and deployment boundary
 
-The current migration and worker are feature-branch drafts. Disposable PostgreSQL CI covers transaction rollback, claim races, reference races, and batch processing. It does not run real Supabase Auth/RLS JWT sessions or real Storage requests. The worker crash-window unit test is authored, but its latest commit has not yet been confirmed by CI. No cleanup worker is deployed and no production object has been deleted.
+The worker modules are separate long-running processes; they are not started by the API process:
+
+- verification: `python -m app.workers.media_outbox_worker`
+- cleanup: `python -m app.workers.media_cleanup_worker`
+
+The current `backend/Dockerfile` starts only Uvicorn, and the repository's `render.yaml` declares only the API web service. Therefore neither worker is launched by the checked-in deployment configuration. A running API and a healthy `/api/health` response do **not** prove that queued media verification or cleanup is being processed.
+
+Before enabling either worker in any environment, provision a separate private worker process with the same reviewed backend image and server-only Supabase configuration. Give it no public HTTP listener; configure restart-on-failure, graceful SIGTERM, bounded resource limits, and log/alert monitoring for poll failures, retry outcomes, and growing queue age/dead-letter counts. Run one worker type per process so each can be independently stopped and scaled. Do not add worker commands to the API web start command.
+
+This is an operational design, not deployment authorization. No worker service has been created or started by this change.
+
+## 6. Verification boundary
+
+The current migration and worker are feature-branch drafts. Disposable PostgreSQL CI covers transaction rollback, claim races, reference races, and batch processing; backend unit tests cover worker validation and crash/retry paths. It does not run real Supabase Auth/RLS JWT sessions or real Storage requests. Latest worker fencing change `2693105` and regression test `97f2d0d` passed all three CI jobs in run `46099261863`. No cleanup or verification worker is deployed and no production object has been deleted.
