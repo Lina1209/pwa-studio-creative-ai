@@ -12,11 +12,11 @@
  const uuid=(v)=>typeof v==="string"&&UUID.test(v);
  const same=(a,b)=>canonical(a)===canonical(b);
  function dependencies(input){
-  const {journal,blobStore,localAdapter,inspectImage,isCurrent=()=>true}=input||{};
-  if(!journal||!blobStore||!localAdapter||typeof inspectImage!=="function"||typeof isCurrent!=="function")fail("Activation adapters are incomplete.");
+  const {journal,blobStore,localAdapter,inspectImage,ownerLock=globalThis.PWACharacterOwnerCoordinationLock,isCurrent=()=>true}=input||{};
+  if(!journal||!blobStore||!localAdapter||!ownerLock||typeof ownerLock.acquire!=="function"||typeof ownerLock.renew!=="function"||typeof ownerLock.release!=="function"||typeof ownerLock.isCurrent!=="function"||typeof inspectImage!=="function"||typeof isCurrent!=="function")fail("Activation adapters are incomplete.");
   for(const name of ["get","acquireLease","renewLease","checkpoint","releaseLease"])if(typeof journal[name]!=="function")fail("Restore journal adapter is incomplete.");
   if(typeof blobStore.readStagedBlob!=="function"||typeof localAdapter.readLocalItems!=="function"||typeof localAdapter.writeLocalItems!=="function")fail("Owner-scoped storage adapters are incomplete.");
-  return {journal,blobStore,localAdapter,inspectImage,isCurrent};
+  return {journal,blobStore,localAdapter,inspectImage,ownerLock,isCurrent};
  }
  function assertCurrent(isCurrent){if(!isCurrent())fail("Account changed during restore activation.");}
  function manifestMap(plan){
@@ -95,11 +95,11 @@
   return {current,merged,baseDigest,mergedDigest:await digest(canonical(merged))};
  }
  async function activateRestore(input){
-  const {journal,blobStore,localAdapter,inspectImage,isCurrent}=dependencies(input);
+  const {journal,blobStore,localAdapter,inspectImage,ownerLock,isCurrent}=dependencies(input);
   const {ownerId,operationId,plan,expectedRevision}=input;
   if(!uuid(ownerId)||!uuid(operationId))fail("Invalid restore owner or operation identity.");
   assertCurrent(isCurrent);
-  let lease=null,heartbeat=null,renewal=Promise.resolve(),row=null,revision=expectedRevision,writeAttempted=false;
+  let lease=null,ownerLease=null,heartbeat=null,renewal=Promise.resolve(),row=null,revision=expectedRevision,writeAttempted=false;
   try{
    row=await journal.get(ownerId,operationId);
    if(!row||row.revision!==expectedRevision||row.state!=="ready_to_activate")fail("Restore checkpoint changed; refresh and re-plan.");
@@ -110,7 +110,7 @@
    let lost=false;
    const renew=async()=>{try{lease=await journal.renewLease(ownerId,operationId,lease,{ttlMs:30000});}catch{lost=true;}};
    heartbeat=setInterval(()=>{renewal=renewal.then(renew);},10000);
-   const assertLease=()=>{assertCurrent(isCurrent);if(lost||!lease||Date.parse(lease.expiresAt)<=Date.now())fail("Activation lease expired or was fenced.");};
+   const assertLease=async()=>{assertCurrent(isCurrent);if(lost||!lease||Date.parse(lease.expiresAt)<=Date.now()||!ownerLease||!(await ownerLock.isCurrent(ownerLease)))fail("Activation or owner critical-section lease expired or was fenced.");};
    const prepared=await prepareMerged({ownerId,operationId,row,plan,localAdapter,blobStore,inspectImage,isCurrent});
    assertLease();
    const intent={baseDigest:prepared.baseDigest,mergedDigest:prepared.mergedDigest,intendedCount:prepared.merged.length,restoredCount:plan.proposedItems.length,operationMarker:operationId,preparedAt:new Date().toISOString()};
@@ -130,7 +130,7 @@
    revision=committed.revision;
    return Object.freeze({state:"committed",restoredCount:plan.proposedItems.length,totalCount:readBack.length,mergedDigest:intent.mergedDigest});
   }catch(error){
-   if(row&&lease&&isCurrent()){
+   if(row&&lease&&ownerLease&&isCurrent()&&await ownerLock.isCurrent(ownerLease)){
     try{
      const latest=await journal.get(ownerId,operationId);
      if(latest&&latest.state==="activating"&&latest.lease?.token===lease.token&&latest.lease.epoch===lease.epoch){
@@ -145,11 +145,11 @@
   }finally{
    if(heartbeat)clearInterval(heartbeat);
    await renewal;
-   if(lease)try{await journal.releaseLease(ownerId,operationId,lease);}catch{/* lease expiry/takeover is fenced */}
+   if(lease)try{await journal.releaseLease(ownerId,operationId,lease);}catch{/* lease expiry/takeover is fenced */}\n   if(ownerLease)try{await ownerLock.release(ownerLease);}catch{/* owner lease expiry/takeover is fenced */}
   }
  }
  async function recoverActivation(input){
-  const {journal,localAdapter,isCurrent}=dependencies({...input,blobStore:input.blobStore||{readStagedBlob:async()=>null},inspectImage:input.inspectImage||(()=>({width:1,height:1}))});
+  const {journal,localAdapter,ownerLock,isCurrent}=dependencies({...input,blobStore:input.blobStore||{readStagedBlob:async()=>null},inspectImage:input.inspectImage||(()=>({width:1,height:1}))});
   const {ownerId,operationId,expectedRevision}=input;
   assertCurrent(isCurrent);
   const row=await journal.get(ownerId,operationId);
