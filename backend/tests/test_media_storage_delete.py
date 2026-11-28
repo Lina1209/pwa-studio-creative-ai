@@ -18,7 +18,7 @@ PATH = f"{OWNER}/characters/{ASSET}/{OBJECT}.png"
 
 
 def settings():
-    return Settings(supabase_url="https://example.supabase.co", supabase_service_role_key="server-secret")
+    return Settings(supabase_url="https://example.supabase.co", supabase_service_role_key="eyJserver.secret")
 
 
 def plan(**changes):
@@ -34,7 +34,7 @@ class MediaStorageDeleteTests(unittest.TestCase):
         delete_private_media_object(settings(), plan())
         args, kwargs = delete.call_args
         self.assertEqual(args[0], f"https://example.supabase.co/storage/v1/object/studio-media/{PATH}")
-        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer server-secret")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer eyJserver.secret")
 
     @patch("app.services.media_storage_delete.httpx.delete")
     def test_missing_object_is_idempotent_success(self, delete):
@@ -100,7 +100,7 @@ class MediaStorageDeleteTests(unittest.TestCase):
         thread.start()
         local_settings = Settings(
             supabase_url=f"http://127.0.0.1:{server.server_port}",
-            supabase_service_role_key="server-secret",
+            supabase_service_role_key="eyJserver.secret",
         )
         try:
             with self.assertRaises(HTTPException) as raised:
@@ -113,7 +113,7 @@ class MediaStorageDeleteTests(unittest.TestCase):
                 server.last_path,
                 f"/storage/v1/object/studio-media/{PATH}",
             )
-            self.assertEqual(server.last_authorization, "Bearer server-secret")
+            self.assertEqual(server.last_authorization, "Bearer eyJserver.secret")
         finally:
             server.shutdown()
             server.server_close()
