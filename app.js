@@ -2592,12 +2592,12 @@ const movieHistoryStyle = document.createElement("style");
         let failure=null;
         const existing=store.get(id);
         existing.onsuccess=()=>{
-          if(existing.result&&existing.result.ownerId!==ownerId){
-            failure=new Error("Идентификатор изображения уже принадлежит другому аккаунту. Исходная запись сохранена.");
+          if(existing.result){
+            failure=new Error("Идентификатор изображения уже занят. Существующий файл, включая данные восстановления, сохранён без изменений.");
             tx.abort();
             return;
           }
-          store.put({id,ownerId,blob,createdAt:new Date().toISOString()});
+          store.add({id,ownerId,blob,createdAt:new Date().toISOString()});
         };
         existing.onerror=()=>{failure=existing.error||new Error("Не удалось проверить владельца изображения.");};
         tx.oncomplete=resolve;
@@ -2623,8 +2623,8 @@ const movieHistoryStyle = document.createElement("style");
       try{cards=JSON.parse(raw);}catch{throw new Error("Метаданные библиотеки повреждены; изображение сохранено для безопасности.");}
       if(!Array.isArray(cards)||cards.length>100)throw new Error("Состав библиотеки не подтверждён; изображение сохранено.");
       for(const card of cards){
-        if(!card||typeof card!=="object"||!Array.isArray(card.referenceImages))throw new Error("Структура карточки не подтверждена; изображение сохранено.");
-        if(card.referenceImages.some(ref=>ref&&ref.id===id))return false;
+        if(!card||typeof card!=="object"||(card.referenceImages!=null&&!Array.isArray(card.referenceImages)))throw new Error("Структура карточки не подтверждена; изображение сохранено.");
+        if((card.referenceImages||[]).some(ref=>ref&&ref.id===id))return false;
       }
     }
     const db=await openCharacterLibraryDb();
