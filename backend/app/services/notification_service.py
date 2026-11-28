@@ -12,10 +12,12 @@ def _request(settings: Settings, method: str, *, params=None, payload=None):
     base = settings.supabase_url.rstrip("/")
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
+    # Supabase sb_secret keys are sent only as apikey; legacy JWT keys also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.request(method, f"{base}/rest/v1/user_notifications",
             headers=headers, params=params, json=payload, timeout=10.0)
