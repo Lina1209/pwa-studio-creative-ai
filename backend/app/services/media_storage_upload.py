@@ -29,11 +29,13 @@ def upload_character_reference_object(
     )
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": plan.file_type,
         "Cache-Control": "no-store",
         "x-upsert": "false",
-    }
+ 
+    # sb_secret keys are apikey-only; legacy service-role JWTs also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"   }
     try:
         response = httpx.post(endpoint, headers=headers, content=content, timeout=30.0)
         if response.status_code == 409:
