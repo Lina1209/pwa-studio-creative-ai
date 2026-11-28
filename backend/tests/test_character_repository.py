@@ -3,7 +3,7 @@ from unittest.mock import patch, Mock
 from fastapi import HTTPException
 from app.services.character_repository import (
     validate_reference_data, list_owned_characters, create_owned_character,
-    get_owned_character, update_owned_character,
+    get_owned_character, update_owned_character, _encode_cursor,
 )
 
 OWNER = "11111111-1111-4111-8111-111111111111"
@@ -14,7 +14,7 @@ class CharacterRepositoryTests(unittest.TestCase):
     def setUp(self):
         self.settings = Mock()
         self.settings.supabase_url = "https://example.supabase.co"
-        self.settings.supabase_service_role_key = "server-secret"
+        self.settings.supabase_service_role_key = "server-secret-key-material-long-enough"
 
     def test_reference_data_requires_json_object(self):
         with self.assertRaises(HTTPException):
@@ -48,6 +48,63 @@ class CharacterRepositoryTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             list_owned_characters(self.settings, OWNER)
         self.assertEqual(caught.exception.status_code, 404)
+
+    @patch("app.services.character_repository.httpx.request")
+    def test_list_returns_bounded_page_and_signed_next_cursor(self, request):
+        rows = [
+            {"id": CHARACTER, "owner_id": OWNER, "source_local_id": CHARACTER,
+             "name": "One", "description": None, "reference_data": {}, "created_at": "2026-01-02T00:00:00Z", "version": 1},
+            {"id": "44444444-4444-4444-8444-444444444444", "owner_id": OWNER, "source_local_id": CHARACTER,
+             "name": "Two", "description": None, "reference_data": {}, "created_at": "2026-01-01T00:00:00Z", "version": 1},
+        ]
+        request.return_value = Mock(content=b"[]", json=lambda: rows)
+        page = list_owned_characters(self.settings, OWNER, page_size=1)
+        self.assertEqual(len(page["items"]), 1)
+        self.assertIsNotNone(page["next_cursor"])
+        params = request.call_args.kwargs["params"]
+        self.assertEqual(params["limit"], "2")
+        self.assertEqual(params["order"], "created_at.desc,id.desc")
+        self.assertIn("created_at", params)
+
+    @patch("app.services.character_repository.httpx.request")
+    def test_list_uses_signed_cursor_for_keyset_next_page(self, request):
+        cursor = _encode_cursor(self.settings, {
+            "owner": OWNER, "snapshot": "2026-01-03T00:00:00Z",
+            "last_created_at": "2026-01-02T00:00:00Z", "last_id": CHARACTER,
+            "expires": 4102444800,
+        })
+        request.return_value = Mock(content=b"[]", json=lambda: [])
+        page = list_owned_characters(self.settings, OWNER, cursor=cursor, page_size=25)
+        self.assertEqual(page["items"], [])
+        params = request.call_args.kwargs["params"]
+        self.assertEqual(params["limit"], "26")
+        self.assertIn("created_at.lt.2026-01-02T00:00:00Z", params["or"])
+        self.assertIn("id.lt."+CHARACTER, params["or"])
+
+    def test_list_rejects_tampered_or_foreign_cursor(self):
+        token = _encode_cursor(self.settings, {
+            "owner": OWNER, "snapshot": "2026-01-03T00:00:00Z",
+            "last_created_at": "2026-01-02T00:00:00Z", "last_id": CHARACTER,
+            "expires": 4102444800,
+        })
+        with self.assertRaises(HTTPException) as caught:
+            list_owned_characters(self.settings, OWNER, cursor=token[:-1] + ("A" if token[-1] != "A" else "B"))
+        self.assertEqual(caught.exception.status_code, 422)
+        foreign = _encode_cursor(self.settings, {
+            "owner": OTHER, "snapshot": "2026-01-03T00:00:00Z",
+            "last_created_at": "2026-01-02T00:00:00Z", "last_id": CHARACTER,
+            "expires": 4102444800,
+        })
+        with self.assertRaises(HTTPException) as caught:
+            list_owned_characters(self.settings, OWNER, cursor=foreign)
+        self.assertEqual(caught.exception.status_code, 422)
+
+    def test_list_rejects_invalid_page_size(self):
+        for size in (0, 101, True, 1.5):
+            with self.subTest(size=size):
+                with self.assertRaises(HTTPException) as caught:
+                    list_owned_characters(self.settings, OWNER, page_size=size)
+                self.assertEqual(caught.exception.status_code, 422)
 
     @patch("app.services.character_repository.httpx.post")
     def test_create_uses_verified_owner_and_stable_local_mapping(self, request):
