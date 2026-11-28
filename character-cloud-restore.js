@@ -34,20 +34,21 @@
   });
   const safeReferenceData = value => {
     if (!value || typeof value !== "object" || Array.isArray(value)) fail("Cloud passport reference data is invalid.");
-    const passport = value.passport && typeof value.passport === "object" && !Array.isArray(value.passport) ? value.passport : {};
+    if (value.passport !== undefined && (!value.passport || typeof value.passport !== "object" || Array.isArray(value.passport))) fail("Cloud passport fields are invalid.");
+    const passport = value.passport || {};
     const refs = value.referenceImages === undefined ? [] : value.referenceImages;
     if (!Array.isArray(refs) || refs.length > 6) fail("Cloud passport reference manifest is invalid.");
     const manifest = refs.map(ref => {
-      if (!ref || typeof ref !== "object" || Array.isArray(ref)) fail("Cloud reference descriptor is invalid.");
+      if (!ref || typeof ref !== "object" || Array.isArray(ref) || typeof ref.id !== "string" || !ref.id.trim()) fail("Cloud reference descriptor is invalid.");
       return {
-        id: optionalText(ref.id, 180, "cloud reference ID"),
+        id: text(ref.id, 180, "cloud reference ID"),
         name: optionalText(ref.name, 120, "cloud reference name"),
         type: optionalText(ref.type, 80, "cloud reference type")
       };
     });
     return {
-      kind: value.kind === "scene" ? "scene" : "character",
-      representation: ["2d", "3d", "both"].includes(value.representation) ? value.representation : "2d",
+      kind: ["character", "scene"].includes(value.kind) ? value.kind : fail("Cloud passport kind is invalid."),
+      representation: ["2d", "3d", "both"].includes(value.representation) ? value.representation : fail("Cloud passport representation is invalid."),
       voice: optionalText(value.voice, 500, "character voice"),
       passport: {
         face: optionalText(passport.face, 1200, "passport face"),
