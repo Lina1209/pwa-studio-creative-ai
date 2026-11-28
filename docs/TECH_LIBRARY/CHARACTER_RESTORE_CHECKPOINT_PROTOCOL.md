@@ -437,3 +437,21 @@ Real-browser tests cover simultaneous acquisition, independent owner locks, rene
 CI run `46109529483` on feature branch commit `989be93` passed all three jobs, including the initial lock browser suite and all existing backend/PostgreSQL/browser checks. The test was subsequently strengthened to use two actual pages; its final CI result is pending at the time of this note.
 
 Important remaining gate: `character-restore-activation.js` does NOT yet acquire this owner-level lock. The lock is currently an isolated primitive, not an enforced cross-operation barrier. Therefore no cleanup/delete API may be added or invoked. Next, integrate the shared lock into activation and crash recovery, test activation-vs-activation and activation-vs-lock contention across tabs, and only then implement the two-phase cleanup manifest. Cleanup remains design-only and disabled.
+
+
+## 19. Owner lock integrated into activation and recovery (feature branch)
+
+The guarded activation and crash-recovery entry points now require the shared owner coordination lock. Both acquire locks in one deterministic order: owner-wide critical-section lock first, then the operation-specific restore-journal lease. This prevents two restore operations for the same owner from entering the metadata activation/recovery critical section concurrently.
+
+Activation holds the owner lock while it:
+- obtains and revalidates the operation checkpoint;
+- re-reads and hashes the local metadata and all staged Blobs;
+- persists activation intent;
+- performs the single synchronous local metadata replacement and read-back digest check;
+- checkpoints the committed state.
+
+Both operation and owner leases are renewed by the activation heartbeat. A failed renewal, expired lease, stale fencing epoch, or account switch stops further mutation. Release is best effort; expiry and fencing remain the recovery mechanism.
+
+Crash recovery follows the same lock order and holds the owner lock while it reads local metadata, compares the durable base/merged digest boundary, and checkpoints `committed`, `paused_retryable`, or `conflict`. It never rolls back an ambiguous third metadata state.
+
+The real-browser activation and reload-recovery pages load the actual owner lock module, so existing activation tests now exercise the shared critical-section lock rather than a mock. The owner lock remains cooperative: any future activation/deletion path must use it. No cleanup/delete method exists yet. The expanded cross-tab activation-versus-cleanup race matrix remains a prerequisite before cleanup implementation.
