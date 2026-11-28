@@ -108,7 +108,7 @@
   }
   async function reconcileManifest(input){
     const owner=uuid(input?.ownerId,"owner ID"),cleanup=uuid(input?.cleanupId,"cleanup ID");
-    if(!Number.isSafeInteger(input?.expectedRevision)||input.expectedRevision<1||!Array.isArray(input.candidates))fail("Invalid cleanup reconciliation request.");
+    if(!Number.isSafeInteger(input?.expectedRevision)||input.expectedRevision<1||!Number.isSafeInteger(input?.ownerLockEpoch)||input.ownerLockEpoch<1||!Array.isArray(input.candidates))fail("Invalid cleanup reconciliation request.");
     let updated=null;
     const db=await open();
     try{
@@ -118,7 +118,7 @@
           const row=req.result;
           if(!row){try{tx.abort();}catch{}return;}
           validate(row);
-          if(row.ownerId!==owner||row.state!=="marked"||row.revision!==input.expectedRevision||input.candidates.length!==row.candidates.length){try{tx.abort();}catch{}return;}
+          if(row.ownerId!==owner||row.state!=="marked"||row.revision!==input.expectedRevision||input.ownerLockEpoch<=row.ownerLockEpoch||input.candidates.length!==row.candidates.length){try{tx.abort();}catch{}return;}
           const next=row.candidates.map((candidate,index)=>{
             const outcome=input.candidates[index];
             const identity=["operationId","operationRevision","cloudAssetId","localStagedBlobId","sha256","sizeBytes","mimeType","width","height","markedAt","deleteAfter"];
@@ -129,7 +129,7 @@
             if(outcome.state==="eligible_for_delete_review")result.recheckedAt=iso(outcome.recheckedAt,"candidate recheck timestamp");
             return result;
           });
-          row.candidates=next;row.state="reconciled";row.revision+=1;row.updatedAt=new Date().toISOString();
+          row.candidates=next;row.ownerLockEpoch=input.ownerLockEpoch;row.state="reconciled";row.revision+=1;row.updatedAt=new Date().toISOString();
           validate(row);store.put(row);updated=clone(row);
         };
         req.onerror=()=>{try{tx.abort();}catch{}};
