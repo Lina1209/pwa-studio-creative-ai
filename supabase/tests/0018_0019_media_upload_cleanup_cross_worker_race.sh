@@ -105,14 +105,14 @@ PATH_B="$PWA_TEST_OWNER_ID/characters/$CHAR_B/$OBJECT_B.png"
 DIGEST_B="$(printf 'b%.0s' {1..64})"
 psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
   -v owner="$PWA_TEST_OWNER_ID" -v character="$CHAR_B" <<'SQL'
+insert into public.characters(id,owner_id,name,reference_data)
+values (:'character',:'owner','Upload-cleanup race B','{}'::jsonb);
 SQL
 PGAPPNAME=pwa_upload_reservation_race_b psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
   -v owner="$PWA_TEST_OWNER_ID" -v character="$CHAR_B" -v asset="$ASSET_B" \
   -v operation="$OP_B" -v event="$EVENT_B" -v path="$PATH_B" -v digest="$DIGEST_B" \
   <<'SQL' >"$TMP/c.out" 2>&1 &
 begin;
-insert into public.characters(id,owner_id,name,reference_data)
-values (:'character',:'owner','Upload-cleanup race B','{}'::jsonb);
 select public.pwa_reserve_character_reference_upload(
   :'owner',:'character',:'asset',:'operation',:'event',
   'cross-worker-race-b-' || :'event',
