@@ -91,7 +91,7 @@ for output_file in "$tmp_dir"/duplicate-*.out; do
   while IFS='|' read -r reservation_id created; do
     [[ -n "$reservation_id" ]] || continue
     duplicate_rows=$((duplicate_rows + 1))
-    [[ "$created" == "t" ]] && created_rows=$((created_rows + 1))
+    if [[ "$created" == "t" ]]; then created_rows=$((created_rows + 1)); fi
   done < "$output_file"
 done
 
