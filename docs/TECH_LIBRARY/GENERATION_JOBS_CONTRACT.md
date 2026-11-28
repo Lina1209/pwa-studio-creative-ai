@@ -2,6 +2,10 @@
 
 Status: design + inactive pure-Python lifecycle helper. No endpoint, database table, queue, worker, provider integration, or billable call is enabled.
 
+> **Implementation update — 2026-11-28:** The critical SQL/Python parity findings recorded in the historical review sections below have since been addressed in the current draft migrations and regression harnesses. In particular, migration 0013 includes `reconciliation_required`; migration 0014 persists provider-submission evidence and fences completion, failure, cancellation, and lease recovery; unknown/accepted outcomes remain held for reconciliation; only conclusive non-acceptance permits retry/cancellation; and successful completion requires an owner-matched `ready` media asset. The Python lifecycle helper follows the same evidence rules. See the current RPC and CI sections below; older review bullets describing these items as still unfixed are historical findings, not the current code state.
+>
+> **Still not implemented:** there is no generation API, active generation worker/dispatcher, provider adapter, provider-attempt reconciliation service, or credit ledger. Provider acceptance/billing reconciliation therefore remains a manual operational gap. The queue and migrations remain inactive and must not be enabled until that end-to-end reconciliation and billing design is implemented and separately approved. The media verification transaction is now included in disposable PostgreSQL CI; this does not exercise live Supabase Storage or production RLS.
+
 ## Why jobs instead of a synchronous generation request
 
 Image/video generation can outlive an HTTP request and needs cancellation, retry limits, worker recovery, and durable status. FastAPI's own guidance distinguishes small in-process background work from heavier computation that may need a separate worker/queue. Therefore do not use `BackgroundTasks` or an in-memory task list as the durable generation system. See the official [FastAPI Background Tasks guidance](https://fastapi.tiangolo.com/tutorial/background-tasks/).
