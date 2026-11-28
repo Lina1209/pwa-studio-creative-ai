@@ -37,9 +37,11 @@ def download_private_media_image(
     )
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Accept": expected_mime_type,
     }
+    # Modern sb_secret keys are not JWTs and must never be sent as Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         chunks = bytearray()
         with httpx.stream("GET", endpoint, headers=headers, timeout=15.0) as response:
