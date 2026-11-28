@@ -73,6 +73,13 @@ assert.match(app, /Фильм изменился на другом устрой�
 assert.match(app, /локальная копия при конфликте/);
 assert.match(app, /writeMovieStorage\(nextLocal\)/);
 assert.match(app, /writeMovieStorage\(nextLocal\);\s*renderMovieProjects\(\)/);
+assert.match(app, /const movieStableContent = value/);
+assert.match(app, /if \(cloudTime >= localTime\)/);
+assert.match(app, /Облачная версия загружена, а локальный вариант сохранён отдельной копией/);
+assert.match(app, /expectedSettings: remote\.settings/);
+assert.match(app, /\.eq\("settings", item\.expectedSettings\)/);
+assert.match(app, /\.eq\("title", item\.expectedTitle\).*\.eq\("description", item\.expectedDescription\)/);
+assert.match(app, /if \(!contextIsCurrent\(\) \|\| !writeMovieStorage\(nextLocal\)\)/);
 assert.match(app, /movieCloudState\.pending = true/);
 assert.match(app, /return PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(\[candidate\]\)\)\[0\]/);
 assert.doesNotMatch(app, /versions: Array\.isArray\(saved\.versions\) \? saved\.versions : \[\]/);
