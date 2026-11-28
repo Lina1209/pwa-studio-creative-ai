@@ -71,3 +71,15 @@ def require_admin(user: StudioUser = Depends(get_current_user)) -> StudioUser:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Administrator access is required.")
     return user
+
+def get_platform_active_user(user: StudioUser = Depends(get_current_user)) -> StudioUser:
+    """Require an authenticated account without an active platform-wide suspension.
+
+    Keep get_current_user and require_admin separate so administrators can still
+    inspect and revoke suspensions, and suspended users can inspect /auth/me.
+    Feature-specific guards (assistant/community) remain in their route handlers.
+    """
+    from app.services.moderation_service import ensure_user_not_suspended
+
+    ensure_user_not_suspended(get_settings(), user.user_id, "platform")
+    return user
