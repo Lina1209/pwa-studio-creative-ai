@@ -63,8 +63,7 @@
       const request = store.get(lease.ownerId);
       request.onsuccess = () => {
         const current = request.result;
-        if (!current || current.token !== lease.token || current.epoch !== lease.epoch ||
-            current.epoch !== lease.epoch || current.expiresAt <= now()) {
+        if (!current || current.token !== lease.token || current.epoch !== lease.epoch || current.expiresAt <= now()) {
           abort(new Error("Owner lock renewal rejected: stale or expired fencing token."));
           return;
         }
@@ -81,8 +80,7 @@
       const request = store.get(lease.ownerId);
       request.onsuccess = () => {
         const current = request.result;
-        if (!current || current.token !== lease.token || current.epoch !== lease.epoch ||
-            current.epoch !== lease.epoch) {
+        if (!current || current.token !== lease.token || current.epoch !== lease.epoch || current.expiresAt <= now()) {
           abort(new Error("Owner lock release rejected: stale fencing token."));
           return;
         }
