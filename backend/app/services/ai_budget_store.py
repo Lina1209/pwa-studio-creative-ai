@@ -74,6 +74,7 @@ class SupabaseAIBudgetStore:
         if (
             not amount.is_finite()
             or amount <= 0
+            or amount != request.reserved_usd
             or not reservation_id
             or status not in {"reserved", "settled", "released", "unknown"}
             or not isinstance(row.get("reservation_created"), bool)
@@ -130,8 +131,8 @@ class SupabaseAIBudgetStore:
             raise AIBudgetStoreUnavailable("AI budget no-charge release was not confirmed.")
 
     def mark_stale_reservations_unknown(self, created_before: str, limit: int = 100) -> int:
-        if not 1 <= limit <= 1000:
-            raise ValueError("Reconciliation batch size must be between 1 and 1000.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("Reconciliation batch size must be an integer between 1 and 1000.")
         result = self._rpc(
             "mark_stale_ai_budget_reservations_unknown",
             {
