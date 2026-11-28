@@ -107,6 +107,18 @@
      assert(repeat.state==="already_reconciled","repeated recheck changed an already reconciled manifest");
      const stillThere=await blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
      assert(stillThere instanceof Blob,"read-only recheck deleted the Blob");
+     const candidate=saved.candidates[0],deleteLease=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:30000});
+     const intent=await cleanupJournal.beginCandidateDelete({ownerId:owner,cleanupId:marked.cleanupId,expectedRevision:saved.revision,ownerLockEpoch:deleteLease.epoch,localStagedBlobId:blobId,deleteAttemptId:uuid()});
+     assert(intent.state==="deleting"&&intent.candidates[0].state==="delete_intent","durable delete intent was not recorded before Blob deletion");
+     const deleted=await blobStore.deleteStagedBlob({ownerId:owner,operationId,cloudAssetId:asset,localStagedBlobId:blobId,proof:{sha256:candidate.sha256,sizeBytes:candidate.sizeBytes,mimeType:candidate.mimeType,width:candidate.width,height:candidate.height}});
+     assert(deleted==="deleted","exact staged Blob delete failed after durable intent");
+     const attempt=intent.candidates[0].deleteAttemptId;
+     await PWACharacterOwnerCoordinationLock.release(deleteLease);
+     const finalizeLease=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:30000});
+     const completed=await cleanupJournal.finalizeCandidateDeleted({ownerId:owner,cleanupId:marked.cleanupId,expectedRevision:intent.revision,ownerLockEpoch:finalizeLease.epoch,localStagedBlobId:blobId,deleteAttemptId:attempt});
+     assert(completed.state==="completed"&&completed.candidates[0].state==="deleted","post-delete durable completion was not recorded");
+     await PWACharacterOwnerCoordinationLock.release(finalizeLease);
+     assert(await blobStore.readStagedBlob({ownerId:owner,operationId,cloudAssetId:asset,localStagedBlobId:blobId})===null,"deleted staged Blob unexpectedly reappeared");
    });
    await test("changed local metadata blocks an expired manifest",async()=>{
      const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["metadata-change"],{type:"image/webp"});
