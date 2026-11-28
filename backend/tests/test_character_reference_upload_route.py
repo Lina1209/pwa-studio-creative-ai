@@ -112,7 +112,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         headers = {"Idempotency-Key": "test-character-upload-repeat"}
         files = {"file": ("portrait.png", png_bytes(), "image/png")}
         first = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, data={"local_reference_id": "22222222-2222-4222-8222-222222222222-44444444-4444-4444-8444-444444444444"}, files=files)
-        second = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, files=files)
+        second = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, data={"local_reference_id": "22222222-2222-4222-8222-222222222222-44444444-4444-4444-8444-444444444444"}, files=files)
         self.assertEqual(first.status_code, 202)
         self.assertEqual(second.status_code, 202)
         self.assertEqual(first.json()["asset"]["id"], second.json()["asset"]["id"])
