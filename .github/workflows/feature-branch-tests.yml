@@ -143,6 +143,8 @@ jobs:
         run: python tests/browser/run_character_backup_journal.py
       - name: Run real-browser durable restore checkpoint journal tests
         run: python tests/browser/run_character_restore_journal.py
+      - name: Run real-browser restore coordinator integration tests
+        run: python tests/browser/run_character_restore_coordinator.py
       - name: Check frontend syntax and account-switch fencing
         run: |
           node --check profile-avatar-catalog.js
