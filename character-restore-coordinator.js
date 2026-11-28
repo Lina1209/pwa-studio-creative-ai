@@ -9,6 +9,7 @@
   const SHA=/^[a-f0-9]{64}$/i;
   const MIME=new Set(["image/png","image/jpeg","image/webp"]);
   const MAX_BYTES=8*1024*1024, MAX_REFS=600;
+  const LOCAL_REFERENCE_KEY=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-[a-z0-9_-]{8,80})?$/i;
   const fail=m=>{throw new Error(m)};
   const uuid=(v,label)=>{if(typeof v!=="string"||!UUID.test(v))fail("Invalid "+label+".");return v.toLowerCase();};
   const digestHex=async blob=>{
@@ -39,10 +40,15 @@
     const refs=manifest.map(item=>{
       const cloudAssetId=uuid(item?.cloudAssetId,"cloud asset ID");
       if(seen.has(cloudAssetId))fail("Duplicate cloud asset in restore manifest.");seen.add(cloudAssetId);
+      const characterId=uuid(item.characterId,"cloud character ID");
+      const sourceLocalId=uuid(item.sourceLocalId,"local character ID");
+      const localReferenceId=typeof item.localReferenceId==="string"?item.localReferenceId:item.id;
+      if(typeof localReferenceId!=="string"||!LOCAL_REFERENCE_KEY.test(localReferenceId))fail("Invalid local reference identity in restore manifest.");
+      if(typeof item.name!=="string"||!item.name.trim()||item.name.length>120)fail("Invalid reference display name.");
       if(!SHA.test(item.expectedSha256||"")||!Number.isSafeInteger(item.expectedSizeBytes)||item.expectedSizeBytes<1||item.expectedSizeBytes>MAX_BYTES)fail("Invalid expected image digest or size.");
-      if(!MIME.has(item.expectedMimeType))fail("Unsupported expected image MIME type.");
+      if(!MIME.has(item.expectedMimeType)||item.type!==item.expectedMimeType)fail("Unsupported or mismatched expected image MIME type.");
       if(!Number.isInteger(item.width)||item.width<1||item.width>12000||!Number.isInteger(item.height)||item.height<1||item.height>12000)fail("Invalid expected image dimensions.");
-      return {cloudAssetId,expectedSha256:item.expectedSha256.toLowerCase(),expectedSizeBytes:item.expectedSizeBytes,expectedMimeType:item.expectedMimeType,width:item.width,height:item.height,state:"pending",localStagedBlobId:null};
+      return {cloudAssetId,characterId,sourceLocalId,localReferenceId,name:item.name,type:item.type,expectedSha256:item.expectedSha256.toLowerCase(),expectedSizeBytes:item.expectedSizeBytes,expectedMimeType:item.expectedMimeType,width:item.width,height:item.height,state:"pending",localStagedBlobId:null};
     });
     if(refs.length===0)fail("There are no media references to stage.");
     const operation=await journal.get(ownerId,operationId);
