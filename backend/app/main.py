@@ -93,7 +93,7 @@ def list_character_reference_catalog(character_ids: str, response: Response,
 
 
 @app.get(f"{settings.api_prefix}/characters/{{character_id}}/references")
-def list_character_reference_status(character_id: str, response: Response, user: StudioUser = Depends(get_current_user)):
+def list_character_reference_status(character_id: str, response: Response, user: StudioUser = Depends(get_platform_active_user)):
     """Return owner-scoped upload and independent-verification states for a character."""
     response.headers["Cache-Control"] = "private, no-store, max-age=0"
     response.headers["Pragma"] = "no-cache"
@@ -107,7 +107,7 @@ async def upload_character_reference(
     file: UploadFile = File(...),
     local_reference_id: str = Form(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
-    user: StudioUser = Depends(get_current_user),
+    user: StudioUser = Depends(get_platform_active_user),
 ):
     """Reserve and upload one validated private character reference image."""
     if not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 160:
