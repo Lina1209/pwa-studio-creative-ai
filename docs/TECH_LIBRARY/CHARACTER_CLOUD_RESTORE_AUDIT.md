@@ -73,7 +73,7 @@ Therefore, matching by filename, array order, MIME, dimensions, or image similar
 
 ### Required contract before activation work
 
-1. Extend the authenticated upload contract with a validated client reference UUID (or an equally strong immutable reference key) and persist it server-side on the media asset as an explicit association. Bind that association to the authenticated owner and exact cloud character in the same reservation transaction.
+1. Extend the authenticated upload contract with a validated client reference UUID or the existing stable composite key `<character-UUID>-<reference-UUID>` and persist it server-side on the media asset as an explicit association. Bind that association to the authenticated owner and exact cloud character in the same reservation transaction.
 2. Make the character reference listing return an explicit mapping tuple: `local_reference_id`, `asset_id`, `character_id`, `status`, `file_name`, `file_type`, `size_bytes`, `content_sha256`, `width`, `height`. Keep owner, bucket, Storage path, metadata internals, and signed URLs private.
 3. Reject duplicate local reference IDs per character and duplicate asset associations; enforce uniqueness/foreign keys in a reviewed migration and verify the behavior in disposable PostgreSQL only.
 4. The restore planner must join only on that explicit mapping and compare the cloud passport descriptor to the mapped asset record. Require status `ready`, then independently verify downloaded bytes against SHA-256, byte size, MIME, width, and height.
@@ -86,7 +86,7 @@ No migration, route, UI, worker, or production data was changed as part of this 
 
 The first server-side contract slice is now implemented in the feature branch:
 
-- The authenticated reference-upload route requires a multipart `local_reference_id` UUID in addition to the image and idempotency key.
+- The authenticated reference-upload route requires a multipart `local_reference_id` in addition to the image and idempotency key. It accepts both a UUID and the Character Library's existing stable composite key `<character-UUID>-<reference-UUID>`, preserving already-created local reference identities.
 - The upload planner validates that UUID and carries it as a distinct field; it is never conflated with the cloud media asset UUID.
 - A new draft migration `0025_character_reference_identity_binding.sql` adds nullable `media_assets.local_reference_id` for legacy compatibility, prevents a local reference binding without a character, and enforces uniqueness across owner + character + local reference.
 - The versioned server-only RPC `pwa_reserve_character_reference_upload_v2` calls the existing atomic reservation and then binds the local reference in the same database transaction. Any binding collision aborts the entire RPC transaction, including the asset/outbox reservation. Exact idempotent replay is allowed only with the same mapping.
