@@ -21,6 +21,15 @@
    const lease=claims.find(x=>x.status==="fulfilled").value;
    window.lease=lease;ok(lease.epoch===1&&lease.token,"lease fields missing");
   });
+  await test("lease renewal extends expiry without changing checkpoint revision",async()=>{
+   const before=await api.get(owner,op);
+   const renewed=await api.renewLease(owner,op,lease,{ttlMs:10000});
+   const after=await api.get(owner,op);
+   ok(renewed.epoch===lease.epoch&&renewed.token===lease.token,"renewal changed lease identity");
+   ok(Date.parse(renewed.expiresAt)>Date.now(),"renewal did not extend lease expiry");
+   ok(after.revision===before.revision,"lease renewal unexpectedly changed checkpoint revision");
+   await rejects(()=>api.renewLease(owner,op,{token:"stale-token",epoch:lease.epoch}),"stale lease renewal accepted");
+  });
   await test("revision CAS and legal state transitions",async()=>{
    let row=await api.get(owner,op);
    row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned",page:{count:1,cursor:"cursor-1",digest:sha}});
