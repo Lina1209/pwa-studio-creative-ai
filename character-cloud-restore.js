@@ -87,9 +87,15 @@
     try { localSnapshot = JSON.parse(JSON.stringify(existingLocalItems)); }
     catch { fail("The local library could not be snapshotted safely."); }
     const localById = new Map();
+    const localByCloudId = new Map();
     for (const item of localSnapshot) {
       if (!item || !isUuid(item.id) || typeof item.name !== "string" || localById.has(item.id)) fail("Local library contains an invalid or duplicate character ID.");
       localById.set(item.id, item);
+      const mappedCloudId = item.cloudBackup?.characterId;
+      if (mappedCloudId !== undefined && mappedCloudId !== null) {
+        if (!isUuid(mappedCloudId) || localByCloudId.has(mappedCloudId)) fail("Local library contains an invalid or duplicate cloud character mapping.");
+        localByCloudId.set(mappedCloudId, item);
+      }
     }
 
     const cloudRows = [];
@@ -130,6 +136,11 @@
     for (const row of cloudRows) {
       const data = safeReferenceData(row.reference_data || {});
       const existing = localById.get(row.source_local_id);
+      const mappedLocal = localByCloudId.get(row.id);
+      if (mappedLocal && mappedLocal.id !== row.source_local_id) {
+        conflicts.push({localId:mappedLocal.id, cloudId:row.id, reason:"cloud_character_already_mapped_to_another_local_id"});
+        continue;
+      }
       if (!existing) {
         proposedItems.push({
           id: row.source_local_id,
