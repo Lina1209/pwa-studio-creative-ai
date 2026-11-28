@@ -1,5 +1,6 @@
 """Tests for owner-filtered media metadata lookup; no live Supabase calls."""
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 from fastapi import HTTPException
 
@@ -141,6 +142,39 @@ class CharacterUploadOwnershipLookupTests(unittest.TestCase):
             )
         self.assertEqual(caught.exception.status_code, 404)
 
+
+
+class CharacterReferenceBindingRepositoryTests(unittest.TestCase):
+    def setUp(self):
+        self.settings = Settings(supabase_url="https://example.supabase.co", supabase_service_role_key="test-only")
+        self.plan = SimpleNamespace(
+            owner_id=OWNER,
+            character_id=CHARACTER,
+            local_reference_id="66666666-6666-4666-8666-666666666666",
+            asset_id=ASSET,
+            outbox_event=SimpleNamespace(id="77777777-7777-4777-8777-777777777777",
+                                         idempotency_key="reference-binding-test-0001"),
+            file_name="hero.png", file_type="image/png", bucket="studio-media",
+            storage_path=f"{OWNER}/characters/{CHARACTER}/88888888-8888-4888-8888-888888888888.png",
+            size_bytes=128, content_sha256="a" * 64, width=16, height=8,
+        )
+
+    @patch("app.services.media_upload_repository._rpc")
+    def test_reservation_uses_v2_rpc_and_verifies_exact_identity_tuple(self, rpc):
+        rpc.return_value = {"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER,
+                            "local_reference_id": self.plan.local_reference_id, "status": "pending_upload"}
+        result = media_upload_repository.reserve_character_reference_upload(self.settings, self.plan)
+        self.assertEqual(result["local_reference_id"], self.plan.local_reference_id)
+        self.assertEqual(rpc.call_args.args[1], "pwa_reserve_character_reference_upload_v2")
+        self.assertEqual(rpc.call_args.args[2]["p_local_reference_id"], self.plan.local_reference_id)
+
+    @patch("app.services.media_upload_repository._rpc")
+    def test_reservation_rejects_mismatched_local_reference_mapping(self, rpc):
+        rpc.return_value = {"id": ASSET, "owner_id": OWNER, "character_id": CHARACTER,
+                            "local_reference_id": "99999999-9999-4999-8999-999999999999", "status": "pending_upload"}
+        with self.assertRaises(HTTPException) as caught:
+            media_upload_repository.reserve_character_reference_upload(self.settings, self.plan)
+        self.assertEqual(caught.exception.status_code, 502)
 
 if __name__ == "__main__":
     unittest.main()
