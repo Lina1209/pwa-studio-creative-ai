@@ -1,12 +1,14 @@
 # Character Cloud Sync Protocol — Design Gate
 
-Status: design only. No API, schema, migration, deployment, or production behavior is changed by this document.
+Status: feature-branch implementation in progress. Changes are confined to `feature/character-library-foundation`; no production migration or deployment has occurred.
 
-## Current verified boundary
+## Current implementation boundary
 
-The authenticated character API is implemented in `backend/app/character_api.py`. Its list route returns the owner-scoped result from `list_owned_characters`; the repository currently requests at most 100 rows ordered by `created_at DESC`. The PATCH route accepts allowlisted metadata fields and performs an owner-filtered PostgREST PATCH, but it has no expected-version precondition. Concurrent edits therefore have last-write-wins behavior.
+The authenticated character API in `backend/app/character_api.py` now exposes owner-scoped keyset pagination, signed owner-bound cursors, and version-checked PATCH operations. Migrations `0023` and `0024` add optimistic concurrency and the pagination index. Disposable PostgreSQL CI and backend tests cover stale writes, ownership, pagination, and concurrent compare-and-swap behavior.
 
-The existing idempotent create RPC maps `(owner_id, source_local_id)` to a stable cloud character ID. It is a create/retry contract, not an update/version protocol. Cloud restore/import must remain disabled until the requirements below are implemented and tested.
+The Character Library UI now has an explicit metadata-only cloud backup action for signed-in users. It traverses every API page, maps local IDs to cloud IDs via `source_local_id`, creates missing passports idempotently, updates existing passports only with their current version, and stops on conflicts. Operations are fenced to the originating account. Local records and IndexedDB image Blobs are never modified by this action.
+
+This is not yet full restore or media backup. Reference-image files remain local; the local backup journal is not yet connected to the API; cloud-to-local restore, resumable page checkpoints, deletion/tombstone semantics, and end-to-end account-switch browser tests remain outstanding. Keep restore/import disabled until those paths are implemented and tested.
 
 ## 1. Optimistic concurrency for edits
 
