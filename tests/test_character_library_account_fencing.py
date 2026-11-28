@@ -417,5 +417,16 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn('$("#accountLogout").addEventListener("click", () => authLogoutButton.click());', APP)
 
 
+    def test_character_delete_commits_metadata_and_reports_partial_image_cleanup(self):
+        start = APP.index('remove.addEventListener("click",async()=>{', APP.index("const renderCharacterLibrary"))
+        end = APP.index('      actions.append(edit,remove);', start)
+        handler = APP[start:end]
+        self.assertIn("localStorage.setItem(deleteStorageKey,JSON.stringify(next));", handler)
+        self.assertIn("Promise.allSettled((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)))", handler)
+        self.assertIn('cleanup.some(result=>result.status==="rejected")', handler)
+        self.assertIn("if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||\"guest\")!==deleteOwnerId)return;", handler)
+        self.assertIn("Материал удалён из библиотеки, но часть изображений осталась", handler)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
