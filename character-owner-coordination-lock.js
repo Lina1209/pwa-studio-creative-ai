@@ -84,7 +84,10 @@
           abort(new Error("Owner lock release rejected: stale fencing token."));
           return;
         }
-        store.delete(lease.ownerId);
+        current.token = null;
+        current.expiresAt = 0;
+        current.releasedAt = new Date(now()).toISOString();
+        store.put(current);
         done(true);
       };
       request.onerror = () => abort(request.error || new Error("Owner lock read failed."));
