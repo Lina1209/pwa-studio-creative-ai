@@ -53,7 +53,7 @@ begin
 
   begin
     perform public.pwa_update_character_versioned(
-      v_owner,(v_created->>'id')::uuid,2,'{"owner_id":"'||v_other::text||'"}'::jsonb
+      v_owner,(v_created->>'id')::uuid,2,jsonb_build_object('owner_id',v_other::text)
     );
     raise exception 'unexpected field was accepted';
   exception when sqlstate '22023' then
