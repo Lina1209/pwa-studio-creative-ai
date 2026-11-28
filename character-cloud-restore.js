@@ -44,10 +44,25 @@
     const passport = value.passport || {};
     const refs = value.referenceImages === undefined ? [] : value.referenceImages;
     if (!Array.isArray(refs) || refs.length > 6) fail("Cloud passport reference manifest is invalid.");
+    const seenSlots = new Set();
+    const seenAssets = new Set();
     const manifest = refs.map(ref => {
-      if (!ref || typeof ref !== "object" || Array.isArray(ref) || typeof ref.id !== "string" || !LOCAL_REFERENCE_KEY.test(ref.id)) fail("Cloud reference descriptor is invalid.");
+      if (!ref || typeof ref !== "object" || Array.isArray(ref)) fail("Cloud reference descriptor is invalid.");
+      const isV2 = ref.slot_id !== undefined || ref.asset_local_reference_id !== undefined;
+      if (isV2 && (typeof ref.slot_id !== "string" || typeof ref.asset_local_reference_id !== "string" || ref.id !== undefined)) {
+        fail("Cloud reference v2 identity is invalid.");
+      }
+      if (!isV2 && (typeof ref.id !== "string" || !LOCAL_REFERENCE_KEY.test(ref.id))) fail("Cloud reference descriptor is invalid.");
+      const slotId = text(isV2 ? ref.slot_id : ref.id, 180, "cloud reference slot ID");
+      const assetLocalReferenceId = text(isV2 ? ref.asset_local_reference_id : ref.id, 180, "cloud reference asset identity");
+      if (!LOCAL_REFERENCE_KEY.test(slotId) || !LOCAL_REFERENCE_KEY.test(assetLocalReferenceId)) fail("Cloud reference identity is invalid.");
+      if (seenSlots.has(slotId) || seenAssets.has(assetLocalReferenceId)) fail("Cloud reference manifest contains duplicate identities.");
+      seenSlots.add(slotId);
+      seenAssets.add(assetLocalReferenceId);
       return {
-        id: text(ref.id, 180, "cloud reference ID"),
+        id: slotId,
+        slotId,
+        assetLocalReferenceId,
         name: optionalText(ref.name, 120, "cloud reference name"),
         type: optionalText(ref.type, 80, "cloud reference type")
       };
@@ -75,11 +90,12 @@
       wardrobe: String(local.passport?.wardrobe || "").slice(0, 1200),
       palette: String(local.passport?.palette || "").slice(0, 1200)
     },
-    referenceManifest: (Array.isArray(local.referenceImages) && local.referenceImages.length ? local.referenceImages : (Array.isArray(local.cloudBackup?.referenceManifest) ? local.cloudBackup.referenceManifest : [])).slice(0, 6).map(ref => ({
-      id: String(ref.id || "").slice(0, 180),
-      name: String(ref.name || "").slice(0, 120),
-      type: String(ref.type || "").slice(0, 80)
-    }))
+    referenceManifest: (Array.isArray(local.referenceImages) && local.referenceImages.length ? local.referenceImages : (Array.isArray(local.cloudBackup?.referenceManifest) ? local.cloudBackup.referenceManifest : [])).slice(0, 6).map(ref => {
+      const legacyId = String(ref.id || "").slice(0, 180);
+      const slotId = String(ref.slot_id || ref.slotId || legacyId).slice(0, 180);
+      const assetLocalReferenceId = String(ref.asset_local_reference_id || ref.assetLocalReferenceId || legacyId).slice(0, 180);
+      return {id:slotId,slotId,assetLocalReferenceId,name:String(ref.name || "").slice(0, 120),type:String(ref.type || "").slice(0, 80)};
+    })
   });
 
   async function planRestore({ownerId, fetchPage, fetchReferences, existingLocalItems, isCurrent = () => true}) {
@@ -185,7 +201,7 @@
       const descriptors = cloudDataById.get(row.id).referenceManifest;
       const byReference = referenceAssetsByCharacter.get(row.id) || new Map();
       const mapped = descriptors.map(reference => {
-        const asset = byReference.get(reference.id);
+        const asset = byReference.get(reference.assetLocalReferenceId);
         if (!asset) fail("A cloud passport reference has no explicit media asset mapping.");
         if (asset.status !== "ready") fail("A mapped cloud reference asset is not ready for restore.");
         if (reference.type && reference.type !== asset.file_type) fail("Cloud reference MIME type does not match its passport descriptor.");
@@ -195,7 +211,7 @@
           type: asset.file_type,
           characterId: row.id,
           sourceLocalId: row.source_local_id,
-          localReferenceId: reference.id,
+          localReferenceId: reference.assetLocalReferenceId,
           cloudAssetId: asset.id,
           expectedSha256: asset.content_sha256,
           expectedSizeBytes: asset.size_bytes,
