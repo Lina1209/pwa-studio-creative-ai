@@ -167,6 +167,29 @@ begin
   select public.ack_generation_outbox(v_outbox_id, v_outbox_token) into v_ok;
   if v_ok then raise exception 'TEST FAILED: duplicate outbox acknowledgement was accepted'; end if;
 
+  -- An expired outbox lease is reclaimed with a fresh token. The prior
+  -- dispatcher cannot acknowledge the event after the token is rotated.
+  insert into public.generation_job_outbox(job_id, event_type)
+  values (v_job_success, 'job_queued')
+  returning id into v_outbox_id;
+  select c.claim_token into v_token
+  from public.claim_generation_outbox('queue-test-dispatcher-old', 100, 60) c
+  where c.outbox_id = v_outbox_id;
+  if v_token is null then raise exception 'TEST FAILED: outbox event was not initially claimed'; end if;
+  update public.generation_job_outbox
+  set claimed_at = now() - interval '2 minutes'
+  where id = v_outbox_id and claim_token = v_token;
+  select c.claim_token into v_outbox_token
+  from public.claim_generation_outbox('queue-test-dispatcher-new', 100, 60) c
+  where c.outbox_id = v_outbox_id;
+  if v_outbox_token is null or v_outbox_token = v_token then
+    raise exception 'TEST FAILED: expired outbox claim did not receive a fresh token';
+  end if;
+  select public.ack_generation_outbox(v_outbox_id, v_token) into v_ok;
+  if v_ok then raise exception 'TEST FAILED: stale outbox acknowledgement was accepted'; end if;
+  select public.ack_generation_outbox(v_outbox_id, v_outbox_token) into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: current outbox claim could not be acknowledged'; end if;
+
   -- Events that have exhausted the delivery limit are dead-lettered, not claimed again.
   insert into public.generation_job_outbox(job_id, event_type, delivery_attempts)
   values (v_job_success, 'job_queued', 20)
