@@ -28,7 +28,7 @@ create table if not exists public.ai_budget_policies (
   constraint ai_budget_policy_scope_key check (
     (scope_type = 'platform' and scope_key = 'platform') or
     (scope_type = 'provider' and scope_key = lower(scope_key) and length(scope_key) between 1 and 80) or
-    (scope_type = 'user' and scope_key ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+    (scope_type = 'user' and scope_key ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
   ),
   constraint ai_budget_policy_unique_period unique(scope_type, scope_key, period_start, period_end)
 );
