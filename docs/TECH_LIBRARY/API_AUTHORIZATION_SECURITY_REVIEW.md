@@ -150,3 +150,40 @@ A second source-level inconsistency was found: migration `0002_storage_and_moder
 **Verification support added:** `backend/tests/test_media_owner_isolation_contract.py` statically checks the migration and schema contracts. The read-only diagnostic `supabase/diagnostics/inspect_cloud_storage.sql` now lists every effective policy for relevant tables, foreign-key/unique constraints, table grants, and presence of the new composite FK. These are source-level checks only; they do not prove live RLS or Storage behavior.
 
 **Required isolated integration tests before cloud sync:** use two real test accounts A/B and verify each account cannot SELECT, UPDATE, DELETE, or attach another account's character, project, media row, or object path; verify both buckets separately; test upload, list, download, overwrite/move, and signed URL creation; inspect all effective policies and grants. Confirm project deletion nulls only `project_id` while preserving `owner_id`. Do not apply migration 0017 to production as part of this review.
+
+
+## Follow-up verification — 2026-11-28 (supersedes earlier scope statements where noted)
+
+The original review above was written before the Character Library media API was added. Its statements that no character/media API routes exist are historical and are superseded by this follow-up section.
+
+### Implemented media API path
+
+- Authenticated routes now exist for listing a character's reference status, uploading a reference, reading private image bytes through an authenticated proxy, and obtaining a short-lived signed URL for an owned ready asset.
+- Upload derives owner identity from the verified `StudioUser`, loads the character through an owner-filtered repository, validates the image bytes, creates deterministic idempotency identifiers, and commits a reservation before the Storage upload. The asset is not considered ready until the independent verification flow completes.
+- Read/access routes reload the asset using both asset UUID and authenticated owner UUID, verify linked project/character ownership, require ready status and the private bucket, and validate the Storage key. The path's resource UUID is now compared with the exact linked `character_id` or `project_id`, not merely with an allowed resource kind.
+- The byte proxy bounds downloads to 8 MiB, fully decodes/validates the image, checks digest, size, width, and height against the reservation, and returns private no-store/nosniff headers. The signed URL path is host-pinned to the configured Supabase project and has a 60-second TTL.
+- Browser-facing metadata excludes owner IDs, bucket, Storage path, and internal metadata.
+
+### Admin identity and route checks
+
+- `get_current_user` verifies Supabase JWT signature via JWKS, issuer, audience, allowed algorithms, expiry, and subject. `require_admin` gates all current `/api/admin/*` routes.
+- Regression tests cover immutable `OWNER_USER_ID` precedence over email, case-insensitive UUID comparison, creator denial across current admin routes, missing Bearer rejection, and server-derived moderator identity.
+- The feature-branch backend suite passed these tests in CI run `46098849243`. This is mocked route/auth verification, not inspection of live deployment environment values.
+- The `OWNER_EMAIL` fallback still exists when `OWNER_USER_ID` is unset. The deployment setting has not been inspected; production must explicitly confirm the immutable UUID is configured before readiness is claimed.
+
+### Supabase key compatibility and CI
+
+- The audited service-role REST/Storage services send every key as `apikey`; they add `Authorization: Bearer` only for legacy JWT-form keys beginning with `eyJ`. Modern `sb_secret` values are not treated as JWTs.
+- The scan of the remaining media and moderation service modules found no unconditional Bearer header. The corresponding credential handling is covered by regression tests for both key formats.
+- Full CI run `46098849243` completed successfully on feature commit `52a446b`: backend unit tests, disposable PostgreSQL integration, and real-browser account-isolation tests all passed. The PostgreSQL job ran migrations and concurrency/stress harnesses only against its disposable database.
+- The earlier code-only CI run `46098844078` failed because a legacy test fixture still expected a Bearer header for a modern secret key. The test fixture was corrected in `52a446b`; the complete follow-up run passed.
+
+### Remaining production-readiness limits
+
+1. No live Supabase effective-policy/grant inspection or two-real-account Storage penetration test has been performed.
+2. No live deployment value for `OWNER_USER_ID` has been inspected.
+3. The independent media verifier/cleanup workers and their operational scheduling/monitoring need a production-safe runbook and explicit deployment review.
+4. The content safety layer is an input keyword/pattern guard, not a comprehensive moderation service; generated-output moderation and image/video moderation remain separate requirements.
+5. AI budget reservation is still not wired to `/api/chat` or `/api/prompts`; passing isolated SQL tests is not production spend protection.
+
+**Current decision:** the media API has meaningful source-level ownership, integrity, and privacy controls and its isolated CI suite passes. This does not constitute a live Supabase policy audit, production penetration test, deployment verification, or security certification. Do not deploy or apply migrations from this review without explicit approval.
