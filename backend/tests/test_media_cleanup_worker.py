@@ -128,6 +128,29 @@ class MediaCleanupWorkerTests(unittest.TestCase):
     @patch("app.workers.media_cleanup_worker.delete_private_media_object")
     @patch("app.workers.media_cleanup_worker.complete_media_cleanup")
     @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
+    def test_malformed_claims_never_reach_storage_or_completion(
+        self, claim_rpc, complete, delete, retry
+    ):
+        invalid_claims = [
+            claim(owner_id="not-a-uuid"),
+            claim(character_id="not-a-uuid"),
+            claim(storage_path=f"{OWNER}/characters/{ASSET}/{OBJECT}.png"),
+            claim(storage_path=PATH + "?download=1"),
+            claim(attempts=True),
+            claim(max_attempts=9),
+        ]
+        claim_rpc.side_effect = invalid_claims
+        retry.return_value = {"event_status": "pending", "asset_status": "cleanup_pending"}
+        for _ in invalid_claims:
+            self.assertTrue(process_one(object()))
+        delete.assert_not_called()
+        complete.assert_not_called()
+        self.assertEqual(retry.call_count, len(invalid_claims))
+
+    @patch("app.workers.media_cleanup_worker.retry_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.delete_private_media_object")
+    @patch("app.workers.media_cleanup_worker.complete_media_cleanup")
+    @patch("app.workers.media_cleanup_worker.claim_media_cleanup")
     def test_expired_lease_reclaims_after_storage_delete_and_lost_ack(
         self, claim_rpc, complete, delete, retry
     ):
