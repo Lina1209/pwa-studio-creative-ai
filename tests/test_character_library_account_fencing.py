@@ -12,6 +12,48 @@ JOURNAL = (Path(__file__).resolve().parents[1] / "character-backup-journal.js").
 
 
 class CharacterLibraryAccountFencingTests(unittest.TestCase):
+    def test_character_library_reader_fails_closed_without_filtering_or_truncation(self):
+        start = APP.index("const readCharacterLibrary = () =>")
+        end = APP.index("const saveCharacterImage", start)
+        reader = APP[start:end]
+        self.assertIn("JSON.parse(raw)", reader)
+        self.assertIn("value.length > 100", reader)
+        self.assertIn("ids.has(item.id)", reader)
+        self.assertIn("item.referenceImages.length > 6", reader)
+        self.assertIn("referenceIds.has(ref.id)", reader)
+        self.assertNotIn(".filter(", reader)
+        self.assertNotIn(".slice(0,100)", reader)
+        self.assertIn("throw new Error(", reader)
+
+    def test_corrupt_library_preflight_guards_mutation_backup_and_restore(self):
+        save_start = APP.index('$("#saveCharacter")?.addEventListener')
+        save_end = APP.index('$("#cancelCharacterEdit")?.addEventListener', save_start)
+        save = APP[save_start:save_end]
+        self.assertIn("try { current=readCharacterLibrary(); }", save)
+        self.assertIn("catch(error) { $(\"#characterLibraryStatus\").textContent=\"Сохранение остановлено:", save)
+        delete_start = APP.index('remove.addEventListener("click",async()=>{', APP.index("const renderCharacterLibrary"))
+        delete_end = APP.index("actions.append(edit,remove)", delete_start)
+        delete_handler = APP[delete_start:delete_end]
+        self.assertIn("const current=readCharacterLibrary()", delete_handler)
+        self.assertIn("}catch(error){", delete_handler)
+        backup_start = APP.index("const backupCharacterLibrary = async () =>")
+        backup_end = APP.index('$("#backupCharacterLibrary")?.addEventListener', backup_start)
+        self.assertIn("const localItems=readCharacterLibrary();", APP[backup_start:backup_end])
+        bridge_start = APP.index("window.PWAStudioCharacterRestoreBridge")
+        self.assertIn("getLocalItems: () => readCharacterLibrary()", APP[bridge_start:])
+        self.assertIn("libraryReadError=error", APP)
+        self.assertIn("if(libraryItems.length&&!libraryReadError)", APP)
+
+    def test_corrupt_library_is_reported_instead_of_rendered_as_empty(self):
+        start = APP.index("const renderCharacterLibrary = async")
+        end = APP.index('$("#characterKittyPreset")', start)
+        render = APP[start:end]
+        self.assertIn("try { libraryItems=readCharacterLibrary(); }", render)
+        self.assertIn('setAttribute("role","alert")', render)
+        self.assertIn("Не сохраняйте и не удаляйте карточки до проверки.", render)
+        self.assertNotIn("Библиотека пока пуста", render.split("catch(error)", 1)[0])
+
+
     def test_notification_action_cleanup_is_account_fenced(self):
         one_start = APP.index("const markOneNotificationRead = async")
         one_end = APP.index('$("#notificationRefresh")', one_start)
