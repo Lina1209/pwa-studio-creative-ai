@@ -4,6 +4,7 @@ This adapter is not wired to API routes. It calls only the private RPC contract
 and deliberately avoids logging response bodies, credentials, or user content.
 """
 from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 import httpx
 
@@ -65,7 +66,7 @@ class SupabaseAIBudgetStore:
         row = rows[0]
         try:
             amount = Decimal(str(row["reserved_usd"]))
-            reservation_id = str(row["reservation_id"])
+            reservation_id = str(UUID(str(row["reservation_id"])))
             status = str(row["reservation_status"])
             created = row["reservation_created"] is True
         except (KeyError, InvalidOperation, TypeError, ValueError) as exc:
