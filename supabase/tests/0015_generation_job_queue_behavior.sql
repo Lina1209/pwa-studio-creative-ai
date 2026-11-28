@@ -114,6 +114,27 @@ begin
   select status into v_status from public.generation_jobs where id = v_job_recovery;
   if v_status <> 'retry_wait' then raise exception 'TEST FAILED: expired lease did not enter retry_wait'; end if;
 
+  -- Reclaim the recovered job with a fresh token. Every operation from the
+  -- previous worker must be rejected after the lease has been replaced.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_recovery;
+  select j.lease_token into v_outbox_token
+  from public.claim_generation_job('queue-test-worker-new', 120) j
+  where j.id = v_job_recovery;
+  if v_outbox_token is null or v_outbox_token = v_token then
+    raise exception 'TEST FAILED: recovered job did not receive a fresh lease token';
+  end if;
+  select public.heartbeat_generation_job(v_job_recovery, v_token, 120) into v_ok;
+  if v_ok then raise exception 'TEST FAILED: stale worker heartbeat was accepted'; end if;
+  select public.complete_generation_job(v_job_recovery, v_token, v_asset_a, 0.001) into v_ok;
+  if v_ok then raise exception 'TEST FAILED: stale worker completion was accepted'; end if;
+  select public.fail_generation_job(v_job_recovery, v_token, 'stale_worker', true, 5, 0.001)
+    into v_status;
+  if v_status <> 'stale_lease' then raise exception 'TEST FAILED: stale worker failure was accepted'; end if;
+  select lease_token into v_token from public.generation_jobs where id = v_job_recovery;
+  if v_token <> v_outbox_token then
+    raise exception 'TEST FAILED: stale worker changed the current lease token';
+  end if;
+
   -- Outbox claim/ack is fenced; a replayed acknowledgement must fail.
   insert into public.generation_job_outbox(job_id, event_type)
   values (v_job_success, 'job_queued')
