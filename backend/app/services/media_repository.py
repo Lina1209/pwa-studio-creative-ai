@@ -7,7 +7,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.core.config import Settings
-from app.services.media_access import canonical_uuid, require_owned_row, require_same_owner
+from app.services.media_access import canonical_uuid, canonical_local_reference_id, require_owned_row, require_same_owner
 
 
 def _rest_get(settings: Settings, table: str, params: dict) -> list[dict]:
@@ -90,7 +90,7 @@ def list_owned_character_media_assets(settings: Settings, character_id: str, aut
         if not isinstance(row, dict) or row.get("owner_id") != owner or row.get("character_id") != character:
             raise HTTPException(status_code=404, detail="Media resource not found.")
         if row.get("local_reference_id") is not None:
-            canonical_uuid(row.get("local_reference_id"), "local reference")
+            canonical_local_reference_id(row.get("local_reference_id"))
         if row.get("status") not in allowed_statuses:
             raise HTTPException(status_code=502, detail="Media metadata returned an invalid status.")
         result.append({key: row.get(key) for key in ("id", "character_id", "local_reference_id", "file_name", "file_type", "status", "size_bytes", "content_sha256", "width", "height", "created_at")})
