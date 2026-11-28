@@ -82,7 +82,7 @@ jobs:
             supabase/migrations/0019_private_media_cleanup_outbox.sql \
             supabase/migrations/0020_character_local_identity.sql \
             supabase/migrations/0021_profile_avatar_catalog.sql \
-            supabase/migrations/0022_ai_budget_reservations.sql; do
+            supabase/migrations/0022_ai_budget_reservations.sql \\\n            supabase/migrations/0023_character_versioned_updates.sql; do
             echo "Applying $migration"
             psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$migration"
           done
@@ -103,6 +103,11 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0020_character_local_identity.sql
+      - name: Verify versioned character update RPC
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+            -f supabase/tests/0023_character_versioned_updates.sql
       - name: Run cleanup transaction and rollback harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
