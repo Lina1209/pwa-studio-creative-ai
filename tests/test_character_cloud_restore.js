@@ -62,6 +62,10 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     let checks=0;
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],isCurrent:()=>++checks<2,fetchPage:async()=>page([row(cloudId,localId)])}),/Account changed/);
   });
+  await run("malformed passport field types are rejected",async()=>{
+    const malformed=row(cloudId,localId,{reference_data:{kind:"character",voice:17,passport:{face:0},referenceImages:[]}});
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([malformed])}),/Invalid character voice/);
+  });
   await run("malformed cloud page is rejected without local mutation",async()=>{
     const local=[];
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:local,fetchPage:async()=>page([{...row(cloudId,localId),version:0}])}));
