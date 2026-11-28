@@ -1734,6 +1734,10 @@ const movieHistoryStyle = document.createElement("style");
       }
     }, 350);
   };
+  // Retry a previously failed local-to-cloud sync when connectivity returns.
+  window.addEventListener("online", () => {
+    if (authSession?.user?.id) scheduleMovieCloudSync();
+  });
   const loadMovieProjectsFromCloud = async () => {
     const userId = authSession?.user?.id;
     if (!userId || !supabaseClient || movieCloudState.loadingUser === userId) return;
