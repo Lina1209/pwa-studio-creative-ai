@@ -10,8 +10,8 @@ declare
   v_owner uuid := current_setting('pwa.test_owner_id')::uuid;
   v_other_owner uuid := gen_random_uuid();
   v_local_character uuid := gen_random_uuid();
-  v_local_reference uuid := gen_random_uuid();
-  v_other_reference uuid := gen_random_uuid();
+  v_local_reference text;
+  v_other_reference text;
   v_character jsonb;
   v_foreign_character jsonb;
   v_asset uuid := gen_random_uuid();
@@ -33,13 +33,15 @@ begin
     v_owner,v_local_character,'Reference binding test',null,'{"references":[{"id":"placeholder"}]}'::jsonb
   );
   v_character_id := (v_character->>'id')::uuid;
+  v_local_reference := v_character_id::text || '-' || gen_random_uuid()::text;
+  v_other_reference := v_character_id::text || '-' || gen_random_uuid()::text;
   v_foreign_character := public.pwa_create_character_idempotent(
     v_other_owner,gen_random_uuid(),'Foreign character',null,'{}'::jsonb
   );
 
   v_storage_path := v_owner::text || '/characters/' || v_character_id::text || '/' || v_object::text || '.png';
   v_result := public.pwa_reserve_character_reference_upload_v2(
-    v_owner,v_character_id,v_local_reference::text,v_asset,v_operation,v_event,
+    v_owner,v_character_id,v_local_reference,v_asset,v_operation,v_event,
     'reference-binding-idempotency-001','hero.png','image/png','studio-media',
     v_storage_path,128,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',16,8
   );
@@ -82,7 +84,7 @@ begin
   v_conflict := false;
   begin
     perform public.pwa_reserve_character_reference_upload_v2(
-      v_owner,v_character_id,v_other_reference::text,v_asset,v_operation,v_event,
+      v_owner,v_character_id,v_other_reference,v_asset,v_operation,v_event,
       'reference-binding-idempotency-001','hero.png','image/png','studio-media',
       v_storage_path,128,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',16,8
     );
