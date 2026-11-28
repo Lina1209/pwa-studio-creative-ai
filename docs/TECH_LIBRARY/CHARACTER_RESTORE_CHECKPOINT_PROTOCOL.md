@@ -216,3 +216,19 @@ The media staging coordinator renews its 60-second lease every 20 seconds while 
 Real-browser tests now cover successful renewal, stale-token rejection, renewal after lease takeover, and monotonic epoch fencing. The coordinator's existing browser and unit tests continue to exercise staging, tampered read-back, and account-switch fencing.
 
 This improves long-transfer resilience but does not make browser timers reliable during device sleep or browser suspension. If a tab is suspended beyond the lease expiry, the attempt must fail closed and resume under a newly acquired lease. No production UI, cloud media endpoint, metadata activation, or deployment is enabled by this change.
+
+
+## 12. Isolated IndexedDB Blob staging adapter (feature branch)
+
+Status: `character-restore-blob-store.js` now provides an injected, owner- and operation-scoped adapter over the existing `pwa-studio-character-library-v1/images` object store. It is not wired into the application or coordinator.
+
+- Reuses the existing database and object-store schema; no version bump or migration is required.
+- Writes staged records with the existing `id`, `ownerId`, `blob`, and `createdAt` fields plus a `restoreStage` descriptor containing operation ID, cloud asset ID, and the expected byte/dimension proof.
+- Rejects invalid UUID identities, unsupported or malformed proof metadata, and collisions with records owned by another account or operation.
+- Allows an idempotent retry only when owner, operation, cloud asset, and proof metadata match. The coordinator must still read the Blob back and recompute its proof; matching metadata alone is not trusted.
+- Reads return a Blob only when owner, operation, asset, and staged ID all match. Other-owner or other-operation lookups return null.
+- The adapter intentionally has no delete/cleanup API. Safe cleanup requires a separate lease- and active-reference-checked protocol and must not be inferred from an unreferenced Blob.
+
+The real-browser Playwright test uses actual IndexedDB and Web Crypto to check write/read, idempotent retry, owner and operation isolation, collision rejection, and malformed proof rejection. CI wiring runs this browser test and checks the adapter's JavaScript syntax.
+
+This adapter is an isolated persistence primitive, not evidence of a complete restore. It does not download media, inspect image dimensions, activate metadata, clean up staged records, or connect to the UI. Keep restore/import disabled.
