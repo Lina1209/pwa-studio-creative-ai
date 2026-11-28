@@ -284,3 +284,40 @@ else
 fi
 
 echo "AI budget release/settlement race invariant passed: exactly one terminal outcome was recorded."
+
+# Also verify the opposite terminal ordering: once provider cost is settled,
+# concurrent no-charge release attempts must all be rejected without ledger writes.
+settled_request_id='bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
+settled_reservation_id="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select reservation_id from public.reserve_ai_budget('$settled_request_id','$PWA_TEST_OWNER_ID','budget-settled-release-guard-0001','$(printf 'settled-release-guard' | sha256sum | cut -d' ' -f1)','chat','deepseek','deepseek-flash',0.005)")"
+psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select public.settle_ai_budget('$settled_reservation_id',0.002)" | grep -qx 'settled'
+pids=()
+for i in $(seq 1 8); do
+  (
+    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+      -c "select public.release_ai_budget_no_charge('$settled_reservation_id','confirmed_no_charge')" \
+      >"$tmp_dir/settled-release-$i.out" 2>"$tmp_dir/settled-release-$i.err"
+  ) &
+  pids+=("$!")
+done
+settled_release_worker_failures=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || settled_release_worker_failures=$((settled_release_worker_failures + 1))
+done
+settled_release_true=0
+for output_file in "$tmp_dir"/settled-release-*.out; do
+  [[ -f "$output_file" ]] || continue
+  if grep -qx 't' "$output_file"; then
+    settled_release_true=$((settled_release_true + 1))
+  fi
+done
+settled_release_events="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select count(*) from public.ai_budget_ledger where reservation_id='$settled_reservation_id' and event_type='release'")"
+settled_terminal_events="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select count(*) from public.ai_budget_ledger where reservation_id='$settled_reservation_id' and event_type='settle'")"
+if [[ "$settled_release_worker_failures" != "0" || "$settled_release_true" != "0" || "$settled_release_events" != "0" || "$settled_terminal_events" != "1" ]]; then
+  echo "Settled reservation incorrectly accepted a concurrent no-charge release." >&2
+  exit 1
+fi
+echo "AI budget settled/release guard passed: all concurrent releases rejected after settlement."
