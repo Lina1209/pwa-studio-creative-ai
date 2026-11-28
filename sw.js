@@ -5,6 +5,7 @@ const CORE_ASSETS = [
   "./styles.css",
   "./app.js",
   "./character-owner-coordination-lock.js?v=20261128-1",
+  "./profile-avatar-catalog.js?v=20261127-1",
   "./audio-lab.js",
   "./supabase-config.js",
   "./manifest.webmanifest",
@@ -39,7 +40,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   const isShellAsset = request.mode === "navigate" ||
-    ["/index.html", "/app.js", "/character-owner-coordination-lock.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
+    ["/index.html", "/app.js", "/character-owner-coordination-lock.js", "/profile-avatar-catalog.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].some(asset => url.pathname.endsWith(asset));
 
   if (isShellAsset) {
     event.respondWith(
