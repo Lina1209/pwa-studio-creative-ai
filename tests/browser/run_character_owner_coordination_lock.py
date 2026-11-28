@@ -30,21 +30,30 @@ try:
                 first.goto(fixture,wait_until="load")
                 second.goto(fixture,wait_until="load")
                 owner="33333333-3333-4333-8333-333333333333"
-                outcomes=context.pages[-2:]
-                results=[]
+                outcomes=[first,second]
+                # Start both acquisitions before awaiting either result. This exercises
+                # the IndexedDB transaction race rather than merely testing sequential denial.
                 for tab in outcomes:
-                    results.append(tab.evaluate("""async owner => {
-                      try { const lease=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:3000}); return {ok:true,lease}; }
-                      catch(error) { return {ok:false,message:error.message}; }
-                    }""",owner))
+                    tab.evaluate("""owner => {
+                      window.lockRace = (async () => {
+                        try {
+                          const lease=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:3000});
+                          return {ok:true,lease};
+                        } catch(error) {
+                          return {ok:false,message:error.message};
+                        }
+                      })();
+                    }""",owner)
+                results=[tab.evaluate("() => window.lockRace") for tab in outcomes]
                 winners=[item for item in results if item["ok"]]
                 if len(winners)!=1:
-                    print("CROSS-TAB LOCK FAILURE:",results)
+                    print("SIMULTANEOUS CROSS-TAB LOCK FAILURE:",results)
                     failed=True
                 else:
-                    await_release=outcomes[results.index(winners[0])].evaluate(
+                    winner_index=next(i for i,item in enumerate(results) if item["ok"])
+                    await outcomes[winner_index].evaluate(
                         "lease => PWACharacterOwnerCoordinationLock.release(lease)",winners[0]["lease"])
-                    print("PASS cross-tab exclusive owner lock:",results)
+                    print("PASS simultaneous cross-tab exclusive owner lock:",results)
             context.close()
             if failed: raise SystemExit(1)
 finally:
