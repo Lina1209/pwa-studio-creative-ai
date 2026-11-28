@@ -120,4 +120,17 @@ function adapters({badReadback=false}={}){
  assert.equal(sixth.inspect().references[0].state,"pending");
  assert.equal(sixth.inspect().lease,null);
  console.log("PASS confirmation expiring inside stageBlob prevents verified checkpoint and leaves operation safely retryable");
+
+ const seventh=makeJournal(),readGate=await issuedGate();let readValid=true,readCalls=0;
+ const readThenExpired={
+  ...adapters(),
+  async stageBlob(input){const store=adapters();return {localStagedBlobId:input.localStagedBlobId};},
+  async readStagedBlob(){readCalls++;readValid=false;return new Blob([bytes],{type:"image/png"});}
+ };
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:seventh,...readGate,validateConfirmation:()=>readValid,adapters:readThenExpired}),/confirmation/);
+ assert.equal(readCalls,1);
+ assert.equal(seventh.inspect().state,"paused_retryable");
+ assert.equal(seventh.inspect().references[0].state,"pending");
+ assert.equal(seventh.inspect().lease,null);
+ console.log("PASS confirmation expiring during staged Blob read-back prevents verified checkpoint");
 })().catch(error=>{console.error(error);process.exitCode=1;});
