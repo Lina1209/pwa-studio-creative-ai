@@ -36,7 +36,7 @@ function makeJournal(){
 }
 const manifest=[{cloudAssetId:asset,characterId,sourceLocalId,localReferenceId,name:"front.png",type:"image/png",expectedSha256:sha,expectedSizeBytes:bytes.length,expectedMimeType:"image/png",width:32,height:24}];
 async function issuedGate(){
- const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>({items:[{id:characterId,source_local_id:sourceLocalId,version:1,name:"Катти",description:"",created_at:"2026-11-28T00:00:00.000Z",reference_data:{kind:"character",representation:"2d",voice:"",passport:{},referenceImages:[]}}],next_cursor:null})});
+ const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>({items:[{id:characterId,source_local_id:sourceLocalId,version:1,name:"Катти",description:"",created_at:"2026-11-28T00:00:00.000Z",reference_data:{kind:"character",representation:"2d",voice:"",passport:{},referenceImages:[{id:localReferenceId,name:"front.png",type:"image/png"}]}}],next_cursor:null}),fetchReferences:async()=>[{id:asset,character_id:characterId,local_reference_id:localReferenceId,status:"ready",file_name:"front.png",file_type:"image/png",size_bytes:bytes.length,content_sha256:sha,width:32,height:24}]});
  const selected=planner.selectRestorePlan({ownerId:owner,plan,selectedCloudIds:[characterId]});
  const preview=planner.buildRestorePreview({ownerId:owner,plan:selected});
  const confirmation=planner.confirmRestorePreview({ownerId:owner,plan:selected,preview,confirmed:true});
