@@ -68,7 +68,7 @@ assert.match(app, /archivedProjects=authSession\?\.user\?\[\]:readGuestArchive\(
 assert.match(app, /Облачная запись фильма имеет неверный формат или принадлежит другому пространству/);
 assert.match(app, /Optimistic concurrency: never blindly upsert/);
 assert.doesNotMatch(app, /from\("projects"\)\.upsert\(rows/);
-assert.match(app, /\.eq\("updated_at", item\.expectedUpdatedAt\)[\\s\\S]*\\.select\\("id"\\)/);
+assert.match(app, /\.eq\("updated_at", item\.expectedUpdatedAt\)[\s\S]*\.select\("id"\)/);
 assert.match(app, /Фильм изменился на другом устройстве во время сохранения/);
 assert.match(app, /локальная копия при конфликте/);
 assert.match(app, /writeMovieStorage\(nextLocal\)/);
