@@ -95,8 +95,10 @@
    current=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:current.revision,state:"activating",activation:intent});
    localAdapter.writeLocalItems(owner,merged);
    await journal.releaseLease(owner,op,lease);
-   const recovered=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:current.revision+1,journal,localAdapter});
-   ok(recovered.state==="committed","recovery did not recognize committed metadata");
+   const released=await journal.get(owner,op);
+   const query=new URLSearchParams({owner,operation:op,revision:String(released.revision)});
+   window.location.assign("./character-restore-activation-restart.html?"+query.toString());
+   await new Promise(()=>{});
   });
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
  }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
