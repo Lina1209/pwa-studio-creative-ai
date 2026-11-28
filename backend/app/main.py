@@ -17,7 +17,7 @@ from app.services.moderation_service import create_user_report, list_user_report
 from app.services.notification_service import list_notifications, mark_notification_read, mark_all_notifications_read, create_notification
 from app.services.messaging_service import list_conversations, send_message, list_messages, mark_conversation_read, block_user, unblock_user, list_blocked_users, edit_message, delete_message_for_self, ensure_target_not_owner
 from app.services.profile_service import get_own_profile, update_own_profile, search_public_profiles, get_public_profile
-from app.services.media_repository import get_owned_media_asset, list_owned_character_media_assets
+from app.services.media_repository import get_owned_media_asset, list_owned_character_media_assets, list_owned_character_media_assets_for_characters
 from app.services.media_read import plan_private_media_read
 from app.services.media_signed_url import create_private_media_signed_url, SIGNED_URL_TTL_SECONDS
 from app.services.media_access import media_asset_public_view
@@ -78,6 +78,18 @@ def health():
 
 
 
+
+
+@app.get(f"{settings.api_prefix}/characters/references")
+def list_character_reference_catalog(character_ids: str, response: Response,
+                                     user: StudioUser = Depends(get_current_user)):
+    """Return an explicit owner-scoped local-reference to cloud-asset catalog."""
+    ids = character_ids.split(",") if isinstance(character_ids, str) else []
+    if not 1 <= len(ids) <= 100 or any(not value for value in ids):
+        raise HTTPException(status_code=422, detail="Between 1 and 100 character IDs are required.")
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return list_owned_character_media_assets_for_characters(settings, ids, user.user_id)
 
 
 @app.get(f"{settings.api_prefix}/characters/{{character_id}}/references")
