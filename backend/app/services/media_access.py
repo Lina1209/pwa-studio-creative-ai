@@ -4,6 +4,7 @@ These helpers do not access Supabase or Storage. Call them only after loading
 rows server-side; always filter database queries by both resource ID and owner.
 """
 from uuid import UUID
+import re
 
 from fastapi import HTTPException
 
@@ -19,6 +20,17 @@ def canonical_uuid(value: str, label: str = "resource") -> str:
         return str(UUID(str(value)))
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(status_code=422, detail=f"A valid {label} ID is required.") from exc
+
+
+def canonical_local_reference_id(value: str) -> str:
+    """Validate a UUID or the stable legacy <character-UUID>-<reference-UUID> key."""
+    candidate = str(value) if value is not None else ""
+    uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    if re.fullmatch(uuid_pattern, candidate):
+        return candidate
+    if re.fullmatch(uuid_pattern + "-" + uuid_pattern, candidate):
+        return candidate
+    raise HTTPException(status_code=422, detail="A valid local reference ID is required.")
 
 
 def require_owned_row(row: dict | None, owner_id: str) -> dict:
