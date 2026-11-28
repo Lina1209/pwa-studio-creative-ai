@@ -51,6 +51,26 @@
    const manifest=await cleanupJournal.getManifest(owner,cleanupId);
    assert(manifest.state==="completed"&&manifest.candidates[0].state==="deleted","durable completion missing");
   });
+  await test("concurrent executor calls cannot delete the same owner candidate twice",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["concurrent cleanup"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
+   const results=await Promise.allSettled([execute(owner,cleanupId),execute(owner,cleanupId)]);
+   assert(results.filter(x=>x.status==="fulfilled").length===1,"exactly one executor should acquire the owner lock");
+   assert(results.filter(x=>x.status==="rejected").length===1,"contending executor should fail closed");
+   assert(await read(owner,op,asset,id)===null,"successful executor did not remove the exact candidate");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.state==="completed"&&manifest.candidates[0].state==="deleted","concurrent execution did not finalize exactly once");
+  });
+  await test("paused and uncertain source operations cannot be cleaned",async()=>{
+   for(const state of ["paused_retryable","activation_uncertain"]){
+    const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["source "+state],{type:"image/webp"});
+    await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+    try{await new Promise((resolve,reject)=>{const tx=db.transaction("operations","readwrite"),store=tx.objectStore("operations"),q=store.get(owner+":"+op);q.onsuccess=()=>{const row=q.result;row.state=state;row.revision++;store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+    await rejects(()=>execute(owner,cleanupId));
+    assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted for "+state+" source operation");
+   }
+  });
   await test("account switch after lock acquisition prevents deletion",async()=>{
    const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["account switch"],{type:"image/webp"});
    await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);let checks=0;
