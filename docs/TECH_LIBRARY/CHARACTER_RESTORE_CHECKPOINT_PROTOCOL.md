@@ -192,3 +192,13 @@ Status: `character-restore-coordinator.js` now implements an injected-adapter st
 Validation: CI run `46104623804` on commit `32f9a8e` passed all three jobs (backend unit tests, disposable PostgreSQL integration, and browser/IndexedDB plus frontend checks). The Node coordinator harness covers successful byte-proof/read-back staging, tampered staged Blob rejection, and account-switch fencing. Earlier coordinator test failures were traced to a test runtime Web Crypto global assignment and a mismatch between manifest and computed-proof field names; both were corrected before this successful run.
 
 Remaining limitations: the coordinator uses injected adapters and has no production media API or IndexedDB Blob adapter yet; no real cloud transfer, browser offline/network resume, forced process-kill recovery, actual quota exhaustion, lease heartbeat for long-running transfers, multi-tab UI, full 600-image stress test, metadata activation/recovery, tombstones, or restore UX. A successful staging result is not a completed restore. Keep restore/import disabled until the activation coordinator, recovery protocol, adapters, and full interruption/race tests are implemented.
+
+
+### Real-browser coordinator integration validation
+
+A Playwright/Chromium integration page now runs the coordinator against the actual IndexedDB restore journal and real browser Blob/Web Crypto APIs (with deterministic injected media adapters). It verifies:
+- successful staging reaches `ready_to_activate` only after Blob read-back proof is persisted;
+- tampered read-back bytes are rejected and the operation becomes `paused_retryable`;
+- account switching during download prevents later staging/checkpoint writes and releases the lease.
+
+CI run `46104818818` on commit `6dcbe09` passed all three jobs, including this real-browser coordinator integration test, the existing restore/backup journal browser suites, backend unit tests, and disposable PostgreSQL integration. This validates the injected-adapter boundary and journal integration; it does not validate a real cloud media endpoint or production Blob adapter.
