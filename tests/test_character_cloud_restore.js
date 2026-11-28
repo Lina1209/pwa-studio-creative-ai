@@ -42,6 +42,15 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(plan.unchanged.length,1);
     assert.equal(plan.conflicts.length,0);
   });
+
+  await run("matching passport without a persisted cloud identity binding requires conflict resolution",async()=>{
+    const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[]};
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
+    assert.equal(plan.unchanged.length,0);
+    assert.equal(plan.proposedItems.length,0);
+    assert.equal(plan.conflicts.length,1);
+    assert.equal(plan.conflicts[0].reason,"local_record_missing_cloud_identity_binding");
+  });
   await run("restore planning uses a stable local snapshot across awaits",async()=>{
     const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[],cloudBackup:{characterId:cloudId}};
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>{local.name="edited while fetching";return page([row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[]}})]);}});
