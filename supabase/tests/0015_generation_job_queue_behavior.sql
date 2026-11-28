@@ -73,6 +73,14 @@ begin
   where j.id = v_job_success;
   if v_token is null then raise exception 'TEST FAILED: success job was not claimed'; end if;
 
+  -- Null provider evidence is malformed input, not an implicit UNKNOWN value.
+  begin
+    perform public.record_generation_submission_outcome(v_job_success, v_token, null);
+    raise exception 'TEST FAILED: null provider outcome was accepted';
+  exception when invalid_parameter_value then
+    null;
+  end;
+
   select public.complete_generation_job(v_job_success, v_token, v_asset_b, 0.001) into v_ok;
   if v_ok then raise exception 'TEST FAILED: cross-owner result asset was accepted'; end if;
 
