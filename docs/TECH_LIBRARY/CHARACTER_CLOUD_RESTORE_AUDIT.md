@@ -141,3 +141,6 @@ The activation browser suite was extended with an account-switch race: switching
 
 
 Activation tests now exercise real browser `window.localStorage` in addition to real IndexedDB and Blob storage. The quota failure test injects only a failing `setItem` while preserving the real read path; the base library remains unchanged and the journal becomes retryable. GitHub Actions run `46108806956` on `df458f6` passed backend unit tests, disposable PostgreSQL integration, all browser/IndexedDB tests, and frontend syntax/account-switch checks.
+
+
+The crash-recovery scenario now crosses a real document navigation: after the metadata write and durable activation intent, a separate page reloads, reopens the IndexedDB journal and localStorage adapter, and recognizes the committed merged digest before marking the operation committed. GitHub Actions run `46108898647` on `0fcfd1f` passed all three CI jobs. This remains a feature-branch validation only; UI integration and production activation remain disabled.
