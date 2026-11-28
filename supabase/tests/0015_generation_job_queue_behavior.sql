@@ -117,8 +117,14 @@ begin
   where j.id = v_job_cancel;
   select public.request_generation_job_cancel(v_job_cancel, v_owner_a) into v_status;
   if v_status <> 'cancel_requested' then raise exception 'TEST FAILED: active cancel request failed'; end if;
+  -- Cancellation cannot erase an unknown provider outcome; first prove the
+  -- request was not submitted, then the current worker may finish safely.
   select public.finish_generation_job_cancel(v_job_cancel, v_token) into v_ok;
-  if not v_ok then raise exception 'TEST FAILED: matching worker could not finish cancellation'; end if;
+  if v_ok then raise exception 'TEST FAILED: cancellation finalized with unknown provider outcome'; end if;
+  select public.record_generation_submission_outcome(v_job_cancel, v_token, 'definitely_not_submitted') into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: safe cancellation evidence was not recorded'; end if;
+  select public.finish_generation_job_cancel(v_job_cancel, v_token) into v_ok;
+  if not v_ok then raise exception 'TEST FAILED: matching worker could not finish cancellation with safe evidence'; end if;
   select status into v_status from public.generation_jobs where id = v_job_cancel;
   if v_status <> 'cancelled' then raise exception 'TEST FAILED: cancellation terminal state missing'; end if;
 
