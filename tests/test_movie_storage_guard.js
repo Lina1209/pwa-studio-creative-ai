@@ -42,7 +42,7 @@ assert.match(app, /const movieRead = \(\) => \{\s*\/\/ Fail closed/);
 assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(movieStorageKey\(\)\)\)/);
 assert.doesNotMatch(app, /const movieRead = \(\) => \{[\s\S]{0,1800}catch\s*\{\s*return \[\];\s*\}\s*\};/);
 assert.match(app, /Проекты не загружены/);
-assert.match(app, /Гостевые проекты не загружены/);
+assert.match(app, /Гостевые проекты или архив не загружены/);
 
 
 assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(movieStorageKey\(\)\)\);\s*PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(projects\)\);/);
