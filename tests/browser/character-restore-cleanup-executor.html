@@ -57,7 +57,7 @@
    await rejects(()=>execute(owner,cleanupId,{isCurrent:()=>++checks<2}));
    assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted after account context changed");
    const manifest=await cleanupJournal.getManifest(owner,cleanupId);
-   assert(manifest.candidates[0].state==="eligible_for_delete_review","intent was written after account switch");
+   assert(manifest.candidates[0].state==="eligible_for_delete_review","intent was written after account switch");\n   const probe=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:5000});assert(await PWACharacterOwnerCoordinationLock.isCurrent(probe),"lock leaked after account switch during acquisition");await PWACharacterOwnerCoordinationLock.release(probe);
   });
   await test("metadata change after reconciliation blocks deletion",async()=>{
    const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["metadata drift"],{type:"image/webp"});
