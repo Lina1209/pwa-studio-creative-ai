@@ -24,7 +24,7 @@ class SupabaseKeyHeaderTests(unittest.TestCase):
         )
 
     def _call(self, service, key):
-        response = SimpleNamespace(content=b"[]", json=lambda: [])
+        response = SimpleNamespace(content=b"[]", json=lambda: [], raise_for_status=lambda: None)
         with patch.object(service.httpx, "request", return_value=response) as request:
             if service is messaging_service:
                 service._request(self._settings(key), "GET", "conversation_threads")
