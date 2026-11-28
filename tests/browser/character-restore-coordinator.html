@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Restore coordinator browser integration</title></head><body><pre id="results">Running</pre>
-<script src="../../character-restore-journal.js"></script><script src="../../character-restore-coordinator.js"></script>
+<script src="../../character-restore-journal.js"></script><script src="../../character-restore-blob-store.js"></script><script src="../../character-restore-coordinator.js"></script>
 <script>
 (async()=>{
  const out=document.getElementById("results"),passed=[];
@@ -41,6 +41,22 @@
    await rejects(()=>api.renewLease(owner,op.operationId,old),"stale holder renewed a taken-over lease");
    ok(fresh.epoch===old.epoch+1,"takeover did not advance lease epoch");
    await api.releaseLease(owner,op.operationId,fresh);
+  });
+  await test("coordinator stages and reads back through the real owner/operation-scoped Blob store",async()=>{
+   const op=await planned();
+   const store=PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore();
+   const media={
+    async downloadAsset(){return blob},
+    async inspectImage(){return {width:40,height:30}},
+    stageBlob(input){return store.stageBlob(input)},
+    readStagedBlob(input){return store.readStagedBlob(input)}
+   };
+   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:media});
+   const row=await api.get(owner,op.operationId);
+   const ref=row.references[0];
+   const saved=await store.readStagedBlob({ownerId:owner,operationId:op.operationId,cloudAssetId:manifest[0].cloudAssetId,localStagedBlobId:ref.localStagedBlobId});
+   ok(result.state==="ready_to_activate"&&row.state==="ready_to_activate","real Blob store staging did not complete");
+   ok(saved instanceof Blob&&saved.size===blob.size&&ref.state==="verified_staged","real Blob store read-back was not verified");
   });
   await test("real IndexedDB journal + Blob staging reaches ready_to_activate",async()=>{
    const op=await planned();
