@@ -145,3 +145,61 @@ if [[ "$settlement_successes" != "12" || "$settlement_failures" != "0" || "$sett
 fi
 
 echo "AI budget settlement invariant passed: 12 concurrent identical settlements produced one ledger event."
+
+# Race an ambiguous-outcome marker against a confirmed settlement. The global
+# transaction lock and row lock must serialize both operations: settlement
+# wins or follows unknown, and the final reservation must be settled exactly
+# once with the provider's actual amount.
+race_request_id='99999999-9999-4999-8999-999999999999'
+race_reservation_id="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select reservation_id from public.reserve_ai_budget('$race_request_id','$PWA_TEST_OWNER_ID','budget-unknown-settle-race-0001','$(printf 'unknown-settle-race' | sha256sum | cut -d' ' -f1)','chat','deepseek','deepseek-flash',0.005)")"
+if [[ -z "$race_reservation_id" ]]; then
+  echo "Could not create reservation for unknown/settlement race." >&2
+  exit 1
+fi
+pids=()
+for i in $(seq 1 6); do
+  (
+    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+      -c "select public.mark_ai_budget_unknown('$race_reservation_id','concurrent_outcome_check')" \
+      >"$tmp_dir/unknown-$i.out" 2>"$tmp_dir/unknown-$i.err"
+  ) &
+  pids+=("$!")
+done
+for i in $(seq 1 6); do
+  (
+    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+      -c "select public.settle_ai_budget('$race_reservation_id',0.003)" \
+      >"$tmp_dir/race-settle-$i.out" 2>"$tmp_dir/race-settle-$i.err"
+  ) &
+  pids+=("$!")
+done
+unknown_settle_failures=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || unknown_settle_failures=$((unknown_settle_failures + 1))
+done
+race_settle_successes=0
+for output_file in "$tmp_dir"/race-settle-*.out; do
+  [[ -f "$output_file" ]] || continue
+  if grep -qx 'settled' "$output_file"; then
+    race_settle_successes=$((race_settle_successes + 1))
+  fi
+done
+race_final_status="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select status from public.ai_budget_reservations where id='$race_reservation_id'")"
+race_actual="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select actual_usd from public.ai_budget_reservations where id='$race_reservation_id'")"
+race_settle_events="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select count(*) from public.ai_budget_ledger where reservation_id='$race_reservation_id' and event_type='settle'")"
+race_unknown_events="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select count(*) from public.ai_budget_ledger where reservation_id='$race_reservation_id' and event_type='unknown'")"
+echo "AI budget unknown/settlement race: final=$race_final_status settle_successes=$race_settle_successes failures=$unknown_settle_failures settle_events=$race_settle_events unknown_events=$race_unknown_events actual=$race_actual"
+if [[ "$race_final_status" != "settled" || "$race_settle_successes" != "6" || "$unknown_settle_failures" != "0" || "$race_settle_events" != "1" || "$race_unknown_events" -gt "1" || "$race_actual" != "0.0030000000" ]]; then
+  echo "AI budget unknown/settlement race invariant failed." >&2
+  for error_file in "$tmp_dir"/unknown-*.err "$tmp_dir"/race-settle-*.err; do
+    [[ -s "$error_file" ]] && cat "$error_file" >&2
+  done
+  exit 1
+fi
+
+echo "AI budget unknown/settlement race invariant passed: final state settled with one settlement event."
