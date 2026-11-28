@@ -510,3 +510,19 @@ Real-browser tests use actual IndexedDB, localStorage, Blob bytes, WebCrypto, an
 ### Explicit remaining safety gate
 
 This phase only records delayed candidates. It does not implement the retention-expiry recheck, candidate cancellation/reconciliation, cleanup-manifest state transitions, or any Blob delete operation. A later phase must re-read the complete metadata and journal inventory under the owner lock after the retention deadline, verify the original operation revision and proof again, reconcile interrupted batches, and only then consider a separately reviewed exact-key IndexedDB delete transaction. No cleanup UI, background worker, automatic sweep, or production data operation exists.
+
+
+## 23. Retention-gated cleanup recheck (read-only; no delete)
+
+The cleanup planner now also exposes `PWACharacterRestoreCleanup.inspectMarkedManifest`. This is a second, read-only phase:
+
+- Acquires the same owner-wide lock and renews it while reading.
+- Refuses to proceed until every candidate's 24-hour retention deadline has passed.
+- Re-reads and hashes the complete local metadata; any metadata digest change blocks the entire manifest.
+- Re-reads the complete bounded restore journal (up to 100 operations) and checks the source operation is still the exact recorded revision, remains terminal `aborted`, and has no live lease.
+- Rebuilds owner-wide staged-Blob and cloud-asset maps; any active metadata reference, cross-operation staged ID, reused cloud-asset mapping, changed checkpoint proof, missing Blob, or failed byte/dimension verification blocks the candidate batch.
+- Returns only a read-only `eligible_for_delete_review` result when all checks still match. This result is advisory and is not a delete authorization token; a future delete implementation must repeat the full checks while holding the owner lock immediately before its exact-key transaction.
+
+Browser tests verify retention cannot be bypassed, an expired candidate passes the read-only proof recheck, the staged Blob remains present afterward, and any changed local metadata blocks the manifest. CI run `46111142768` on commit `a082776` passed all three jobs, including the new cleanup retention/recheck browser cases.
+
+No deletion method, cleanup manifest mutation, automatic worker, or UI control has been added. The next gate is durable candidate cancellation/reconciliation and crash-safe per-candidate deletion design, followed by additional multi-tab race tests. Until those are complete, staged Blobs are never removed by this cleanup subsystem.
