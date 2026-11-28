@@ -99,25 +99,36 @@
   const {ownerId,operationId,plan,expectedRevision}=input;
   if(!uuid(ownerId)||!uuid(operationId))fail("Invalid restore owner or operation identity.");
   assertCurrent(isCurrent);
-  let lease=null,ownerLease=null,heartbeat=null,renewal=Promise.resolve(),row=null,revision=expectedRevision,writeAttempted=false;
+  let operationLease=null,ownerLease=null,heartbeat=null,renewal=Promise.resolve(),row=null,revision=expectedRevision,writeAttempted=false,lost=false;
+  const renewBoth=async()=>{
+   try{
+    operationLease=await journal.renewLease(ownerId,operationId,operationLease,{ttlMs:30000});
+    ownerLease=await ownerLock.renew(ownerLease,{ttlMs:30000});
+   }catch{lost=true;}
+  };
   try{
+   // Global owner lock first, then the operation lease: every activation/recovery path uses this order.
+   ownerLease=await ownerLock.acquire(ownerId,{ttlMs:30000});
+   if(!(await ownerLock.isCurrent(ownerLease)))fail("Owner critical-section lease was lost before activation.");
    row=await journal.get(ownerId,operationId);
    if(!row||row.revision!==expectedRevision||row.state!=="ready_to_activate")fail("Restore checkpoint changed; refresh and re-plan.");
-   lease=await journal.acquireLease(ownerId,operationId,{ttlMs:30000});
+   operationLease=await journal.acquireLease(ownerId,operationId,{ttlMs:30000});
    row=await journal.get(ownerId,operationId);
-   if(!row||row.state!=="ready_to_activate"||row.revision!==expectedRevision+1||row.leaseEpoch!==lease.epoch)fail("Activation lease or checkpoint changed.");
+   if(!row||row.state!=="ready_to_activate"||row.revision!==expectedRevision+1||row.leaseEpoch!==operationLease.epoch)fail("Activation lease or checkpoint changed.");
    revision=row.revision;
-   let lost=false;
-   const renew=async()=>{try{lease=await journal.renewLease(ownerId,operationId,lease,{ttlMs:30000});}catch{lost=true;}};
-   heartbeat=setInterval(()=>{renewal=renewal.then(renew);},10000);
-   const assertLease=async()=>{assertCurrent(isCurrent);if(lost||!lease||Date.parse(lease.expiresAt)<=Date.now()||!ownerLease||!(await ownerLock.isCurrent(ownerLease)))fail("Activation or owner critical-section lease expired or was fenced.");};
+   heartbeat=setInterval(()=>{renewal=renewal.then(renewBoth);},10000);
+   const assertLeases=async()=>{
+    assertCurrent(isCurrent);
+    if(lost||!operationLease||Date.parse(operationLease.expiresAt)<=Date.now()||
+       !ownerLease||!(await ownerLock.isCurrent(ownerLease)))fail("Activation or owner critical-section lease expired or was fenced.");
+   };
    const prepared=await prepareMerged({ownerId,operationId,row,plan,localAdapter,blobStore,inspectImage,isCurrent});
-   assertLease();
+   await assertLeases();
    const intent={baseDigest:prepared.baseDigest,mergedDigest:prepared.mergedDigest,intendedCount:prepared.merged.length,restoredCount:plan.proposedItems.length,operationMarker:operationId,preparedAt:new Date().toISOString()};
-   const activating=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"activating",activation:intent});
+   const activating=await journal.checkpoint({ownerId,operationId,leaseToken:operationLease.token,leaseEpoch:operationLease.epoch,expectedRevision:revision,state:"activating",activation:intent});
    revision=activating.revision;
-   await renewal;assertLease();
-   // Single synchronous owner-scoped metadata-key replacement is the commit point.
+   await renewal;await assertLeases();
+   // The owner lock fences cleanup/other activations through this synchronous metadata commit boundary.
    writeAttempted=true;
    const result=localAdapter.writeLocalItems(ownerId,prepared.merged);
    if(result&&typeof result.then==="function")fail("Local metadata activation must be synchronous.");
@@ -125,55 +136,62 @@
    if(readBack&&typeof readBack.then==="function")fail("Local metadata read-back must be synchronous.");
    if(!Array.isArray(readBack)||await digest(canonical(readBack))!==intent.mergedDigest)fail("Activated metadata read-back digest does not match.");
    if(readBack.filter(x=>x?.restoreOperationId===operationId).length!==intent.intendedCount-prepared.current.length)fail("Activated card markers do not match the intended restore count.");
-   await renewal;assertLease();
-   const committed=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"committed"});
+   await renewal;await assertLeases();
+   const committed=await journal.checkpoint({ownerId,operationId,leaseToken:operationLease.token,leaseEpoch:operationLease.epoch,expectedRevision:revision,state:"committed"});
    revision=committed.revision;
    return Object.freeze({state:"committed",restoredCount:plan.proposedItems.length,totalCount:readBack.length,mergedDigest:intent.mergedDigest});
   }catch(error){
-   if(row&&lease&&ownerLease&&isCurrent()&&await ownerLock.isCurrent(ownerLease)){
+   if(row&&operationLease&&ownerLease&&isCurrent()&&await ownerLock.isCurrent(ownerLease)){
     try{
      const latest=await journal.get(ownerId,operationId);
-     if(latest&&latest.state==="activating"&&latest.lease?.token===lease.token&&latest.lease.epoch===lease.epoch){
-      const actual=localAdapter.readLocalItems(ownerId);
-      const actualDigest=await digest(canonical(actual));
+     if(latest&&latest.state==="activating"&&latest.lease?.token===operationLease.token&&latest.lease.epoch===operationLease.epoch){
+      const actual=localAdapter.readLocalItems(ownerId),actualDigest=await digest(canonical(actual));
       const state=writeAttempted&&actualDigest!==(latest.activation?.baseDigest)?"activation_uncertain":"paused_retryable";
-      await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:latest.revision,state});
+      await journal.checkpoint({ownerId,operationId,leaseToken:operationLease.token,leaseEpoch:operationLease.epoch,expectedRevision:latest.revision,state});
      }
-    }catch{/* Preserve original failure; the persisted activation intent remains recoverable. */}
+    }catch{/* Preserve original failure; durable activation intent remains recoverable. */}
    }
    throw error;
   }finally{
    if(heartbeat)clearInterval(heartbeat);
    await renewal;
-   if(lease)try{await journal.releaseLease(ownerId,operationId,lease);}catch{/* lease expiry/takeover is fenced */}\n   if(ownerLease)try{await ownerLock.release(ownerLease);}catch{/* owner lease expiry/takeover is fenced */}
+   if(operationLease)try{await journal.releaseLease(ownerId,operationId,operationLease);}catch{/* stale lease is fenced */}
+   if(ownerLease)try{await ownerLock.release(ownerLease);}catch{/* expired/taken-over owner lease is fenced */}
   }
  }
  async function recoverActivation(input){
   const {journal,localAdapter,ownerLock,isCurrent}=dependencies({...input,blobStore:input.blobStore||{readStagedBlob:async()=>null},inspectImage:input.inspectImage||(()=>({width:1,height:1}))});
   const {ownerId,operationId,expectedRevision}=input;
+  if(!uuid(ownerId)||!uuid(operationId))fail("Invalid recovery owner or operation identity.");
   assertCurrent(isCurrent);
-  const row=await journal.get(ownerId,operationId);
-  if(!row||row.revision!==expectedRevision||!["activating","activation_uncertain","paused_retryable"].includes(row.state)||!row.activation)fail("No recoverable activation intent exists.");
-  assertCurrent(isCurrent);
-  const lease=await journal.acquireLease(ownerId,operationId,{ttlMs:30000});
+  let ownerLease=null,operationLease=null;
   try{
+   // Same lock order as activation prevents cross-operation recovery/activation races.
+   ownerLease=await ownerLock.acquire(ownerId,{ttlMs:30000});
+   if(!(await ownerLock.isCurrent(ownerLease)))fail("Owner critical-section lease was lost before recovery.");
+   const row=await journal.get(ownerId,operationId);
+   if(!row||row.revision!==expectedRevision||!["activating","activation_uncertain","paused_retryable"].includes(row.state)||!row.activation)fail("No recoverable activation intent exists.");
+   assertCurrent(isCurrent);
+   operationLease=await journal.acquireLease(ownerId,operationId,{ttlMs:30000});
    const current=await journal.get(ownerId,operationId);
    assertCurrent(isCurrent);
-   if(!current||current.revision!==expectedRevision+1||current.leaseEpoch!==lease.epoch)fail("Recovery checkpoint changed.");
+   if(!current||current.revision!==expectedRevision+1||current.leaseEpoch!==operationLease.epoch)fail("Recovery checkpoint changed.");
    const items=localAdapter.readLocalItems(ownerId);
    if(items&&typeof items.then==="function")fail("Local metadata adapter must be synchronous.");
    const actual=await digest(canonical(items));
    assertCurrent(isCurrent);
    let next;
-   if(actual===current.activation.mergedDigest&&items.length===current.activation.intendedCount&&items.filter(x=>x?.restoreOperationId===operationId).length===current.activation.restoredCount){
-     next="committed";
-    }else if(actual===current.activation.baseDigest){
-     next="paused_retryable";
-    }else next="conflict";
+   if(actual===current.activation.mergedDigest&&items.length===current.activation.intendedCount&&items.filter(x=>x?.restoreOperationId===operationId).length===current.activation.restoredCount)next="committed";
+   else if(actual===current.activation.baseDigest)next="paused_retryable";
+   else next="conflict";
    assertCurrent(isCurrent);
-   const saved=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:current.revision,state:next});
+   if(!(await ownerLock.isCurrent(ownerLease)))fail("Owner critical-section lease was fenced during recovery.");
+   const saved=await journal.checkpoint({ownerId,operationId,leaseToken:operationLease.token,leaseEpoch:operationLease.epoch,expectedRevision:current.revision,state:next});
    return Object.freeze({state:saved.state,reason:next==="committed"?"merged_digest_matches":next==="paused_retryable"?"base_digest_matches":"metadata_matches_neither_safe_boundary"});
-  }finally{try{await journal.releaseLease(ownerId,operationId,lease);}catch{}}
+  }finally{
+   if(operationLease)try{await journal.releaseLease(ownerId,operationId,operationLease);}catch{}
+   if(ownerLease)try{await ownerLock.release(ownerLease);}catch{}
+  }
  }
  globalThis.PWACharacterRestoreActivation=Object.freeze({activateRestore,recoverActivation});
 })();
