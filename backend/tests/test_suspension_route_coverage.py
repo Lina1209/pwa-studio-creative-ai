@@ -87,7 +87,7 @@ class SuspensionRouteCoverageTests(unittest.TestCase):
                 calls = _body_calls(node)
                 self.assertTrue(any(
                     func.endswith("ensure_user_not_suspended")
-                    and len(args) >= 3 and args[2].strip("'\\"") == "community"
+                    and len(args) >= 3 and ast.literal_eval(args[2]) == "community"
                     for func, args in calls
                 ))
 
@@ -98,7 +98,7 @@ class SuspensionRouteCoverageTests(unittest.TestCase):
                 calls = _body_calls(self.main_routes[name])
                 self.assertTrue(any(
                     func.endswith("ensure_user_not_suspended")
-                    and len(args) >= 3 and args[2].strip("'\\"") == "assistant"
+                    and len(args) >= 3 and ast.literal_eval(args[2]) == "assistant"
                     for func, args in calls
                 ))
 
