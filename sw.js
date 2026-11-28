@@ -53,7 +53,8 @@ self.addEventListener("fetch", event => {
         })
         .catch(async () => {
           const cache = await caches.open(CACHE_NAME);
-          const cached = await cache.match(request);
+          // Shell assets are precached without cache-busting query strings.
+          const cached = await cache.match(request, { ignoreSearch: true });
           const appIndex = new URL("./index.html", self.registration.scope).href;
           return cached || (request.mode === "navigate" ? (await cache.match(appIndex)) : null) || Response.error();
         })
