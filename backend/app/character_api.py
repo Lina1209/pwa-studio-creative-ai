@@ -16,6 +16,7 @@ class CharacterCreate(BaseModel):
 
 class CharacterPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1)
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=5000)
     reference_data: dict | None = None
@@ -37,6 +38,6 @@ def build_character_router(settings):
     @router.patch("/characters/{character_id}")
     def patch_character(character_id: str, payload: CharacterPatch, response: Response, user: StudioUser = Depends(get_current_user)):
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
-        changes = payload.model_dump(exclude_unset=True)
-        return update_owned_character(settings, user.user_id, character_id, changes)
+        changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+        return update_owned_character(settings, user.user_id, character_id, payload.expected_version, changes)
     return router
