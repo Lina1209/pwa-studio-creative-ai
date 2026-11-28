@@ -30,7 +30,11 @@
   await rejects(()=>api.release(renewed));
   assert(await api.isCurrent(takeover),"new lease not current");
   await api.release(takeover);
-  passed.push("expiry takeover and stale-holder fencing");
+  assert(!(await api.isCurrent(takeover)),"released owner lease remained current");
+  const afterRelease=await api.acquire(owner,{ttlMs:3000});
+  assert(afterRelease.epoch===takeover.epoch+1,"owner epoch reset after a successful release");
+  await api.release(afterRelease);
+  passed.push("expiry takeover, release tombstone, and monotonic stale-holder fencing");
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
   document.documentElement.dataset.testResult="passed";
  }catch(error){out.textContent="FAIL\n"+passed.join("\n")+"\n"+(error.stack||error);document.documentElement.dataset.testResult="failed"}
