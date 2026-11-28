@@ -258,7 +258,9 @@
 
   // Compatibility helper: returns the first bounded page only.
   async function list(ownerIdValue) {
-    return (await listPage(ownerIdValue, {limit:100})).items;
+    const page = await listPage(ownerIdValue, {limit:100});
+    if (page.nextCursor) fail("Journal contains more than 100 records; use listPage() to traverse every page.");
+    return page.items;
   }
 
   async function setCloudCharacter(ownerIdValue, localCharacterIdValue, cloudCharacterIdValue) {
