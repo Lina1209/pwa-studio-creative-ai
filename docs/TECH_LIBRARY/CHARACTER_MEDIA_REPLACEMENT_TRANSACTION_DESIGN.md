@@ -192,3 +192,23 @@ The client must not choose a raw Storage path or supply authority to delete an o
 The repository currently supports upload reservation, immutable local-reference binding, independent verification, and owner-scoped catalog lookup. It does not yet support a logical slot identity distinct from the immutable upload identity, nor does the current passport serializer persist a cloud asset ID.
 
 Consequently, the next implementation must first add and test the manifest v2 compatibility layer and catalog-to-manifest resolver. Only after that contract is stable should a new migration add the atomic replacement RPC and replacement-specific cleanup event/claim/completion path. Do not wire the current `id` field directly to a destructive replacement operation.
+
+## 11. Additional audit: prevent duplicate deletion across cleanup scopes
+
+A further read-only audit of migration 0019 found a cross-scope race that must be closed before implementing the replacement worker:
+
+- The whole-character request RPC accepts an asset already in `cleanup_pending` and can enqueue a new `media_cleanup_requested` event for it.
+- A replacement operation uses a different event type, `media_reference_replacement_cleanup_requested`.
+- The existing uniqueness constraint is scoped to `(asset_id, operation_id, event_type)`; it does not prevent two active events of different cleanup scopes from targeting the same immutable Storage object.
+- Therefore, simply adding a replacement event type and separate RPCs could allow two workers to receive the same object key and issue overlapping Storage DELETE requests if whole-character deletion starts after a replacement switch.
+
+Required guard for the feature migration:
+
+1. Add a partial unique index allowing at most one active deletion event per asset across both cleanup event types. The active states are `pending` and `claimed`; terminal `delivered` and `dead_letter` events remain auditable.
+2. A conflicting whole-character cleanup reservation must fail atomically and leave its character deletion marker unset. The caller can retry after the replacement event reaches a terminal state. Do not catch and suppress this uniqueness conflict.
+3. A replacement transaction must likewise fail closed if a whole-character cleanup event is already active; the existing character cleanup marker and character-row lock are additional fences.
+4. Replacement claim, completion, and retry RPCs must use a consistent character -> outbox event -> media asset lock order. The claim must recheck exact object-key references under the same advisory lock convention as migration 0019 before returning a Storage key.
+5. The replacement claim must carry and fence the replacement operation ID as well as event, owner, asset, and claim token. The completion RPC may detach the old asset only after the external worker confirms DELETE/404.
+6. Add disposable-PostgreSQL tests for both orderings: replacement reservation first, then whole-character cleanup; and whole-character cleanup first, then attempted replacement. Also race two claimers and verify that only one active event can ever authorize deletion for an asset.
+
+This is a required safety invariant, not an optimization. It is deliberately stricter than allowing both event types to coexist and hoping one worker wins. The migration and any worker support remain feature-branch-only until the race matrix passes; no production database or worker is to be activated by this work.
