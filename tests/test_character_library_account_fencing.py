@@ -436,3 +436,22 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+    def test_auth_identity_event_is_not_emitted_for_token_refresh_or_duplicate_session(self):
+        start = APP.index("const refreshAuthUI = session =>")
+        end = APP.index("const user = session && session.user;", start)
+        transition = APP[start:end]
+        self.assertIn("const identityChanged = nextUserId !== assistantUserId;", transition)
+        self.assertIn('if (identityChanged) window.dispatchEvent(new Event("pwa-studio-auth-changed"));', transition)
+
+    def test_initial_auth_loads_are_deduplicated_per_account_context(self):
+        start = APP.index("const scheduleAuthContextLoad = () =>")
+        end = APP.index('  if (!supabaseClient) {', start)
+        scheduler = APP[start:end]
+        self.assertIn("scheduledAuthLoadContextVersion === scheduledVersion", scheduler)
+        self.assertIn("scheduledAuthLoadContextVersion = scheduledVersion;", scheduler)
+        self.assertIn("clearTimeout(authLoadTimer);", scheduler)
+        self.assertIn("if (scheduledVersion !== authContextVersion) return;", scheduler)
+        self.assertEqual(APP.count("scheduleAuthContextLoad();"), 2)
+        self.assertNotIn("setTimeout(() => { loadAccountRole();", APP)
