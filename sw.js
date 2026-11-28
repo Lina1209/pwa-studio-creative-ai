@@ -1,9 +1,10 @@
-const CACHE_NAME = "pwa-studio-shell-v35";
+const CACHE_NAME = "pwa-studio-shell-v36";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./movie-storage-guard.js",
   "./character-cloud-restore.js?v=20261128-1",
   "./character-restore-review-ui.js?v=20261128-1",
   "./character-owner-coordination-lock.js?v=20261128-1",
@@ -42,7 +43,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   const isShellAsset = request.mode === "navigate" ||
-    ["/index.html", "/app.js", "/character-cloud-restore.js", "/character-restore-review-ui.js", "/character-owner-coordination-lock.js", "/profile-avatar-catalog.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/site-cache-tools.js", "/manifest.webmanifest", "/assets/icon.svg"].some(asset => url.pathname.endsWith(asset));
+    ["/index.html", "/app.js", "/movie-storage-guard.js", "/character-cloud-restore.js", "/character-restore-review-ui.js", "/character-owner-coordination-lock.js", "/profile-avatar-catalog.js", "/audio-lab.js", "/styles.css", "/supabase-config.js", "/site-cache-tools.js", "/manifest.webmanifest", "/assets/icon.svg"].some(asset => url.pathname.endsWith(asset));
 
   if (isShellAsset) {
     event.respondWith(
