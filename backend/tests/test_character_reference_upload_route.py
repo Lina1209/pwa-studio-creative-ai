@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import app
+from app.services.image_reference_validation import ValidatedReference
 from app.services.auth import StudioUser, get_current_user, get_platform_active_user
 
 OWNER = "11111111-1111-4111-8111-111111111111"
@@ -81,12 +82,13 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         upload.assert_called_once()
         mark.assert_not_called()
 
+    @patch("app.main.download_private_media_image", side_effect=HTTPException(status_code=404, detail="not found"))
     @patch("app.main.mark_character_reference_object_uploaded")
     @patch("app.main.upload_character_reference_object", side_effect=HTTPException(status_code=409, detail="object already exists"))
     @patch("app.main.reserve_character_reference_upload", return_value={"id": "asset", "status": "pending_upload"})
     @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
-    def test_existing_object_conflict_does_not_mark_upload_and_keeps_verification_event(
-        self, character_lookup, reserve, upload, mark
+    def test_existing_unreadable_object_conflict_does_not_mark_upload(
+        self, character_lookup, reserve, upload, mark, download
     ):
         response = self.client.post(
             f"/api/characters/{CHARACTER}/references",
@@ -97,7 +99,34 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         reserve.assert_called_once()
         upload.assert_called_once()
+        download.assert_called_once()
         mark.assert_not_called()
+
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.mark_character_reference_object_uploaded", return_value={"id": "asset", "status": "object_uploaded"})
+    @patch("app.main.upload_character_reference_object", side_effect=HTTPException(status_code=409, detail="object already exists"))
+    @patch("app.main.reserve_character_reference_upload", side_effect=lambda _settings, plan: {"id": plan.asset_id, "status": "pending_upload"})
+    @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
+    def test_duplicate_object_is_reconciled_only_when_exact_reserved_bytes_match(
+        self, character_lookup, reserve, upload, mark, download
+    ):
+        content = png_bytes()
+        image = Image.open(BytesIO(content))
+        download.return_value = ValidatedReference(
+            content=content, mime_type="image/png", safe_filename="portrait.png",
+            size_bytes=len(content), width=image.width, height=image.height, frame_count=1,
+        )
+        response = self.client.post(
+            f"/api/characters/{CHARACTER}/references",
+            headers={"Idempotency-Key": "test-character-upload-reconcile"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
+            files={"file": ("portrait.png", content, "image/png")},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["asset"]["status"], "object_uploaded")
+        upload.assert_called_once()
+        download.assert_called_once()
+        mark.assert_called_once()
 
     @patch("app.main.mark_character_reference_object_uploaded")
     @patch("app.main.upload_character_reference_object")
