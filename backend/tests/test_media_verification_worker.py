@@ -57,6 +57,28 @@ class MediaVerificationWorkerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify_claimed_media(object(), CLAIM)
 
+    @patch("app.workers.media_outbox_worker.download_private_media_image")
+    def test_rejects_malformed_claim_fields_before_storage_access(self, download):
+        malformed_claims = [
+            dict(CLAIM, owner_id="not-a-uuid"),
+            dict(CLAIM, event_id="not-a-uuid"),
+            dict(CLAIM, claim_token="not-a-uuid"),
+            dict(CLAIM, storage_path=f"99999999-9999-4999-8999-999999999999/characters/{ASSET}/{EVENT}.png"),
+            dict(CLAIM, file_name=""),
+            dict(CLAIM, file_type="image/gif"),
+            dict(CLAIM, size_bytes=True),
+            dict(CLAIM, width=True),
+            dict(CLAIM, height=0),
+            dict(CLAIM, content_sha256=DIGEST.upper()),
+            dict(CLAIM, attempts=9),
+            dict(CLAIM, max_attempts=7),
+        ]
+        for invalid in malformed_claims:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    verify_claimed_media(object(), invalid)
+        download.assert_not_called()
+
     @patch("app.workers.media_outbox_worker.retry_media_upload_verification")
     @patch("app.workers.media_outbox_worker.complete_media_upload_verification")
     @patch("app.workers.media_outbox_worker.verify_claimed_media", return_value=image())
