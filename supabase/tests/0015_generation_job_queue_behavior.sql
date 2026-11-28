@@ -25,10 +25,10 @@ declare
   v_count integer;
 begin
   -- Auth fixtures are rolled back with this test transaction.
-  insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+  insert into auth.users (id, email)
   values
-    (v_owner_a, 'authenticated', 'authenticated', 'queue-test-' || v_owner_a::text || '@example.invalid', '', now(), now(), now()),
-    (v_owner_b, 'authenticated', 'authenticated', 'queue-test-' || v_owner_b::text || '@example.invalid', '', now(), now(), now());
+    (v_owner_a, 'queue-test-' || v_owner_a::text || '@example.invalid'),
+    (v_owner_b, 'queue-test-' || v_owner_b::text || '@example.invalid');
 
   insert into public.generation_jobs (id, owner_id, idempotency_key, request_fingerprint, job_type)
   values
