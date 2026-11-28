@@ -1664,6 +1664,7 @@ const movieHistoryStyle = document.createElement("style");
               nextLocal.unshift(conflictCopy);
               if (!contextIsCurrent()) return;
               writeMovieStorage(nextLocal);
+              renderMovieProjects();
               preservedConflict = true;
               syncConflictPreserved = true;
               movieCloudState.pending = true;
