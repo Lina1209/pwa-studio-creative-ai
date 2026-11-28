@@ -192,7 +192,7 @@
     const bytes = new TextEncoder().encode(JSON.stringify(value));
     let binary = "";
     bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-    return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+    return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
   };
   const decodeCursor = value => {
     if (typeof value !== "string" || value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) fail("Invalid journal cursor.");
