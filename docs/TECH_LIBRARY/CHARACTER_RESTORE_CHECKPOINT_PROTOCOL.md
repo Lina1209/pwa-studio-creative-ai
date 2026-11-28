@@ -174,3 +174,21 @@ Status: the persistence primitive is implemented in `character-restore-journal.j
 Validation: GitHub Actions run `46104006239` on commit `f7cfa3b` completed successfully; backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB/frontend checks all passed.
 
 Remaining limitations are intentional: no real process-kill recovery test, browser offline resume, actual quota exhaustion, multi-tab UI integration, cloud snapshot traversal, media staging/read-back, restore coordinator, activation recovery, or UI wiring. A journal checkpoint is not proof that an image has been downloaded or that a restore is complete. Keep restore/import disabled until the coordinator and all activation safeguards in this document are implemented and tested.
+
+
+## 11. Verified media staging coordinator (feature branch; activation remains separate)
+
+Status: `character-restore-coordinator.js` now implements an injected-adapter staging coordinator. It is not connected to the application UI or production APIs.
+
+- Requires an existing owner-bound restore operation at the expected revision and an eligible `planned`, `staging`, or `paused_retryable` state.
+- Acquires the journal's fenced lease, then re-reads the operation and verifies that lease acquisition changed the revision exactly as expected before any media work.
+- Validates the bounded manifest (up to 600 references), unique cloud asset IDs, SHA-256, byte size (1–8 MiB), supported image MIME, and expected dimensions.
+- Downloads through an injected adapter only; computes SHA-256 from the received Blob bytes and independently checks size, MIME, and image dimensions.
+- Stages each Blob through an injected owner/operation-scoped adapter, reads it back, and repeats digest/size/MIME/dimension verification before marking that reference `verified_staged` in the durable journal.
+- On retry, already verified staged Blobs are read back and reverified instead of blindly trusted. An interrupted write before checkpoint can safely retry the same deterministic staged Blob identity.
+- Account-current checks fence work before/after awaits. Errors leave the operation retryable when the same account and lease remain valid; stale/expired leases cannot checkpoint. The coordinator releases its lease best-effort.
+- Returns only a staging result with `activationRequired: true`. It does not write localStorage metadata, publish restored cards, delete data, or activate a restore.
+
+Validation: CI run `46104623804` on commit `32f9a8e` passed all three jobs (backend unit tests, disposable PostgreSQL integration, and browser/IndexedDB plus frontend checks). The Node coordinator harness covers successful byte-proof/read-back staging, tampered staged Blob rejection, and account-switch fencing. Earlier coordinator test failures were traced to a test runtime Web Crypto global assignment and a mismatch between manifest and computed-proof field names; both were corrected before this successful run.
+
+Remaining limitations: the coordinator uses injected adapters and has no production media API or IndexedDB Blob adapter yet; no real cloud transfer, browser offline/network resume, forced process-kill recovery, actual quota exhaustion, lease heartbeat for long-running transfers, multi-tab UI, full 600-image stress test, metadata activation/recovery, tombstones, or restore UX. A successful staging result is not a completed restore. Keep restore/import disabled until the activation coordinator, recovery protocol, adapters, and full interruption/race tests are implemented.
