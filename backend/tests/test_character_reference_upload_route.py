@@ -49,7 +49,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         body = response.json()
         self.assertEqual(body["asset"]["character_id"], CHARACTER)
-        self.assertEqual(body["asset"]["local_reference_id"], "44444444-4444-4444-8444-444444444444")
+        self.assertEqual(body["asset"]["local_reference_id"], "22222222-2222-4222-8222-222222222222-44444444-4444-4444-8444-444444444444")
         self.assertEqual(body["asset"]["status"], "object_uploaded")
         self.assertEqual(body["verification"], "pending")
         self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
@@ -111,7 +111,7 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         mark.return_value = {"id": "asset", "status": "object_uploaded"}
         headers = {"Idempotency-Key": "test-character-upload-repeat"}
         files = {"file": ("portrait.png", png_bytes(), "image/png")}
-        first = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, files=files)
+        first = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, data={"local_reference_id": "22222222-2222-4222-8222-222222222222-44444444-4444-4444-8444-444444444444"}, files=files)
         second = self.client.post(f"/api/characters/{CHARACTER}/references", headers=headers, files=files)
         self.assertEqual(first.status_code, 202)
         self.assertEqual(second.status_code, 202)
