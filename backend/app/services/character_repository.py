@@ -1,5 +1,10 @@
 """Owner-scoped server API boundary for character passport metadata."""
 import json
+import base64
+import hashlib
+import hmac
+import time
+from datetime import datetime, timezone
 import httpx
 from fastapi import HTTPException
 from app.core.config import Settings
@@ -89,14 +94,90 @@ def _public(row):
     if not isinstance(row, dict): raise HTTPException(status_code=502, detail="Character storage returned an invalid record.")
     return {k: row.get(k) for k in ("id", "source_local_id", "name", "description", "reference_data", "created_at", "version")}
 
-def list_owned_characters(settings, owner_id):
+def _cursor_secret(settings):
+    secret = settings.supabase_service_role_key
+    if not isinstance(secret, str) or len(secret) < 24:
+        raise HTTPException(status_code=503, detail="Character pagination is not configured.")
+    return secret.encode("utf-8")
+
+
+def _encode_cursor(settings, payload):
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+    signature = hmac.new(_cursor_secret(settings), encoded.encode("ascii"), hashlib.sha256).digest()
+    return encoded + "." + base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
+
+
+def _decode_cursor(settings, token, owner):
+    if not isinstance(token, str) or len(token) > 2048 or token.count(".") != 1:
+        raise HTTPException(status_code=422, detail="Invalid character page cursor.")
+    encoded, supplied = token.split(".", 1)
+    expected = hmac.new(_cursor_secret(settings), encoded.encode("ascii"), hashlib.sha256).digest()
+    try:
+        signature = base64.urlsafe_b64decode(supplied + "=" * (-len(supplied) % 4))
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        payload = json.loads(raw)
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid character page cursor.") from exc
+    if not hmac.compare_digest(signature, expected) or not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="Invalid character page cursor.")
+    if payload.get("owner") != owner or not isinstance(payload.get("expires"), int) or payload["expires"] < int(time.time()):
+        raise HTTPException(status_code=422, detail="Expired or mismatched character page cursor.")
+    for key in ("snapshot", "last_created_at", "last_id"):
+        if not isinstance(payload.get(key), str) or len(payload[key]) > 80:
+            raise HTTPException(status_code=422, detail="Invalid character page cursor.")
+    canonical_uuid(payload["last_id"], "cursor character")
+    try:
+        datetime.fromisoformat(payload["snapshot"].replace("Z", "+00:00"))
+        datetime.fromisoformat(payload["last_created_at"].replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid character page cursor.") from exc
+    return payload
+
+
+def list_owned_characters(settings, owner_id, cursor=None, page_size=50):
     owner = canonical_uuid(owner_id, "owner")
-    rows = _request(settings, "GET", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at,version",
-        "owner_id":f"eq.{owner}", "order":"created_at.desc", "limit":"100"})
-    # Defense in depth: verify every returned row before exposing any passport.
+    if isinstance(page_size, bool) or not isinstance(page_size, int) or not 1 <= page_size <= 100:
+        raise HTTPException(status_code=422, detail="Character page size must be between 1 and 100.")
+    if cursor:
+        state = _decode_cursor(settings, cursor, owner)
+        snapshot = state["snapshot"]
+        last_created_at = state["last_created_at"]
+        last_id = state["last_id"]
+    else:
+        snapshot = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        last_created_at = last_id = None
+    params = {
+        "select":"id,owner_id,source_local_id,name,description,reference_data,created_at,version",
+        "owner_id":f"eq.{owner}",
+        "created_at":f"lte.{snapshot}",
+        "order":"created_at.desc,id.desc",
+        "limit":str(page_size + 1),
+    }
+    if last_created_at is not None:
+        params["or"] = f"(created_at.lt.{last_created_at},and(created_at.eq.{last_created_at},id.lt.{last_id}))"
+    rows = _request(settings, "GET", params)
     if any(not isinstance(row, dict) or row.get("owner_id") != owner for row in rows):
         raise HTTPException(status_code=404, detail="Character not found.")
-    return [_public(row) for row in rows]
+    has_more = len(rows) > page_size
+    visible = rows[:page_size]
+    next_cursor = None
+    if has_more and visible:
+        last = visible[-1]
+        if not isinstance(last.get("created_at"), str):
+            raise HTTPException(status_code=502, detail="Character storage returned an invalid page boundary.")
+        next_cursor = _encode_cursor(settings, {
+            "owner": owner,
+            "snapshot": snapshot,
+            "last_created_at": last["created_at"],
+            "last_id": last.get("id"),
+            "expires": int(time.time()) + 900,
+        })
+    return {
+        "items": [_public(row) for row in visible],
+        "next_cursor": next_cursor,
+        "snapshot_created_at": snapshot,
+    }
 
 def create_owned_character(settings, owner_id, source_local_id, name, description, reference_data):
     owner = canonical_uuid(owner_id, "owner")
