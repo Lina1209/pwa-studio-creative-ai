@@ -120,13 +120,24 @@ No credit wallet, ledger, reservation, pricing, or settlement code is implemente
 11. Stale worker/reconciler fencing, retry cap, backoff bounds, dead-letter alerts, and audit completeness.
 12. All tests use a disposable local database and fake provider. No paid provider calls.
 
-## 9. Activation blockers
+## 9. Current activation blockers (review update — 2026-11-28)
 
-- Current migration 0013 status CHECK omits `reconciliation_required`.
-- Current migration 0014 failure RPC accepts `p_retryable boolean` without provider outcome evidence.
-- Current recovery RPC automatically retries expired processing jobs and finalizes expired cancellations.
-- Current finish-cancel RPC can finalize without proving provider stop/zero usage.
-- No attempts table, reconciliation lease/RPC, reconciliation audit table, worker, API route, or credit ledger exists.
-- Repository local Supabase CLI setup/migration history and concurrency test blockers remain unresolved.
+The following earlier SQL/Python parity findings have been resolved in the current inactive draft and are covered by disposable PostgreSQL/Python regression tests:
 
-**Do not apply migrations 0013/0014, create a worker, select a provider, enable a scheduler, or connect billing until these blockers are addressed and isolated tests pass. Production must remain untouched.**
+- Migration 0013 includes the `reconciliation_required` state.
+- Migration 0014 persists job-level provider-submission evidence; unknown/accepted outcomes enter reconciliation rather than retry.
+- Expired leases retry or finish cancellation only with conclusive `definitely_not_submitted` / `definitely_rejected` evidence.
+- Cancellation completion is lease-fenced and requires conclusive non-acceptance/rejection evidence.
+- Successful generation completion requires accepted provider evidence and an owner-matched media asset with `status='ready'`.
+- Disposable PostgreSQL CI now exercises sequential lifecycle behavior, two-session claim races, and the relevant media upload/cleanup transactions. This is not a live Supabase Storage, production RLS, or live provider test.
+
+The remaining go-live blockers are end-to-end, not the earlier state-check omissions:
+
+- No durable per-provider-attempt table or attempt-level idempotency/operation identity exists. The current single job-level outcome field is not a complete multi-attempt reconciliation ledger.
+- No reconciliation lease/RPC/worker, reconciliation audit event table, provider status lookup, signed webhook receiver, or manual resolution console exists.
+- No generation API route, active dispatcher/worker, provider adapter, or scheduled recovery process is enabled.
+- No credit reservation/ledger/settlement implementation exists; provider usage and billing reconciliation remains an operational gap.
+- No selected image/video provider or approved pricing/cost ceiling exists. DeepSeek remains the text provider; no generation provider is selected here.
+- Repository migration history still has duplicate legacy numeric prefixes and no standard local Supabase CLI config. The disposable PostgreSQL CI harness is the current isolated SQL validation path; it does not resolve that local CLI setup issue.
+
+**Do not apply migrations 0013/0014 to production, create/enable a worker or scheduler, select a provider, or connect billing until the complete attempt-level reconciliation and credit-ledger design is implemented, tested in isolation, and separately approved. Production must remain untouched.**
