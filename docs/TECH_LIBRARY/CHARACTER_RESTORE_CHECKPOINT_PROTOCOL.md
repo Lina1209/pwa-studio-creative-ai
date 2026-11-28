@@ -597,3 +597,12 @@ Before each candidate, the executor:
 The executor defaults to one candidate per invocation (hard maximum ten). It never scans or deletes ordinary image rows. A missing Blob during a normal delete attempt is treated as an uncertain/manual-recovery condition, not success. A pre-existing delete intent is recoverable only when the exact Blob lookup reports missing after a fresh complete inventory and the intent identity still matches; the journal is then finalized under a newer owner-lock epoch.
 
 Important limitation: this commit adds the executor and a CI syntax check only. It does not yet have a dedicated real-browser adversarial test harness. Therefore it is not approved for activation or invocation. The next gate is a disposable-IndexedDB multi-tab test suite covering active/paused/uncertain operations, retention, changed metadata, incomplete pagination, account switching, lock loss, crash windows, and legacy image preservation. Until those tests pass and the caller is separately reviewed, keep cleanup execution disabled.
+
+
+## 28. User-facing PWA cache maintenance
+
+The Settings page now exposes **Очистить кеш сайта** for every visitor/account, not only administrators. It deletes only Cache Storage entries whose names begin with `pwa-studio-shell-`, then refreshes the page. The shell cache version was advanced so clients can receive the updated app shell.
+
+This is a per-browser/per-device action. It does not clear localStorage, IndexedDB, character images, drafts, cloud projects, authentication, preferences, or server-side/CDN caches. It cannot repair a server outage or remove data stored on another device. The user receives a confirmation explaining the preserved data and a status message.
+
+Global cache purges, server/CDN cache invalidation, and administrator maintenance controls are separate operational features and are not implemented by this button. No admin-only access is required for a user clearing their own browser cache.
