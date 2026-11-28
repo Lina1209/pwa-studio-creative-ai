@@ -95,6 +95,8 @@ jobs:
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -f supabase/tests/0015_generation_job_queue_behavior.sql
+      - name: Run generation queue two-session claim race (disposable PostgreSQL only)
+        run: bash supabase/tests/0016_generation_job_queue_concurrency.sh
       - name: Verify profile avatar catalog migration and defaults
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
