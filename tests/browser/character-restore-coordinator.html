@@ -1,0 +1,61 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Restore coordinator browser integration</title></head><body><pre id="results">Running</pre>
+<script src="../../character-restore-journal.js"></script><script src="../../character-restore-coordinator.js"></script>
+<script>
+(async()=>{
+ const out=document.getElementById("results"),passed=[];
+ const api=window.PWACharacterRestoreJournal, coordinator=window.PWACharacterRestoreCoordinator;
+ const uuid=()=>crypto.randomUUID(), bytes=new TextEncoder().encode("browser integration image bytes");
+ const blob=new Blob([bytes],{type:"image/png"});
+ const digest=async b=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await b.arrayBuffer())),x=>x.toString(16).padStart(2,"0")).join("");
+ const ok=(v,m)=>{if(!v)throw Error(m)};
+ const rejects=async(fn,m)=>{let yes=false;try{await fn()}catch{yes=true}ok(yes,m)};
+ const test=async(n,fn)=>{await fn();passed.push(n)};
+ const owner=uuid(), sha=await digest(blob);
+ async function planned(){
+  const operationId=uuid();
+  await api.create({ownerId:owner,operationId,localBaseFingerprint:sha,snapshotId:"browser-snapshot",selectedCharacterIds:[]});
+  let lease=await api.acquireLease(owner,operationId);
+  let row=await api.get(owner,operationId);
+  row=await api.checkpoint({ownerId:owner,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
+  await api.releaseLease(owner,operationId,lease);
+  row=await api.get(owner,operationId);
+  return {operationId,revision:row.revision};
+ }
+ function adapters({tamper=false,onDownload=()=>{}}={}){
+  const blobs=new Map();
+  return {
+   async downloadAsset(){onDownload();return blob},
+   async inspectImage(){return {width:40,height:30}},
+   async stageBlob(x){blobs.set(x.localStagedBlobId,x.blob);return {localStagedBlobId:x.localStagedBlobId}},
+   async readStagedBlob(x){return tamper?new Blob(["modified"],{type:"image/png"}):blobs.get(x.localStagedBlobId)}
+  };
+ }
+ const manifest=[{cloudAssetId:uuid(),expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30}];
+ try{
+  await test("real IndexedDB journal + Blob staging reaches ready_to_activate",async()=>{
+   const op=await planned();
+   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:adapters()});
+   const row=await api.get(owner,op.operationId);
+   ok(result.state==="ready_to_activate"&&result.activationRequired,"coordinator did not report staging-only result");
+   ok(row.state==="ready_to_activate"&&row.references[0].state==="verified_staged","verified checkpoint missing");
+   ok(row.lease===null,"lease remained held after staging");
+  });
+  await test("real journal rejects tampered staged Blob and keeps retryable checkpoint",async()=>{
+   const op=await planned();
+   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:adapters({tamper:true})}),"tampered Blob accepted");
+   const row=await api.get(owner,op.operationId);
+   ok(row.state==="paused_retryable"&&row.references[0].state==="pending","failed verification did not pause safely");
+   ok(row.lease===null,"failed staging left lease held");
+  });
+  await test("real journal fences account switch during download",async()=>{
+   const op=await planned();let current=true;
+   const media=adapters({onDownload:()=>{current=false}});
+   await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:media,isCurrent:()=>current}),"account switch was not fenced");
+   const row=await api.get(owner,op.operationId);
+   ok(row.state==="staging"&&row.references[0].state==="pending","account-switch checkpoint changed unexpectedly");
+   ok(row.lease===null,"account-switch path did not release lease");
+  });
+  out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
+ }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
+})();
+</script></body></html>
