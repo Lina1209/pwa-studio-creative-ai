@@ -130,3 +130,16 @@ class SupabaseAIBudgetStore:
                 "AI budget reconciliation RPC returned an invalid result."
             )
         return result
+
+    def list_reconciliation_candidates(self, limit: int = 100) -> list[dict]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("Reconciliation batch size must be between 1 and 1000.")
+        result = self._rpc(
+            "list_ai_budget_reconciliation_candidates",
+            {"p_limit": limit},
+        )
+        if not isinstance(result, list) or any(not isinstance(row, dict) for row in result):
+            raise AIBudgetStoreUnavailable(
+                "AI budget reconciliation query returned an invalid result."
+            )
+        return result
