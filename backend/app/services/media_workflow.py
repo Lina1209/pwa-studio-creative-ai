@@ -19,6 +19,7 @@ from app.services.media_outbox import MediaOutboxEvent, OutboxStatus
 class CharacterReferenceUploadPlan:
     owner_id: str
     character_id: str
+    local_reference_id: str
     asset_id: str
     bucket: str
     storage_path: str
@@ -40,6 +41,7 @@ def plan_character_reference_upload(
     object_id: str,
     event_id: str,
     idempotency_key: str,
+    local_reference_id: str,
     content: bytes,
     filename: str,
     declared_mime_type: str | None = None,
@@ -51,6 +53,8 @@ def plan_character_reference_upload(
     owner = str(authenticated_owner_id)
     require_same_owner(owner, character)
     character_id = str(character["id"])
+    from app.services.media_access import canonical_uuid
+    local_reference = canonical_uuid(local_reference_id, "local reference")
     validated = validate_reference_image(content, filename, declared_mime_type)
     safe_bucket = require_private_bucket(bucket)
     object_key = build_storage_object_key(
@@ -68,6 +72,7 @@ def plan_character_reference_upload(
     return CharacterReferenceUploadPlan(
         owner_id=owner,
         character_id=character_id,
+        local_reference_id=local_reference,
         asset_id=event.asset_id,
         bucket=safe_bucket,
         storage_path=object_key,
