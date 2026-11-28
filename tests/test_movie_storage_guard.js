@@ -57,6 +57,10 @@ assert.doesNotMatch(app, /const valid=imported\.filter/);
 assert.match(app, /version\.data,id:copy\.id/);
 assert.match(app, /version\.data, id: project\.id/);
 assert.match(app, /Экспорт остановлен для защиты данных/);
+assert.match(app, /Облачная запись фильма имеет неверный формат/);
+assert.match(app, /return PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(\[candidate\]\)\)\[0\]/);
+assert.doesNotMatch(app, /versions: Array\.isArray\(saved\.versions\) \? saved\.versions : \[\]/);
+assert.doesNotMatch(app, /completedSteps: Array\.isArray\(saved\.completedSteps\) \? saved\.completedSteps : \[\]/);
 
 
 assert.match(app, /Очередь удалений фильмов повреждена/);
