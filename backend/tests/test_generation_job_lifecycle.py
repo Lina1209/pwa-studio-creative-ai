@@ -71,6 +71,24 @@ class GenerationJobLifecycleTests(unittest.TestCase):
                 ProviderSubmissionOutcome.DEFINITELY_REJECTED,
             )
 
+    def test_failure_uses_persisted_accepted_evidence_when_no_new_evidence_is_supplied(self):
+        running = replace(
+            claim_job(new_job(), NOW),
+            provider_submission_outcome=ProviderSubmissionOutcome.ACCEPTED,
+        )
+        unresolved = mark_failed(running, NOW, "provider_response_lost", True)
+        self.assertEqual(unresolved.status, JobStatus.RECONCILIATION_REQUIRED)
+        self.assertEqual(unresolved.provider_submission_outcome, ProviderSubmissionOutcome.ACCEPTED)
+
+    def test_expired_lease_uses_persisted_definite_rejection_evidence(self):
+        running = replace(
+            claim_job(new_job(), NOW, lease_seconds=10),
+            provider_submission_outcome=ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+        )
+        recovered = recover_expired_lease(running, NOW + timedelta(seconds=11))
+        self.assertEqual(recovered.status, JobStatus.RETRY_WAIT)
+        self.assertEqual(recovered.provider_submission_outcome, ProviderSubmissionOutcome.DEFINITELY_REJECTED)
+
     def test_accepted_provider_attempt_requires_reconciliation(self):
         running = claim_job(new_job(), NOW)
         unresolved = mark_failed(
