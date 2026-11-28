@@ -270,6 +270,32 @@
     return plan;
   }
 
+  function selectRestorePlan({ownerId, plan, selectedCloudIds}) {
+    if (!isUuid(ownerId) || !plan || !issuedPlans.has(plan) || plan.ownerId !== ownerId || plan.complete !== true) fail("Restore selection requires a complete plan for this owner.");
+    if (!Array.isArray(selectedCloudIds) || selectedCloudIds.length < 1 || selectedCloudIds.length > 100) fail("Select between 1 and 100 cloud characters.");
+    const selected = new Set();
+    for (const id of selectedCloudIds) {
+      if (!isUuid(id) || selected.has(id)) fail("Restore selection contains an invalid or duplicate cloud character.");
+      selected.add(id);
+    }
+    const available = new Set([
+      ...plan.proposedItems.map(x => x.cloudBackup.characterId),
+      ...plan.unchanged.map(x => x.cloudId),
+      ...plan.conflicts.map(x => x.cloudId)
+    ]);
+    for (const id of selected) if (!available.has(id)) fail("Restore selection contains a character outside the reviewed cloud snapshot.");
+    const selectedPlan = Object.freeze({
+      complete: true, ownerId, baseLocalFingerprint: plan.baseLocalFingerprint,
+      pagesRead: plan.pagesRead, cloudCount: selected.size,
+      selectedCloudIds: Object.freeze([...selected]),
+      proposedItems: deepFreeze(plan.proposedItems.filter(x => selected.has(x.cloudBackup.characterId))),
+      unchanged: deepFreeze(plan.unchanged.filter(x => selected.has(x.cloudId))),
+      conflicts: deepFreeze(plan.conflicts.filter(x => selected.has(x.cloudId)))
+    });
+    issuedPlans.add(selectedPlan);
+    return selectedPlan;
+  }
+
   function applyRestorePlan({ownerId, plan, readLocalItems, writeLocalItems, isCurrent = () => true}) {
     if (!isUuid(ownerId) || !plan || !issuedPlans.has(plan) || plan.complete !== true || plan.ownerId !== ownerId) fail("Restore plan owner or completion proof is invalid.");
     if (typeof readLocalItems !== "function" || typeof writeLocalItems !== "function") fail("Local restore adapters are required.");
@@ -322,5 +348,5 @@
     }
   }
 
-  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,applyRestorePlan});
+  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,selectRestorePlan,applyRestorePlan});
 })();
