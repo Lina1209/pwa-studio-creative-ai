@@ -21,9 +21,12 @@
     return {sha256:Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,"0")).join(""),sizeBytes:bytes.byteLength,mimeType:blob.type};
   };
   const proofMatches=(actual,expected)=>{
-    if(actual.sha256.toLowerCase()!==expected.sha256.toLowerCase())fail("Image SHA-256 verification failed.");
-    if(actual.sizeBytes!==expected.sizeBytes)fail("Image byte-size verification failed.");
-    if(actual.mimeType!==expected.mimeType)fail("Image MIME verification failed.");
+    const expectedSha=expected.expectedSha256??expected.sha256;
+    const expectedSize=expected.expectedSizeBytes??expected.sizeBytes;
+    const expectedMime=expected.expectedMimeType??expected.mimeType;
+    if(typeof actual?.sha256!=="string"||actual.sha256.toLowerCase()!==String(expectedSha).toLowerCase())fail("Image SHA-256 verification failed.");
+    if(actual.sizeBytes!==expectedSize)fail("Image byte-size verification failed.");
+    if(actual.mimeType!==expectedMime)fail("Image MIME verification failed.");
   };
   async function stageRestoreReferences({ownerId,operationId,manifest,expectedRevision,journal,adapters,isCurrent=()=>true}) {
     ownerId=uuid(ownerId,"owner ID");operationId=uuid(operationId,"operation ID");
