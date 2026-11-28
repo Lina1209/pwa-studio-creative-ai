@@ -204,6 +204,11 @@ fi
 
 echo "AI budget unknown/settlement race invariant passed: final state settled with one settlement event."
 
+# The earlier cap-race intentionally consumes the small USD 0.10 test
+# policy. Raise only this disposable CI policy before creating more scenarios.
+psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \\
+  -c "update public.ai_budget_policies set limit_usd=1.00 where scope_type='platform' and scope_key='platform' and enabled"
+
 # Race mutually exclusive terminal outcomes: confirmed no-charge release and
 # provider-cost settlement. Row/advisory locking must allow exactly one
 # terminal ledger event; the losing operation must not overwrite that state.
