@@ -82,6 +82,31 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
         upload.assert_called_once()
         mark.assert_not_called()
 
+    @patch("app.main.download_private_media_image")
+    @patch("app.main.mark_character_reference_object_uploaded")
+    @patch("app.main.upload_character_reference_object", side_effect=HTTPException(status_code=409, detail="object already exists"))
+    @patch("app.main.reserve_character_reference_upload", side_effect=lambda _settings, plan: {"id": plan.asset_id, "status": "pending_upload"})
+    @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
+    def test_duplicate_object_with_different_bytes_remains_conflict(
+        self, character_lookup, reserve, upload, mark, download
+    ):
+        different = png_bytes() + b"different"
+        image = Image.open(BytesIO(png_bytes()))
+        download.return_value = ValidatedReference(
+            content=different, mime_type="image/png", safe_filename="portrait.png",
+            size_bytes=len(different), width=image.width, height=image.height, frame_count=1,
+        )
+        response = self.client.post(
+            f"/api/characters/{CHARACTER}/references",
+            headers={"Idempotency-Key": "test-character-upload-different-object"},
+            data={"local_reference_id": "44444444-4444-4444-8444-444444444444"},
+            files={"file": ("portrait.png", png_bytes(), "image/png")},
+        )
+        self.assertEqual(response.status_code, 409)
+        upload.assert_called_once()
+        download.assert_called_once()
+        mark.assert_not_called()
+
     @patch("app.main.download_private_media_image", side_effect=HTTPException(status_code=404, detail="not found"))
     @patch("app.main.mark_character_reference_object_uploaded")
     @patch("app.main.upload_character_reference_object", side_effect=HTTPException(status_code=409, detail="object already exists"))
