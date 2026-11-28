@@ -239,7 +239,7 @@ class CharacterReferenceBulkCatalogRouteTests(unittest.TestCase):
     ])
     def test_bulk_catalog_is_authenticated_private_and_no_store(self, catalog):
         response = self.client.get(
-            f"/api/characters/references?character_ids={CHARACTER}"
+            f"/api/media/character-references?character_ids={CHARACTER}"
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()[0]["local_reference_id"],
