@@ -15,7 +15,7 @@
   function validate(row){
     if(!row||row.protocolVersion!==PROTOCOL||row.id!==key(row.ownerId,row.cleanupId))fail("Invalid cleanup manifest identity.");
     uuid(row.ownerId,"owner ID");uuid(row.cleanupId,"cleanup ID");
-    if(row.state!=="marked"||!Number.isSafeInteger(row.revision)||row.revision!==1)fail("Invalid cleanup manifest state or revision.");
+    if(!["marked","reconciled"].includes(row.state)||!Number.isSafeInteger(row.revision)||row.revision<1||(row.state==="marked"&&row.revision!==1))fail("Invalid cleanup manifest state or revision.");
     if(!Number.isSafeInteger(row.ownerLockEpoch)||row.ownerLockEpoch<1)fail("Invalid owner lock epoch.");
     if(!SHA.test(row.metadataDigest||""))fail("Invalid metadata snapshot digest.");
     if(!Array.isArray(row.candidates)||row.candidates.length<1||row.candidates.length>600)fail("Invalid cleanup candidate list.");
@@ -28,6 +28,10 @@
          !MIME.has(c.mimeType)||!Number.isInteger(c.width)||c.width<1||c.width>12000||!Number.isInteger(c.height)||c.height<1||c.height>12000)fail("Invalid staged Blob proof.");
       iso(c.markedAt,"candidate mark timestamp");iso(c.deleteAfter,"candidate retention timestamp");
       if(Date.parse(c.deleteAfter)<=Date.parse(c.markedAt))fail("Cleanup retention window must be positive.");
+      if(!["marked","retained","eligible_for_delete_review"].includes(c.state))fail("Invalid cleanup candidate state.");
+      if(c.state==="retained"&&!["metadata_changed","source_changed","reference_changed","proof_changed","blob_missing","inventory_incomplete"].includes(c.reasonCode))fail("Invalid retained candidate reason.");
+      if(c.state==="eligible_for_delete_review")iso(c.recheckedAt,"candidate recheck timestamp");
+      if(c.state==="marked"&&(c.reasonCode!==undefined||c.recheckedAt!==undefined))fail("Unreconciled candidate has premature outcome metadata.");
       const tuple=c.operationId+":"+c.cloudAssetId+":"+c.localStagedBlobId;
       if(ids.has(c.localStagedBlobId)||tuples.has(tuple))fail("Duplicate staged Blob cleanup candidate.");
       ids.add(c.localStagedBlobId);tuples.add(tuple);
@@ -48,7 +52,7 @@
     const ownerId=uuid(input?.ownerId,"owner ID"),cleanupId=uuid(input?.cleanupId,"cleanup ID");
     const row={id:key(ownerId,cleanupId),protocolVersion:PROTOCOL,ownerId,cleanupId,state:"marked",revision:1,
       ownerLockEpoch:input.ownerLockEpoch,metadataDigest:input.metadataDigest,
-      candidates:clone(input.candidates),createdAt:input.createdAt||new Date().toISOString()};
+      candidates:clone(input.candidates).map(candidate=>({...candidate,state:"marked"})),createdAt:input.createdAt||new Date().toISOString()};
     validate(row);
     const db=await open();
     try{
@@ -102,5 +106,40 @@
       req.onerror=()=>reject(req.error||new Error("Cleanup manifest page read failed."));
     });}finally{db.close();}
   }
-  globalThis.PWACharacterRestoreCleanupJournal=Object.freeze({protocolVersion:PROTOCOL,createManifest,getManifest,listPage});
+  async function reconcileManifest(input){
+    const owner=uuid(input?.ownerId,"owner ID"),cleanup=uuid(input?.cleanupId,"cleanup ID");
+    if(!Number.isSafeInteger(input?.expectedRevision)||input.expectedRevision<1||!Array.isArray(input.candidates))fail("Invalid cleanup reconciliation request.");
+    let updated=null;
+    const db=await open();
+    try{
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction(STORE,"readwrite"),store=tx.objectStore(STORE),req=store.get(key(owner,cleanup));
+        req.onsuccess=()=>{
+          const row=req.result;
+          if(!row){try{tx.abort();}catch{}return;}
+          validate(row);
+          if(row.ownerId!==owner||row.state!=="marked"||row.revision!==input.expectedRevision||input.candidates.length!==row.candidates.length){try{tx.abort();}catch{}return;}
+          const next=row.candidates.map((candidate,index)=>{
+            const outcome=input.candidates[index];
+            const identity=["operationId","operationRevision","cloudAssetId","localStagedBlobId","sha256","sizeBytes","mimeType","width","height","markedAt","deleteAfter"];
+            if(!outcome||identity.some(field=>outcome[field]!==candidate[field])||
+               !["retained","eligible_for_delete_review"].includes(outcome.state))fail("Cleanup reconciliation attempted to change candidate identity.");
+            const result={...candidate,state:outcome.state};
+            if(outcome.state==="retained")result.reasonCode=outcome.reasonCode;
+            if(outcome.state==="eligible_for_delete_review")result.recheckedAt=iso(outcome.recheckedAt,"candidate recheck timestamp");
+            return result;
+          });
+          row.candidates=next;row.state="reconciled";row.revision+=1;row.updatedAt=new Date().toISOString();
+          validate(row);store.put(row);updated=clone(row);
+        };
+        req.onerror=()=>{try{tx.abort();}catch{}};
+        tx.oncomplete=()=>resolve();
+        tx.onerror=()=>reject(tx.error||new Error("Cleanup manifest reconciliation failed."));
+        tx.onabort=()=>reject(tx.error||new Error("Cleanup manifest reconciliation was fenced or stale."));
+      });
+    }finally{db.close();}
+    if(!updated)fail("Cleanup manifest reconciliation rejected: stale revision, owner, or state.");
+    return updated;
+  }
+  globalThis.PWACharacterRestoreCleanupJournal=Object.freeze({protocolVersion:PROTOCOL,createManifest,getManifest,listPage,reconcileManifest});
 })();
