@@ -23,6 +23,9 @@ function harness(fetchImpl,isCurrent=()=>true){
  let calls=[];
  const uploadResponse=()=>new Response(JSON.stringify({asset:{id:asset,character_id:character,local_reference_id:reference,file_type:"image/png",size_bytes:blob.size,status:"ready"},verification:"complete"}),{status:202,headers:{"Content-Type":"application/json"}});
  const h=harness(async(url,init)=>{calls.push({url,init});return uploadResponse();});
+ const fallbackReference=character+"-"+Date.now().toString(36)+Math.random().toString(36).slice(2);
+ const fallback=await h.adapter.uploadAsset({characterId:character,localReferenceId:fallbackReference,fileName:"fallback.png",blob});
+ assert.equal(fallback.localReferenceId,fallbackReference,"legacy non-UUID suffix generated without crypto.randomUUID must remain accepted");
  const first=await h.adapter.uploadAsset({characterId:character,localReferenceId:reference,fileName:"reference.png",blob});
  const second=await h.adapter.uploadAsset({characterId:character,localReferenceId:reference,fileName:"reference.png",blob});
  assert.equal(first.assetId,asset);
