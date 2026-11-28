@@ -225,6 +225,25 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.list_reconciliation_candidates(1001)
 
+    @patch("app.services.ai_budget_store.httpx.Client")
+    def test_reserve_rejects_rpc_amount_different_from_requested(self, client_cls):
+        client_cls.return_value.__enter__.return_value.post.return_value.json.return_value = [{
+            "reservation_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "reservation_status": "reserved",
+            "reserved_usd": "0.024",
+            "reservation_created": True,
+        }]
+        with self.assertRaises(AIBudgetStoreUnavailable):
+            self.store.reserve(self.request)
+
+    def test_reconciliation_limits_reject_boolean_and_non_integer(self):
+        for limit in (True, False, 1.5, "10"):
+            with self.subTest(limit=limit):
+                with self.assertRaises(ValueError):
+                    self.store.list_reconciliation_candidates(limit)
+                with self.assertRaises(ValueError):
+                    self.store.mark_stale_reservations_unknown("2026-11-28T00:00:00Z", limit)
+
     def test_missing_server_credentials_fail_closed(self):
         store = SupabaseAIBudgetStore(Settings())
         with self.assertRaises(AIBudgetStoreUnavailable):
