@@ -2733,16 +2733,20 @@ const movieHistoryStyle = document.createElement("style");
       passport:{face:$("#characterFace").value.trim().slice(0,1200),body:$("#characterBody").value.trim().slice(0,1200),wardrobe:$("#characterWardrobe").value.trim().slice(0,1200),palette:$("#characterPalette").value.trim().slice(0,1200)},
       referenceImages:[...retainedReferences,...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
     const button=$("#saveCharacter");button.disabled=true;
+    const savedImageIds=[];
+    let metadataCommitted=false;
     try{
       for(let i=0;i<files.length;i++){
         if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
           throw new Error("Аккаунт изменился во время сохранения. Повторите действие в текущем аккаунте.");
         await saveCharacterImage(refs[i].id,files[i],ownerId);
+        savedImageIds.push(refs[i].id);
       }
       if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
         throw new Error("Аккаунт изменился во время сохранения. Локальная карточка не была записана в другой аккаунт.");
       const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
       localStorage.setItem(storageKey,JSON.stringify(next));
+      metadataCommitted=true;
       let cleanupWarning="";
       if(existing&&removedCharacterReferenceIds.size){
         try{await Promise.all([...removedCharacterReferenceIds].map(refId=>deleteCharacterImage(refId,ownerId)));}
@@ -2752,8 +2756,14 @@ const movieHistoryStyle = document.createElement("style");
       resetCharacterEditor();$("#characterLibraryStatus").textContent="«"+name+"» сохранён в библиотеке этого браузера."+cleanupWarning;
       await renderCharacterLibrary();
     }catch(error){
+      let cleanupWarning="";
+      if(!metadataCommitted&&savedImageIds.length){
+        const cleanup=await Promise.allSettled(savedImageIds.map(imageId=>deleteCharacterImage(imageId,ownerId)));
+        if(cleanup.some(result=>result.status==="rejected"))
+          cleanupWarning=" Часть временных изображений не удалось очистить; карточка не была записана.";
+      }
       if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)
-        $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+" Новые изображения не очищались автоматически.";
+        $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+(metadataCommitted?" Карточка уже записана; проверьте состояние библиотеки.":cleanupWarning||" Временные изображения очищены.");
     }finally{if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}
   });
   $("#cancelCharacterEdit")?.addEventListener("click",()=>{resetCharacterEditor();$("#characterLibraryStatus").textContent="Редактирование отменено.";});
