@@ -97,5 +97,8 @@ assert.match(app, /Remove only IDs handled by this request; preserve tombstones 
 assert.match(app, /writeMovieTombstones\(readMovieTombstones\(\)\.filter\(id => !deletedIds\.includes\(id\)\)\)/);
 assert.doesNotMatch(app.match(/const loadMovieProjectsFromCloud = async \(\) => \{[\s\S]*?const movieRead = \(\) => \{/)[0], /writeMovieTombstones\(\[\]\)/);
 assert.match(app, /network wait may have overlapped local edits or another deletion; merge from fresh state[\s\S]*?local = movieRead\(\);[\s\S]*?deletedIds = readMovieTombstones\(\);/);
+assert.match(app, /const pageSize = 100;[\s\S]*?const maxRows = 10000;[\s\S]*?\.range\(offset, offset \+ pageSize - 1\)/);
+assert.match(app, /\.order\("updated_at", \{ ascending: false \}\)[\s\S]*?\.order\("id", \{ ascending: true \}\)/);
+assert.match(app, /if \(offset >= maxRows && rows\.length\)[\s\S]*?больше 10 000 фильмов[\s\S]*?data\.push\(\.\.\.rows\)/);
 
 console.log("Movie storage guard tests passed.");
