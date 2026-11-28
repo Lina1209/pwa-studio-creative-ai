@@ -99,7 +99,11 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0022_ai_budget_reservations.sql
-      - name: Verify explicit character reference identity binding RPC\n        run: |\n          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \\\n            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \\\n            -f supabase/tests/0025_character_reference_identity_binding.sql\n      - name: Run concurrent AI budget reservation race harness
+      - name: Verify explicit character reference identity binding RPC
+        run: |
+          psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
+            -f supabase/tests/0025_character_reference_identity_binding.sql
         run: bash supabase/tests/0022_ai_budget_reservation_race.sh
       - name: Run character idempotency transaction harness
         run: |
