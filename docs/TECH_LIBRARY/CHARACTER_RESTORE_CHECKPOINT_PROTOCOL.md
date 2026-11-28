@@ -555,3 +555,18 @@ The next implementation slice adds two narrowly scoped primitives, but deliberat
 The real-browser test now exercises the sequence: advisory eligibility → durable delete intent → exact-key deletion → release/reacquire owner lock → durable completion. This models a crash boundary between the Blob transaction and journal completion; the next holder can finish the same attempt without guessing another key. Additional Blob tests prove cross-owner, cross-operation, and proof-mismatch requests are rejected and that exact deletion retry is idempotent.
 
 The adapter primitive is not a complete deletion workflow. There is still no production caller, automatic worker, or UI. Before any executor can be enabled it must repeat the complete metadata and restore-journal inventory checks under the owner lock immediately before writing intent, verify the candidate is still eligible and its 24-hour retention elapsed, then delete and finalize one candidate at a time. It must also recover existing `delete_intent` records by exact identity, and fail closed on incomplete inventories, account switches, lock loss, stale revisions, and ambiguous storage errors. Existing ordinary character images are never eligible for this API because they lack the exact `restoreStage` tuple and proof.
+
+
+## 26. Current application writer-path audit and primitive verification
+
+A fresh inspection of the current `app.js` character-library section confirms the authenticated owner-scoped write paths use the shared owner coordination lock:
+
+- New reference Blob writes occur in the save flow while the owner lock is held; metadata activation is fenced by a fresh library snapshot and the same lock.
+- Card deletion first commits the owner-scoped metadata update while holding the lock, then attempts per-reference deletion through `deleteCharacterImage`.
+- Reference removal during card edit is committed under the same lock, then its old image cleanup runs before releasing the lock.
+- `deleteCharacterImage` re-reads the owner metadata and refuses deletion when any card still references the image; it also requires the exact row owner in IndexedDB.
+- Restore staging and activation use the same owner lock. The guest library path is not eligible for restore cleanup because restore journal operations require a UUID owner.
+
+The current audit is scoped to the character-library metadata and image store paths above; it is not a claim that unrelated application localStorage keys participate in this lock.
+
+CI run `46111985459` on commit `f6f2c7d` passed all three jobs. The real-browser suite verified the exact-key deletion adapter and the durable intent → Blob delete → lock reacquire → journal completion sequence. This is test-harness coverage only; no cleanup executor is wired into `app.js`, no worker is scheduled, and no existing user image is swept.
