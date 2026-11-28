@@ -95,7 +95,9 @@
      await assertLease();
      const identity=canonical({ownerId,metadataDigest,candidates:candidates.map(({operationId,operationRevision,cloudAssetId,localStagedBlobId,sha256,sizeBytes,mimeType,width,height})=>({operationId,operationRevision,cloudAssetId,localStagedBlobId,sha256,sizeBytes,mimeType,width,height}))});
      const cleanupId=uuidFromDigest(await sha256(identity));
-     const manifest=await cleanupJournal.createManifest({ownerId,cleanupId,ownerLockEpoch:lease.epoch,metadataDigest,candidates});
+     const existingManifest=typeof cleanupJournal.getManifest==="function"?await cleanupJournal.getManifest(ownerId,cleanupId):null;
+     await assertLease();
+     const manifest=existingManifest||await cleanupJournal.createManifest({ownerId,cleanupId,ownerLockEpoch:lease.epoch,metadataDigest,candidates});
      await assertLease();
      return Object.freeze({state:"marked",cleanupId,revision:manifest.revision,candidateCount:manifest.candidates.length,deleteAfter:manifest.candidates.reduce((max,x)=>Date.parse(x.deleteAfter)>max?Date.parse(x.deleteAfter):max,0)});
    }finally{
