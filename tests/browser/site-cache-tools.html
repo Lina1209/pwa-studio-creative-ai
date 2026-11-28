@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><base href="../../"><title>Site cache tools browser tests</title></head>
+<head><meta charset="utf-8"><base href="/"><title>Site cache tools browser tests</title></head>
 <body>
 <button id="clearSiteCache" type="button">Очистить кеш</button>
 <p id="clearSiteCacheStatus"></p>
@@ -47,7 +47,7 @@
   assert(result.deleted === 2, "returns exact number of owned shell caches");
   assert(deleted.join(",") === "pwa-studio-shell-v34,pwa-studio-shell-v35", "deletes only PWA Studio shell cache keys");
   assert(!deleted.includes("third-party-cache") && !deleted.includes("image-transform-cache"), "leaves unrelated caches untouched");
-  assert(updateCalls === 1, "updates only this origin's /sw.js registration");
+  assert(updateCalls === 1, "updates only this origin's /sw.js registration (calls=" + updateCalls + ", expected=" + new URL("./sw.js", document.baseURI).href + ")");
   assert(localStorageTouches === 0 && indexedDbTouches === 0, "does not access localStorage or IndexedDB");
   assert(document.getElementById("clearSiteCache") && document.getElementById("clearSiteCacheStatus"), "settings controls exist for all account roles");
   registration.update = async () => { throw new Error("offline update check"); };
