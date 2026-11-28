@@ -71,6 +71,35 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[referenceAsset(),referenceAsset({id:"88888888-8888-4888-8888-888888888888"})]}),/duplicate local reference mappings/);
   });
 
+  await run("v2 manifest keeps logical slot stable and resolves the immutable asset identity",async()=>{
+    const slotId=localId2;
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{},referenceImages:[{slot_id:slotId,asset_local_reference_id:referenceId,name:"front.png",type:"image/png"}]}});
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[referenceAsset()]});
+    const manifest=plan.proposedItems[0].cloudBackup.referenceManifest[0];
+    assert.equal(manifest.id,slotId);
+    assert.equal(manifest.slotId,slotId);
+    assert.equal(manifest.assetLocalReferenceId,referenceId);
+    assert.equal(manifest.localReferenceId,referenceId);
+    assert.equal(manifest.cloudAssetId,referenceAsset().id);
+  });
+  await run("v2 manifest local comparison accepts stable slot plus immutable asset identity",async()=>{
+    const slotId=localId2;
+    const v2=[{slot_id:slotId,asset_local_reference_id:referenceId,name:"front.png",type:"image/png"}];
+    const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:v2,cloudBackup:{characterId:cloudId}};
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:local.passport,referenceImages:v2}});
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[referenceAsset()]});
+    assert.equal(plan.unchanged.length,1);
+    assert.equal(plan.conflicts.length,0);
+  });
+  await run("v2 manifest rejects duplicate logical slots and ambiguous mixed identity fields",async()=>{
+    const cloudRow=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{},referenceImages:[
+      {slot_id:localId2,asset_local_reference_id:referenceId,name:"front.png",type:"image/png"},
+      {slot_id:localId2,asset_local_reference_id:localId+"-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",name:"side.png",type:"image/png"}
+    ]}});
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([cloudRow]),fetchReferences:async()=>[]}),/duplicate identities/);
+    const mixed=row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:{},referenceImages:[{id:referenceId,slot_id:localId2,asset_local_reference_id:referenceId,name:"front.png",type:"image/png"}]}});
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([mixed]),fetchReferences:async()=>[]}),/v2 identity is invalid/);
+  });
   await run("matching passport without a persisted cloud identity binding requires conflict resolution",async()=>{
     const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[]};
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
