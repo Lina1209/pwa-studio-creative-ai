@@ -75,13 +75,14 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
 
     def test_stale_save_cannot_unlock_new_account_editor(self):
         self.assertIn(
-            'finally{if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}',
+            'finally{if(ownerLock)await ownerLock.release();if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}',
             APP,
         )
 
     def test_delete_uses_captured_owner_and_storage_key(self):
         self.assertIn("const deleteOwnerId=ownerId;", APP)
         self.assertIn("const deleteStorageKey=characterLibraryKey();", APP)
+        self.assertIn("ownerLock=await acquireCharacterLibraryLock(deleteOwnerId,deleteContextVersion);", APP)
         self.assertIn("localStorage.setItem(deleteStorageKey,JSON.stringify(next));", APP)
         self.assertIn("deleteCharacterImage(ref.id,deleteOwnerId)", APP)
 
@@ -91,7 +92,9 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         handler = APP[start:end]
         self.assertIn("const savedImageIds=[];", handler)
         self.assertIn("savedImageIds.push(refs[i].id);", handler)
-        self.assertIn("let metadataCommitted=false;", handler)
+        self.assertIn("let metadataCommitted=false,ownerLock=null;", handler)
+        self.assertIn("ownerLock=await acquireCharacterLibraryLock(ownerId,contextVersion);", handler)
+        self.assertIn("await ownerLock.assertCurrent();", handler)
         self.assertIn("metadataCommitted=true;", handler)
         self.assertIn("if(!metadataCommitted&&savedImageIds.length)", handler)
         self.assertIn("Promise.allSettled(savedImageIds.map(imageId=>deleteCharacterImage(imageId,ownerId)))", handler)
@@ -170,12 +173,15 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
 
     def test_indexeddb_image_reads_and_deletes_verify_owner(self):
         self.assertIn("request.result?.ownerId===ownerId?request.result.blob:null", APP)
-        self.assertIn("if(request.result?.ownerId===ownerId)store.delete(id);", APP)
+        self.assertIn("request.onsuccess=()=>{if(request.result?.ownerId===ownerId){store.delete(id);deleted=true;}};", APP)
+        self.assertIn('const raw=localStorage.getItem("pwa-studio-character-library-v1:"+ownerId);', APP)
+        self.assertIn("(card.referenceImages||[]).some(ref=>ref&&ref.id===id)", APP)
 
     def test_indexeddb_image_save_refuses_cross_owner_id_collision(self):
         self.assertIn("const existing=store.get(id);", APP)
-        self.assertIn("existing.result.ownerId!==ownerId", APP)
-        self.assertIn("Исходная запись сохранена.", APP)
+        self.assertIn("if(existing.result){", APP)
+        self.assertIn("Идентификатор изображения уже занят.", APP)
+        self.assertIn("store.add({id,ownerId,blob,createdAt:new Date().toISOString()});", APP)
         self.assertIn("tx.abort();", APP)
 
     def test_auth_identity_change_increments_context_and_notifies_library(self):
