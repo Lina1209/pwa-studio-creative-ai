@@ -80,10 +80,10 @@
    const noRefCard={id:nextLocal,name:"Карточка без референсов",description:"",kind:"character",representation:"2d",voice:"",passport:{},referenceImages:[],cloudBackup:{characterId:nextCloud,version:1,referenceManifest:[]}};
    const noRefPlan={complete:true,ownerId:owner,baseLocalFingerprint:base3,proposedItems:[noRefCard],unchanged:[],conflicts:[]};
    const ready=await operationReady(op,[nextCloud],[],baseDigest3);
-   const failingAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage:{getItem:storage.getItem,setItem(){throw new DOMException("quota exceeded","QuotaExceededError")}},ownerId:owner});
+   const failingAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage:{getItem:k=>storage.getItem(k),setItem(){throw new DOMException("quota exceeded","QuotaExceededError")}},ownerId:owner});
    await rejects(()=>window.PWACharacterRestoreActivation.activateRestore({ownerId:owner,operationId:op,plan:noRefPlan,expectedRevision:ready.revision,journal,blobStore,localAdapter:failingAdapter,inspectImage:async()=>({width:1,height:1})}),"quota failure did not abort activation");
    ok(canonical(localAdapter.readLocalItems(owner))===base3,"quota failure changed existing metadata");
-   ok((await journal.get(owner,op)).state==="paused_retryable","quota failure was not left retryable");
+   const afterFailure=await journal.get(owner,op);ok(afterFailure.state==="paused_retryable","quota failure was not left retryable: "+afterFailure.state);
   });
   await run("recovery recognizes a completed metadata write after a simulated crash",async()=>{
    const op=crypto.randomUUID(),newId=crypto.randomUUID();
