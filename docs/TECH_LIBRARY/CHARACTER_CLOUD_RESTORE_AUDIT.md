@@ -94,3 +94,17 @@ The first server-side contract slice is now implemented in the feature branch:
 - The upload response includes the local reference UUID separately from the cloud asset UUID.
 
 Legacy assets may still return `local_reference_id: null`; they are deliberately unmapped and must never be auto-associated during restore. The activation gate remains closed until the complete contract is validated in disposable PostgreSQL and browser integration tests. No UI uploader has been connected yet, and no migration was run against production.
+
+
+## Bulk cloud reference catalog and restore-planner join
+
+The explicit binding is now consumable without one request per character:
+
+- Authenticated `GET /api/media/character-references?character_ids=<comma-separated UUIDs>` accepts 1–100 cloud character IDs and returns a bounded catalog (maximum 600 rows).
+- Every row is filtered by the authenticated owner, requested character set, and private `studio-media` bucket. The browser receives only asset ID, character ID, local reference ID, safe filename/MIME, lifecycle status, byte size, SHA-256, dimensions, and creation timestamp. Owner ID, bucket, Storage path, and internal metadata remain hidden.
+- The catalog rejects duplicate asset IDs, duplicate owner/character/local-reference mappings, malformed IDs, and invalid integrity metadata. Legacy rows with no local-reference binding remain visible as explicitly unmapped and are never guessed.
+- The restore planner now accepts a `fetchReferences(characterIds)` adapter, requests reference catalogs in batches of at most 100 characters, and joins only on the exact pair `(character_id, local_reference_id)`.
+- A passport reference is accepted only when exactly one mapped asset exists, its status is `ready`, MIME agrees with the passport descriptor, and SHA-256, byte size, and dimensions are valid. The plan records `cloudAssetId`, `expectedSha256`, `expectedSizeBytes`, `expectedMimeType`, width, and height for the later staging coordinator.
+- Missing mappings, extra mapped assets, duplicate mappings, non-ready assets, MIME mismatch, account switch, or integrity errors fail closed. Filename/order/image-similarity matching is not used.
+
+The bulk catalog, backend route, planner join, and localStorage metadata adapter are covered by automated tests. Restore remains staging-only: there is still no user-facing restore UI, metadata activation, or production migration/deployment.
