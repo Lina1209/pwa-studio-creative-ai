@@ -85,12 +85,12 @@ begin
   begin
     update public.generation_jobs set actual_cost_usd = 'Infinity'::numeric where id = v_job_success;
     raise exception 'TEST FAILED: direct positive-infinity actual cost was accepted';
-  exception when check_violation then null;
+  exception when check_violation or numeric_value_out_of_range then null;
   end;
   begin
     update public.generation_jobs set estimated_cost_usd = '-Infinity'::numeric where id = v_job_success;
     raise exception 'TEST FAILED: direct negative-infinity estimated cost was accepted';
-  exception when check_violation then null;
+  exception when check_violation or numeric_value_out_of_range then null;
   end;
 
   -- A job cannot be completed using another user's media asset.
