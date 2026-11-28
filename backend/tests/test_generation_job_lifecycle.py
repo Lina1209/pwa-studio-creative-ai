@@ -192,6 +192,18 @@ class GenerationJobLifecycleTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "provider_submission_outcome"):
                     new_job(provider_submission_outcome=invalid_outcome)
 
+    def test_rejects_invalid_status_values(self):
+        for invalid_status in ("queued", "processing", None):
+            with self.subTest(status=invalid_status):
+                with self.assertRaisesRegex(ValueError, "status"):
+                    new_job(status=invalid_status)
+
+    def test_rejects_non_datetime_and_naive_timestamps(self):
+        for invalid_timestamp in ("2026-11-27T12:00:00Z", object(), datetime(2026, 11, 27)):
+            with self.subTest(timestamp=repr(invalid_timestamp)):
+                with self.assertRaisesRegex(ValueError, "timezone-aware datetimes"):
+                    new_job(created_at=invalid_timestamp)
+
     def test_rejects_naive_timestamps_and_invalid_limits(self):
         with self.assertRaises(ValueError):
             new_job(created_at=datetime(2026, 11, 27))
