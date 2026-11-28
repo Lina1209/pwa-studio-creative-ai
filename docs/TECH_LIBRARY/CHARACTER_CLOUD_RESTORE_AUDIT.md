@@ -80,3 +80,17 @@ Therefore, matching by filename, array order, MIME, dimensions, or image similar
 5. Add route, repository, migration, cross-owner, duplicate, retry/idempotency, and browser end-to-end tests before enabling any activation path.
 
 No migration, route, UI, worker, or production data was changed as part of this audit. Until this mapping contract exists, the media restore coordinator remains staging-only and local metadata activation remains blocked.
+
+
+## Explicit reference identity binding implementation (feature branch draft)
+
+The first server-side contract slice is now implemented in the feature branch:
+
+- The authenticated reference-upload route requires a multipart `local_reference_id` UUID in addition to the image and idempotency key.
+- The upload planner validates that UUID and carries it as a distinct field; it is never conflated with the cloud media asset UUID.
+- A new draft migration `0025_character_reference_identity_binding.sql` adds nullable `media_assets.local_reference_id` for legacy compatibility, prevents a local reference binding without a character, and enforces uniqueness across owner + character + local reference.
+- The versioned server-only RPC `pwa_reserve_character_reference_upload_v2` calls the existing atomic reservation and then binds the local reference in the same database transaction. Any binding collision aborts the entire RPC transaction, including the asset/outbox reservation. Exact idempotent replay is allowed only with the same mapping.
+- The owner-filtered character-reference listing now includes `local_reference_id` and `content_sha256`, while continuing to hide owner IDs, bucket, Storage path, and internal metadata.
+- The upload response includes the local reference UUID separately from the cloud asset UUID.
+
+Legacy assets may still return `local_reference_id: null`; they are deliberately unmapped and must never be auto-associated during restore. The activation gate remains closed until the complete contract is validated in disposable PostgreSQL and browser integration tests. No UI uploader has been connected yet, and no migration was run against production.
