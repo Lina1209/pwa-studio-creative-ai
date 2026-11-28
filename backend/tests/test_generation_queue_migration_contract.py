@@ -48,6 +48,7 @@ class GenerationQueueMigrationContractTests(unittest.TestCase):
         self.assertIn("m.owner_id = g.owner_id", completion)
         self.assertIn("m.storage_path is not null", completion)
         self.assertIn("g.status = 'processing'", completion)
+        self.assertIn("g.provider_submission_outcome = 'accepted'", completion)
 
     def test_fenced_worker_writes_and_expired_lease_recovery_exist(self):
         self.assertIn("g.lease_token = p_lease_token", self.sql)
