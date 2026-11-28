@@ -163,6 +163,17 @@ begin
     raise exception 'provider overrun was hidden or clipped: %',v_actual;
   end if;
 
+  -- Actual overrun remains part of platform exposure and blocks new reservations.
+  begin
+    perform * from public.reserve_ai_budget(
+      '66666666-6666-4666-8666-666666666666',v_user,'budget-test-key-0006',
+      repeat('6',64),'chat','deepseek','deepseek-flash',0.001
+    );
+    raise exception 'actual provider overrun did not constrain later reservations';
+  exception when sqlstate 'P0001' then
+    if sqlerrm <> 'ai_budget_limit_exceeded' then raise; end if;
+  end;
+
   select count(*) into v_count from public.ai_budget_ledger
   where request_id in (
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
