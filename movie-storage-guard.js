@@ -25,8 +25,27 @@
           (!Array.isArray(item.completedSteps) || item.completedSteps.some(step => typeof step !== "string" || !ALLOWED_STAGES.has(step)))) {
         throw new Error("Этапы проекта «" + item.id + "» повреждены. Сохранение заблокировано.");
       }
-      if (item.versions !== undefined && !Array.isArray(item.versions)) {
-        throw new Error("История версий проекта «" + item.id + "» повреждена. Сохранение заблокировано.");
+      if (item.versions !== undefined) {
+        if (!Array.isArray(item.versions) || item.versions.length > 20) {
+          throw new Error("История версий проекта «" + item.id + "» повреждена. Сохранение заблокировано.");
+        }
+        item.versions.forEach((version, versionIndex) => {
+          if (!version || typeof version !== "object" || Array.isArray(version) ||
+              typeof version.savedAt !== "string" || !Number.isFinite(Date.parse(version.savedAt)) ||
+              !version.data || typeof version.data !== "object" || Array.isArray(version.data) ||
+              version.data.id !== item.id) {
+            throw new Error("Запись истории №" + (versionIndex + 1) + " проекта «" + item.id + "» повреждена. Сохранение заблокировано.");
+          }
+          for (const field of TEXT_FIELDS) {
+            if (version.data[field] !== undefined && version.data[field] !== null && typeof version.data[field] !== "string") {
+              throw new Error("История проекта «" + item.id + "» содержит некорректное поле «" + field + "». Сохранение заблокировано.");
+            }
+          }
+          if (version.data.completedSteps !== undefined &&
+              (!Array.isArray(version.data.completedSteps) || version.data.completedSteps.some(step => typeof step !== "string" || !ALLOWED_STAGES.has(step)))) {
+            throw new Error("Этапы в истории проекта «" + item.id + "» повреждены. Сохранение заблокировано.");
+          }
+        });
       }
     }
     return value;
