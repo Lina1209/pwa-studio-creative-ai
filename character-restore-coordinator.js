@@ -159,11 +159,12 @@
       assertConfirmation();
       const ready=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"ready_to_activate",references:savedRefs});
       revision=ready.revision;state=ready.state;
+      assertConfirmation();
       return Object.freeze({ownerId,operationId,state,revision,stagedReferences:staged,totalReferences:refs.length,activationRequired:true});
     }catch(error){
       try{
         const current=await journal.get(ownerId,operationId);
-        if(current&&current.state==="staging"&&current.revision===revision&&isCurrent()){
+        if(current&&["staging","ready_to_activate"].includes(current.state)&&current.revision===revision&&isCurrent()){
           const paused=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"paused_retryable",references:current.references});
           revision=paused.revision;
         }
