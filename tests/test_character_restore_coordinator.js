@@ -70,6 +70,26 @@ function adapters({badReadback=false}={}){
  assert.equal(mismatchReads,0);assert.equal(mismatchJournal.inspect().state,"planned");
  console.log("PASS real planner confirmation binds coordinator manifest to selected cloud characters before journal access");
 
+ const omittedJournal=makeJournal();let omittedReads=0;const omittedGate=await issuedGate();
+ const noReferences=await coordinator.stageRestoreReferences({
+  ownerId:owner,operationId:operation,manifest:[],expectedRevision:1,
+  journal:{...omittedJournal,async get(...args){omittedReads++;return omittedJournal.get(...args);}},
+  ...omittedGate,adapters:adapters()
+ }).catch(error=>error);
+ assert.ok(omittedReads===0);
+ assert.match(noReferences.message,/There are no media references/);
+
+ const tamperedJournal=makeJournal();let tamperedReads=0;const tamperedGate=await issuedGate();
+ const tamperedManifest=manifest.map(item=>({...item,expectedSha256:"0".repeat(64)}));
+ await assert.rejects(()=>coordinator.stageRestoreReferences({
+  ownerId:owner,operationId:operation,manifest:tamperedManifest,expectedRevision:1,
+  journal:{...tamperedJournal,async get(...args){tamperedReads++;return tamperedJournal.get(...args);}},
+  ...tamperedGate,adapters:adapters()
+ }),/differs from the exact reference inventory/);
+ assert.equal(tamperedReads,0);
+ assert.equal(tamperedJournal.inspect().state,"planned");
+ console.log("PASS omitted and substituted assets are rejected against the exact planner-reviewed manifest before journal access");
+
  const second=makeJournal(),bad=adapters({badReadback:true});
  await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:second,...gate,adapters:bad}));
  assert.equal(second.inspect().state,"paused_retryable");
