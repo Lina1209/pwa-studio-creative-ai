@@ -144,3 +144,6 @@ Activation tests now exercise real browser `window.localStorage` in addition to 
 
 
 The crash-recovery scenario now crosses a real document navigation: after the metadata write and durable activation intent, a separate page reloads, reopens the IndexedDB journal and localStorage adapter, and recognizes the committed merged digest before marking the operation committed. GitHub Actions run `46108898647` on `0fcfd1f` passed all three CI jobs. This remains a feature-branch validation only; UI integration and production activation remain disabled.
+
+
+Recovery now has its own account-switch race protection. If the active account changes after local metadata is read, the recovery path does not update the journal; the operation remains recoverable and succeeds only when the correct owner context is active again. The corresponding browser test and all existing suites passed in GitHub Actions run `46108991587` on `db04ed6`.
