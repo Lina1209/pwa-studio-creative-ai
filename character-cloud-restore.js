@@ -14,6 +14,8 @@
   // Only plans produced by this module instance may cross the commit boundary.
   // A caller-created object must never be able to forge a "complete" plan.
   const issuedPlans = new WeakSet();
+  const issuedPreviews = new WeakMap();
+  const issuedConfirmations = new WeakMap();
 
   const fail = message => { throw new Error(message); };
   const isUuid = value => typeof value === "string" && UUID.test(value);
@@ -366,7 +368,49 @@
       downloadsPerformed: false,
       items
     };
-    return deepFreeze(preview);
+    const frozenPreview = deepFreeze(preview);
+    issuedPreviews.set(frozenPreview, plan);
+    return frozenPreview;
+  }
+
+  function confirmRestorePreview({ownerId, plan, preview, confirmed}) {
+    if (confirmed !== true) fail("Explicit user confirmation is required before staging restore media.");
+    if (!isUuid(ownerId) || !plan || !issuedPlans.has(plan) || plan.ownerId !== ownerId ||
+        !preview || issuedPreviews.get(preview) !== plan) {
+      fail("Restore confirmation must reference the exact reviewed preview and owner.");
+    }
+    if (preview.conflictCount !== 0 || preview.restorableCount < 1 || preview.canContinue !== true) {
+      fail("Resolve restore conflicts and select at least one restorable character before confirming.");
+    }
+    const confirmation = Object.freeze({
+      ownerId,
+      selectedCloudIds: Object.freeze(plan.cloudSummary.map(item => item.cloudId)),
+      selectedCount: preview.selectedCount,
+      restorableCount: preview.restorableCount,
+      confirmedAt: new Date().toISOString(),
+      confirmationVersion: 1
+    });
+    issuedConfirmations.set(confirmation, {
+      plan,
+      preview,
+      ownerId,
+      selectionFingerprint: canonical(plan.cloudSummary.map(item => item.cloudId).sort()),
+      previewFingerprint: canonical(preview.items)
+    });
+    return confirmation;
+  }
+
+  function validateRestoreConfirmation({ownerId, plan, preview, confirmation}) {
+    const issued = confirmation && issuedConfirmations.get(confirmation);
+    return Boolean(
+      issued &&
+      issued.ownerId === ownerId &&
+      issued.plan === plan &&
+      issued.preview === preview &&
+      plan && plan.ownerId === ownerId &&
+      issued.selectionFingerprint === canonical(plan.cloudSummary.map(item => item.cloudId).sort()) &&
+      issued.previewFingerprint === canonical(preview.items)
+    );
   }
 
   function applyRestorePlan({ownerId, plan, readLocalItems, writeLocalItems, isCurrent = () => true}) {
@@ -421,5 +465,5 @@
     }
   }
 
-  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,selectRestorePlan,buildRestorePreview,applyRestorePlan});
+  globalThis.PWACharacterCloudRestore = Object.freeze({planRestore,selectRestorePlan,buildRestorePreview,confirmRestorePreview,validateRestoreConfirmation,applyRestorePlan});
 })();
