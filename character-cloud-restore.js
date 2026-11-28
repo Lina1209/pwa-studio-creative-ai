@@ -10,6 +10,9 @@
   const MAX_PAGES = 100;
   const MAX_ITEMS = 10000;
   const MAX_PAGE_SIZE = 100;
+  // Only plans produced by this module instance may cross the commit boundary.
+  // A caller-created object must never be able to forge a "complete" plan.
+  const issuedPlans = new WeakSet();
 
   const fail = message => { throw new Error(message); };
   const isUuid = value => typeof value === "string" && UUID.test(value);
@@ -162,7 +165,7 @@
       }
     }
     if (!isCurrent()) fail("Account changed before cloud restore planning completed.");
-    return Object.freeze({
+    const plan = Object.freeze({
       complete: true,
       ownerId,
       baseLocalFingerprint: canonical(localSnapshot),
@@ -172,10 +175,12 @@
       unchanged: deepFreeze(unchanged),
       conflicts: deepFreeze(conflicts)
     });
+    issuedPlans.add(plan);
+    return plan;
   }
 
   function applyRestorePlan({ownerId, plan, readLocalItems, writeLocalItems, isCurrent = () => true}) {
-    if (!isUuid(ownerId) || !plan || plan.complete !== true || plan.ownerId !== ownerId) fail("Restore plan owner or completion proof is invalid.");
+    if (!isUuid(ownerId) || !plan || !issuedPlans.has(plan) || plan.complete !== true || plan.ownerId !== ownerId) fail("Restore plan owner or completion proof is invalid.");
     if (typeof readLocalItems !== "function" || typeof writeLocalItems !== "function") fail("Local restore adapters are required.");
     if (!Array.isArray(plan.proposedItems) || !Array.isArray(plan.conflicts) || plan.conflicts.length) fail("Resolve every cloud/local conflict before restoring.");
     if (!isCurrent()) fail("Account changed before local restore commit.");
