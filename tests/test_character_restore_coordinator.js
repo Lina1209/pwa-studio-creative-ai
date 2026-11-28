@@ -1,7 +1,6 @@
 "use strict";
 const assert=require("node:assert/strict");
-const {webcrypto,createHash}=require("node:crypto");
-global.crypto=webcrypto;
+const {createHash}=require("node:crypto");
 require("../character-restore-coordinator.js");
 const coordinator=global.PWACharacterRestoreCoordinator;
 const owner="11111111-1111-4111-8111-111111111111";
