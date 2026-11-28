@@ -44,7 +44,7 @@ end;
 $$;
 
 -- Reject malformed user policy UUIDs and non-finite accounting amounts at the table boundary.
-do $
+do $$
 begin
   begin
     insert into public.ai_budget_policies(scope_type,scope_key,period_start,period_end,limit_usd)
@@ -61,7 +61,7 @@ begin
     null;
   end;
 end;
-$;
+$$;
 
 update public.ai_budget_control
 set enforcement_enabled=true, kill_switch_enabled=false
