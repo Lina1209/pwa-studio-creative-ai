@@ -1698,7 +1698,7 @@ const movieHistoryStyle = document.createElement("style");
             if (!contextIsCurrent()) return;
             const { data: changed, error } = await supabaseClient.from("projects").update(item.row)
               .eq("id", item.row.id).eq("owner_id", userId).eq("project_type", "movie")
-              .eq("updated_at", item.expectedUpdatedAt).eq("settings", item.expectedSettings)
+              .eq("updated_at", item.expectedUpdatedAt).eq("settings", JSON.stringify(item.expectedSettings))
               .eq("title", item.expectedTitle).eq("description", item.expectedDescription)
               .eq("status", item.expectedStatus).select("id");
             if (error) throw error;
