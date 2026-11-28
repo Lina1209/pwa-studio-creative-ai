@@ -11,6 +11,19 @@ const valid = [{ id: "movie-1", name: "Тест", idea: "История", comple
 assert.deepEqual(JSON.parse(JSON.stringify(guard.parse(JSON.stringify(valid)))), valid);
 assert.deepEqual(JSON.parse(JSON.stringify(guard.parse(null))), []);
 assert.deepEqual(JSON.parse(JSON.stringify(guard.parse(""))), []);
+const historical = [{ id: "movie-history", name: "Тест", versions: [
+  { savedAt: "2026-11-28T12:00:00.000Z", data: { id: "movie-history", name: "Старая версия", completedSteps: ["story"] } }
+] }];
+assert.equal(guard.parse(JSON.stringify(historical))[0].versions.length, 1);
+for (const versions of [
+  [{ savedAt: "not-a-date", data: { id: "movie-history" } }],
+  [{ savedAt: "2026-11-28T12:00:00.000Z", data: { id: "other-id" } }],
+  [{ savedAt: "2026-11-28T12:00:00.000Z", data: [] }],
+  [{ savedAt: "2026-11-28T12:00:00.000Z", data: { id: "movie-history", name: 42 } }]
+]) {
+  assert.throws(() => guard.parse(JSON.stringify([{ id: "movie-history", versions }])),
+    /История|истории|Запись истории/);
+}
 
 for (const raw of ["{broken", "{}", "null", '[{"name":"Без ID"}]', '[null]', '[[]]',
   '[{"id":"x"},{"id":"x"}]', '[{"id":"x","name":42}]',
@@ -36,6 +49,14 @@ assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(mov
 assert.match(app, /Validate the local library before processing deletion tombstones or uploading anything/);
 assert.match(app, /A corrupt local library must stop cloud-side deletion and merge as well/);
 assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(guestArchiveKey\(\)\)\)/);
+assert.match(app, /const writeMovieStorage = projects => \{/);
+assert.match(app, /writeMovieStorage\(localProjects\)/);
+assert.match(app, /if \(changed\) writeMovieStorage\(active\)/);
+assert.match(app, /Reject the entire backup if even one record or nested version is malformed/);
+assert.doesNotMatch(app, /const valid=imported\.filter/);
+assert.match(app, /version\.data,id:copy\.id/);
+assert.match(app, /version\.data, id: project\.id/);
+assert.match(app, /Экспорт остановлен для защиты данных/);
 
 
 assert.match(app, /Очередь удалений фильмов повреждена/);
