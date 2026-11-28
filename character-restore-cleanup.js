@@ -109,7 +109,7 @@
  async function inspectMarkedManifest(input){
    const {ownerId,cleanupId,restoreJournal,cleanupJournal,blobStore,localAdapter,ownerLock=globalThis.PWACharacterOwnerCoordinationLock,inspectImage,isCurrent=()=>true}=input||{};
    if(!validUuid(ownerId)||!validUuid(cleanupId)||!restoreJournal||!cleanupJournal||!blobStore||!localAdapter||!ownerLock||
-      typeof inspectImage!=="function"||typeof isCurrent!=="function"||typeof cleanupJournal.getManifest!=="function")fail("Cleanup recheck adapters are incomplete.");
+      typeof inspectImage!=="function"||typeof isCurrent!=="function"||typeof cleanupJournal.getManifest!=="function"||typeof cleanupJournal.reconcileManifest!=="function")fail("Cleanup recheck adapters are incomplete.");
    const assertContext=()=>{if(!isCurrent())fail("Account changed during cleanup recheck.");};
    assertContext();
    let lease=null,heartbeat=null,renewal=Promise.resolve(),lost=false;
@@ -120,7 +120,19 @@
      const assertLease=async()=>{assertContext();await renewal;if(lost||!(await ownerLock.isCurrent(lease)))fail("Owner cleanup lock expired or was fenced.");assertContext();};
      await assertLease();
      const manifest=await cleanupJournal.getManifest(ownerId,cleanupId);
-     if(!manifest||manifest.ownerId!==ownerId||manifest.cleanupId!==cleanupId||manifest.state!=="marked")fail("Marked cleanup manifest was not found for this owner.");
+     if(!manifest||manifest.ownerId!==ownerId||manifest.cleanupId!==cleanupId)fail("Marked cleanup manifest was not found for this owner.");
+     if(manifest.state==="reconciled")return Object.freeze({state:"already_reconciled",revision:manifest.revision,candidates:manifest.candidates.map(c=>({localStagedBlobId:c.localStagedBlobId,state:c.state,reasonCode:c.reasonCode||null}))});
+     if(manifest.state!=="marked")fail("Cleanup manifest is not eligible for recheck.");
+     const reconcile=async(candidateState,reasonCode)=>{
+       await assertLease();
+       const recheckedAt=new Date().toISOString();
+       const candidates=manifest.candidates.map(c=>candidateState==="retained"
+         ?{...c,state:"retained",reasonCode}
+         :{...c,state:"eligible_for_delete_review",recheckedAt});
+       const saved=await cleanupJournal.reconcileManifest({ownerId,cleanupId,expectedRevision:manifest.revision,candidates});
+       await assertLease();
+       return Object.freeze({state:candidateState==="retained"?"blocked_"+reasonCode:"eligible_for_delete_review",revision:saved.revision,eligibleCount:saved.candidates.filter(c=>c.state==="eligible_for_delete_review").length,retainedCount:saved.candidates.filter(c=>c.state==="retained").length,candidates:saved.candidates.map(c=>({localStagedBlobId:c.localStagedBlobId,state:c.state,reasonCode:c.reasonCode||null}))});
+     };
      const now=Date.now();
      if(manifest.candidates.some(c=>Date.parse(c.deleteAfter)>now))
        return Object.freeze({state:"retention_pending",candidateCount:manifest.candidates.length,deleteAfter:Math.max(...manifest.candidates.map(c=>Date.parse(c.deleteAfter)))});
@@ -129,7 +141,7 @@
      if(!Array.isArray(localItems)||localItems.length>100)fail("Local metadata inventory is incomplete or invalid.");
      const metadataDigestNow=await sha256(canonical(localItems));
      await assertLease();
-     if(metadataDigestNow!==manifest.metadataDigest)return Object.freeze({state:"blocked_metadata_changed",eligibleCount:0});
+     if(metadataDigestNow!==manifest.metadataDigest)return reconcile("retained","metadata_changed");
      const activeIds=new Set();
      for(const card of localItems){
        if(!card||typeof card!=="object"||(card.referenceImages!=null&&!Array.isArray(card.referenceImages)))fail("Local metadata contains an ambiguous card.");
@@ -138,7 +150,7 @@
      const page=await restoreJournal.listPage(ownerId,{limit:100,cursor:null});
      await assertLease();
      if(!page||!Array.isArray(page.items)||page.items.length>MAX_OPERATIONS||page.nextCursor!==null)
-       return Object.freeze({state:"blocked_incomplete_inventory",eligibleCount:0});
+       return reconcile("retained","inventory_incomplete");
      const operations=page.items;
      const blobRefs=new Map(),assetRefs=new Map();
      for(const op of operations){
@@ -154,24 +166,24 @@
        const source=operations.find(op=>op.operationId===candidate.operationId);
        if(!source||source.state!=="aborted"||source.revision!==candidate.operationRevision||
           (source.lease&&Date.parse(source.lease.expiresAt)>Date.now()))
-         return Object.freeze({state:"blocked_source_changed",eligibleCount:0,operationId:candidate.operationId});
+         return reconcile("retained","source_changed");
        const matching=source.references.filter(ref=>ref.localStagedBlobId===candidate.localStagedBlobId&&ref.cloudAssetId===candidate.cloudAssetId&&ref.state==="verified_staged");
        if(matching.length!==1||activeIds.has(candidate.localStagedBlobId)||
           (blobRefs.get(candidate.localStagedBlobId)||[]).length!==1||
           (assetRefs.get(candidate.cloudAssetId)||[]).some(id=>id!==candidate.operationId))
-         return Object.freeze({state:"blocked_reference_or_mapping_changed",eligibleCount:0,operationId:candidate.operationId});
+         return reconcile("retained","reference_changed");
        const ref=matching[0];
        if(ref.expectedSha256!==candidate.sha256||ref.expectedSizeBytes!==candidate.sizeBytes||
           ref.expectedMimeType!==candidate.mimeType||ref.width!==candidate.width||ref.height!==candidate.height)
-         return Object.freeze({state:"blocked_checkpoint_proof_changed",eligibleCount:0,operationId:candidate.operationId});
+         return reconcile("retained","proof_changed");
        const blob=await blobStore.readStagedBlob({ownerId,operationId:candidate.operationId,cloudAssetId:candidate.cloudAssetId,localStagedBlobId:candidate.localStagedBlobId});
        await assertLease();
-       if(!blob)return Object.freeze({state:"blocked_blob_missing_or_identity_changed",eligibleCount:0,localStagedBlobId:candidate.localStagedBlobId});
-       try{await proofBlob(blob,ref,inspectImage);}catch(_){return Object.freeze({state:"blocked_blob_integrity_changed",eligibleCount:0,localStagedBlobId:candidate.localStagedBlobId});}
+       if(!blob)return reconcile("retained","blob_missing");
+       try{await proofBlob(blob,ref,inspectImage);}catch(_){return reconcile("retained","proof_changed");}
        await assertLease();
        eligible.push(Object.freeze({operationId:candidate.operationId,cloudAssetId:candidate.cloudAssetId,localStagedBlobId:candidate.localStagedBlobId}));
      }
-     return Object.freeze({state:"eligible_for_delete_review",eligibleCount:eligible.length,candidates:Object.freeze(eligible)});
+     return reconcile("eligible_for_delete_review",null);
    }finally{
      if(heartbeat)clearInterval(heartbeat);
      await renewal;
