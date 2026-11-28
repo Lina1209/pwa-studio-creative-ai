@@ -58,6 +58,17 @@
     let revision=leasedOperation.revision;
     let state=leasedOperation.state;
     let staged=0;
+    let leaseLost=null;
+    let renewalInFlight=null;
+    const renewLease=()=>{
+      if(renewalInFlight)return renewalInFlight;
+      renewalInFlight=journal.renewLease(ownerId,operationId,lease,{ttlMs:60000})
+        .catch(error=>{leaseLost=error;})
+        .finally(()=>{renewalInFlight=null;});
+      return renewalInFlight;
+    };
+    const assertLease=()=>{if(leaseLost)fail("Restore lease was lost; staging must pause and resume safely.");};
+    const heartbeat=setInterval(()=>{if(!leaseLost)void renewLease();},20000);
     try{
       if(!isCurrent())fail("Account changed before media staging.");
       if(state==="planned"){
@@ -73,6 +84,7 @@
       const savedRefs=persisted.references;
       if(savedRefs.length!==refs.length)fail("Persisted restore manifest does not match the requested media.");
       for(let i=0;i<refs.length;i++){
+        assertLease();
         if(!isCurrent())fail("Account changed during media staging.");
         const expected=refs[i],saved=savedRefs[i];
         if(saved.cloudAssetId!==expected.cloudAssetId||saved.expectedSha256!==expected.expectedSha256||saved.expectedSizeBytes!==expected.expectedSizeBytes||saved.expectedMimeType!==expected.expectedMimeType)fail("Persisted media checkpoint differs from the requested manifest.");
@@ -85,21 +97,26 @@
           staged++;continue;
         }
         const downloaded=await adapters.downloadAsset({ownerId,operationId,cloudAssetId:expected.cloudAssetId});
+        assertLease();
         if(!isCurrent())fail("Account changed while downloading a media asset.");
-        const proof=await digestHex(downloaded);proofMatches(proof,expected);
-        const dimensions=await adapters.inspectImage(downloaded);
+        const proof=await digestHex(downloaded);assertLease();proofMatches(proof,expected);
+        const dimensions=await adapters.inspectImage(downloaded);assertLease();
         if(!dimensions||dimensions.width!==expected.width||dimensions.height!==expected.height)fail("Downloaded image dimensions verification failed.");
+        assertLease();
         const stored=await adapters.stageBlob({ownerId,operationId,cloudAssetId:expected.cloudAssetId,localStagedBlobId:localId,blob:downloaded,proof:{...proof,width:dimensions.width,height:dimensions.height}});
         if(!stored||stored.localStagedBlobId!==localId)fail("Staged Blob adapter returned an unexpected identity.");
         if(!isCurrent())fail("Account changed after staging a media asset.");
+        assertLease();
         const readBack=await adapters.readStagedBlob({ownerId,operationId,localStagedBlobId:localId});
-        const readProof=await digestHex(readBack);proofMatches(readProof,expected);
-        const readDimensions=await adapters.inspectImage(readBack);
+        const readProof=await digestHex(readBack);assertLease();proofMatches(readProof,expected);
+        const readDimensions=await adapters.inspectImage(readBack);assertLease();
         if(!readDimensions||readDimensions.width!==expected.width||readDimensions.height!==expected.height)fail("Staged Blob read-back dimensions verification failed.");
         saved.state="verified_staged";
         const updated=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"staging",references:savedRefs});
         revision=updated.revision;staged++;
       }
+      await renewalInFlight;
+      assertLease();
       if(!isCurrent())fail("Account changed before staging completion.");
       const ready=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:revision,state:"ready_to_activate",references:savedRefs});
       revision=ready.revision;state=ready.state;
@@ -114,6 +131,8 @@
       }catch{/* preserve the original failure; lease expiry permits a later safe retry */}
       throw error;
     }finally{
+      clearInterval(heartbeat);
+      if(renewalInFlight)await renewalInFlight;
       try{await journal.releaseLease(ownerId,operationId,lease);}catch{/* expired/stale leases are fenced by epoch */}
     }
   }
