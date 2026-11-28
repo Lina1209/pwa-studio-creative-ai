@@ -4,7 +4,7 @@ from unittest.mock import patch
 from app.core.config import Settings
 from fastapi.testclient import TestClient
 from app.main import app
-from app.services.auth import StudioUser, get_current_user
+from app.services.auth import StudioUser, get_current_user, get_platform_active_user
 
 OWNER = "11111111-1111-4111-8111-111111111111"
 CHARACTER = "33333333-3333-4333-8333-333333333333"
@@ -18,6 +18,7 @@ class CharacterApiRouteTests(unittest.TestCase):
         app.dependency_overrides[get_current_user] = lambda: StudioUser(
             user_id=OWNER, email="creator@example.test", role="creator"
         )
+        app.dependency_overrides[get_platform_active_user] = lambda: app.dependency_overrides[get_current_user]()
 
     def tearDown(self):
         app.dependency_overrides.clear()
