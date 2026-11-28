@@ -123,15 +123,37 @@
   }
 
   function assertRecord(record) {
-    if (!record || record.protocolVersion !== PROTOCOL_VERSION || !record.ownerId || !record.localCharacterId || !Array.isArray(record.references)) fail("Invalid backup journal record.");
+    if (!record || record.protocolVersion !== PROTOCOL_VERSION || !Array.isArray(record.references)) fail("Invalid backup journal record.");
+    const ownerId = uuid(record.ownerId, "journal owner ID");
+    const localCharacterId = uuid(record.localCharacterId, "journal local character ID");
+    if (record.id !== keyFor(ownerId, localCharacterId)) fail("Journal primary key does not match its owner mapping.");
+    if (record.cloudCharacterId !== null) uuid(record.cloudCharacterId, "cloud character ID");
+    const fingerprint = requiredString(record.passportFingerprint, "passport fingerprint", 64).toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(fingerprint)) fail("Invalid passport fingerprint.");
+    for (const field of ["createdAt", "updatedAt"]) {
+      if (typeof record[field] !== "string" || !Number.isFinite(Date.parse(record[field]))) fail("Invalid journal timestamp.");
+    }
     if (record.references.length > 6) fail("A character may have at most six references.");
     const ids = new Set();
     const keys = new Set();
     for (const ref of record.references) {
+      if (!ref || typeof ref !== "object") fail("Invalid backup reference record.");
+      requiredString(ref.localReferenceId, "local reference ID", 180);
+      const sha = requiredString(ref.sha256, "reference SHA-256", 64).toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(sha)) fail("Invalid reference SHA-256.");
+      if (!Number.isSafeInteger(ref.sizeBytes) || ref.sizeBytes < 1 || ref.sizeBytes > 8 * 1024 * 1024) fail("Invalid reference size.");
+      if (!["image/png", "image/jpeg", "image/webp"].includes(ref.mimeType)) fail("Unsupported reference MIME type.");
+      requiredString(ref.fileName, "reference filename", 120);
+      requiredString(ref.idempotencyKey, "idempotency key", 180);
+      if (ref.cloudAssetId !== null) uuid(ref.cloudAssetId, "cloud asset ID");
       if (!STATES.has(ref.state)) fail("Unknown backup reference state.");
+      if (ref.lastErrorCategory !== null) requiredString(ref.lastErrorCategory, "error category", 80);
+      if (ref.lastVerifiedAt !== null && (typeof ref.lastVerifiedAt !== "string" || !Number.isFinite(Date.parse(ref.lastVerifiedAt)))) fail("Invalid reference verification timestamp.");
+      if (ref.state === "verified" && (!ref.cloudAssetId || !ref.lastVerifiedAt)) fail("Verified reference is missing its cloud proof.");
       if (ids.has(ref.localReferenceId) || keys.has(ref.idempotencyKey)) fail("Duplicate reference identity or idempotency key.");
       ids.add(ref.localReferenceId); keys.add(ref.idempotencyKey);
     }
+    return record;
   }
 
   async function create(input) {
