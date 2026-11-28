@@ -83,31 +83,37 @@ class SupabaseAIBudgetStore:
         if actual_cost_usd is None:
             self.mark_unknown(reservation_id, "provider_cost_unknown")
             return
-        self._rpc(
+        result = self._rpc(
             "settle_ai_budget",
             {
                 "p_reservation_id": reservation_id,
                 "p_actual_usd": str(actual_cost_usd),
             },
         )
+        if result != "settled":
+            raise AIBudgetStoreUnavailable("AI budget settlement was not confirmed.")
 
     def mark_unknown(self, reservation_id: str, safe_reason: str) -> None:
-        self._rpc(
+        result = self._rpc(
             "mark_ai_budget_unknown",
             {
                 "p_reservation_id": reservation_id,
                 "p_safe_reason": safe_reason,
             },
         )
+        if result is not True:
+            raise AIBudgetStoreUnavailable("AI budget unknown state was not confirmed.")
 
     def release_confirmed_no_charge(self, reservation_id: str, safe_reason: str) -> None:
-        self._rpc(
+        result = self._rpc(
             "release_ai_budget_no_charge",
             {
                 "p_reservation_id": reservation_id,
                 "p_safe_reason": safe_reason,
             },
         )
+        if result is not True:
+            raise AIBudgetStoreUnavailable("AI budget no-charge release was not confirmed.")
 
     def mark_stale_reservations_unknown(self, created_before: str, limit: int = 100) -> int:
         if not 1 <= limit <= 1000:
