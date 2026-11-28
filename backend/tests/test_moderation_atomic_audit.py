@@ -23,7 +23,7 @@ SUSPENSION = "44444444-4444-4444-8444-444444444444"
 class ModerationAtomicAuditTests(unittest.TestCase):
     @patch.object(moderation_service.httpx, "request")
     def test_new_supabase_secret_key_is_not_sent_as_bearer_jwt(self, request):
-        request.return_value = SimpleNamespace(content=b"[]", json=lambda: [])
+        request.return_value = SimpleNamespace(content=b"[]", json=lambda: [], raise_for_status=lambda: None)
         settings = SimpleNamespace(
             supabase_url="https://example.supabase.co",
             supabase_service_role_key="sb_secret_test_key",
