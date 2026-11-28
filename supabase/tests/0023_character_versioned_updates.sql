@@ -73,6 +73,13 @@ begin
   if has_table_privilege('authenticated','public.characters','UPDATE') then
     raise exception 'authenticated role can bypass versioned update RPC';
   end if;
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname='public' and tablename='characters'
+      and indexname='characters_owner_created_id_desc_idx'
+  ) then
+    raise exception 'character keyset pagination index is missing';
+  end if;
 end;
 $$;
 rollback;
