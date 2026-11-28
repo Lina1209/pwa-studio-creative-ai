@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { webcrypto } = require("node:crypto");
 
 const source = fs.readFileSync("character-media-backup-coordinator.js", "utf8");
-const sandbox = { crypto: webcrypto, Blob };
+const sandbox = { crypto: webcrypto, Blob, Map };
 sandbox.globalThis = sandbox;
 vm.runInNewContext(source, sandbox, { filename: "character-media-backup-coordinator.js" });
 const coordinator = sandbox.PWACharacterMediaBackupCoordinator;
