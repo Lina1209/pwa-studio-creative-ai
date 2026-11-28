@@ -177,8 +177,13 @@ begin
   where c.outbox_id = v_outbox_id;
   if v_token is null then raise exception 'TEST FAILED: outbox event was not initially claimed'; end if;
   update public.generation_job_outbox
-  set claimed_at = now() - interval '2 minutes'
+  set claimed_at = now() - interval '2 minutes',
+      claim_expires_at = now() - interval '1 second'
   where id = v_outbox_id and claim_token = v_token;
+  -- Expiry alone invalidates the old dispatcher, even before another
+  -- dispatcher has reclaimed the row and rotated its token.
+  select public.ack_generation_outbox(v_outbox_id, v_token) into v_ok;
+  if v_ok then raise exception 'TEST FAILED: expired outbox lease was acknowledged before reclaim'; end if;
   select c.claim_token into v_outbox_token
   from public.claim_generation_outbox('queue-test-dispatcher-new', 100, 60) c
   where c.outbox_id = v_outbox_id;
