@@ -151,6 +151,18 @@
         const latestCandidate=latest?.candidates?.find(c=>c.localStagedBlobId===candidate.localStagedBlobId);
         if(!latest||latestCandidate?.state!=="delete_intent"||latestCandidate.deleteAttemptId!==attempt)
           fail("Delete intent changed before journal finalization.");
+        // Revalidate the owner snapshot after the release/reacquire boundary too.
+        // The bytes are already gone, but finalizing against changed metadata could
+        // hide a newly reintroduced reference to the missing local image.
+        const finalizedSnapshot=await snapshot();
+        await assertLease();
+        if(finalizedSnapshot.metadataDigest!==latest.metadataDigest)
+          fail("Owner metadata changed before cleanup journal finalization.");
+        assertInventories(ownerId,finalizedSnapshot.operations,candidate,finalizedSnapshot.activeIds);
+        const remains=await blobStore.readStagedBlob({ownerId,operationId:candidate.operationId,
+          cloudAssetId:candidate.cloudAssetId,localStagedBlobId:candidate.localStagedBlobId});
+        if(remains)fail("Deleted staged Blob reappeared before journal finalization.");
+        await assertLease();
         const final=await cleanupJournal.finalizeCandidateDeleted({ownerId,cleanupId,expectedRevision:latest.revision,
           ownerLockEpoch:lease.epoch,localStagedBlobId:candidate.localStagedBlobId,deleteAttemptId:attempt});
         manifest=final;results.push({localStagedBlobId:candidate.localStagedBlobId,state:"deleted",blobResult:result});
