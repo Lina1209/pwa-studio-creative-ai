@@ -91,8 +91,11 @@ def _public(row):
 
 def list_owned_characters(settings, owner_id):
     owner = canonical_uuid(owner_id, "owner")
-    rows = _request(settings, "GET", {"select":"id,source_local_id,name,description,reference_data,created_at",
+    rows = _request(settings, "GET", {"select":"id,owner_id,source_local_id,name,description,reference_data,created_at",
         "owner_id":f"eq.{owner}", "order":"created_at.desc", "limit":"100"})
+    # Defense in depth: verify every returned row before exposing any passport.
+    if any(not isinstance(row, dict) or row.get("owner_id") != owner for row in rows):
+        raise HTTPException(status_code=404, detail="Character not found.")
     return [_public(row) for row in rows]
 
 def create_owned_character(settings, owner_id, source_local_id, name, description, reference_data):
