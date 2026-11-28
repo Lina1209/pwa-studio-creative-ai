@@ -39,6 +39,16 @@ class CharacterRepositoryTests(unittest.TestCase):
         self.assertEqual(list_owned_characters(self.settings, OWNER), [])
         self.assertEqual(request.call_args.kwargs["params"]["owner_id"], f"eq.{OWNER}")
 
+    @patch("app.services.character_repository.httpx.request")
+    def test_list_rejects_unexpected_foreign_row_even_if_query_was_owner_filtered(self, request):
+        request.return_value = Mock(content=b"[]", json=lambda: [{
+            "id": CHARACTER, "owner_id": OTHER, "source_local_id": CHARACTER,
+            "name": "Foreign", "description": None, "reference_data": {}, "created_at": "now"
+        }])
+        with self.assertRaises(HTTPException) as caught:
+            list_owned_characters(self.settings, OWNER)
+        self.assertEqual(caught.exception.status_code, 404)
+
     @patch("app.services.character_repository.httpx.post")
     def test_create_uses_verified_owner_and_stable_local_mapping(self, request):
         local_id = "44444444-4444-4444-8444-444444444444"
