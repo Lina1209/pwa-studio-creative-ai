@@ -102,6 +102,14 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         self.assertIn("Локальная библиотека сохранена.", backup)
         self.assertIn("Изображения-референсы пока остаются только на этом устройстве.", backup)
 
+    def test_character_backup_preserves_cloud_reference_manifest(self):
+        start = APP.index("const backupCharacterLibrary = async () =>")
+        end = APP.index('$("#backupCharacterLibrary")?.addEventListener', start)
+        backup = APP[start:end]
+        self.assertIn("local.cloudBackup?.referenceManifest", backup)
+        self.assertIn("seenReferenceIds.has(refId)", backup)
+        self.assertIn("referenceImages:referenceManifest.map", backup)
+
     def test_character_cloud_backup_never_uploads_or_deletes_image_blobs(self):
         start = APP.index("const backupCharacterLibrary = async () =>")
         end = APP.index('$("#backupCharacterLibrary")?.addEventListener', start)
