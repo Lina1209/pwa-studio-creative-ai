@@ -14,7 +14,7 @@ function makeJournal(){
  let row={ownerId:owner,operationId:operation,state:"planned",revision:1,references:[],lease:null,leaseEpoch:0};
  return {
   async get(o,id){return o===owner&&id===operation?structuredClone(row):null;},
-  async acquireLease(o,id){assert.equal(o,owner);assert.equal(id,operation);assert.equal(row.lease,null);row.leaseEpoch++;row.lease={token:"lease-token-"+row.leaseEpoch,epoch:row.leaseEpoch};return structuredClone(row.lease);},
+  async acquireLease(o,id){assert.equal(o,owner);assert.equal(id,operation);assert.equal(row.lease,null);row.leaseEpoch++;row.lease={token:"lease-token-"+row.leaseEpoch,epoch:row.leaseEpoch};row.revision++;return structuredClone(row.lease);},
   async checkpoint(input){
    assert.equal(input.ownerId,owner);assert.equal(input.operationId,operation);
    assert.equal(input.leaseToken,row.lease.token);assert.equal(input.leaseEpoch,row.lease.epoch);
@@ -24,7 +24,7 @@ function makeJournal(){
    row={...row,state:input.state,revision:row.revision+1,references:structuredClone(input.references||row.references),lease:row.lease,leaseEpoch:row.leaseEpoch};
    return structuredClone(row);
   },
-  async releaseLease(o,id,lease){assert.equal(lease.token,row.lease.token);row.lease=null;return true;},
+  async releaseLease(o,id,lease){assert.equal(lease.token,row.lease.token);row.lease=null;row.revision++;return true;},
   inspect(){return structuredClone(row);}
  };
 }
