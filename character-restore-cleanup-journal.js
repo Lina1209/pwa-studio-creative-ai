@@ -15,7 +15,7 @@
   function validate(row){
     if(!row||row.protocolVersion!==PROTOCOL||row.id!==key(row.ownerId,row.cleanupId))fail("Invalid cleanup manifest identity.");
     uuid(row.ownerId,"owner ID");uuid(row.cleanupId,"cleanup ID");
-    if(!["marked","reconciled"].includes(row.state)||!Number.isSafeInteger(row.revision)||row.revision<1||(row.state==="marked"&&row.revision!==1))fail("Invalid cleanup manifest state or revision.");
+    if(!["marked","reconciled","deleting","completed"].includes(row.state)||!Number.isSafeInteger(row.revision)||row.revision<1||(row.state==="marked"&&row.revision!==1))fail("Invalid cleanup manifest state or revision.");
     if(!Number.isSafeInteger(row.ownerLockEpoch)||row.ownerLockEpoch<1)fail("Invalid owner lock epoch.");
     if(!SHA.test(row.metadataDigest||""))fail("Invalid metadata snapshot digest.");
     if(!Array.isArray(row.candidates)||row.candidates.length<1||row.candidates.length>600)fail("Invalid cleanup candidate list.");
@@ -28,7 +28,9 @@
          !MIME.has(c.mimeType)||!Number.isInteger(c.width)||c.width<1||c.width>12000||!Number.isInteger(c.height)||c.height<1||c.height>12000)fail("Invalid staged Blob proof.");
       iso(c.markedAt,"candidate mark timestamp");iso(c.deleteAfter,"candidate retention timestamp");
       if(Date.parse(c.deleteAfter)<=Date.parse(c.markedAt))fail("Cleanup retention window must be positive.");
-      if(!["marked","retained","eligible_for_delete_review"].includes(c.state))fail("Invalid cleanup candidate state.");
+      if(!["marked","retained","eligible_for_delete_review","delete_intent","deleted"].includes(c.state))fail("Invalid cleanup candidate state.");
+      if(c.state==="delete_intent"||c.state==="deleted"){uuid(c.deleteAttemptId,"delete attempt ID");iso(c.deleteIntentAt,"delete intent timestamp");if(!Number.isSafeInteger(c.deleteLockEpoch)||c.deleteLockEpoch<1)fail("Invalid delete lock epoch.");}
+      if(c.state==="deleted")iso(c.deletedAt,"candidate deletion timestamp");
       if(c.state==="retained"&&!["metadata_changed","source_changed","reference_changed","proof_changed","blob_missing","inventory_incomplete"].includes(c.reasonCode))fail("Invalid retained candidate reason.");
       if(c.state==="eligible_for_delete_review")iso(c.recheckedAt,"candidate recheck timestamp");
       if(c.state==="marked"&&(c.reasonCode!==undefined||c.recheckedAt!==undefined))fail("Unreconciled candidate has premature outcome metadata.");
@@ -141,5 +143,54 @@
     if(!updated)fail("Cleanup manifest reconciliation rejected: stale revision, owner, or state.");
     return updated;
   }
-  globalThis.PWACharacterRestoreCleanupJournal=Object.freeze({protocolVersion:PROTOCOL,createManifest,getManifest,listPage,reconcileManifest});
+  async function beginCandidateDelete(input){
+    const owner=uuid(input?.ownerId,"owner ID"),cleanup=uuid(input?.cleanupId,"cleanup ID"),attempt=uuid(input?.deleteAttemptId,"delete attempt ID");
+    uuid(input?.localStagedBlobId,"staged Blob ID");
+    if(!Number.isSafeInteger(input?.expectedRevision)||input.expectedRevision<1||!Number.isSafeInteger(input?.ownerLockEpoch)||input.ownerLockEpoch<1)fail("Invalid delete-intent request.");
+    let updated=null;const db=await open();
+    try{await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,"readwrite"),store=tx.objectStore(STORE),req=store.get(key(owner,cleanup));
+      req.onsuccess=()=>{const row=req.result;if(!row){try{tx.abort();}catch{}return;}validate(row);
+        if(row.ownerId!==owner||!["reconciled","deleting"].includes(row.state)||row.revision!==input.expectedRevision||
+           input.ownerLockEpoch<=row.ownerLockEpoch){try{tx.abort();}catch{}return;}
+        const candidate=row.candidates.find(c=>c.localStagedBlobId===input.localStagedBlobId);
+        if(!candidate||candidate.state!=="eligible_for_delete_review"){try{tx.abort();}catch{}return;}
+        candidate.state="delete_intent";candidate.deleteAttemptId=attempt;
+        candidate.deleteIntentAt=iso(input.deleteIntentAt||new Date().toISOString(),"delete intent timestamp");
+        candidate.deleteLockEpoch=input.ownerLockEpoch;
+        row.ownerLockEpoch=input.ownerLockEpoch;row.state="deleting";row.revision+=1;row.updatedAt=new Date().toISOString();
+        validate(row);store.put(row);updated=clone(row);
+      };
+      req.onerror=()=>{try{tx.abort();}catch{}};
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("Delete intent transaction failed."));
+      tx.onabort=()=>reject(tx.error||new Error("Delete intent was fenced or stale."));
+    });}finally{db.close();}
+    if(!updated)fail("Delete intent rejected: candidate, revision, state, or owner epoch changed.");
+    return updated;
+  }
+  async function finalizeCandidateDeleted(input){
+    const owner=uuid(input?.ownerId,"owner ID"),cleanup=uuid(input?.cleanupId,"cleanup ID"),attempt=uuid(input?.deleteAttemptId,"delete attempt ID");
+    uuid(input?.localStagedBlobId,"staged Blob ID");
+    if(!Number.isSafeInteger(input?.expectedRevision)||input.expectedRevision<1||!Number.isSafeInteger(input?.ownerLockEpoch)||input.ownerLockEpoch<1)fail("Invalid delete completion request.");
+    let updated=null;const db=await open();
+    try{await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,"readwrite"),store=tx.objectStore(STORE),req=store.get(key(owner,cleanup));
+      req.onsuccess=()=>{const row=req.result;if(!row){try{tx.abort();}catch{}return;}validate(row);
+        if(row.ownerId!==owner||row.state!=="deleting"||row.revision!==input.expectedRevision||
+           input.ownerLockEpoch<=row.ownerLockEpoch){try{tx.abort();}catch{}return;}
+        const candidate=row.candidates.find(c=>c.localStagedBlobId===input.localStagedBlobId);
+        if(!candidate||candidate.state!=="delete_intent"||candidate.deleteAttemptId!==attempt){try{tx.abort();}catch{}return;}
+        candidate.state="deleted";candidate.deletedAt=iso(input.deletedAt||new Date().toISOString(),"deleted timestamp");
+        row.ownerLockEpoch=input.ownerLockEpoch;row.revision+=1;
+        row.state=row.candidates.every(c=>["deleted","retained"].includes(c.state))?"completed":"deleting";
+        row.updatedAt=new Date().toISOString();validate(row);store.put(row);updated=clone(row);
+      };
+      req.onerror=()=>{try{tx.abort();}catch{}};
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("Delete completion transaction failed."));
+      tx.onabort=()=>reject(tx.error||new Error("Delete completion was fenced or stale."));
+    });}finally{db.close();}
+    if(!updated)fail("Delete completion rejected: candidate intent, revision, state, or owner epoch changed.");
+    return updated;
+  }
+  globalThis.PWACharacterRestoreCleanupJournal=Object.freeze({protocolVersion:PROTOCOL,createManifest,getManifest,listPage,reconcileManifest,beginCandidateDelete,finalizeCandidateDeleted});
 })();
