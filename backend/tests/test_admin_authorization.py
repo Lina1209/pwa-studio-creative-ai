@@ -85,6 +85,25 @@ class AdminIdentityTests(unittest.TestCase):
         self.assertIs(require_admin(admin), admin)
 
 
+    @patch.object(auth, "get_settings")
+    @patch("app.services.moderation_service.ensure_user_not_suspended")
+    def test_platform_active_dependency_checks_global_scope(self, guard, settings):
+        settings.return_value = SimpleNamespace()
+        user = StudioUser(CREATOR, None, "creator")
+        self.assertIs(auth.get_platform_active_user(user), user)
+        guard.assert_called_once_with(settings.return_value, CREATOR, "platform")
+
+    @patch.object(auth, "get_settings")
+    @patch("app.services.moderation_service.ensure_user_not_suspended",
+           side_effect=HTTPException(status_code=403, detail="restricted"))
+    def test_platform_active_dependency_rejects_global_suspension(self, guard, settings):
+        settings.return_value = SimpleNamespace()
+        with self.assertRaises(HTTPException) as caught:
+            auth.get_platform_active_user(StudioUser(CREATOR, None, "creator"))
+        self.assertEqual(caught.exception.status_code, 403)
+        guard.assert_called_once_with(settings.return_value, CREATOR, "platform")
+
+
 class AdminRouteGuardTests(unittest.TestCase):
     def tearDown(self):
         app.dependency_overrides.clear()
