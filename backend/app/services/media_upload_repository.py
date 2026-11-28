@@ -58,7 +58,13 @@ def get_owned_character_for_media_upload(
         rows = response.json()
         if not isinstance(rows, list) or not rows:
             raise HTTPException(status_code=404, detail="Character not found.")
-        return rows[0]
+        row = rows[0]
+        # Defense in depth: never trust a PostgREST response that does not
+        # exactly match both identifiers used in the owner-scoped query.
+        if (not isinstance(row, dict) or row.get("id") != character
+                or row.get("owner_id") != owner):
+            raise HTTPException(status_code=404, detail="Character not found.")
+        return row
     except HTTPException:
         raise
     except httpx.HTTPStatusError as exc:
