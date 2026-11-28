@@ -91,6 +91,12 @@ class SupabaseAIBudgetStore:
         if actual_cost_usd is None:
             self.mark_unknown(reservation_id, "provider_cost_unknown")
             return
+        if (
+            not isinstance(actual_cost_usd, Decimal)
+            or not actual_cost_usd.is_finite()
+            or actual_cost_usd < 0
+        ):
+            raise ValueError("AI settlement amount must be a finite non-negative Decimal.")
         result = self._rpc(
             "settle_ai_budget",
             {
