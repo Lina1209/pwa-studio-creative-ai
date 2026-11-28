@@ -74,9 +74,10 @@ def get_owned_character_for_media_upload(
 
 
 def reserve_character_reference_upload(settings: Settings, plan) -> dict:
-    result = _rpc(settings, "pwa_reserve_character_reference_upload", {
+    result = _rpc(settings, "pwa_reserve_character_reference_upload_v2", {
         "p_owner_id": plan.owner_id,
         "p_character_id": plan.character_id,
+        "p_local_reference_id": plan.local_reference_id,
         "p_asset_id": plan.asset_id,
         "p_operation_id": plan.outbox_event.id,
         "p_event_id": plan.outbox_event.id,
