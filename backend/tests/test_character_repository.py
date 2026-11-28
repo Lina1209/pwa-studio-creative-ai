@@ -73,32 +73,57 @@ class CharacterRepositoryTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 404)
         self.assertEqual(request.call_args.kwargs["params"]["owner_id"], f"eq.{OWNER}")
 
-    @patch("app.services.character_repository.httpx.request")
-    def test_patch_is_owner_filtered_and_allowlisted(self, request):
-        request.return_value = Mock(content=b'[{"id":"%s","owner_id":"%s","name":"New","description":null,"reference_data":{},"created_at":"now"}]' % (CHARACTER.encode(), OWNER.encode()), json=lambda: [{
-            "id": CHARACTER, "owner_id": OWNER, "name": "New", "description": None, "reference_data": {}, "created_at": "now"
-        }])
-        update_owned_character(self.settings, OWNER, CHARACTER, {"name": " New ", "owner_id": OTHER})
-        kwargs = request.call_args.kwargs
-        self.assertEqual(kwargs["params"]["owner_id"], f"eq.{OWNER}")
-        self.assertEqual(kwargs["json"], {"name": "New"})
+    @patch("app.services.character_repository._rpc")
+    def test_patch_uses_versioned_rpc_and_allowlists_fields(self, rpc):
+        rpc.return_value = {
+            "id": CHARACTER, "owner_id": OWNER, "source_local_id": CHARACTER,
+            "name": "New", "description": None, "reference_data": {},
+            "created_at": "now", "version": 2
+        }
+        row = update_owned_character(self.settings, OWNER, CHARACTER, 1,
+                                     {"name": " New ", "owner_id": OTHER})
+        self.assertEqual(rpc.call_args.args[1], "pwa_update_character_versioned")
+        payload = rpc.call_args.args[2]
+        self.assertEqual(payload["p_owner_id"], OWNER)
+        self.assertEqual(payload["p_character_id"], CHARACTER)
+        self.assertEqual(payload["p_expected_version"], 1)
+        self.assertEqual(payload["p_changes"], {"name": "New"})
+        self.assertEqual(row["version"], 2)
 
-    @patch("app.services.character_repository.httpx.request")
-    def test_patch_accepts_local_ui_description_limit(self, request):
-        description = "x" * 5000
-        request.return_value = Mock(content=b"[]", json=lambda: [])
+    @patch("app.services.character_repository._rpc")
+    def test_patch_stale_version_returns_conflict_without_retry(self, rpc):
+        rpc.return_value = {"conflict": True, "version": 3}
         with self.assertRaises(HTTPException) as caught:
-            update_owned_character(self.settings, OWNER, CHARACTER, {"description": description})
-        # Empty PostgREST response is a not-found result, not a validation failure.
+            update_owned_character(self.settings, OWNER, CHARACTER, 2, {"name": "Stale"})
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail["code"], "character_version_conflict")
+        rpc.assert_called_once()
+
+    @patch("app.services.character_repository._rpc")
+    def test_patch_foreign_or_missing_character_returns_not_found(self, rpc):
+        rpc.return_value = {"not_found": True}
+        with self.assertRaises(HTTPException) as caught:
+            update_owned_character(self.settings, OWNER, CHARACTER, 1, {"name": "Nope"})
         self.assertEqual(caught.exception.status_code, 404)
-        self.assertEqual(request.call_args.kwargs["json"]["description"], description)
 
-    @patch("app.services.character_repository.httpx.request")
-    def test_patch_rejects_description_above_local_ui_limit(self, request):
+    @patch("app.services.character_repository._rpc")
+    def test_patch_requires_positive_integer_version(self, rpc):
+        for value in (0, -1, True, 1.5, "1"):
+            with self.subTest(value=value):
+                with self.assertRaises(HTTPException) as caught:
+                    update_owned_character(self.settings, OWNER, CHARACTER, value, {"name": "Nope"})
+                self.assertEqual(caught.exception.status_code, 422)
+        rpc.assert_not_called()
+
+    @patch("app.services.character_repository._rpc")
+    def test_patch_rejects_invalid_returned_version(self, rpc):
+        rpc.return_value = {
+            "id": CHARACTER, "owner_id": OWNER, "name": "New",
+            "description": None, "reference_data": {}, "created_at": "now", "version": 8
+        }
         with self.assertRaises(HTTPException) as caught:
-            update_owned_character(self.settings, OWNER, CHARACTER, {"description": "x" * 5001})
-        self.assertEqual(caught.exception.status_code, 422)
-        request.assert_not_called()
+            update_owned_character(self.settings, OWNER, CHARACTER, 1, {"name": "New"})
+        self.assertEqual(caught.exception.status_code, 502)
 
     def test_invalid_ids_rejected_before_database_call(self):
         with self.assertRaises(HTTPException) as caught:
