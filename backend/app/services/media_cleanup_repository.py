@@ -21,10 +21,12 @@ def _call(settings: Settings, function_name: str, payload: dict, *, timeout: flo
         raise RuntimeError("Media cleanup database credentials are not configured.")
     headers = {
         "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+    # sb_secret keys are apikey-only; legacy service-role JWTs also use Bearer.
+    if settings.supabase_service_role_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
     try:
         response = httpx.post(
             f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/{function_name}",
