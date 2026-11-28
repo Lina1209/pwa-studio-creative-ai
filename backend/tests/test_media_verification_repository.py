@@ -48,6 +48,19 @@ class MediaVerificationRepositoryTests(unittest.TestCase):
         result = claim_media_upload_verification(settings(), TOKEN)
         self.assertEqual(result["asset_id"], ASSET)
 
+
+    @patch("app.services.media_verification_repository.httpx.post", return_value=response({
+        "event_id": EVENT, "owner_id": OWNER, "asset_id": ASSET,
+        "claim_token": "77777777-7777-4777-8777-777777777777",
+        "bucket": "studio-media", "storage_path": "private/path.png",
+        "file_name": "image.png", "file_type": "image/png", "size_bytes": 18,
+        "content_sha256": hashlib.sha256(CONTENT).hexdigest(),
+        "width": 2, "height": 3, "attempts": 1, "max_attempts": 8,
+    }))
+    def test_claim_rejects_mismatched_fencing_token(self, _post):
+        with self.assertRaises(RuntimeError):
+            claim_media_upload_verification(settings(), TOKEN)
+
     @patch("app.services.media_verification_repository.httpx.post", return_value=response({
         "id": ASSET, "status": "ready", "version": 3,
     }))
