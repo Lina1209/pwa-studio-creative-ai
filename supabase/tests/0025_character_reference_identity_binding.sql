@@ -62,6 +62,23 @@ begin
     raise exception 'media asset does not retain the expected owner/character/local-reference tuple';
   end if;
 
+  -- A PNG MIME declaration cannot reserve a JPEG-suffixed object key.
+  v_conflict := false;
+  begin
+    perform public.pwa_reserve_character_reference_upload_v2(
+      v_owner,v_character_id,gen_random_uuid()::text,
+      gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
+      'reference-binding-mime-extension-001','wrong.png','image/png','studio-media',
+      v_owner::text || '/characters/' || v_character_id::text || '/' || gen_random_uuid()::text || '.jpg',
+      128,'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',16,8
+    );
+  exception when sqlstate '22023' then
+    v_conflict := true;
+  end;
+  if not v_conflict then
+    raise exception 'MIME type and immutable object extension mismatch was accepted';
+  end if;
+
   -- A local reference UUID cannot be rebound to a second asset in the same
   -- owner+character namespace.
   v_conflict := false;
