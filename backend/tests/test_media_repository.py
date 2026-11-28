@@ -91,7 +91,7 @@ class CharacterMediaAssetListTests(unittest.TestCase):
         self.assertEqual(params["character_id"], f"eq.{CHARACTER}")
         self.assertEqual(params["bucket"], "eq.studio-media")
         self.assertEqual(rows[0]["status"], "ready")
-        self.assertEqual(rows[0]["local_reference_id"], "66666666-6666-4666-8666-666666666666")
+        self.assertEqual(rows[0]["local_reference_id"], "55555555-5555-4555-8555-555555555555-66666666-6666-4666-8666-666666666666")
         self.assertEqual(rows[0]["content_sha256"], "a" * 64)
         for hidden in ("storage_path", "bucket", "owner_id", "metadata"): self.assertNotIn(hidden, rows[0])
 
