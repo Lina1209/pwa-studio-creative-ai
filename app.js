@@ -2769,15 +2769,10 @@ const movieHistoryStyle = document.createElement("style");
         if(!stillOwner())return;
         const local=localItems[index];
         if(!local||!isCharacterUuid(local.id)||typeof local.name!=="string"||!local.name.trim())throw new Error("Локальная карточка содержит некорректные данные.");
-        const referenceManifest=[];
-        const seenReferenceIds=new Set();
-        for(const ref of [...(Array.isArray(local.referenceImages)?local.referenceImages:[]),...(Array.isArray(local.cloudBackup?.referenceManifest)?local.cloudBackup.referenceManifest:[])]){
-          const refId=String(ref?.id||"").slice(0,180);
-          if(!refId||seenReferenceIds.has(refId))continue;
-          seenReferenceIds.add(refId);
-          referenceManifest.push(ref);
-          if(referenceManifest.length===6)break;
-        }
+        const referenceManifest=globalThis.PWACharacterCloudRestore.serializeReferenceManifest(
+          Array.isArray(local.referenceImages)?local.referenceImages:[],
+          Array.isArray(local.cloudBackup?.referenceManifest)?local.cloudBackup.referenceManifest:[]
+        );
         const referenceData={
           kind:local.kind==="scene"?"scene":"character",
           representation:["2d","3d","both"].includes(local.representation)?local.representation:"2d",
@@ -2788,9 +2783,7 @@ const movieHistoryStyle = document.createElement("style");
             wardrobe:String(local.passport?.wardrobe||"").slice(0,1200),
             palette:String(local.passport?.palette||"").slice(0,1200)
           },
-          referenceImages:referenceManifest.map(ref=>({
-            id:String(ref.id||"").slice(0,180),name:String(ref.name||"").slice(0,120),type:String(ref.type||"").slice(0,80)
-          }))
+          referenceImages:referenceManifest
         };
         const payload={source_local_id:local.id,name:local.name.trim().slice(0,120),description:String(local.description||"").slice(0,5000),reference_data:referenceData};
         if(new TextEncoder().encode(JSON.stringify(payload.reference_data)).length>24000)throw new Error("Паспорт «"+payload.name+"» слишком велик для безопасной облачной копии.");
