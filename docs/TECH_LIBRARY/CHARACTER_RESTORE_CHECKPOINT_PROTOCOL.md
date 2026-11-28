@@ -472,3 +472,23 @@ CI run `46109968273` on commit `f636626` passed all three jobs. The browser job 
 ### Cleanup implementation remains intentionally blocked
 
 The owner lock is now enforced by both restore activation and recovery, and contention is covered. However, the existing application UI's general local-library write paths have not yet been audited or brought under this owner lock. A cleanup worker must not delete staged rows until every path capable of creating or changing a reference to a staged Blob is proven to participate in the same owner critical section. Therefore the Blob store still has no delete API; no cleanup job, automatic sweep, or user-facing cleanup control is enabled.
+
+
+## 21. Local Character Library UI mutation audit and lock coverage
+
+The frontend mutation-path audit identified two direct UI mutation handlers in `app.js`:
+
+1. Character/scene save and edit: writes reference Blobs to the existing `images` store, then replaces the owner metadata key in localStorage.
+2. Character/scene deletion: removes the card metadata, then attempts to remove its reference Blobs.
+
+Both handlers now acquire the shared owner coordination lock before the final metadata snapshot and hold it across Blob writes/deletes and the localStorage commit. The save handler re-reads the complete owner metadata after lock acquisition and refuses to overwrite a snapshot changed by another tab. The lock renews while asynchronous image work is in progress; stale/expired lock or account-switch checks fail closed. Guests remain local-only and cannot enter authenticated cloud restore.
+
+Image-write collision behavior was tightened: a new reference uses IndexedDB `add`, never `put`; any pre-existing row at that key is preserved and the save aborts. This prevents an accidental ID collision from overwriting a staged restore Blob or another existing image.
+
+Image deletion now parses the complete owner metadata key and refuses to delete a Blob if any card still references its ID. Missing legacy `referenceImages` arrays are treated as empty, while malformed metadata/shape, unreadable localStorage, or an incomplete (>100) library blocks deletion. Shared references are retained and surfaced as partial cleanup rather than reported as deleted. On account switch or lost owner lock, failed-save cleanup leaves temporary images in place rather than mutating storage under a stale context.
+
+The owner coordination lock script is loaded before `app.js` and added to the versioned service-worker shell cache for offline startup. A static contract test checks load order, offline precache, both lock acquisitions, fresh metadata re-read, collision-safe image writes, and cross-card reference protection.
+
+Scope note: this audit covers every direct Character Library metadata key and image-store mutation found in the current frontend source. Cloud backup reads local metadata and writes only authenticated cloud passport metadata; it does not upload or delete local image Blobs. Movie-project, profile-avatar, and unrelated localStorage writes are separate stores and are not part of this Character Library lock.
+
+The first CI run exposed three outdated source-contract assertions and then one remaining assertion about partial cleanup. Those tests were updated to reflect the stronger owner-lock and shared-reference behavior. The next CI run is the acceptance gate for these frontend changes. No cleanup sweeper or staged-Blob delete API has been added.
