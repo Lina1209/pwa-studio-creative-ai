@@ -2,7 +2,7 @@ from uuid import uuid4, uuid5, NAMESPACE_URL
 import hashlib
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException, Response, File, Header, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Response, File, Form, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -93,6 +93,7 @@ async def upload_character_reference(
     character_id: str,
     response: Response,
     file: UploadFile = File(...),
+    local_reference_id: str = Form(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
     user: StudioUser = Depends(get_current_user),
 ):
@@ -116,6 +117,7 @@ async def upload_character_reference(
             object_id=object_id,
             event_id=event_id,
             idempotency_key=idempotency_key,
+            local_reference_id=local_reference_id,
             content=content,
             filename=file.filename or "reference",
             declared_mime_type=file.content_type,
@@ -138,6 +140,7 @@ async def upload_character_reference(
         "asset": {
             "id": asset_id,
             "character_id": plan.character_id,
+            "local_reference_id": plan.local_reference_id,
             "file_name": plan.file_name,
             "file_type": plan.file_type,
             "size_bytes": plan.size_bytes,
