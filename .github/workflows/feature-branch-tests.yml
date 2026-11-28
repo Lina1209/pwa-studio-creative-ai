@@ -110,6 +110,8 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0023_character_versioned_updates.sql
+      - name: Race concurrent character version updates
+        run: bash supabase/tests/0023_character_versioned_update_race.sh
       - name: Run cleanup transaction and rollback harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
