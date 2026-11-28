@@ -30,12 +30,12 @@ function harness(fetchImpl,isCurrent=()=>true){
  const second=await h.adapter.uploadAsset({characterId:character,localReferenceId:reference,fileName:"reference.png",blob});
  assert.equal(first.assetId,asset);
  assert.equal(first.sha256,await digest(blob));
- assert.equal(calls[0].init.headers.Authorization,"Bearer private-test-token");
- assert.equal(calls[0].init.headers["Idempotency-Key"],calls[1].init.headers["Idempotency-Key"],"retry key must be stable for identical owner/card/reference/bytes");
- assert.ok(calls[0].init.body instanceof FormData);
- assert.equal(calls[0].init.body.get("local_reference_id"),reference);
- assert.equal(calls[0].init.body.get("file").size,blob.size);
- assert.equal(calls[0].init.headers["Content-Type"],undefined,"browser must set multipart boundary");
+ assert.equal(calls[1].init.headers.Authorization,"Bearer private-test-token");
+ assert.equal(calls[1].init.headers["Idempotency-Key"],calls[2].init.headers["Idempotency-Key"],"retry key must be stable for identical owner/card/reference/bytes");
+ assert.ok(calls[1].init.body instanceof FormData);
+ assert.equal(calls[1].init.body.get("local_reference_id"),reference);
+ assert.equal(calls[1].init.body.get("file").size,blob.size);
+ assert.equal(calls[1].init.headers["Content-Type"],undefined,"browser must set multipart boundary");
  let getCalls=0;
  const downloader=harness(async(url,init)=>{getCalls++;return new Response(blob,{status:200,headers:{"Content-Type":"image/png","X-Content-SHA256":await digest(blob)}});});
  const restored=await downloader.adapter.downloadAsset({cloudAssetId:asset,expectedSha256:await digest(blob),expectedSizeBytes:blob.size,expectedMimeType:"image/png"});
