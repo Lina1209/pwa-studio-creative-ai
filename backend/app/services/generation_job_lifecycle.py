@@ -106,6 +106,8 @@ def request_cancel(job: GenerationJob, now: datetime) -> GenerationJob:
 
 
 def mark_succeeded(job: GenerationJob, result_asset_id: str) -> GenerationJob:
+    if not isinstance(result_asset_id, str) or not result_asset_id:
+        raise ValueError("A successful job requires a result asset id string.")
     if job.status == JobStatus.CANCEL_REQUESTED:
         # A successful provider response is evidence of acceptance, but it must
         # never overwrite an already-recorded contradictory provider outcome.
@@ -143,6 +145,8 @@ def mark_failed(
     if (not isinstance(error_code, str) or not 1 <= len(error_code) <= 80
             or not all(char.isascii() and (char.isalnum() or char in "_.-") for char in error_code)):
         raise ValueError("A short, non-sensitive error code is required.")
+    if type(retryable) is not bool:
+        raise ValueError("retryable must be a boolean.")
     if type(retry_delay_seconds) is not int or retry_delay_seconds < 1 or retry_delay_seconds > 3600:
         raise ValueError("retry_delay_seconds must be between 1 and 3600.")
     if submission_outcome is None:
