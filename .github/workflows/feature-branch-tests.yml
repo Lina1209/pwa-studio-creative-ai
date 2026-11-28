@@ -142,6 +142,8 @@ jobs:
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
             -v PWA_TEST_OWNER_ID="$PWA_TEST_OWNER_ID" \
             -f supabase/tests/0026_media_cleanup_cross_scope_fence.sql
+      - name: Race cross-scope media cleanup reservations (disposable PostgreSQL only)
+        run: bash supabase/tests/0026_media_cleanup_cross_scope_race.sh
       - name: Run character idempotency transaction harness
         run: |
           psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
