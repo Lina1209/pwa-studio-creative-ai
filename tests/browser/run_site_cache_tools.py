@@ -12,7 +12,7 @@ thread.start()
 
 try:
     with sync_playwright() as playwright:
-        browser = playwright.chromium
+        browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
         page.on("pageerror", lambda error: print("BROWSER PAGE ERROR:", error))
         page.goto(f"http://127.0.0.1:{server.server_port}/tests/browser/site-cache-tools.html", wait_until="load")
