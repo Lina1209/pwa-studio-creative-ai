@@ -81,6 +81,18 @@ begin
     null;
   end;
 
+  -- Direct table writes must also reject both signs of infinity.
+  begin
+    update public.generation_jobs set actual_cost_usd = 'Infinity'::numeric where id = v_job_success;
+    raise exception 'TEST FAILED: direct positive-infinity actual cost was accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.generation_jobs set estimated_cost_usd = '-Infinity'::numeric where id = v_job_success;
+    raise exception 'TEST FAILED: direct negative-infinity estimated cost was accepted';
+  exception when check_violation then null;
+  end;
+
   -- A job cannot be completed using another user's media asset.
   select j.lease_token into v_token
   from public.claim_generation_job('queue-test-worker', 120) j
