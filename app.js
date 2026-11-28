@@ -2606,11 +2606,37 @@ const movieHistoryStyle = document.createElement("style");
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error("Не удалось открыть локальное хранилище изображений."));
   });
+  // Strict full-record read: never turn corruption into an apparently empty/partial
+  // library. Every write, delete, backup and restore preview must fail closed.
   const readCharacterLibrary = () => {
-    try {
-      const value = JSON.parse(localStorage.getItem(characterLibraryKey()) || "[]");
-      return Array.isArray(value) ? value.filter(item => item && typeof item.id === "string" && typeof item.name === "string").slice(0,100) : [];
-    } catch { return []; }
+    const raw = localStorage.getItem(characterLibraryKey());
+    if (raw === null || raw === "") return [];
+    let value;
+    try { value = JSON.parse(raw); }
+    catch { throw new Error("Локальная библиотека повреждена (ошибка JSON). Данные не изменены; сначала создайте резервную копию исходного содержимого."); }
+    if (!Array.isArray(value) || value.length > 100)
+      throw new Error("Структура библиотеки недопустима или превышен лимит 100 записей. Запись и удаление остановлены.");
+    const ids = new Set();
+    for (const item of value) {
+      if (!item || typeof item !== "object" || Array.isArray(item) ||
+          typeof item.id !== "string" || !item.id.trim() ||
+          typeof item.name !== "string" || !item.name.trim() ||
+          ids.has(item.id))
+        throw new Error("В библиотеке найдена неполная или повторяющаяся карточка. Данные не изменены.");
+      ids.add(item.id);
+      if (item.referenceImages !== undefined) {
+        if (!Array.isArray(item.referenceImages) || item.referenceImages.length > 6)
+          throw new Error("У карточки повреждён список изображений. Данные не изменены.");
+        const referenceIds = new Set();
+        for (const ref of item.referenceImages) {
+          if (!ref || typeof ref !== "object" || Array.isArray(ref) ||
+              typeof ref.id !== "string" || !ref.id.trim() || referenceIds.has(ref.id))
+            throw new Error("У карточки найден повреждённый или повторяющийся референс. Данные не изменены.");
+          referenceIds.add(ref.id);
+        }
+      }
+    }
+    return value;
   };
   const saveCharacterImage = async (id,blob,ownerId) => {
     const db=await openCharacterLibraryDb();
@@ -2692,7 +2718,17 @@ const movieHistoryStyle = document.createElement("style");
     const ownerId=authSession?.user?.id||"guest";
     const contextVersion=authContextVersion;
     const query=($("#characterSearch")?.value||"").trim().toLocaleLowerCase();
-    const items=readCharacterLibrary().filter(item=>!query||(item.name+" "+item.description).toLocaleLowerCase().includes(query));
+    let libraryItems;
+    try { libraryItems=readCharacterLibrary(); }
+    catch(error) {
+      list.replaceChildren();
+      const warning=document.createElement("p");warning.className="helper-text";warning.setAttribute("role","alert");
+      warning.textContent="⚠ Библиотека не загружена полностью: "+error.message+" Не сохраняйте и не удаляйте карточки до проверки.";
+      list.append(warning);
+      const status=$("#characterLibraryStatus");if(status)status.textContent="Защитная проверка остановила операции с повреждёнными данными.";
+      return;
+    }
+    const items=libraryItems.filter(item=>!query||(item.name+" "+(item.description||"")).toLocaleLowerCase().includes(query));
     list.replaceChildren();
     if(!items.length){const empty=document.createElement("p");empty.className="helper-text";empty.textContent=query?"Ничего не найдено.":"Библиотека пока пуста. Добавьте первого персонажа.";list.append(empty);return;}
     for(const item of items){
@@ -2782,7 +2818,10 @@ const movieHistoryStyle = document.createElement("style");
     const kind=$("#characterKind").value,representation=$("#characterRepresentation").value,files=Array.from($("#characterImages").files||[]);
     if(!name||!description){$("#characterLibraryStatus").textContent="Укажите имя и основное описание.";return;}
     if(!["character","scene"].includes(kind)||!["2d","3d","both"].includes(representation)){return;}
-    const current=readCharacterLibrary(),existing=editingCharacterId?current.find(x=>x.id===editingCharacterId):null;
+    let current;
+    try { current=readCharacterLibrary(); }
+    catch(error) { $("#characterLibraryStatus").textContent="Сохранение остановлено: "+error.message; return; }
+    const existing=editingCharacterId?current.find(x=>x.id===editingCharacterId):null;
     if(editingCharacterId&&!existing){resetCharacterEditor();$("#characterLibraryStatus").textContent="Запись больше не найдена. Обновите библиотеку.";return;}
     if(!existing&&current.length>=100){$("#characterLibraryStatus").textContent="Достигнут лимит в 100 материалов.";return;}
     const retainedReferences=(existing?.referenceImages||[]).filter(ref=>!removedCharacterReferenceIds.has(ref.id));
