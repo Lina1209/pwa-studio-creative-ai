@@ -43,6 +43,12 @@ assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(mov
 assert.doesNotMatch(app, /const movieRead = \(\) => \{[\s\S]{0,1800}catch\s*\{\s*return \[\];\s*\}\s*\};/);
 assert.match(app, /Проекты не загружены/);
 assert.match(app, /Гостевые проекты или архив не загружены/);
+assert.match(app, /historyContextVersion!==authContextVersion/);
+assert.match(app, /historyOwnerId!==\(authSession\?\.user\?\.id\|\|null\)/);
+assert.match(app, /const liveVersion=\(live\.versions\|\|\[\]\)\.find/);
+assert.match(app, /preserve all content and history exactly/);
+assert.doesNotMatch(app, /copy\.(?:name|idea|story|storyboard|characters|voices|edit)=String\([^\n]*\.slice\(/);
+assert.doesNotMatch(app, /copy\.completedSteps=Array\.isArray\(copy\.completedSteps\)\?copy\.completedSteps\.filter/);
 
 
 assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(movieStorageKey\(\)\)\);\s*PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(projects\)\);/);
