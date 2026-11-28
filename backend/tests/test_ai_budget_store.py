@@ -68,6 +68,7 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
     @patch("app.services.ai_budget_store.httpx.Client")
     def test_unknown_cost_calls_unknown_rpc_not_zero_settlement(self, client_cls):
         client = client_cls.return_value.__enter__.return_value
+        client.post.return_value.json.return_value = True
         self.store.settle("reservation-1", None)
         self.assertTrue(client.post.call_args.args[0].endswith("/rpc/mark_ai_budget_unknown"))
         self.assertEqual(client.post.call_args.kwargs["json"]["p_safe_reason"], "provider_cost_unknown")
@@ -75,6 +76,7 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
     @patch("app.services.ai_budget_store.httpx.Client")
     def test_known_cost_calls_settlement_rpc(self, client_cls):
         client = client_cls.return_value.__enter__.return_value
+        client.post.return_value.json.return_value = "settled"
         self.store.settle("reservation-1", Decimal("0.01"))
         self.assertTrue(client.post.call_args.args[0].endswith("/rpc/settle_ai_budget"))
         self.assertEqual(client.post.call_args.kwargs["json"]["p_actual_usd"], "0.01")
@@ -82,6 +84,7 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
     @patch("app.services.ai_budget_store.httpx.Client")
     def test_confirmed_no_charge_uses_dedicated_release_rpc(self, client_cls):
         client = client_cls.return_value.__enter__.return_value
+        client.post.return_value.json.return_value = True
         self.store.release_confirmed_no_charge("reservation-1", "provider_rejected")
         self.assertTrue(client.post.call_args.args[0].endswith("/rpc/release_ai_budget_no_charge"))
 
@@ -109,6 +112,18 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
         with self.assertRaises(AIBudgetStoreUnavailable) as raised:
             self.store.reserve(self.request)
         self.assertNotIn("secret response body", str(raised.exception))
+
+    @patch("app.services.ai_budget_store.httpx.Client")
+    def test_missing_settlement_is_not_reported_as_success(self, client_cls):
+        client_cls.return_value.__enter__.return_value.post.return_value.json.return_value = "not_found"
+        with self.assertRaises(AIBudgetStoreUnavailable):
+            self.store.settle("missing-reservation", Decimal("0.01"))
+
+    @patch("app.services.ai_budget_store.httpx.Client")
+    def test_unconfirmed_release_is_not_reported_as_success(self, client_cls):
+        client_cls.return_value.__enter__.return_value.post.return_value.json.return_value = False
+        with self.assertRaises(AIBudgetStoreUnavailable):
+            self.store.release_confirmed_no_charge("missing-reservation", "provider_rejected")
 
     @patch("app.services.ai_budget_store.httpx.Client")
     def test_stale_reconciliation_calls_safe_unknown_rpc(self, client_cls):
