@@ -227,6 +227,18 @@ begin
   if exists (select 1 from public.generation_job_outbox where job_id = v_job_unknown_failure and event_type = 'job_retry_ready') then
     raise exception 'TEST FAILED: unknown provider outcome emitted a retry event';
   end if;
+  -- Cancellation during reconciliation records intent but preserves the hold.
+  select public.request_generation_job_cancel(v_job_unknown_failure, v_owner_a) into v_status;
+  if v_status <> 'reconciliation_required' then
+    raise exception 'TEST FAILED: reconciliation hold was released by cancellation';
+  end if;
+  if not exists (
+    select 1 from public.generation_jobs
+    where id = v_job_unknown_failure and status = 'reconciliation_required'
+      and cancel_requested_at is not null
+  ) then
+    raise exception 'TEST FAILED: cancellation intent was not persisted during reconciliation';
+  end if;
 
   -- A provider-accepted request with an expired worker lease is held for
   -- reconciliation rather than being submitted a second time.
