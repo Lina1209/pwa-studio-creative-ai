@@ -9,6 +9,33 @@ alter table public.generation_job_outbox
   add column if not exists last_error_code text
     check (last_error_code is null or char_length(last_error_code) <= 80);
 
+-- Legacy claimed rows predate explicit expiry timestamps. Expire them at
+-- migration time so they can be safely reclaimed instead of being stuck.
+update public.generation_job_outbox
+set claim_expires_at = now()
+where claimed_at is not null and claim_token is not null and claim_expires_at is null;
+
+do $
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.generation_job_outbox'::regclass
+      and conname = 'generation_job_outbox_claim_expiry_consistency'
+  ) then
+    alter table public.generation_job_outbox
+      add constraint generation_job_outbox_claim_expiry_consistency
+      check (
+        (claimed_at is null and claim_token is null and claim_expires_at is null)
+        or
+        (claimed_at is not null and claim_token is not null and claim_expires_at is not null)
+      ) not valid;
+  end if;
+end;
+$;
+
+alter table public.generation_job_outbox
+  validate constraint generation_job_outbox_claim_expiry_consistency;
+
 create or replace function public.claim_generation_outbox(
   p_worker_id text, p_batch_size integer default 10, p_lease_seconds integer default 60
 ) returns table (outbox_id bigint, job_id uuid, event_type text, claim_token uuid, delivery_attempt integer)
