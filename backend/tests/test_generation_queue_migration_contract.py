@@ -47,6 +47,7 @@ class GenerationQueueMigrationContractTests(unittest.TestCase):
         self.assertIn("m.id = p_result_asset_id", completion)
         self.assertIn("m.owner_id = g.owner_id", completion)
         self.assertIn("m.storage_path is not null", completion)
+        self.assertIn("m.status = 'ready'", completion)
         self.assertIn("g.status = 'processing'", completion)
         self.assertIn("g.provider_submission_outcome = 'accepted'", completion)
 
