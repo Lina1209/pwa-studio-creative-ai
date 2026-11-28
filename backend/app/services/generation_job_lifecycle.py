@@ -54,6 +54,8 @@ class GenerationJob:
             raise ValueError("max_attempts must be between 1 and 5.")
         if self.attempt_count < 0 or self.attempt_count > self.max_attempts:
             raise ValueError("attempt_count is outside the allowed range.")
+        if not isinstance(self.provider_submission_outcome, ProviderSubmissionOutcome):
+            raise ValueError("provider_submission_outcome must be a ProviderSubmissionOutcome.")
         for value in (self.created_at, self.next_attempt_at, self.lease_expires_at, self.cancel_requested_at):
             if value is not None and value.tzinfo is None:
                 raise ValueError("Job timestamps must be timezone-aware.")
