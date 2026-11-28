@@ -81,6 +81,21 @@
    ok(row.state==="staging"&&row.references[0].state==="pending","account-switch checkpoint changed unexpectedly");
    ok(row.lease===null,"account-switch path did not release lease");
   });
+  await test("coordinator stages through the real owner-scoped IndexedDB Blob adapter",async()=>{
+   const op=await planned(), blobStore=PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore();
+   const media={
+    async downloadAsset(){return blob},
+    async inspectImage(){return {width:40,height:30}},
+    stageBlob:blobStore.stageBlob,
+    readStagedBlob:blobStore.readStagedBlob
+   };
+   const result=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:media});
+   const row=await api.get(owner,op.operationId);
+   ok(result.state==="ready_to_activate"&&row.references[0].state==="verified_staged","real Blob adapter did not reach verified checkpoint");
+   const stagedId=row.references[0].localStagedBlobId;
+   const read=await blobStore.readStagedBlob({ownerId:owner,operationId:op.operationId,cloudAssetId:manifest[0].cloudAssetId,localStagedBlobId:stagedId});
+   ok(read instanceof Blob&&await digest(read)===sha,"real staged Blob read-back did not preserve bytes");
+  });
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
  }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
 })();
