@@ -11,13 +11,17 @@ create table if not exists public.generation_jobs (
   request_fingerprint text not null check (request_fingerprint ~ '^[a-f0-9]{64}$'),
   job_type text not null check (job_type in ('image', 'video')),
   status text not null default 'queued'
-    check (status in ('queued','processing','retry_wait','cancel_requested','succeeded','failed','cancelled')),
+    check (status in ('queued','processing','retry_wait','cancel_requested','reconciliation_required','succeeded','failed','cancelled')),
   -- Store only the minimum validated request required by a worker.
   -- Never put credentials, signed URLs, or client-supplied owner IDs here.
   request_payload jsonb not null default '{}'::jsonb
     check (jsonb_typeof(request_payload) = 'object'),
   provider text,
   model text,
+  -- Evidence about whether the external provider accepted this attempt.
+  -- Unknown is the safe default: an expired worker must not blindly resubmit.
+  provider_submission_outcome text not null default 'unknown'
+    check (provider_submission_outcome in ('unknown','definitely_not_submitted','definitely_rejected','accepted')),
   attempt_count integer not null default 0 check (attempt_count >= 0 and attempt_count <= 5),
   max_attempts integer not null default 3 check (max_attempts between 1 and 5),
   worker_id text,
