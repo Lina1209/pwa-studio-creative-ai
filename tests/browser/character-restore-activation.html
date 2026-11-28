@@ -85,6 +85,33 @@
    ok(canonical(localAdapter.readLocalItems(owner))===base3,"quota failure changed existing metadata");
    const afterFailure=await journal.get(owner,op);ok(afterFailure.state==="paused_retryable","quota failure was not left retryable: "+afterFailure.state);
   });
+  async function activatingIntent(op,baseItems,mergedDigest){
+   const cloudId=crypto.randomUUID(),baseText=canonical(baseItems),baseHash=await digest(baseText);
+   await journal.create({ownerId:owner,operationId:op,localBaseFingerprint:baseHash,snapshotId:"recovery-boundary",selectedCharacterIds:[cloudId]});
+   let lease=await journal.acquireLease(owner,op),row=await journal.get(owner,op);
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"ready_to_activate"});
+   row=await journal.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"activating",activation:{baseDigest:baseHash,mergedDigest,intendedCount:baseItems.length+1,restoredCount:1,operationMarker:op,preparedAt:new Date().toISOString()}});
+   await journal.releaseLease(owner,op,lease);
+   return await journal.get(owner,op);
+  }
+  await run("recovery returns untouched base snapshot to retryable state",async()=>{
+   const op=crypto.randomUUID(),baseItems=localAdapter.readLocalItems(owner),baseText=canonical(baseItems);
+   const ready=await activatingIntent(op,baseItems,await digest("expected merged metadata not yet written"));
+   const result=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:ready.revision,journal,localAdapter});
+   ok(result.state==="paused_retryable"&&result.reason==="base_digest_matches","untouched base snapshot was not marked retryable");
+   ok(canonical(localAdapter.readLocalItems(owner))===baseText,"base recovery changed metadata");
+  });
+  await run("recovery marks an unexpected third metadata state as conflict without rollback",async()=>{
+   const op=crypto.randomUUID(),baseItems=localAdapter.readLocalItems(owner),changed=baseItems.map((x,i)=>i===0?{...x,description:"Concurrent local edit"}:x);
+   const ready=await activatingIntent(op,baseItems,await digest("expected merged result that is not present"));
+   localAdapter.writeLocalItems(owner,changed);
+   const result=await window.PWACharacterRestoreActivation.recoverActivation({ownerId:owner,operationId:op,expectedRevision:ready.revision,journal,localAdapter});
+   ok(result.state==="conflict"&&result.reason==="metadata_matches_neither_safe_boundary","ambiguous metadata was not marked conflict");
+   ok(canonical(localAdapter.readLocalItems(owner))===canonical(changed),"recovery blindly rolled back concurrent metadata");
+   localAdapter.writeLocalItems(owner,baseItems);
+  });
   await run("account switch fences crash recovery before journal commit",async()=>{
    const op=crypto.randomUUID(),cloudId=crypto.randomUUID(),newId=crypto.randomUUID();
    const baseNow=localAdapter.readLocalItems(owner),baseNowText=canonical(baseNow),baseNowDigest=await digest(baseNowText);
