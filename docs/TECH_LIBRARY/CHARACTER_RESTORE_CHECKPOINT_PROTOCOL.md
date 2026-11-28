@@ -492,3 +492,21 @@ The owner coordination lock script is loaded before `app.js` and added to the ve
 Scope note: this audit covers every direct Character Library metadata key and image-store mutation found in the current frontend source. Cloud backup reads local metadata and writes only authenticated cloud passport metadata; it does not upload or delete local image Blobs. Movie-project, profile-avatar, and unrelated localStorage writes are separate stores and are not part of this Character Library lock.
 
 The first CI run exposed three outdated source-contract assertions and then one remaining assertion about partial cleanup. Those tests were updated to reflect the stronger owner-lock and shared-reference behavior. The next CI run is the acceptance gate for these frontend changes. No cleanup sweeper or staged-Blob delete API has been added.
+
+
+## 22. Mark-only cleanup journal and candidate planner (implemented; deletion disabled)
+
+Two new isolated modules now implement the first durable cleanup phase:
+
+- `character-restore-cleanup-journal.js` stores append-only owner-bound cleanup manifests in its own IndexedDB database `pwa-studio-character-restore-cleanup-journal-v1`. It validates owner/cleanup UUID identity, revision, owner-lock epoch, metadata digest, candidate identity, SHA-256, byte size, MIME, dimensions, timestamps, and duplicate staged IDs. It provides create/read/bounded owner pagination only. There is no manifest mutation or Blob deletion method.
+- `character-restore-cleanup.js` exports `PWACharacterRestoreCleanup.markAbortedRestoreBlobs`. It acquires the shared owner lock, snapshots and hashes complete local metadata, reads the full restore-journal inventory (deliberately limited to one complete page of at most 100 operations), and considers only references in explicitly `aborted` operations with `verified_staged` proof and no live operation lease.
+
+The planner builds owner-wide maps before candidate selection. It retains a Blob if its staged ID appears in any active card, if the cloud asset mapping appears in another restore operation, or if the staged ID is shared by another operation. It reads the exact owner/operation/asset/staged-ID tuple through the existing Blob adapter and recomputes SHA-256, byte size, MIME, and dimensions from the stored Blob. Missing, malformed, mismatched, incomplete, or over-limit inventory fails closed.
+
+A successful mark writes a deterministic cleanup manifest with a minimum 24-hour retention deadline. Repeating the same mark against the same metadata and candidate proof returns the existing manifest instead of duplicating it. The operation lock is renewed during asynchronous reads and checked before the durable manifest write. Account switches or lock loss stop the pass.
+
+Real-browser tests use actual IndexedDB, localStorage, Blob bytes, WebCrypto, and the shared owner lock. They cover successful marking without deleting bytes, deterministic idempotency, active-card retention, nonterminal/cross-operation asset retention, owner-lock contention, and account-switch fencing. CI run `46110872865` on feature branch commit `bd558f4` passed all three jobs, including the new mark-only cleanup browser suite.
+
+### Explicit remaining safety gate
+
+This phase only records delayed candidates. It does not implement the retention-expiry recheck, candidate cancellation/reconciliation, cleanup-manifest state transitions, or any Blob delete operation. A later phase must re-read the complete metadata and journal inventory under the owner lock after the retention deadline, verify the original operation revision and proof again, reconcile interrupted batches, and only then consider a separately reviewed exact-key IndexedDB delete transaction. No cleanup UI, background worker, automatic sweep, or production data operation exists.
