@@ -46,8 +46,14 @@
     if(!operation||operation.ownerId!==ownerId||operation.operationId!==operationId)fail("Restore operation was not found for this owner.");
     if(operation.revision!==expectedRevision||!["planned","staging","paused_retryable"].includes(operation.state))fail("Restore operation is not at the expected checkpoint.");
     const lease=await journal.acquireLease(ownerId,operationId,{ttlMs:60000});
-    let revision=operation.revision;
-    let state=operation.state;
+    const leasedOperation=await journal.get(ownerId,operationId);
+    if(!leasedOperation||leasedOperation.ownerId!==ownerId||leasedOperation.operationId!==operationId||
+       leasedOperation.revision!==expectedRevision+1||leasedOperation.leaseEpoch!==lease.epoch){
+      try{await journal.releaseLease(ownerId,operationId,lease);}catch{}
+      fail("Restore operation changed while its lease was being acquired.");
+    }
+    let revision=leasedOperation.revision;
+    let state=leasedOperation.state;
     let staged=0;
     try{
       if(!isCurrent())fail("Account changed before media staging.");
