@@ -88,6 +88,30 @@
      assert(page.items.length===0,"manifest was written after account context changed");
 
    });
+   await test("retention-gated recheck becomes eligible without deleting any bytes",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["recheck-proof"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     const marked=await mark(owner);
+     const args={ownerId:owner,cleanupId:marked.cleanupId,restoreJournal:api,cleanupJournal,blobStore,localAdapter:localFor(owner),ownerLock:PWACharacterOwnerCoordinationLock,inspectImage:async()=>({width:64,height:48})};
+     const pending=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
+     assert(pending.state==="retention_pending","retention interval was bypassed");
+     const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-cleanup-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+     try{await new Promise((resolve,reject)=>{const tx=db.transaction("manifests","readwrite"),store=tx.objectStore("manifests"),q=store.get(owner+":"+marked.cleanupId);q.onsuccess=()=>{const row=q.result;row.candidates.forEach(c=>{c.markedAt=new Date(Date.now()-25*60*60*1000).toISOString();c.deleteAfter=new Date(Date.now()-1000).toISOString()});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+     const ready=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
+     assert(ready.state==="eligible_for_delete_review"&&ready.eligibleCount===1,"valid expired candidate did not pass the read-only recheck");
+     const stillThere=await blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
+     assert(stillThere instanceof Blob,"read-only recheck deleted the Blob");
+   });
+   await test("changed local metadata blocks an expired manifest",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["metadata-change"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     const marked=await mark(owner);
+     const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-cleanup-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+     try{await new Promise((resolve,reject)=>{const tx=db.transaction("manifests","readwrite"),store=tx.objectStore("manifests"),q=store.get(owner+":"+marked.cleanupId);q.onsuccess=()=>{const row=q.result;row.candidates.forEach(c=>{c.markedAt=new Date(Date.now()-25*60*60*1000).toISOString();c.deleteAfter=new Date(Date.now()-1000).toISOString()});store.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+     localStorage.setItem("pwa-studio-character-library-v1:"+owner,JSON.stringify([{id:uuid(),name:"new card",referenceImages:[]}]));
+     const result=await PWACharacterRestoreCleanup.inspectMarkedManifest(args);
+     assert(result.state==="blocked_metadata_changed"&&result.eligibleCount===0,"changed metadata did not block candidate");
+   });
    out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
    document.documentElement.dataset.testResult="passed";
  }catch(error){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(error.stack||error);document.documentElement.dataset.testResult="failed";}
