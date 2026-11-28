@@ -170,8 +170,11 @@ class CharacterLibraryAccountFencingTests(unittest.TestCase):
         end = APP.index('$("#backupCharacterLibrary")?.addEventListener', start)
         backup = APP[start:end]
         self.assertIn("local.cloudBackup?.referenceManifest", backup)
-        self.assertIn("seenReferenceIds.has(refId)", backup)
-        self.assertIn("referenceImages:referenceManifest.map", backup)
+        self.assertIn("PWACharacterCloudRestore.serializeReferenceManifest(", backup)
+        self.assertIn("Array.isArray(local.referenceImages)?local.referenceImages:[]", backup)
+        self.assertIn("Array.isArray(local.cloudBackup?.referenceManifest)?local.cloudBackup.referenceManifest:[]", backup)
+        self.assertIn("referenceImages:referenceManifest", backup)
+        self.assertNotIn("seenReferenceIds.has(refId)", backup)
 
     def test_character_cloud_backup_never_uploads_or_deletes_image_blobs(self):
         start = APP.index("const backupCharacterLibrary = async () =>")
