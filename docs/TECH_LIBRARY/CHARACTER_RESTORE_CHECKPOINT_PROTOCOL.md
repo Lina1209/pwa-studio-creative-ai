@@ -276,3 +276,21 @@ A transition into `activating` is rejected unless this complete intent is persis
 The browser journal suite now verifies that an activation transition without intent is rejected, a valid intent survives a checkpoint/read-back, malformed digests are rejected, and an interrupted activation can be paused without losing the intent.
 
 This is only the durable intent primitive. There is still no activation coordinator, canonical merged-array builder, staged-Blob revalidation at activation time, localStorage commit, read-back recovery, or crash-boundary integration test. Do not enable restore/import or connect this journal field to the application UI.
+
+
+## 16. Guarded metadata activation coordinator (not UI-connected)
+
+A separate `character-restore-activation.js` coordinator now implements the guarded activation boundary using injected owner-scoped adapters:
+
+1. Requires the journal operation to be `ready_to_activate`, obtains a fenced lease, and checks the post-lease revision.
+2. Requires a fresh complete, conflict-free planner result whose selected cloud identities match the durable operation (including explicitly unchanged cards).
+3. Hashes the planner's canonical local snapshot and compares it with the durable base digest; it also re-reads the owner-local metadata and requires an exact canonical match.
+4. Requires every staged reference to be `verified_staged`, checks the exact character/local-reference/asset mapping against the fresh manifest, re-reads each staged Blob by owner + operation + asset + staged ID, and recomputes SHA-256, byte size, MIME, and dimensions.
+5. Builds additive card metadata only. Existing local cards remain in place. New `referenceImages` entries use the staged Blob's actual local IndexedDB key as `id`, preserve the original cloud local-reference key as `sourceReferenceId`, and carry the existing display name/MIME fields. Each new card receives a `restoreOperationId` marker.
+6. Computes the complete canonical merged-library digest, persists the activation intent in the journal, then performs one synchronous owner-scoped localStorage key replacement and verifies the read-back digest and operation markers before checkpointing `committed`.
+
+No compensating deletion or blind rollback is attempted after the metadata commit point. If a write/read-back boundary is interrupted, the durable intent is retained. `recoverActivation` compares the current local metadata against the intended merged digest and base digest: a complete intended result can be marked committed, the untouched base can be marked retryable, and any third state is classified as a conflict. Recovery never overwrites the current library.
+
+Real-browser integration tests cover successful activation with preserved existing data, image bytes and dimensions being checked before activation, refusal on dimension mismatch without metadata mutation, and recognition of a completed metadata write after a simulated crash.
+
+This is still an isolated foundation. No application UI or automatic cloud restore flow calls this coordinator. No cleanup/deletion of staged Blobs, tombstones, deployment, or production migration is included. The next validation step is the new GitHub Actions browser job; activation remains disabled until it passes and further crash/account-switch boundary tests are completed.
