@@ -94,6 +94,16 @@ class GenerationJobLifecycleTests(unittest.TestCase):
         self.assertIsNone(cancelled.result_asset_id)
         self.assertEqual(cancelled.provider_submission_outcome, ProviderSubmissionOutcome.ACCEPTED)
 
+    def test_cancelled_completion_cannot_overwrite_rejected_provider_evidence(self):
+        running = claim_job(new_job(), NOW)
+        requested = request_cancel(running, NOW)
+        rejected = replace(
+            requested,
+            provider_submission_outcome=ProviderSubmissionOutcome.DEFINITELY_REJECTED,
+        )
+        with self.assertRaisesRegex(ValueError, "contradictory evidence"):
+            mark_succeeded(rejected, "asset-must-not-be-published")
+
     def test_cancel_during_reconciliation_records_intent_without_releasing_hold(self):
         running = claim_job(new_job(), NOW)
         unresolved = mark_failed(running, NOW, "provider_timeout", True)
