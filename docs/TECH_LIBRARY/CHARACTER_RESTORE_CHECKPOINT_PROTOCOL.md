@@ -220,7 +220,7 @@ This improves long-transfer resilience but does not make browser timers reliable
 
 ## 12. Isolated IndexedDB Blob staging adapter (feature branch)
 
-Status: `character-restore-blob-store.js` now provides an injected, owner- and operation-scoped adapter over the existing `pwa-studio-character-library-v1/images` object store. It is not wired into the application or coordinator.
+Status: `character-restore-blob-store.js` now provides an injected, owner- and operation-scoped adapter over the existing `pwa-studio-character-library-v1/images` object store. It is not wired into the application runtime; a real-browser integration test now injects it into the staging coordinator.
 
 - Reuses the existing database and object-store schema; no version bump or migration is required.
 - Writes staged records with the existing `id`, `ownerId`, `blob`, and `createdAt` fields plus a `restoreStage` descriptor containing operation ID, cloud asset ID, and the expected byte/dimension proof.
