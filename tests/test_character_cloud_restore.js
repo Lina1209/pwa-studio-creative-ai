@@ -183,6 +183,31 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(preview.items[0].statusLabel,"Уже актуальна");
     assert.equal(preview.items[0].referenceStatusLabel,"Изображений для восстановления нет.");
   });
+  await run("explicit restore confirmation is bound to the exact owner, selection and preview",async()=>{
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
+    const preview=planner.buildRestorePreview({ownerId:owner,plan});
+    assert.throws(()=>planner.confirmRestorePreview({ownerId:owner,plan,preview,confirmed:false}),/Explicit user confirmation/);
+    const confirmation=planner.confirmRestorePreview({ownerId:owner,plan,preview,confirmed:true});
+    assert.equal(confirmation.ownerId,owner);
+    assert.deepEqual(confirmation.selectedCloudIds,[cloudId]);
+    assert.equal(confirmation.selectedCount,1);
+    assert.equal(confirmation.restorableCount,1);
+    assert.equal(planner.validateRestoreConfirmation({ownerId:owner,plan,preview,confirmation}),true);
+    assert.equal(planner.validateRestoreConfirmation({ownerId:localId,plan,preview,confirmation}),false);
+    assert.equal(planner.validateRestoreConfirmation({ownerId:owner,plan,preview:{...preview},confirmation}),false);
+    assert.equal(planner.validateRestoreConfirmation({ownerId:owner,plan:{...plan},preview,confirmation}),false);
+    assert.throws(()=>planner.confirmRestorePreview({ownerId:owner,plan,preview:{...preview},confirmed:true}),/exact reviewed preview/);
+  });
+  await run("restore confirmation is blocked when preview contains conflicts or no restorable cards",async()=>{
+    const conflictLocal={id:localId,name:"Local",description:"",referenceImages:[]};
+    const conflictPlan=await planner.planRestore({ownerId:owner,existingLocalItems:[conflictLocal],fetchPage:async()=>page([row(cloudId,localId)])});
+    const conflictPreview=planner.buildRestorePreview({ownerId:owner,plan:conflictPlan});
+    assert.throws(()=>planner.confirmRestorePreview({ownerId:owner,plan:conflictPlan,preview:conflictPreview,confirmed:true}),/Resolve restore conflicts/);
+    const unchanged={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[],cloudBackup:{characterId:cloudId}};
+    const unchangedPlan=await planner.planRestore({ownerId:owner,existingLocalItems:[unchanged],fetchPage:async()=>page([row(cloudId,localId,{reference_data:{kind:"character",representation:"both",voice:"",passport:unchanged.passport,referenceImages:[]}})])});
+    const unchangedPreview=planner.buildRestorePreview({ownerId:owner,plan:unchangedPlan});
+    assert.throws(()=>planner.confirmRestorePreview({ownerId:owner,plan:unchangedPlan,preview:unchangedPreview,confirmed:true}),/at least one restorable character/);
+  });
   await run("restore commit refuses stale local state and performs no write",async()=>{
     let stored=[];
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId)])});
