@@ -10,7 +10,7 @@ OLD = "33333333-3333-4333-8333-333333333333"
 NEW = "44444444-4444-4444-8444-444444444444"
 
 
-def records(old_status="ready", new_status="object_uploaded", old_owner=OWNER, new_owner=OWNER):
+def records(old_status="ready", new_status="ready", old_owner=OWNER, new_owner=OWNER):
     return (
         {"id": OLD, "owner_id": old_owner, "status": old_status},
         {"id": NEW, "owner_id": new_owner, "status": new_status},
@@ -31,10 +31,12 @@ class MediaReplacementTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan_media_replacement(authenticated_owner_id=OWNER, old_asset=old, new_asset=new)
 
-    def test_new_asset_must_be_uploaded_and_verified(self):
-        old, new = records(new_status="pending_upload")
-        with self.assertRaises(ValueError):
-            plan_media_replacement(authenticated_owner_id=OWNER, old_asset=old, new_asset=new)
+    def test_new_asset_must_be_fully_verified_and_ready(self):
+        for status in ("pending_upload", "object_uploaded", "upload_failed", "cleanup_pending", "deleted"):
+            with self.subTest(status=status):
+                old, new = records(new_status=status)
+                with self.assertRaisesRegex(ValueError, "server-side verification"):
+                    plan_media_replacement(authenticated_owner_id=OWNER, old_asset=old, new_asset=new)
 
     def test_foreign_old_or_new_asset_is_rejected(self):
         old, new = records(old_owner=OTHER)
