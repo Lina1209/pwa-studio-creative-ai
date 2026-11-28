@@ -86,6 +86,10 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan:{complete:true,ownerId:owner,proposedItems:[],conflicts:[],baseLocalFingerprint:"[]"},readLocalItems:()=>[],writeLocalItems:()=>writes++,isCurrent:()=>false}),/Account changed/);
     assert.equal(writes,0);
   });
+  await run("invalid passport kind and reference identity are rejected",async()=>{
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId,{reference_data:{kind:"unknown",representation:"2d",passport:{},referenceImages:[]}})])}),/kind is invalid/);
+    await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([row(cloudId,localId,{reference_data:{kind:"character",representation:"2d",passport:{},referenceImages:[{id:"",name:"x",type:"image/png"}]}})])}),/reference descriptor is invalid/);
+  });
   await run("malformed passport field types are rejected",async()=>{
     const malformed=row(cloudId,localId,{reference_data:{kind:"character",voice:17,passport:{face:0},referenceImages:[]}});
     await assert.rejects(()=>planner.planRestore({ownerId:owner,existingLocalItems:[],fetchPage:async()=>page([malformed])}),/Invalid character voice/);
