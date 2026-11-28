@@ -81,6 +81,18 @@ The existing idempotent create RPC maps `(owner_id, source_local_id)` to a stabl
 - Keep cloud restore/import disabled until pagination, versioning, deletion semantics, worker deployment/monitoring, and end-to-end restore tests are all accepted.
 - Do not add a worker service, apply migrations, alter live Supabase, or deploy without separate explicit approval.
 
+## Implementation status — feature branch only
+
+Draft implementation has now been added for the first two protocol layers:
+
+- Migration `0023_character_versioned_updates.sql` adds a positive monotonic `version` and a service-role-only compare-and-swap RPC. It also updates the idempotent create RPC response to expose the initial version.
+- The character PATCH API requires `expected_version`; stale writes return HTTP 409 with `character_version_conflict`.
+- Migration `0024_character_cursor_pagination_index.sql` adds the composite owner/created_at/ID index.
+- The list API now returns `items`, `next_cursor`, and `snapshot_created_at`, with a maximum page size of 100. Cursors are owner-bound, HMAC-signed, expire after 15 minutes, and use descending keyset pagination on immutable `created_at, id`.
+- Backend unit/API tests and disposable PostgreSQL assertions have been added for version conflicts, owner isolation, cursor tampering, page bounds, and the pagination index.
+
+These changes are not yet accepted as complete: CI is still running after iterative test fixes. The browser restore workflow does not yet consume every page, and the local journal has not been connected to this API. Do not enable restore/import based on these API foundations alone.
+
 ## Decision
 
-Implement versioned compare-and-swap and cursor pagination as separate, reviewable changes. First add disposable-PostgreSQL migration/RPC tests, then repository/API tests, then browser restore integration. Do not bundle this design document with a production rollout.
+Keep cloud restore/import disabled until the latest CI run passes, browser account-switch and resumable multi-page restore integration is implemented, deletion/tombstone semantics are defined, and worker deployment/monitoring is approved. No production migration or deployment is part of this work.
