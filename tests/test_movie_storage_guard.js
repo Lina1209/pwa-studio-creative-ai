@@ -78,7 +78,7 @@ assert.match(app, /if \(cloudTime >= localTime\)/);
 assert.match(app, /Облачная версия загружена, а локальный вариант сохранён отдельной копией/);
 assert.match(app, /expectedSettings: remote\.settings/);
 assert.match(app, /\.eq\("settings", item\.expectedSettings\)/);
-assert.match(app, /\.eq\("title", item\.expectedTitle\).*\.eq\("description", item\.expectedDescription\)/);
+assert.match(app, /\.eq\("title", item\.expectedTitle\)[\s\S]*\.eq\("description", item\.expectedDescription\)/);
 assert.match(app, /if \(!contextIsCurrent\(\) \|\| !writeMovieStorage\(nextLocal\)\)/);
 assert.match(app, /movieCloudState\.pending = true/);
 assert.match(app, /return PWAStudioMovieStorageGuard\.parse\(JSON\.stringify\(\[candidate\]\)\)\[0\]/);
