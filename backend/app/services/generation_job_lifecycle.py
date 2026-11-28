@@ -69,7 +69,7 @@ class GenerationJob:
 
 def claim_job(job: GenerationJob, now: datetime, lease_seconds: int = 120) -> GenerationJob:
     _validate_now(now)
-    if lease_seconds < 10 or lease_seconds > 900:
+    if type(lease_seconds) is not int or lease_seconds < 10 or lease_seconds > 900:
         raise ValueError("lease_seconds must be between 10 and 900.")
     if job.status not in {JobStatus.QUEUED, JobStatus.RETRY_WAIT}:
         raise ValueError("Only queued or retry-wait jobs can be claimed.")
@@ -140,9 +140,10 @@ def mark_failed(
     _validate_now(now)
     if job.status not in {JobStatus.PROCESSING, JobStatus.CANCEL_REQUESTED}:
         raise ValueError("Only an active job can fail.")
-    if not error_code or len(error_code) > 80:
+    if (not isinstance(error_code, str) or not 1 <= len(error_code) <= 80
+            or not all(char.isascii() and (char.isalnum() or char in "_.-") for char in error_code)):
         raise ValueError("A short, non-sensitive error code is required.")
-    if retry_delay_seconds < 1 or retry_delay_seconds > 3600:
+    if type(retry_delay_seconds) is not int or retry_delay_seconds < 1 or retry_delay_seconds > 3600:
         raise ValueError("retry_delay_seconds must be between 1 and 3600.")
     if submission_outcome is None:
         submission_outcome = job.provider_submission_outcome
@@ -209,5 +210,5 @@ def recover_expired_lease(
 
 
 def _validate_now(now: datetime) -> None:
-    if not isinstance(now, datetime) or now.tzinfo is None:
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be a timezone-aware datetime.")
