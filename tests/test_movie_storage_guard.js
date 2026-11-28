@@ -37,4 +37,8 @@ assert.match(app, /Validate the local library before processing deletion tombsto
 assert.match(app, /A corrupt local library must stop cloud-side deletion and merge as well/);
 assert.match(app, /PWAStudioMovieStorageGuard\.parse\(localStorage\.getItem\(guestArchiveKey\(\)\)\)/);
 
-console.log("Movie storage guard tests passed.");
+
+assert.match(app, /Очередь удалений фильмов повреждена/);
+assert.match(app, /value\.some\(id=>!isUuid\(id\)\)/);
+assert.match(app, /!writeMovieTombstones\(\[\.\.\.deletedIds,project\.id\]\)\)return/);
+\nconsole.log("Movie storage guard tests passed.");
