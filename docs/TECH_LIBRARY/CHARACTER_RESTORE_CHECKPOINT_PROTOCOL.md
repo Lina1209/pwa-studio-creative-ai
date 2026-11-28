@@ -420,3 +420,20 @@ Do not add a delete method to `character-restore-blob-store.js` until:
 4. every mandatory race test above passes in feature-branch CI.
 
 No production database, Storage object, migration, account, or deployment is involved. UI remains disconnected and cleanup remains disabled.
+
+
+## 18. Owner coordination lock foundation (implemented; not yet used by activation)
+
+The isolated module `character-owner-coordination-lock.js` now implements the shared owner-level lock foundation described above:
+
+- Dedicated IndexedDB database `pwa-studio-character-owner-coordination-v1`, store `locks`, keyed by validated owner UUID. It does not change the existing image database or restore journal schema.
+- Atomic read-write transactions implement acquisition, renewal, takeover, and release.
+- Each lease carries an opaque token, monotonically increasing owner epoch, bounded expiry, and protocol version. Active locks cannot be acquired twice; expired locks can be taken over only with a higher epoch.
+- Renewal, release, and `isCurrent` are fenced by owner + token + epoch; expired or stale holders cannot renew or release a replacement lease.
+- The module has no network, UI, Blob deletion, journal mutation, or application wiring.
+
+Real-browser tests cover simultaneous acquisition, independent owner locks, renewal, expiry takeover, and stale-holder fencing. A separate Playwright runner opens two actual browser pages on the same origin and verifies that exactly one can acquire the same owner's lock.
+
+CI run `46109529483` on feature branch commit `989be93` passed all three jobs, including the initial lock browser suite and all existing backend/PostgreSQL/browser checks. The test was subsequently strengthened to use two actual pages; its final CI result is pending at the time of this note.
+
+Important remaining gate: `character-restore-activation.js` does NOT yet acquire this owner-level lock. The lock is currently an isolated primitive, not an enforced cross-operation barrier. Therefore no cleanup/delete API may be added or invoked. Next, integrate the shared lock into activation and crash recovery, test activation-vs-activation and activation-vs-lock contention across tabs, and only then implement the two-phase cleanup manifest. Cleanup remains design-only and disabled.
