@@ -48,12 +48,14 @@ class GenerationJob:
     provider_submission_outcome: ProviderSubmissionOutcome = ProviderSubmissionOutcome.UNKNOWN
 
     def __post_init__(self):
-        if not self.id or not self.owner_id or not self.idempotency_key:
-            raise ValueError("Job id, owner id, and idempotency key are required.")
-        if self.max_attempts < 1 or self.max_attempts > 5:
-            raise ValueError("max_attempts must be between 1 and 5.")
-        if self.attempt_count < 0 or self.attempt_count > self.max_attempts:
-            raise ValueError("attempt_count is outside the allowed range.")
+        if not all(isinstance(value, str) and value for value in (self.id, self.owner_id)):
+            raise ValueError("Job id and owner id are required strings.")
+        if not isinstance(self.idempotency_key, str) or not 8 <= len(self.idempotency_key) <= 160:
+            raise ValueError("idempotency_key must contain between 8 and 160 characters.")
+        if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 5:
+            raise ValueError("max_attempts must be an integer between 1 and 5.")
+        if type(self.attempt_count) is not int or not 0 <= self.attempt_count <= self.max_attempts:
+            raise ValueError("attempt_count must be an integer within the allowed range.")
         if not isinstance(self.status, JobStatus):
             raise ValueError("status must be a JobStatus.")
         if not isinstance(self.provider_submission_outcome, ProviderSubmissionOutcome):
