@@ -9,7 +9,7 @@ import hashlib
 
 from app.services.image_reference_validation import validate_reference_image
 from app.services.media_access import (
-    build_storage_object_key, require_private_bucket, require_same_owner,
+    build_storage_object_key, require_private_bucket, require_same_owner, canonical_local_reference_id,
 )
 from app.services.media_lifecycle import MediaStatus
 from app.services.media_outbox import MediaOutboxEvent, OutboxStatus
@@ -53,8 +53,7 @@ def plan_character_reference_upload(
     owner = str(authenticated_owner_id)
     require_same_owner(owner, character)
     character_id = str(character["id"])
-    from app.services.media_access import canonical_uuid
-    local_reference = canonical_uuid(local_reference_id, "local reference")
+    local_reference = canonical_local_reference_id(local_reference_id)
     validated = validate_reference_image(content, filename, declared_mime_type)
     safe_bucket = require_private_bucket(bucket)
     object_key = build_storage_object_key(
