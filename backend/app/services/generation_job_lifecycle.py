@@ -169,7 +169,7 @@ def mark_failed(
 def recover_expired_lease(
     job: GenerationJob,
     now: datetime,
-    submission_outcome: ProviderSubmissionOutcome = ProviderSubmissionOutcome.UNKNOWN,
+    submission_outcome: ProviderSubmissionOutcome | None = None,
 ) -> GenerationJob:
     _validate_now(now)
     if job.status not in {JobStatus.PROCESSING, JobStatus.CANCEL_REQUESTED}:
