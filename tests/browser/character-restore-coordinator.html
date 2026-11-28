@@ -30,7 +30,7 @@
    async readStagedBlob(x){return tamper?new Blob(["modified"],{type:"image/png"}):blobs.get(x.localStagedBlobId)}
   };
  }
- const manifest=[{cloudAssetId:uuid(),expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30}];
+ const characterId=uuid(),sourceLocalId=uuid(),localReferenceId=sourceLocalId+"-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";\n const manifest=[{cloudAssetId:uuid(),characterId,sourceLocalId,localReferenceId,name:"front.png",type:"image/png",expectedSha256:sha,expectedSizeBytes:blob.size,expectedMimeType:"image/png",width:40,height:30}];
  try{
   await test("renewal remains fenced after a lease takeover",async()=>{
    const op=await planned();
