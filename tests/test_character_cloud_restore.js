@@ -86,7 +86,7 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:original,fetchPage:async()=>page([row(cloudId,localId)])});
     assert.throws(()=>planner.applyRestorePlan({
       ownerId:owner,plan,
-      readLocalItems:()=>++reads===1?stored:[{id:"tampered-readback"}],
+      readLocalItems:()=>++reads===2?[{id:"tampered-readback"}]:stored,
       writeLocalItems:(writeOwner,items)=>{assert.equal(writeOwner,owner);stored=items;}
     }),/read-back verification failed/);
     assert.deepEqual(stored,original);
