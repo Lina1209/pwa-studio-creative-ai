@@ -1601,6 +1601,7 @@ const movieHistoryStyle = document.createElement("style");
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
+        let syncConflictPreserved = false;
         // Validate the local library before processing deletion tombstones or uploading anything.
         movieRead();
         const deletedIds = readMovieTombstones();
@@ -1661,10 +1662,11 @@ const movieHistoryStyle = document.createElement("style");
               const cloudProject = movieFromCloudRow(remote, userId);
               const nextLocal = currentLocal.map(project => project.id === row.id ? cloudProject : project);
               nextLocal.unshift(conflictCopy);
-              if (!contextIsCurrent() || !writeMovieStorage(nextLocal)) {
-                throw new Error("Конфликт обнаружен. Не удалось безопасно сохранить локальную копию; облачная версия не изменена.");
-              }
+              if (!contextIsCurrent()) return;
+              writeMovieStorage(nextLocal);
               preservedConflict = true;
+              syncConflictPreserved = true;
+              movieCloudState.pending = true;
               continue;
             }
             if (remoteTime === localTime) continue;
@@ -1693,9 +1695,11 @@ const movieHistoryStyle = document.createElement("style");
         }
         if (!contextIsCurrent()) return;
         const feedback = $("#movieFeedback");
-        if (feedback) feedback.textContent = deletedIds.length
-          ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
-          : "✓ Изменения сохранены в облаке Supabase.";
+        if (feedback) feedback.textContent = syncConflictPreserved
+          ? "Обнаружен конфликт между устройствами. Облачная версия загружена, локальный вариант сохранён отдельной копией."
+          : deletedIds.length
+            ? "✓ Фильмы и удаления синхронизированы с облаком Supabase."
+            : "✓ Изменения сохранены в облаке Supabase.";
       } catch (error) {
         console.error("Movie cloud sync failed:", error);
         if (contextIsCurrent()) {
