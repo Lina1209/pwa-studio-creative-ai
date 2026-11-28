@@ -103,6 +103,8 @@ Implementation has now been added for the API foundations and the local journal 
 
 Validation checkpoint: CI run `46100463960` passed all three jobs (backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal tests) for the versioned-update and cursor-pagination implementation. The additional concurrent compare-and-swap harness also passed in CI run `46100552578`: two independent PostgreSQL clients used the same expected version, exactly one update succeeded, one returned a stale-version conflict, and the stored version incremented only once. The side-effect-free restore planner now consumes every API page and produces a validated proposal, but it is not yet connected to the UI or a local commit/checkpoint layer. The local backup journal is still not connected to this API. Do not enable restore/import based on these foundations alone.
 
+Validation checkpoint: CI run `46101231547` completed successfully on commit `c4f01af`: backend unit tests, disposable PostgreSQL integration, and real-browser IndexedDB journal tests all passed. The restore planner and guarded commit tests were included in the browser/Node validation job. Subsequent source hardening for cloud-reference manifest preservation and stricter passport field validation has separate CI runs in progress; do not claim those newest revisions are validated until their runs complete.
+
 ## Decision
 
 Keep cloud restore/import disabled until the latest CI run passes, browser account-switch and resumable multi-page restore integration is implemented, deletion/tombstone semantics are defined, and worker deployment/monitoring is approved. No production migration or deployment is part of this work.
