@@ -43,10 +43,10 @@
       representation: ["2d", "3d", "both"].includes(value.representation) ? value.representation : "2d",
       voice: optionalText(value.voice, 500, "character voice"),
       passport: {
-        face: text(passport.face || "", 1200, "passport face"),
-        body: text(passport.body || "", 1200, "passport body"),
-        wardrobe: text(passport.wardrobe || "", 1200, "passport wardrobe"),
-        palette: text(passport.palette || "", 1200, "passport palette")
+        face: optionalText(passport.face, 1200, "passport face"),
+        body: optionalText(passport.body, 1200, "passport body"),
+        wardrobe: optionalText(passport.wardrobe, 1200, "passport wardrobe"),
+        palette: optionalText(passport.palette, 1200, "passport palette")
       },
       referenceManifest: manifest
     };
