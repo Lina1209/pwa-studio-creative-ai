@@ -11,7 +11,7 @@
  const ok=(v,m)=>{if(!v)throw Error(m)},rejects=async(fn,m)=>{let yes=false;try{await fn()}catch{yes=true}ok(yes,m)};
  const run=async(n,fn)=>{out.textContent="RUN "+n+"\\n"+passed.join("\\n");await fn();passed.push(n);out.textContent="PASS "+passed.length+"\\n"+passed.join("\\n")};
  const values=new Map(),storage={getItem:k=>values.has(k)?values.get(k):null,setItem:(k,v)=>values.set(k,String(v))};
- const localAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage,ownerId});
+ const localAdapter=window.PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage,ownerId:owner});
  const original={id:crypto.randomUUID(),name:"Карточка, которую нельзя потерять",kind:"character",referenceImages:[]};
  localAdapter.writeLocalItems(owner,[original]);
  const base=localAdapter.readLocalItems(owner),baseCanonical=canonical(base),baseDigest=await digest(baseCanonical),sha=await digest(blob);
