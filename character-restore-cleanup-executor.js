@@ -66,7 +66,7 @@
       [blobStore,["readStagedBlob","deleteStagedBlob"],"Blob store"],[localAdapter,["readLocalItems"],"Local metadata"]
     ])for(const method of methods)if(typeof obj[method]!=="function")fail(label+" adapter is incomplete.");
     const assertContext=()=>{if(!isCurrent())fail("Account changed during cleanup execution.");};
-    const acquire=async()=>{assertContext();const lease=await ownerLock.acquire(ownerId,{ttlMs:30000});assertContext();const current=await ownerLock.isCurrent(lease);assertContext();if(!current)fail("Owner cleanup lock could not be verified.");return lease;};
+    const acquire=async()=>{assertContext();const lease=await ownerLock.acquire(ownerId,{ttlMs:30000});try{assertContext();const current=await ownerLock.isCurrent(lease);assertContext();if(!current)fail("Owner cleanup lock could not be verified.");return lease;}catch(error){try{await ownerLock.release(lease);}catch{}throw error;}};
     const release=async lease=>{if(lease)await ownerLock.release(lease);};
     const snapshot=async()=>{
       assertContext();
