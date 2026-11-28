@@ -31,7 +31,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
     .character-form-actions,.character-library-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.character-library-toolbar{margin:18px 0}.character-library-toolbar input{max-width:340px}
     .character-library-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.character-card{padding:14px;border:1px solid var(--border-color,#444);border-radius:13px;background:var(--surface,rgba(255,255,255,.025));min-width:0}
     .character-card h3{margin:0 0 7px}.character-card p{white-space:pre-wrap;overflow-wrap:anywhere}.character-card-gallery{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.character-card-gallery img{width:76px;height:76px;object-fit:cover;border-radius:9px;border:1px solid var(--border-color,#555)}
-    .character-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.character-card-actions button{font-size:12px}.character-meta{font-size:12px;opacity:.75}
+    .character-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.character-card-actions button{font-size:12px}.character-meta{font-size:12px;opacity:.75}\n    .character-restore-tools{display:grid;gap:6px;margin-top:10px}.character-restore-panel{margin-top:14px;padding:14px;border:1px solid var(--border-color,#555);border-radius:12px}.character-restore-choice{display:flex;align-items:center;gap:10px;padding:9px;border-bottom:1px solid var(--border-color,#444)}.character-restore-choice span{display:grid;gap:3px}.character-restore-choice small,.character-restore-preview-row small{display:block;color:var(--muted,#aaa);font-size:12px}.character-restore-preview-row{padding:10px 0;border-bottom:1px solid var(--border-color,#444)}.character-restore-panel[hidden]{display:none}
 
   </style>
 <style>.guest-import-label{position:relative;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}.guest-import-label input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:100px}</style>
@@ -170,7 +170,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
             <input id="characterImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
             <div id="characterReferenceEditor" class="character-reference-editor" aria-live="polite"></div>
             <div class="character-form-actions"><button type="button" class="secondary-button" id="characterKittyPreset">✦ Заполнить паспорт Катти</button><button type="button" class="primary-button" id="saveCharacter">＋ Сохранить персонажа</button><button type="button" class="secondary-button" id="cancelCharacterEdit" hidden>Отмена</button></div>
-            <div class="character-form-actions"><button type="button" class="secondary-button" id="backupCharacterLibrary">☁ Создать облачную копию</button></div><p class="helper-text" id="characterLibraryStatus" aria-live="polite">Карточки и изображения сохраняются локально. Для вошедшего аккаунта можно вручную скопировать паспорта в облако; файлы изображений пока не загружаются.</p>
+            <div class="character-form-actions"><button type="button" class="secondary-button" id="backupCharacterLibrary">☁ Создать облачную копию</button></div><p class="helper-text" id="characterLibraryStatus" aria-live="polite">Карточки и изображения сохраняются локально. Для вошедшего аккаунта можно вручную скопировать паспорта в облако; файлы изображений пока не загружаются.</p>\n            <div class="character-restore-tools"><button type="button" class="secondary-button" id="previewCharacterRestore">☁ Проверить облачную копию</button><p id="characterRestoreStatus" class="helper-text" role="status" aria-live="polite">Просмотр облачной копии не изменяет локальную библиотеку.</p></div>\n            <div id="characterRestorePanel" class="character-restore-panel" hidden><h3>Восстановление из облака — предварительная проверка</h3><div id="characterRestoreChoices"></div><div id="characterRestorePreview" aria-live="polite"></div></div>
           </div>
           <div class="character-library-toolbar"><label for="characterSearch">Поиск по библиотеке</label><input id="characterSearch" type="search" placeholder="Имя или описание"></div>
           <div id="characterLibraryList" class="character-library-grid" aria-live="polite"><p class="helper-text">Библиотека пока пуста.</p></div>
@@ -505,7 +505,7 @@ body.light .assistant-history-open,body.light .assistant-history-rename{color:#3
   <script src="./supabase-config.js"></script>
   <script src="./character-owner-coordination-lock.js?v=20261128-1" defer></script>
   <script src="./profile-avatar-catalog.js?v=20261127-1" defer></script>
-  <script src="./app.js?v=20261127-2" defer></script>
+  <script src="./character-cloud-restore.js?v=20261128-1" defer></script>\n  <script src="./app.js?v=20261128-1" defer></script>\n  <script src="./character-restore-review-ui.js?v=20261128-1" defer></script>
   <script src="./audio-lab.js?v=20261126-4" defer></script>
   <script src="./site-cache-tools.js?v=20261128-1" defer></script>
 </body>
