@@ -112,6 +112,16 @@
           const current=manifest?.candidates?.find(c=>c.localStagedBlobId===candidate.localStagedBlobId);
           if(!manifest||!current||current.state!=="delete_intent"||current.deleteAttemptId!==candidate.deleteAttemptId)
             fail("Delete-intent recovery manifest changed.");
+          // The lock was released to obtain a newer fencing epoch. Rebuild every
+          // owner-scoped precondition after reacquisition before finalizing recovery.
+          const recoveredSnapshot=await snapshot();
+          await assertLease();
+          if(recoveredSnapshot.metadataDigest!==manifest.metadataDigest)
+            fail("Owner metadata changed while recovering the delete intent.");
+          assertInventories(ownerId,recoveredSnapshot.operations,candidate,recoveredSnapshot.activeIds);
+          const stillMissing=await blobStore.readStagedBlob({ownerId,operationId:candidate.operationId,
+            cloudAssetId:candidate.cloudAssetId,localStagedBlobId:candidate.localStagedBlobId});
+          if(stillMissing)fail("Delete-intent Blob reappeared during recovery; manual review is required.");
           await assertLease();
           const finalized=await cleanupJournal.finalizeCandidateDeleted({ownerId,cleanupId,expectedRevision:manifest.revision,
             ownerLockEpoch:lease.epoch,localStagedBlobId:candidate.localStagedBlobId,deleteAttemptId:candidate.deleteAttemptId});
