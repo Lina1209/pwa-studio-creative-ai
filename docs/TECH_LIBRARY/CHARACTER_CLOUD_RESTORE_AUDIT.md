@@ -111,3 +111,12 @@ The bulk catalog, backend route, planner join, and localStorage metadata adapter
 
 
 The validated mapping now also carries card/reference identity through staging: every durable reference checkpoint retains cloud `characterId`, local `sourceLocalId`, original `localReferenceId`, display name, and MIME alongside the staged Blob ID and integrity proof. This is the identity information the future activation step will use; staging still does not write active character metadata.
+
+
+
+
+## Durable activation intent: first isolated checkpoint
+
+The restore journal now persists a strictly validated activation intent before an operation may enter `activating`. It binds the base local-library SHA-256, intended merged-library SHA-256, intended record count, immutable restore operation marker, and preparation timestamp. Interrupted activation may be moved to `paused_retryable` without discarding that intent. Browser tests cover missing-intent rejection, valid persistence, malformed-digest rejection, and retention across a retryable interruption.
+
+This closes only the journal-record portion of the activation protocol. No code yet recomputes the merged digest from fresh planner output, revalidates every staged Blob at activation, performs the synchronous owner-scoped localStorage write, or recognizes post-write crashes. Restore remains disabled and the UI remains unchanged.
