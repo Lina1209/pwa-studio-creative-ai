@@ -98,6 +98,9 @@ begin
      or p_storage_path !~ ('^' || p_owner_id::text || '/characters/' || p_character_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$')
      or p_file_name is null or length(p_file_name) not between 1 and 255
      or p_file_type is null or p_file_type not in ('image/png','image/jpeg','image/webp')
+     or (p_file_type = 'image/png' and right(p_storage_path, 4) <> '.png')
+     or (p_file_type = 'image/jpeg' and right(p_storage_path, 4) <> '.jpg')
+     or (p_file_type = 'image/webp' and right(p_storage_path, 5) <> '.webp')
      or p_size_bytes is null or p_size_bytes < 1 or p_size_bytes > 8388608
      or p_content_sha256 is null or p_content_sha256 !~ '^[0-9a-f]{64}$'
      or p_width is null or p_height is null
