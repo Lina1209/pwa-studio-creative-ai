@@ -36,6 +36,28 @@ class CharacterReferenceUploadRouteTests(unittest.TestCase):
     def tearDown(self):
         app.dependency_overrides.clear()
 
+    @patch("app.main.upload_character_reference_object")
+    @patch("app.main.reserve_character_reference_upload", side_effect=HTTPException(status_code=409, detail="Media upload reservation could not be created."))
+    @patch("app.main.get_owned_character_for_media_upload", return_value={"id": CHARACTER, "owner_id": OWNER})
+    def test_new_content_for_existing_local_reference_fails_closed_before_storage_upload(
+        self, character_lookup, reserve, upload
+    ):
+        # A changed image has a new idempotency key, but migration 0025 binds
+        # one immutable asset to each owner/character/local-reference tuple.
+        # The reservation conflict must stop the route before any Storage write.
+        changed = BytesIO()
+        Image.new("RGB", (4, 3), "black").save(changed, format="PNG")
+        response = self.client.post(
+            f"/api/characters/{CHARACTER}/references",
+            headers={"Idempotency-Key": "test-character-upload-changed-content"},
+            data={"local_reference_id": "22222222-2222-4222-8222-222222222222-44444444-4444-4444-8444-444444444444"},
+            files={"file": ("portrait.png", changed.getvalue(), "image/png")},
+        )
+        self.assertEqual(response.status_code, 409)
+        character_lookup.assert_called_once()
+        reserve.assert_called_once()
+        upload.assert_not_called()
+
     @patch("app.main.mark_character_reference_object_uploaded", return_value={"id": "asset", "status": "object_uploaded"})
     @patch("app.main.upload_character_reference_object")
     @patch("app.main.reserve_character_reference_upload", side_effect=lambda _settings, plan: {"id": plan.asset_id, "status": "pending_upload"})
