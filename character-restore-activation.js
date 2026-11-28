@@ -154,19 +154,23 @@
   assertCurrent(isCurrent);
   const row=await journal.get(ownerId,operationId);
   if(!row||row.revision!==expectedRevision||!["activating","activation_uncertain","paused_retryable"].includes(row.state)||!row.activation)fail("No recoverable activation intent exists.");
+  assertCurrent(isCurrent);
   const lease=await journal.acquireLease(ownerId,operationId,{ttlMs:30000});
   try{
    const current=await journal.get(ownerId,operationId);
+   assertCurrent(isCurrent);
    if(!current||current.revision!==expectedRevision+1||current.leaseEpoch!==lease.epoch)fail("Recovery checkpoint changed.");
    const items=localAdapter.readLocalItems(ownerId);
    if(items&&typeof items.then==="function")fail("Local metadata adapter must be synchronous.");
    const actual=await digest(canonical(items));
+   assertCurrent(isCurrent);
    let next;
    if(actual===current.activation.mergedDigest&&items.length===current.activation.intendedCount&&items.filter(x=>x?.restoreOperationId===operationId).length===current.activation.restoredCount){
      next="committed";
     }else if(actual===current.activation.baseDigest){
      next="paused_retryable";
     }else next="conflict";
+   assertCurrent(isCurrent);
    const saved=await journal.checkpoint({ownerId,operationId,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:current.revision,state:next});
    return Object.freeze({state:saved.state,reason:next==="committed"?"merged_digest_matches":next==="paused_retryable"?"base_digest_matches":"metadata_matches_neither_safe_boundary"});
   }finally{try{await journal.releaseLease(ownerId,operationId,lease);}catch{}}
