@@ -542,3 +542,16 @@ A fencing issue found during this work was corrected: successful owner-lock rele
 CI run `46111523702` on commit `5e92777` passed all three jobs, including the complete browser cleanup-mark/recheck suite, owner-lock tests, backend unit tests, and disposable PostgreSQL integration tests.
 
 This is still not deletion authorization. `eligible_for_delete_review` is only a durable advisory state. Any future delete transaction must acquire a fresh owner lock and repeat all metadata, journal, source revision, reference-map, Blob identity, and byte-proof checks immediately before deleting the exact staged Blob key. No Blob deletion API exists.
+
+
+## 25. Per-candidate deletion intent primitives (not wired to an executor)
+
+The next implementation slice adds two narrowly scoped primitives, but deliberately does not expose a cleanup runner or UI:
+
+1. `PWACharacterRestoreCleanupJournal.beginCandidateDelete` performs an IndexedDB compare-and-swap from `eligible_for_delete_review` to `delete_intent`. It requires the expected manifest revision, candidate's exact staged Blob ID, a unique delete-attempt UUID, and a strictly newer owner-lock epoch. The intent (including timestamp and epoch) is durable before any Blob deletion is attempted.
+2. `PWACharacterRestoreBlobStore.deleteStagedBlob` deletes only the exact IndexedDB key when owner ID, restore operation ID, cloud asset ID, and the complete persisted SHA/size/MIME/dimensions proof all match in the same read-write transaction. Identity/proof mismatch aborts without deleting. A missing row returns `missing`, allowing a future executor to recover a crash after the delete transaction but before journal completion.
+3. `PWACharacterRestoreCleanupJournal.finalizeCandidateDeleted` records completion only for the matching durable delete attempt, expected revision, `deleting` manifest, and a newer owner-lock epoch. A manifest becomes `completed` only when every candidate is either `deleted` or `retained`.
+
+The real-browser test now exercises the sequence: advisory eligibility → durable delete intent → exact-key deletion → release/reacquire owner lock → durable completion. This models a crash boundary between the Blob transaction and journal completion; the next holder can finish the same attempt without guessing another key. Additional Blob tests prove cross-owner, cross-operation, and proof-mismatch requests are rejected and that exact deletion retry is idempotent.
+
+The adapter primitive is not a complete deletion workflow. There is still no production caller, automatic worker, or UI. Before any executor can be enabled it must repeat the complete metadata and restore-journal inventory checks under the owner lock immediately before writing intent, verify the candidate is still eligible and its 24-hour retention elapsed, then delete and finalize one candidate at a time. It must also recover existing `delete_intent` records by exact identity, and fail closed on incomplete inventories, account switches, lock loss, stale revisions, and ambiguous storage errors. Existing ordinary character images are never eligible for this API because they lack the exact `restoreStage` tuple and proof.
