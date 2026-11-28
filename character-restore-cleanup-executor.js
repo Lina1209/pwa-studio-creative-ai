@@ -131,7 +131,7 @@
            exact.width!==candidate.width||exact.height!==candidate.height)fail("Durable delete intent does not match the exact candidate.");
         await assertLease();
         const result=await blobStore.deleteStagedBlob({ownerId,operationId:candidate.operationId,cloudAssetId:candidate.cloudAssetId,
-          localStagedBlobId:candidate.localStagedBlobId,inspectImage,
+          localStagedBlobId:candidate.localStagedBlobId,inspectImage,beforeDelete:assertLease,
           proof:{sha256:candidate.sha256,sizeBytes:candidate.sizeBytes,mimeType:candidate.mimeType,width:candidate.width,height:candidate.height}});
         if(result!=="deleted")fail(result==="missing"?"Staged Blob disappeared before exact deletion; intent retained for manual recovery.":"Blob store returned an unknown deletion result.");
         await assertLease();await stopHeartbeat();await release(lease);lease=null;
