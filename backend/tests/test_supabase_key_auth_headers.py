@@ -46,6 +46,22 @@ class SupabaseKeyHeaderTests(unittest.TestCase):
                 self.assertEqual(headers["apikey"], "eyJlegacy.jwt")
                 self.assertEqual(headers["Authorization"], "Bearer eyJlegacy.jwt")
 
+    def test_owner_protection_uses_apikey_only_for_new_secret_key(self):
+        from app.services.messaging_service import ensure_target_not_owner
+
+        response = SimpleNamespace(status_code=200, json=lambda: {"user": {"email": "member@example.com"}}, raise_for_status=lambda: None)
+        settings = SimpleNamespace(
+            owner_user_id="",
+            owner_email="owner@example.com",
+            supabase_url="https://example.supabase.co",
+            supabase_service_role_key="sb_secret_test_value",
+        )
+        with patch.object(messaging_service.httpx, "get", return_value=response) as request:
+            ensure_target_not_owner(settings, "11111111-1111-4111-8111-111111111111")
+        headers = request.call_args.kwargs["headers"]
+        self.assertEqual(headers["apikey"], "sb_secret_test_value")
+        self.assertNotIn("Authorization", headers)
+
 
 if __name__ == "__main__":
     unittest.main()
