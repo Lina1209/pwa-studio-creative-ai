@@ -72,6 +72,7 @@ class MediaVerificationWorkerTests(unittest.TestCase):
             dict(CLAIM, height=0),
             dict(CLAIM, content_sha256=DIGEST.upper()),
             dict(CLAIM, attempts=9),
+            dict(CLAIM, attempts=True),
             dict(CLAIM, max_attempts=7),
         ]
         for invalid in malformed_claims:
