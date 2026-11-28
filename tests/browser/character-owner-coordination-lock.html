@@ -54,6 +54,28 @@
   });
   db.close();
   passed.push("malformed persisted lock records fail closed");
+  const corruptActiveOwner="55555555-5555-4555-8555-555555555555";
+  const activeLease=await api.acquire(corruptActiveOwner,{ttlMs:3000});
+  const corruptDb=await new Promise((resolve,reject)=>{
+   const request=indexedDB.open("pwa-studio-character-owner-coordination-v1",1);
+   request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error);
+  });
+  await new Promise((resolve,reject)=>{
+   const tx=corruptDb.transaction("locks","readwrite");
+   const store=tx.objectStore("locks"), request=store.get(corruptActiveOwner);
+   request.onsuccess=()=>{const row=request.result;row.expiresAt=String(row.expiresAt);store.put(row);};
+   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+  });
+  assert(!(await api.isCurrent(activeLease)),"malformed active lock was reported current");
+  await rejects(()=>api.renew(activeLease,{ttlMs:3000}));
+  await rejects(()=>api.release(activeLease));
+  await new Promise((resolve,reject)=>{
+   const tx=corruptDb.transaction("locks","readwrite");
+   tx.objectStore("locks").delete(corruptActiveOwner);
+   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+  });
+  corruptDb.close();
+  passed.push("malformed active records rejected by current, renew, and release");
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
   document.documentElement.dataset.testResult="passed";
  }catch(error){out.textContent="FAIL\n"+passed.join("\n")+"\n"+(error.stack||error);document.documentElement.dataset.testResult="failed"}
