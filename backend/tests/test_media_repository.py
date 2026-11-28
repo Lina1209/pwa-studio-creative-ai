@@ -4,7 +4,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.core.config import Settings
-from app.services import media_repository
+from app.services import media_repository, media_upload_repository
 
 OWNER = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
@@ -109,6 +109,36 @@ class CharacterMediaAssetListTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught: media_repository.list_owned_character_media_assets(self.settings, "../other", OWNER)
         self.assertEqual(caught.exception.status_code, 422)
         get.assert_not_called()
+
+class CharacterUploadOwnershipLookupTests(unittest.TestCase):
+    def setUp(self):
+        self.settings = Settings(supabase_url="https://example.supabase.co",
+                                 supabase_service_role_key="test-only")
+
+    @patch("app.services.media_upload_repository.httpx.get")
+    def test_lookup_rejects_response_with_foreign_owner(self, get):
+        get.return_value = unittest.mock.Mock(
+            content=b"[]",
+            json=lambda: [{"id": CHARACTER, "owner_id": OTHER}],
+        )
+        with self.assertRaises(HTTPException) as caught:
+            media_upload_repository.get_owned_character_for_media_upload(
+                self.settings, CHARACTER, OWNER
+            )
+        self.assertEqual(caught.exception.status_code, 404)
+
+    @patch("app.services.media_upload_repository.httpx.get")
+    def test_lookup_rejects_response_with_different_character_id(self, get):
+        get.return_value = unittest.mock.Mock(
+            content=b"[]",
+            json=lambda: [{"id": ASSET, "owner_id": OWNER}],
+        )
+        with self.assertRaises(HTTPException) as caught:
+            media_upload_repository.get_owned_character_for_media_upload(
+                self.settings, CHARACTER, OWNER
+            )
+        self.assertEqual(caught.exception.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()
