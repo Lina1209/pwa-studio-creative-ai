@@ -171,6 +171,7 @@ jobs:
           node --check character-local-storage-adapter.js
           node tests/test_character_cloud_restore.js
           node tests/test_character_local_storage_adapter.js
+          node tests/test_character_library_owner_lock_contract.js
           node tests/test_character_cloud_restore_adapter_integration.js
           node tests/test_character_restore_coordinator.js
           node tests/test_profile_avatar_catalog.js
