@@ -35,6 +35,13 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.equal(plan.proposedItems.length,0);
     assert.equal(JSON.stringify(local),snapshot);
   });
+  await run("restored metadata manifest remains unchanged without local image Blobs",async()=>{
+    const manifest=[{id:"ref-local-1",name:"front.png",type:"image/png"}];
+    const local={id:localId,name:"Катти",description:"Описание",kind:"character",representation:"both",voice:"",passport:{face:"глаза",body:"силуэт",wardrobe:"худи",palette:"рыжий"},referenceImages:[],cloudBackup:{characterId:cloudId,version:1,referenceManifest:manifest}};
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
+    assert.equal(plan.unchanged.length,1);
+    assert.equal(plan.conflicts.length,0);
+  });
   await run("different local content becomes a conflict, not an overwrite",async()=>{
     const local={id:localId,name:"Локальная версия",description:"",referenceImages:[]};
     const plan=await planner.planRestore({ownerId:owner,existingLocalItems:[local],fetchPage:async()=>page([row(cloudId,localId)])});
