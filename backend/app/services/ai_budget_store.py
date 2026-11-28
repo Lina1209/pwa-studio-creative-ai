@@ -108,3 +108,19 @@ class SupabaseAIBudgetStore:
                 "p_safe_reason": safe_reason,
             },
         )
+
+    def mark_stale_reservations_unknown(self, created_before: str, limit: int = 100) -> int:
+        if not 1 <= limit <= 1000:
+            raise ValueError("Reconciliation batch size must be between 1 and 1000.")
+        result = self._rpc(
+            "mark_stale_ai_budget_reservations_unknown",
+            {
+                "p_created_before": created_before,
+                "p_limit": limit,
+            },
+        )
+        if not isinstance(result, int) or isinstance(result, bool) or result < 0:
+            raise AIBudgetStoreUnavailable(
+                "AI budget reconciliation RPC returned an invalid result."
+            )
+        return result
