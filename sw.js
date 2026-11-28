@@ -52,23 +52,25 @@ self.addEventListener("fetch", event => {
           return response;
         })
         .catch(async () => {
-          const cached = await caches.match(request);
-          return cached || (request.mode === "navigate" ? (await caches.match("./index.html")) : null) || Response.error();
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match(request);
+          const appIndex = new URL("./index.html", self.registration.scope).href;
+          return cached || (request.mode === "navigate" ? (await cache.match(appIndex)) : null) || Response.error();
         })
     );
     return;
   }
 
   event.respondWith(
-    caches.match(request).then(cached => {
+    caches.open(CACHE_NAME).then(async cache => {
+      const cached = await cache.match(request);
       if (cached) return cached;
-      return fetch(request).then(response => {
-        if (response && response.ok && response.type === "basic") {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
-        }
-        return response;
-      });
+      const response = await fetch(request);
+      if (response && response.ok && response.type === "basic") {
+        const copy = response.clone();
+        cache.put(request, copy).catch(error => console.warn("PWA cache write failed:", error));
+      }
+      return response;
     })
   );
 });
