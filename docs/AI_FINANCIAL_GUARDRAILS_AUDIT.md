@@ -65,6 +65,14 @@ This audit records the verified boundary between current protections and the fut
 - Disposable CI applies the migration and runs SQL checks. A concurrent reservation race harness is being validated. This is not production evidence until the latest CI run passes.
 - No live Supabase migration was run. No production setting, provider key, route, or billing flow was changed.
 
+### Reconciliation and exposure refinements
+
+- Added `mark_stale_ai_budget_reservations_unknown`: a bounded, service-role-only RPC that converts old `reserved` rows to `unknown` and appends a ledger event. It never releases a stale reservation.
+- Added a backend adapter method for invoking that RPC; no scheduler or background worker is configured.
+- Exposure aggregation now filters by both the active policy's scope and its period. Platform policies aggregate all provider/user reservations in-period; provider and user policies aggregate only matching rows.
+- SQL tests now check disabled-by-default behavior, browser-role privilege denial, idempotency, settlement, unknown exposure, confirmed no-charge release, and stale reservation reconciliation.
+- The CI SQL test initially failed due to a dollar-quote typo in its first DO block. This was corrected; the corrected and expanded run is pending.
+
 ## Remaining blockers before route integration
 
 1. Complete and pass the PostgreSQL concurrency harness on the latest branch commit.
