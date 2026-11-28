@@ -1,0 +1,17 @@
+const fs = require("fs");
+const app = fs.readFileSync("app.js", "utf8");
+const html = fs.readFileSync("index.html", "utf8");
+const lockTag = html.indexOf('src="./character-owner-coordination-lock.js');
+const appTag = html.indexOf('src="./app.js');
+if (lockTag < 0 || appTag < 0 || lockTag > appTag) throw new Error("Owner lock must load before app.js");
+if (!app.includes("const acquireCharacterLibraryLock = async")) throw new Error("Missing UI owner-lock helper");
+if (!app.includes("ownerLock=await acquireCharacterLibraryLock(deleteOwnerId,deleteContextVersion)")) throw new Error("Card deletion is not fenced");
+if (!app.includes("ownerLock=await acquireCharacterLibraryLock(ownerId,contextVersion)")) throw new Error("Card save is not fenced");
+if (!app.includes("const freshLibrary=readCharacterLibrary()")) throw new Error("Save must re-read metadata after acquiring lock");
+if (!app.includes("store.add({id,ownerId,blob,createdAt:new Date().toISOString()})")) throw new Error("Image creation must not overwrite existing/staged rows");
+if (!app.includes("Идентификатор изображения уже занят")) throw new Error("Existing image collision must fail closed");
+if (!app.includes("(card.referenceImages||[]).some(ref=>ref&&ref.id===id)")) throw new Error("Image deletion must preserve cross-card references");
+if (!app.includes('const raw=localStorage.getItem("pwa-studio-character-library-v1:"+ownerId)')) throw new Error("Image deletion must inspect full owner metadata");
+const writes = [...app.matchAll(/localStorage\.setItem\((?:storageKey|deleteStorageKey),/g)];
+if (writes.length !== 2) throw new Error("Unexpected number of direct character-library metadata writes: " + writes.length);
+console.log("PASS character library mutation static contract: lock loaded before app, save/delete lock acquisition, fresh metadata recheck, no Blob overwrite, cross-card reference retention.");
