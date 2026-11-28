@@ -103,3 +103,45 @@ if [[ "$duplicate_rows" != "12" || "$duplicate_ids" != "1" || "$created_rows" !=
 fi
 
 echo "AI budget idempotency invariant passed: 12 identical concurrent calls created one reservation."
+
+# Race identical settlement calls: every caller must observe success, but the
+# reservation and append-only ledger must contain exactly one settlement event.
+settlement_reservation_id="$(head -n 1 "$tmp_dir/duplicate-1.out" | cut -d'|' -f1)"
+if [[ -z "$settlement_reservation_id" ]]; then
+  echo "Could not resolve the shared idempotency reservation for settlement race." >&2
+  exit 1
+fi
+pids=()
+for i in $(seq 1 12); do
+  (
+    psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+      -c "select public.settle_ai_budget('$settlement_reservation_id',0.004)" \
+      >"$tmp_dir/settle-$i.out" 2>"$tmp_dir/settle-$i.err"
+  ) &
+  pids+=("$!")
+done
+settlement_failures=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || settlement_failures=$((settlement_failures + 1))
+done
+settlement_successes=0
+for output_file in "$tmp_dir"/settle-*.out; do
+  [[ -f "$output_file" ]] || continue
+  if grep -qx 'settled' "$output_file"; then
+    settlement_successes=$((settlement_successes + 1))
+  fi
+done
+settlement_ledger_count="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select count(*) from public.ai_budget_ledger where reservation_id='$settlement_reservation_id' and event_type='settle'")"
+settlement_actual="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+  -c "select actual_usd from public.ai_budget_reservations where id='$settlement_reservation_id'")"
+echo "AI budget settlement race: successes=$settlement_successes failures=$settlement_failures ledger_events=$settlement_ledger_count actual=$settlement_actual"
+if [[ "$settlement_successes" != "12" || "$settlement_failures" != "0" || "$settlement_ledger_count" != "1" || "$settlement_actual" != "0.0040000000" ]]; then
+  echo "AI budget concurrent settlement invariant failed." >&2
+  for error_file in "$tmp_dir"/settle-*.err; do
+    [[ -s "$error_file" ]] && cat "$error_file" >&2
+  done
+  exit 1
+fi
+
+echo "AI budget settlement invariant passed: 12 concurrent identical settlements produced one ledger event."
