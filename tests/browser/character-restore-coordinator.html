@@ -96,6 +96,38 @@
    const read=await blobStore.readStagedBlob({ownerId:owner,operationId:op.operationId,cloudAssetId:manifest[0].cloudAssetId,localStagedBlobId:stagedId});
    ok(read instanceof Blob&&await digest(read)===sha,"real staged Blob read-back did not preserve bytes");
   });
+   await test("retry resumes a paused operation and reuses verified staged media",async()=>{
+    const op=await planned();
+    await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:op.revision,journal:api,adapters:adapters({tamper:true})}),"initial tampered staging unexpectedly succeeded");
+    const paused=await api.get(owner,op.operationId);
+    ok(paused.state==="paused_retryable","failed operation was not paused");
+    const goodStore=PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore();
+    const media={
+     async downloadAsset(){return blob},
+     async inspectImage(){return {width:40,height:30}},
+     stageBlob(input){return goodStore.stageBlob(input)},
+     readStagedBlob(input){return goodStore.readStagedBlob(input)}
+    };
+    const resumed=await coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest,expectedRevision:paused.revision,journal:api,adapters:media});
+    const final=await api.get(owner,op.operationId);
+    ok(resumed.state==="ready_to_activate"&&final.references[0].state==="verified_staged","paused operation did not resume to verified state");
+   });
+   await test("manifest MIME, byte size, SHA-256 and dimensions mismatches are rejected",async()=>{
+    const variants=[
+     {...manifest[0],expectedMimeType:"image/webp"},
+     {...manifest[0],expectedSizeBytes:blob.size+1},
+     {...manifest[0],expectedSha256:"0".repeat(64)},
+     {...manifest[0],width:41}
+    ];
+    for(const badRef of variants){
+     const op=await planned();let staged=0;
+     const base=adapters();
+     const media={...base,async stageBlob(input){staged++;return base.stageBlob(input)}};
+     await rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:op.operationId,manifest:[badRef],expectedRevision:op.revision,journal:api,adapters:media}),"invalid media manifest proof was accepted");
+     const row=await api.get(owner,op.operationId);
+     ok(row.state==="paused_retryable"&&staged===0,"invalid media reached persistent staging");
+    }
+   });
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
  }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
 })();
