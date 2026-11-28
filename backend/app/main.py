@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.character_api import build_character_router
 from app.schemas import (ChatRequest, ChatResponse, PromptRequest, PromptResponse, ReportCreateRequest, ReportResponse, ReportListItem, ReportReviewRequest, SuspensionCreateRequest, SuspensionResponse, SuspensionRevokeRequest, NotificationResponse, DirectMessageCreateRequest, DirectMessageEditRequest, UserBlockRequest, ProfileUpdateRequest)
 from app.services.ai_service import AIConfigurationError, ask_ai
-from app.services.auth import StudioUser, get_current_user, require_admin
+from app.services.auth import StudioUser, get_current_user, get_platform_active_user, require_admin
 from app.services.content_safety import check_content, check_prompt_content
 from app.services.usage_service import record_ai_usage
 from app.services.ai_rate_limit import enforce_ai_rate_limit
@@ -82,7 +82,7 @@ def health():
 
 @app.get(f"{settings.api_prefix}/media/character-references")
 def list_character_reference_catalog(character_ids: str, response: Response,
-                                     user: StudioUser = Depends(get_current_user)):
+                                     user: StudioUser = Depends(get_platform_active_user)):
     """Return an explicit owner-scoped local-reference to cloud-asset catalog."""
     ids = character_ids.split(",") if isinstance(character_ids, str) else []
     if not 1 <= len(ids) <= 100 or any(not value for value in ids):
@@ -166,7 +166,7 @@ async def upload_character_reference(
 
 @app.get(f"{settings.api_prefix}/media/{{asset_id}}/content")
 def private_media_content(asset_id: str,
-                          user: StudioUser = Depends(get_current_user)):
+                          user: StudioUser = Depends(get_platform_active_user)):
     """Proxy one private image; re-check ownership and readiness on every request."""
     asset = get_owned_media_asset(settings, asset_id, user.user_id)
     try:
@@ -213,7 +213,7 @@ def private_media_content(asset_id: str,
 
 @app.get(f"{settings.api_prefix}/media/{{asset_id}}/access")
 def private_media_access(asset_id: str, response: Response,
-                         user: StudioUser = Depends(get_current_user)):
+                         user: StudioUser = Depends(get_platform_active_user)):
     """Return safe metadata and a 60-second URL for the caller's own ready asset."""
     asset = get_owned_media_asset(settings, asset_id, user.user_id)
     try:
