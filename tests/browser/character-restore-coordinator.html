@@ -115,7 +115,7 @@
    });
    await test("manifest MIME, byte size, SHA-256 and dimensions mismatches are rejected",async()=>{
     const variants=[
-     {...manifest[0],expectedMimeType:"image/webp"},
+     {...manifest[0],type:"image/webp",expectedMimeType:"image/webp"},
      {...manifest[0],expectedSizeBytes:blob.size+1},
      {...manifest[0],expectedSha256:"0".repeat(64)},
      {...manifest[0],width:41}
