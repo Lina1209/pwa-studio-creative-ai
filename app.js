@@ -2552,6 +2552,21 @@ const movieHistoryStyle = document.createElement("style");
   // Character Library v1: owner-scoped metadata in localStorage and image blobs in IndexedDB.
   const characterLibraryDbName = "pwa-studio-character-library-v1";
   const characterLibraryKey = () => "pwa-studio-character-library-v1:" + (authSession?.user?.id || "guest");
+  const characterOwnerIsUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value||""));
+  const acquireCharacterLibraryLock = async (ownerId,contextVersion) => {
+    const contextIsCurrent=()=>contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId;
+    const assertContext=()=>{if(!contextIsCurrent())throw new Error("Аккаунт изменился. Операция остановлена.");};
+    if(ownerId==="guest")return {assertCurrent:async()=>assertContext(),release:async()=>{}};
+    if(!characterOwnerIsUuid(ownerId))throw new Error("Не удалось подтвердить владельца библиотеки.");
+    const api=window.PWACharacterOwnerCoordinationLock;
+    if(!api)throw new Error("Защитная блокировка библиотеки недоступна. Обновите страницу и повторите попытку.");
+    let lease=await api.acquire(ownerId,{ttlMs:30000}),lost=false,renewal=Promise.resolve();
+    const heartbeat=setInterval(()=>{renewal=renewal.then(async()=>{try{lease=await api.renew(lease,{ttlMs:30000});}catch(_){lost=true;}});},8000);
+    return {
+      assertCurrent:async()=>{assertContext();await renewal;if(lost||!(await api.isCurrent(lease)))throw new Error("Защитная блокировка истекла или передана другой вкладке. Повторите действие.");assertContext();},
+      release:async()=>{clearInterval(heartbeat);await renewal;try{await api.release(lease);}catch(_){}}
+    };
+  };
   let editingCharacterId = null;
   let removedCharacterReferenceIds = new Set();
   const openCharacterLibraryDb = () => new Promise((resolve,reject) => {
@@ -2602,14 +2617,25 @@ const movieHistoryStyle = document.createElement("style");
     } finally { db.close(); }
   };
   const deleteCharacterImage = async (id,ownerId) => {
+    const raw=localStorage.getItem("pwa-studio-character-library-v1:"+ownerId);
+    let cards=[];
+    if(raw!==null&&raw!==""){
+      try{cards=JSON.parse(raw);}catch{throw new Error("Метаданные библиотеки повреждены; изображение сохранено для безопасности.");}
+      if(!Array.isArray(cards)||cards.length>100)throw new Error("Состав библиотеки не подтверждён; изображение сохранено.");
+      for(const card of cards){
+        if(!card||typeof card!=="object"||!Array.isArray(card.referenceImages))throw new Error("Структура карточки не подтверждена; изображение сохранено.");
+        if(card.referenceImages.some(ref=>ref&&ref.id===id))return false;
+      }
+    }
     const db=await openCharacterLibraryDb();
-    try {
-      await new Promise((resolve,reject)=>{
-        const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);
-        request.onsuccess=()=>{if(request.result?.ownerId===ownerId)store.delete(id);};
-        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
-      });
-    } finally { db.close(); }
+    try{return await new Promise((resolve,reject)=>{
+      const tx=db.transaction("images","readwrite"),store=tx.objectStore("images"),request=store.get(id);let deleted=false;
+      request.onsuccess=()=>{if(request.result?.ownerId===ownerId){store.delete(id);deleted=true;}};
+      request.onerror=()=>{try{tx.abort();}catch{}};
+      tx.oncomplete=()=>resolve(deleted);
+      tx.onerror=()=>reject(tx.error||new Error("Не удалось удалить локальное изображение."));
+      tx.onabort=()=>reject(tx.error||new Error("Удаление локального изображения отменено."));
+    });}finally{db.close();}
   };
   const resetCharacterEditor = () => {
     editingCharacterId=null;
@@ -2679,12 +2705,16 @@ const movieHistoryStyle = document.createElement("style");
         const deleteStorageKey=characterLibraryKey();
         if(!window.confirm("Удалить «"+item.name+"» и его локальные изображения?"))return;
         if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==deleteOwnerId)return;
-        const current=readCharacterLibrary(),found=current.find(x=>x.id===item.id);if(!found)return;
-        const next=current.filter(x=>x.id!==item.id);
+        let ownerLock=null;
         try{
+          ownerLock=await acquireCharacterLibraryLock(deleteOwnerId,deleteContextVersion);
+          await ownerLock.assertCurrent();
+          const current=readCharacterLibrary(),found=current.find(x=>x.id===item.id);if(!found)return;
+          const next=current.filter(x=>x.id!==item.id);
           localStorage.setItem(deleteStorageKey,JSON.stringify(next));
+          await ownerLock.assertCurrent();
           const cleanup=await Promise.allSettled((found.referenceImages||[]).map(ref=>deleteCharacterImage(ref.id,deleteOwnerId)));
-          if(deleteContextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==deleteOwnerId)return;
+          await ownerLock.assertCurrent();
           const cleanupFailed=cleanup.some(result=>result.status==="rejected");
           $("#characterLibraryStatus").textContent=cleanupFailed
             ?"Материал удалён из библиотеки, но часть изображений осталась в локальном хранилище. Повторите очистку позже."
@@ -2692,8 +2722,8 @@ const movieHistoryStyle = document.createElement("style");
           renderCharacterLibrary();
         }catch(error){
           if(deleteContextVersion===authContextVersion&&(authSession?.user?.id||"guest")===deleteOwnerId)
-            $("#characterLibraryStatus").textContent="Запись обновлена, но очистка части изображений не завершилась. "+error.message;
-        }
+            $("#characterLibraryStatus").textContent="Не удалось безопасно завершить удаление: "+error.message;
+        }finally{if(ownerLock)await ownerLock.release();}
       });
       actions.append(edit,remove);card.append(actions);list.append(card);
     }
@@ -2737,9 +2767,14 @@ const movieHistoryStyle = document.createElement("style");
       referenceImages:[...retainedReferences,...refs],createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
     const button=$("#saveCharacter");button.disabled=true;
     const savedImageIds=[];
-    let metadataCommitted=false;
+    let metadataCommitted=false,ownerLock=null;
     try{
+      ownerLock=await acquireCharacterLibraryLock(ownerId,contextVersion);
+      await ownerLock.assertCurrent();
+      const freshLibrary=readCharacterLibrary();
+      if(JSON.stringify(freshLibrary)!==JSON.stringify(current))throw new Error("Библиотека изменилась в другой вкладке. Обновите список и повторите сохранение.");
       for(let i=0;i<files.length;i++){
+        await ownerLock.assertCurrent();
         if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
           throw new Error("Аккаунт изменился во время сохранения. Повторите действие в текущем аккаунте.");
         await saveCharacterImage(refs[i].id,files[i],ownerId);
@@ -2748,6 +2783,7 @@ const movieHistoryStyle = document.createElement("style");
       if(contextVersion!==authContextVersion||(authSession?.user?.id||"guest")!==ownerId)
         throw new Error("Аккаунт изменился во время сохранения. Локальная карточка не была записана в другой аккаунт.");
       const next=existing?current.map(x=>x.id===id?updated:x):[updated,...current];
+      await ownerLock.assertCurrent();
       localStorage.setItem(storageKey,JSON.stringify(next));
       metadataCommitted=true;
       let cleanupWarning="";
@@ -2767,7 +2803,7 @@ const movieHistoryStyle = document.createElement("style");
       }
       if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)
         $("#characterLibraryStatus").textContent="Не удалось завершить сохранение: "+error.message+(metadataCommitted?" Карточка уже записана; проверьте состояние библиотеки.":cleanupWarning||" Временные изображения очищены.");
-    }finally{if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}
+    }finally{if(ownerLock)await ownerLock.release();if(contextVersion===authContextVersion&&(authSession?.user?.id||"guest")===ownerId)button.disabled=false;}
   });
   $("#cancelCharacterEdit")?.addEventListener("click",()=>{resetCharacterEditor();$("#characterLibraryStatus").textContent="Редактирование отменено.";});
   $("#characterSearch")?.addEventListener("input",renderCharacterLibrary);
