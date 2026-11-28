@@ -96,4 +96,16 @@ function adapters({badReadback=false}={}){
  assert.equal(fourth.inspect().state,"paused_retryable");
  assert.equal(fourth.inspect().lease,null);
  console.log("PASS confirmation expiring during initial durable checkpoint pauses safely before any download");
+
+ const fifth=makeJournal(),acquireGate=await issuedGate();let acquireValid=true,acquireDownloads=0;
+ const expiringAcquireJournal={
+  ...fifth,
+  async acquireLease(...args){const lease=await fifth.acquireLease(...args);acquireValid=false;return lease;}
+ };
+ const neverDownload={...adapters(),async downloadAsset(){acquireDownloads++;return new Blob([bytes],{type:"image/png"});}};
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:expiringAcquireJournal,...acquireGate,validateConfirmation:()=>acquireValid,adapters:neverDownload}),/confirmation/);
+ assert.equal(acquireDownloads,0);
+ assert.equal(fifth.inspect().state,"planned");
+ assert.equal(fifth.inspect().lease,null);
+ console.log("PASS confirmation expiring during lease acquisition releases the newly acquired lease without starting work");
 })().catch(error=>{console.error(error);process.exitCode=1;});
