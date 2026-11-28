@@ -2431,8 +2431,8 @@ const movieHistoryStyle = document.createElement("style");
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshGuestExpiry();});
   window.addEventListener("pageshow",refreshGuestExpiry);
 
-  // Character Library cloud backup v1: explicit, one-way backup for signed-in users.
-  // Local-first data remains untouched if any cloud operation fails.
+  // Character Library cloud backup v2: explicit, metadata-only, resumable-by-retry.
+  // Local records and image Blobs are never deleted or rewritten by this operation.
   const makeCharacterUuid = () => {
     if (window.crypto?.randomUUID) return window.crypto.randomUUID();
     const bytes = new Uint8Array(16);
@@ -2445,9 +2445,87 @@ const movieHistoryStyle = document.createElement("style");
   const isCharacterUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || "");
   const backupCharacterLibrary = async () => {
     const status=$("#characterLibraryStatus"),button=$("#backupCharacterLibrary");
-    if(button){button.disabled=true;button.title="Ожидает безопасного серверного API загрузки.";}
-    if(status){
-      status.textContent="Облачное резервное копирование временно отключено. Прежний вариант загружал файлы и создавал записи media_assets напрямую из браузера. Мы заменяем его серверной загрузкой с проверкой владельца, формата, размера и жизненного цикла. Локальные карточки и изображения остаются доступны.";
+    const session=authSession,ownerId=session?.user?.id,contextVersion=authContextVersion;
+    const stillOwner=()=>authContextVersion===contextVersion&&authSession?.user?.id===ownerId;
+    if(!ownerId||!session?.access_token){if(status)status.textContent="Для облачной копии войдите в свой аккаунт. Гостевая библиотека останется на этом устройстве.";return;}
+    if(!isCharacterUuid(ownerId)){if(status)status.textContent="Не удалось проверить идентификатор аккаунта. Локальные материалы не изменены.";return;}
+    if(button){button.disabled=true;button.textContent="⏳ Создаём копию…";}
+    const say=message=>{if(stillOwner()&&status)status.textContent=message;};
+    try{
+      const localItems=readCharacterLibrary();
+      if(!Array.isArray(localItems)||localItems.length>100){throw new Error("Локальная библиотека содержит недопустимое число записей.");}
+      if(!localItems.length){say("Библиотека пуста — пока нечего копировать.");return;}
+      say("Получаю список облачных паспортов…");
+      const cloudItems=[];
+      let cursor=null,pages=0;
+      do{
+        const query=new URLSearchParams({limit:"100"});
+        if(cursor)query.set("cursor",cursor);
+        const page=await apiRequest("/api/characters?"+query.toString());
+        if(!stillOwner())return;
+        if(!page||!Array.isArray(page.items)||!(page.next_cursor===null||typeof page.next_cursor==="string"))throw new Error("Сервер вернул неполную страницу библиотеки.");
+        cloudItems.push(...page.items);
+        if(cloudItems.length>10000)throw new Error("Облачная библиотека превышает безопасный предел обхода.");
+        cursor=page.next_cursor;
+        pages++;
+        if(pages>100)throw new Error("Слишком много страниц. Операция остановлена без изменения локальных данных.");
+      }while(cursor);
+      const byLocalId=new Map();
+      for(const item of cloudItems){
+        if(!isCharacterUuid(item.source_local_id)||!isCharacterUuid(item.id))throw new Error("Облачная запись содержит некорректную связь ID.");
+        if(byLocalId.has(item.source_local_id))throw new Error("Найдены повторяющиеся связи локального и облачного ID. Нужна проверка, автоматическое объединение запрещено.");
+        byLocalId.set(item.source_local_id,item);
+      }
+      let created=0,updated=0,unchanged=0;
+      for(let index=0;index<localItems.length;index++){
+        if(!stillOwner())return;
+        const local=localItems[index];
+        if(!local||!isCharacterUuid(local.id)||typeof local.name!=="string"||!local.name.trim())throw new Error("Локальная карточка содержит некорректные данные.");
+        const referenceData={
+          kind:local.kind==="scene"?"scene":"character",
+          representation:["2d","3d","both"].includes(local.representation)?local.representation:"2d",
+          voice:String(local.voice||"").slice(0,500),
+          passport:{
+            face:String(local.passport?.face||"").slice(0,1200),
+            body:String(local.passport?.body||"").slice(0,1200),
+            wardrobe:String(local.passport?.wardrobe||"").slice(0,1200),
+            palette:String(local.passport?.palette||"").slice(0,1200)
+          },
+          referenceImages:(Array.isArray(local.referenceImages)?local.referenceImages:[]).slice(0,6).map(ref=>({
+            id:String(ref.id||"").slice(0,180),name:String(ref.name||"").slice(0,120),type:String(ref.type||"").slice(0,80)
+          }))
+        };
+        const payload={source_local_id:local.id,name:local.name.trim().slice(0,120),description:String(local.description||"").slice(0,5000),reference_data:referenceData};
+        if(new TextEncoder().encode(JSON.stringify(payload.reference_data)).length>24000)throw new Error("Паспорт «"+payload.name+"» слишком велик для безопасной облачной копии.");
+        const existing=byLocalId.get(local.id);
+        if(!existing){
+          const createdRow=await apiRequest("/api/characters",{method:"POST",body:JSON.stringify(payload)});
+          if(!stillOwner())return;
+          if(!createdRow||createdRow.source_local_id!==local.id||!isCharacterUuid(createdRow.id)||!Number.isInteger(createdRow.version)||createdRow.version<1)throw new Error("Сервер не подтвердил создание облачного паспорта.");
+          byLocalId.set(local.id,createdRow);created++;
+        }else{
+          if(!Number.isInteger(existing.version)||existing.version<1)throw new Error("У облачного паспорта отсутствует версия. Обновление остановлено.");
+          const same=existing.name===payload.name&&String(existing.description||"")===String(payload.description||"")&&JSON.stringify(existing.reference_data||{})===JSON.stringify(payload.reference_data);
+          if(same){unchanged++;continue;}
+          try{
+            const updatedRow=await apiRequest("/api/characters/"+encodeURIComponent(existing.id),{
+              method:"PATCH",body:JSON.stringify({expected_version:existing.version,name:payload.name,description:payload.description,reference_data:payload.reference_data})
+            });
+            if(!stillOwner())return;
+            if(!updatedRow||updatedRow.id!==existing.id||updatedRow.version!==existing.version+1)throw new Error("Сервер не подтвердил новую версию паспорта.");
+            byLocalId.set(local.id,updatedRow);updated++;
+          }catch(error){
+            if(/409|conflict|конфликт|уже измен/i.test(String(error.message)))throw new Error("Паспорт «"+payload.name+"» изменён в облаке на другом устройстве. Ничего не перезаписано; обновите данные и разрешите конфликт вручную.");
+            throw error;
+          }
+        }
+        say("Обработано "+(index+1)+" из "+localItems.length+" паспортов…");
+      }
+      say("Облачная копия паспортов готова: новых — "+created+", обновлено — "+updated+", без изменений — "+unchanged+". Изображения-референсы пока остаются только на этом устройстве. Локальная библиотека сохранена.");
+    }catch(error){
+      say("Копирование не завершено: "+error.message+" Локальные карточки и изображения сохранены; повторный запуск безопасен.");
+    }finally{
+      if(stillOwner()&&button){button.disabled=false;button.textContent="☁ Создать облачную копию";}
     }
   };
   $("#backupCharacterLibrary")?.addEventListener("click",backupCharacterLibrary);
