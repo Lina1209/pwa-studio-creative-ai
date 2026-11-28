@@ -59,6 +59,7 @@
   const nonShellSource = swSource.slice(swSource.indexOf("  // Everything outside the explicit app-shell allowlist"));
   assert(nonShellSource.includes("return;") && !nonShellSource.includes("caches.") && !nonShellSource.includes("cache.put"), "non-shell requests do not accumulate dynamic or large media in Cache Storage");
   assert(swSource.includes('cache.match(request, { ignoreSearch: true })'), "offline shell fallback matches precached assets despite cache-busting query strings");
+  assert(coreAssets.includes("/assets/icon.svg") && shellPaths.includes("/assets/icon.svg"), "manifest app icon is both precached and served by the offline shell strategy");
   const indexText = await fetch("index.html").then(response => response.text());
   const indexDoc = new DOMParser().parseFromString(indexText, "text/html");
   const coreStart = swSource.indexOf("const CORE_ASSETS = [");
