@@ -1542,7 +1542,13 @@ const movieHistoryStyle = document.createElement("style");
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
   const movieToCloudRow = (project, ownerId = authSession?.user?.id) => {
     if (!ownerId) throw new Error("Облачное сохранение недоступно гостю.");
-    if (!isUuid(project.id)) project.id = movieId();
+    if (!isUuid(project.id)) {
+      project.id = movieId();
+      // Keep every historical snapshot bound to the newly assigned cloud UUID.
+      project.versions = (project.versions || []).map(version => ({
+        ...version, data: { ...version.data, id: project.id }
+      }));
+    }
     const snapshot = { ...project, cloudSchemaVersion: 1 };
     return {
       id: project.id,
