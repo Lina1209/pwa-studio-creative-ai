@@ -1,0 +1,81 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Restore cleanup executor isolated tests</title><body><pre id="results">Running…</pre>
+<script src="../../character-owner-coordination-lock.js"></script>
+<script src="../../character-restore-journal.js"></script>
+<script src="../../character-restore-blob-store.js"></script>
+<script src="../../character-restore-cleanup-journal.js"></script>
+<script src="../../character-local-storage-adapter.js"></script>
+<script src="../../character-restore-cleanup.js"></script>
+<script src="../../character-restore-cleanup-executor.js"></script>
+<script>
+(async()=>{
+ const out=document.querySelector("#results"),passed=[],api=PWACharacterRestoreJournal;
+ const blobStore=PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore(),cleanupJournal=PWACharacterRestoreCleanupJournal;
+ const uuid=()=>crypto.randomUUID(),assert=(v,m)=>{if(!v)throw Error(m)};
+ const sha=async b=>{const h=await crypto.subtle.digest("SHA-256",await b.arrayBuffer());return Array.from(new Uint8Array(h),x=>x.toString(16).padStart(2,"0")).map(x=>x.padStart(2,"0")).join("")};
+ const localFor=owner=>PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage:localStorage,ownerId:owner,isCurrent:()=>true});
+ const makeAborted=async(owner,operation,asset,blobId,blob)=>{
+  const proof={sha256:await sha(blob),sizeBytes:blob.size,mimeType:blob.type,width:64,height:48};
+  await blobStore.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId,blob,proof});
+  await api.create({ownerId:owner,operationId:operation,localBaseFingerprint:"a".repeat(64),snapshotId:"snapshot-"+operation,selectedCharacterIds:[uuid()]});
+  const lease=await api.acquireLease(owner,operation,{ttlMs:10000});let row=await api.get(owner,operation);
+  const ref={cloudAssetId:asset,characterId:uuid(),sourceLocalId:uuid(),localReferenceId:uuid(),name:"restore.webp",type:"image/webp",localStagedBlobId:blobId,expectedSha256:proof.sha256,expectedSizeBytes:proof.sizeBytes,expectedMimeType:proof.mimeType,width:64,height:48,state:"verified_staged"};
+  row=await api.checkpoint({ownerId:owner,operationId:operation,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned",references:[ref]});
+  row=await api.checkpoint({ownerId:owner,operationId:operation,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"aborted"});
+  await api.releaseLease(owner,operation,lease);
+  return proof;
+ };
+ const adapters=owner=>({ownerId:owner,restoreJournal:api,cleanupJournal,blobStore,localAdapter:localFor(owner),ownerLock:PWACharacterOwnerCoordinationLock,inspectImage:async()=>({width:64,height:48})});
+ const eligible=async(owner,operation,asset,blobId)=>{
+  const marked=await PWACharacterRestoreCleanup.markAbortedRestoreBlobs(adapters(owner));
+  assert(marked.candidateCount===1,"expected one marked candidate");
+  const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-cleanup-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+  try{await new Promise((resolve,reject)=>{const tx=db.transaction("manifests","readwrite"),s=tx.objectStore("manifests"),q=s.get(owner+":"+marked.cleanupId);q.onsuccess=()=>{const row=q.result;row.candidates.forEach(c=>{c.markedAt=new Date(Date.now()-25*3600000).toISOString();c.deleteAfter=new Date(Date.now()-1000).toISOString()});s.put(row)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+  const ready=await PWACharacterRestoreCleanup.inspectMarkedManifest({...adapters(owner),cleanupId:marked.cleanupId});
+  assert(ready.state==="eligible_for_delete_review","candidate did not pass read-only recheck");
+  return marked.cleanupId;
+ };
+ const execute=(owner,cleanupId,extra={})=>PWACharacterRestoreCleanupExecutor.executeEligibleCleanup({...adapters(owner),cleanupId,...extra});
+ const read=(owner,operation,asset,blobId)=>blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
+ const rejects=async fn=>{let failed=false;try{await fn()}catch{failed=true}assert(failed,"expected executor to fail closed")};
+ try{
+  await test("deletes only exact eligible staged Blob and preserves unrelated staged Blob",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["exact candidate"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);
+   const otherOp=uuid(),otherAsset=uuid(),otherId=uuid(),otherBlob=new Blob(["unrelated staged"],{type:"image/webp"}),otherProof={sha256:await sha(otherBlob),sizeBytes:otherBlob.size,mimeType:otherBlob.type,width:64,height:48};
+   await blobStore.stageBlob({ownerId:owner,operationId:otherOp,cloudAssetId:otherAsset,localStagedBlobId:otherId,blob:otherBlob,proof:otherProof});
+   const cleanupId=await eligible(owner,op,asset,id);
+   const result=await execute(owner,cleanupId);
+   assert(result.processed===1&&result.results[0].state==="deleted","executor did not report exact deletion");
+   assert(await read(owner,op,asset,id)===null,"eligible staged Blob remains");
+   assert(await read(owner,otherOp,otherAsset,otherId) instanceof Blob,"unrelated staged Blob was deleted");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.state==="completed"&&manifest.candidates[0].state==="deleted","durable completion missing");
+  });
+  await test("account switch after lock acquisition prevents deletion",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["account switch"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);let checks=0;
+   await rejects(()=>execute(owner,cleanupId,{isCurrent:()=>++checks<2}));
+   assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted after account context changed");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.candidates[0].state==="eligible_for_delete_review","intent was written after account switch");
+  });
+  await test("metadata change after reconciliation blocks deletion",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["metadata drift"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
+   localStorage.setItem("pwa-studio-character-library-v1:"+owner,JSON.stringify([{id:uuid(),name:"changed",referenceImages:[]}]));
+   await rejects(()=>execute(owner,cleanupId));
+   assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted after metadata changed");
+  });
+  await test("incomplete restore journal pagination blocks deletion",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["pagination"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);let calls=0;
+   const broken={listPage:async()=>({items:[],nextCursor:"still-more-"+(++calls)})};
+   await rejects(()=>execute(owner,cleanupId,{restoreJournal:broken}));
+   assert(calls===101,"pagination safety bound was not enforced");
+   assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted with incomplete inventory");
+  });
+  out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
+ }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
+ async function test(name,fn){await fn();passed.push(name)}
+})();
+</script></body></html>
