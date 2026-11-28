@@ -76,8 +76,8 @@ class SuspensionRouteCoverageTests(unittest.TestCase):
             if name in {
                 "own_community_profile", "update_community_profile",
                 "community_user_search", "community_public_profile",
-                "conversations", "conversation_messages", "send_message",
-                "read_conversation", "edit_direct_message", "remove_direct_message",
+                "conversations", "conversation_messages", "create_direct_message",
+                "read_conversation", "update_direct_message", "remove_direct_message",
                 "blocked_users", "create_user_block", "remove_user_block",
             }
         }
