@@ -14,6 +14,7 @@ declare
   v_job_recovery uuid := gen_random_uuid();
   v_job_cancel uuid := gen_random_uuid();
   v_job_cancel_queued uuid := gen_random_uuid();
+  v_job_cancel_expired uuid := gen_random_uuid();
   v_job_other_owner uuid := gen_random_uuid();
   v_asset_a uuid := gen_random_uuid();
   v_asset_b uuid := gen_random_uuid();
@@ -37,6 +38,7 @@ begin
     (v_job_recovery, v_owner_a, 'test-recovery-001', repeat('c',64), 'video'),
     (v_job_cancel, v_owner_a, 'test-cancel-00001', repeat('d',64), 'image'),
     (v_job_cancel_queued, v_owner_a, 'test-cancel-queue1', repeat('e',64), 'image'),
+    (v_job_cancel_expired, v_owner_a, 'test-cancel-expired', repeat('1',64), 'image'),
     (v_job_other_owner, v_owner_b, 'test-other-owner1', repeat('f',64), 'image');
 
   insert into public.media_assets (id, owner_id, file_name, file_type, storage_path)
@@ -100,6 +102,23 @@ begin
   if not v_ok then raise exception 'TEST FAILED: matching worker could not finish cancellation'; end if;
   select status into v_status from public.generation_jobs where id = v_job_cancel;
   if v_status <> 'cancelled' then raise exception 'TEST FAILED: cancellation terminal state missing'; end if;
+
+  -- An expired worker cannot finish a cancellation after its lease deadline,
+  -- even before the recovery process rotates/clears the fencing token.
+  update public.generation_jobs set next_attempt_at = null where id = v_job_cancel_expired;
+  select j.lease_token into v_token
+  from public.claim_generation_job('queue-test-worker-expiring', 120) j
+  where j.id = v_job_cancel_expired;
+  if v_token is null then raise exception 'TEST FAILED: expiring cancel job was not claimed'; end if;
+  select public.request_generation_job_cancel(v_job_cancel_expired, v_owner_a) into v_status;
+  if v_status <> 'cancel_requested' then raise exception 'TEST FAILED: expiring cancel request failed'; end if;
+  update public.generation_jobs set lease_expires_at = now() - interval '1 second'
+  where id = v_job_cancel_expired and lease_token = v_token;
+  select public.finish_generation_job_cancel(v_job_cancel_expired, v_token) into v_ok;
+  if v_ok then raise exception 'TEST FAILED: expired worker finished cancellation'; end if;
+  select public.recover_expired_generation_jobs(10) into v_count;
+  select status into v_status from public.generation_jobs where id = v_job_cancel_expired;
+  if v_status <> 'cancelled' then raise exception 'TEST FAILED: expired cancellation was not recovered'; end if;
 
   -- Expired worker lease is recovered to retry_wait when attempts remain.
   update public.generation_jobs set next_attempt_at = null where id = v_job_recovery;
