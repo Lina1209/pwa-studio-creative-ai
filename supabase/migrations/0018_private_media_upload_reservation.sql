@@ -314,7 +314,29 @@ declare
 begin
   if p_owner_id is null or p_asset_id is null or p_event_id is null
      or p_claim_token is null or p_content_sha256 is null
-     or p_content_sha256 !~ '^[0-9a-f]{64}
+     or p_content_sha256 !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid media verification result' using errcode='22023';
+  end if;
+
+  -- Match cleanup's character -> media lock order. The media_assets update
+  -- below performs an FK check that takes KEY SHARE on characters; acquiring
+  -- that lock before the outbox/media locks prevents a cleanup/verification
+  -- deadlock (cleanup holds FOR UPDATE on the character before locking media).
+  select character_id into v_character_id
+  from public.media_assets
+  where id=p_asset_id and owner_id=p_owner_id;
+  if not found or v_character_id is null then
+    raise exception 'media verification character is missing' using errcode='P0002';
+  end if;
+
+  perform 1 from public.characters
+  where id=v_character_id and owner_id=p_owner_id
+  for key share;
+  if not found then
+    raise exception 'media verification character is missing' using errcode='P0002';
+  end if;
+
+  select * into v_event from public.media_asset_outbox
   where id=p_event_id and owner_id=p_owner_id and asset_id=p_asset_id
     and event_type='media_upload_verify_requested'
     and status='claimed' and claim_token=p_claim_token
