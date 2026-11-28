@@ -79,6 +79,31 @@ const run = async (name, fn) => { await fn(); process.stdout.write("PASS "+name+
     assert.throws(()=>planner.applyRestorePlan({ownerId:owner,plan,readLocalItems:()=>stored,writeLocalItems:()=>writes++}),/changed after planning/);
     assert.equal(writes,0);
   });
+  await run("failed restore read-back compensates to the original local library",async()=>{
+    const original=[{id:localId2,name:"existing"}];
+    let stored=original;
+    let reads=0;
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:original,fetchPage:async()=>page([row(cloudId,localId)])});
+    assert.throws(()=>planner.applyRestorePlan({
+      ownerId:owner,plan,
+      readLocalItems:()=>++reads===1?stored:[{id:"tampered-readback"}],
+      writeLocalItems:(writeOwner,items)=>{assert.equal(writeOwner,owner);stored=items;}
+    }),/read-back verification failed/);
+    assert.deepEqual(stored,original);
+  });
+  await run("writer failure after partial mutation attempts owner-scoped rollback",async()=>{
+    const original=[{id:localId2,name:"existing"}];
+    let stored=original;
+    let writes=0;
+    const plan=await planner.planRestore({ownerId:owner,existingLocalItems:original,fetchPage:async()=>page([row(cloudId,localId)])});
+    assert.throws(()=>planner.applyRestorePlan({
+      ownerId:owner,plan,
+      readLocalItems:()=>stored,
+      writeLocalItems:(writeOwner,items)=>{assert.equal(writeOwner,owner);writes++;stored=items;if(writes===1)throw new Error("simulated storage failure");}
+    }),/simulated storage failure/);
+    assert.equal(writes,2);
+    assert.deepEqual(stored,original);
+  });
   await run("restore commit refuses conflicts and account changes",async()=>{
     const conflictingLocal={id:localId,name:"Локальная версия",description:"",referenceImages:[]};
     const conflictPlan=await planner.planRestore({ownerId:owner,existingLocalItems:[conflictingLocal],fetchPage:async()=>page([row(cloudId,localId)])});
