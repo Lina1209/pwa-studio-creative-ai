@@ -140,6 +140,34 @@
    assert(calls===101,"pagination safety bound was not enforced");
    assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted with incomplete inventory");
   });
+  await test("failure before durable delete intent leaves candidate retryable",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["crash before intent"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
+   let calls=0;
+   const journal={listPage:(...args)=>cleanupJournal.listPage(...args),getManifest:(...args)=>cleanupJournal.getManifest(...args),
+    beginCandidateDelete:async()=>{calls++;throw Error("simulated failure before durable intent")},
+    finalizeCandidateDeleted:(...args)=>cleanupJournal.finalizeCandidateDeleted(...args)};
+   await rejects(()=>execute(owner,cleanupId,{cleanupJournal:journal}));
+   assert(calls===1,"pre-intent failure was not reached");
+   assert(await read(owner,op,asset,id) instanceof Blob,"Blob deleted before durable intent");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.candidates[0].state==="eligible_for_delete_review","candidate changed without durable intent");
+   const retry=await execute(owner,cleanupId);
+   assert(retry.results[0].state==="deleted","candidate was not safely retryable before intent");
+  });
+  await test("crash after durable intent but before Blob deletion preserves bytes for manual recovery",async()=>{
+   const owner=uuid(),op=uuid(),asset=uuid(),id=uuid(),blob=new Blob(["crash after intent"],{type:"image/webp"});
+   await makeAborted(owner,op,asset,id,blob);const cleanupId=await eligible(owner,op,asset,id);
+   const journal={listPage:(...args)=>cleanupJournal.listPage(...args),getManifest:(...args)=>cleanupJournal.getManifest(...args),
+    beginCandidateDelete:async(args)=>{await cleanupJournal.beginCandidateDelete(args);throw Error("simulated process crash after durable intent")},
+    finalizeCandidateDeleted:(...args)=>cleanupJournal.finalizeCandidateDeleted(...args)};
+   await rejects(()=>execute(owner,cleanupId,{cleanupJournal:journal}));
+   assert(await read(owner,op,asset,id) instanceof Blob,"Blob bytes were deleted before deletion call");
+   const manifest=await cleanupJournal.getManifest(owner,cleanupId);
+   assert(manifest.candidates[0].state==="delete_intent","durable intent was not retained");
+   await rejects(()=>execute(owner,cleanupId));
+   assert(await read(owner,op,asset,id) instanceof Blob,"recovery path deleted a Blob that still exists");
+  });
   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
  }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
  async function test(name,fn){await fn();passed.push(name)}
