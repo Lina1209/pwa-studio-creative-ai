@@ -1485,7 +1485,19 @@ const movieHistoryStyle = document.createElement("style");
   const movieStorageKey = () => "pwa-studio-movie-projects:" + (authSession?.user?.id || "guest");
   const guestArchiveKey = () => "pwa-studio-movie-archive:guest";
   const readGuestArchive = () => PWAStudioMovieStorageGuard.parse(localStorage.getItem(guestArchiveKey()));
-  const writeGuestArchive = items => { try { localStorage.setItem(guestArchiveKey(),JSON.stringify(items)); return true; } catch(error) { console.error("Guest archive write failed:",error); return false; } };
+  const writeGuestArchive = items => {
+    try {
+      PWAStudioMovieStorageGuard.parse(localStorage.getItem(guestArchiveKey()));
+      PWAStudioMovieStorageGuard.parse(JSON.stringify(items));
+      localStorage.setItem(guestArchiveKey(),JSON.stringify(items));
+      return true;
+    } catch(error) {
+      console.error("Guest archive write blocked:",error);
+      const feedback=$("#movieFeedback");
+      if(feedback)feedback.textContent="Архив гостевых фильмов не изменён: "+error.message;
+      return false;
+    }
+  };
   let activeMovieId = null;
   let editingMovieId = null;
   const movieStages = [
@@ -1548,6 +1560,8 @@ const movieHistoryStyle = document.createElement("style");
       if (movieCloudState.syncing) { movieCloudState.pending = true; return; }
       movieCloudState.syncing = true;
       try {
+        // Validate the local library before processing deletion tombstones or uploading anything.
+        movieRead();
         const deletedIds = readMovieTombstones();
         if (deletedIds.length) {
           const { error: deleteError } = await supabaseClient.from("projects").delete()
@@ -1603,6 +1617,8 @@ const movieHistoryStyle = document.createElement("style");
         .order("updated_at", { ascending: false });
       if (error) throw error;
       if (!contextIsCurrent()) return;
+      // A corrupt local library must stop cloud-side deletion and merge as well.
+      const local = movieRead();
       const deletedIds = readMovieTombstones();
       if (deletedIds.length) {
         const { error: deleteError } = await supabaseClient.from("projects").delete()
@@ -1612,8 +1628,8 @@ const movieHistoryStyle = document.createElement("style");
         writeMovieTombstones([]);
       }
       const deletedSet = new Set(deletedIds);
-      const local = movieRead().filter(project => !deletedSet.has(project.id));
-      const merged = new Map(local.map(project => [project.id, project]));
+      const survivingLocal = local.filter(project => !deletedSet.has(project.id));
+      const merged = new Map(survivingLocal.map(project => [project.id, project]));
       (data || []).filter(row => !deletedSet.has(row.id)).forEach(row => {
         const cloudProject = movieFromCloudRow(row);
         const localProject = merged.get(cloudProject.id);
@@ -1678,13 +1694,16 @@ const movieHistoryStyle = document.createElement("style");
   };
   const movieWrite = projects => {
     try {
+      // Never replace an untrusted existing library, even if a caller passes [].
+      PWAStudioMovieStorageGuard.parse(localStorage.getItem(movieStorageKey()));
+      PWAStudioMovieStorageGuard.parse(JSON.stringify(projects));
       localStorage.setItem(movieStorageKey(), JSON.stringify(projects));
       scheduleMovieCloudSync();
       return true;
     } catch (error) {
-      console.error("Movie project storage failed:", error);
+      console.error("Movie project storage write blocked:", error);
       const feedback = $("#movieFeedback");
-      if (feedback) feedback.textContent = "Не удалось сохранить изменения в памяти браузера. Проверьте свободное место и настройки приватности.";
+      if (feedback) feedback.textContent = "Сохранение остановлено для защиты проектов: " + error.message;
       return false;
     }
   };
