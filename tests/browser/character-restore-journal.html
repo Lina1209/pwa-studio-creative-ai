@@ -1,0 +1,63 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Restore checkpoint journal tests</title></head><body><pre id="results">Running</pre>
+<script src="../../character-restore-journal.js"></script><script>
+(async()=>{
+ const out=document.getElementById("results"),passed=[];
+ const uuid=()=>crypto.randomUUID(), sha="a".repeat(64);
+ const ok=(v,m)=>{if(!v)throw Error(m);};
+ const rejects=async(fn,m)=>{let yes=false;try{await fn()}catch{yes=true}ok(yes,m)};
+ const test=async(n,fn)=>{await fn();passed.push(n)};
+ try{
+  const api=window.PWACharacterRestoreJournal, owner=uuid(), other=uuid(), op=uuid(), cloud=uuid();
+  const base={ownerId:owner,operationId:op,localBaseFingerprint:sha,snapshotId:"snapshot-test-1",selectedCharacterIds:[cloud]};
+  await test("create and read durable owner-bound operation",async()=>{
+   const row=await api.create(base);ok(row.state==="planning"&&row.revision===1,"initial state/revision incorrect");
+   const got=await api.get(owner,op);ok(got.id===row.id&&got.ownerId===owner,"read-back mismatch");
+   ok(!("token" in got)&&!JSON.stringify(got).includes("bearer"),"secret material found in journal");
+   ok(await api.get(other,op)===null,"foreign owner read returned a row");
+  });
+  await test("exclusive lease claim and monotonic epoch",async()=>{
+   const claims=await Promise.allSettled([api.acquireLease(owner,op),api.acquireLease(owner,op)]);
+   ok(claims.filter(x=>x.status==="fulfilled").length===1,"lease race did not have one winner");
+   const lease=claims.find(x=>x.status==="fulfilled").value;
+   window.lease=lease;ok(lease.epoch===1&&lease.token,"lease fields missing");
+  });
+  await test("revision CAS and legal state transitions",async()=>{
+   let row=await api.get(owner,op);
+   row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned",page:{count:1,cursor:"cursor-1",digest:sha}});
+   ok(row.revision===3&&row.state==="planned","planned checkpoint not persisted");
+   await rejects(()=>api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:1,state:"staging"}),"stale revision accepted");
+   await rejects(()=>api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"committed"}),"illegal transition accepted");
+  });
+  await test("expired lease takeover fences stale holder",async()=>{
+   const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+   try{await new Promise((resolve,reject)=>{const tx=db.transaction("operations","readwrite"),q=tx.objectStore("operations").get(owner+":"+op);q.onsuccess=()=>{const r=q.result;r.lease.expiresAt=new Date(Date.now()-1000).toISOString();tx.objectStore("operations").put(r)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+   const fresh=await api.acquireLease(owner,op,{ttlMs:5000});ok(fresh.epoch===2&&fresh.token!==lease.token,"new lease did not advance epoch");
+   const row=await api.get(owner,op);
+   await rejects(()=>api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging"}),"stale lease holder advanced checkpoint");
+   window.lease=fresh;
+  });
+  await test("verified staging checkpoint and lease release",async()=>{
+   let row=await api.get(owner,op);
+   row=await api.checkpoint({ownerId:owner,operationId:op,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"staging",references:[{cloudAssetId:uuid(),localStagedBlobId:uuid(),expectedSha256:sha,expectedSizeBytes:2048,expectedMimeType:"image/webp",width:512,height:512,state:"verified_staged"}]});
+   ok(row.references[0].state==="verified_staged","reference proof checkpoint missing");
+   await api.releaseLease(owner,op,lease);
+   ok((await api.get(owner,op)).lease===null,"lease not released");
+   await rejects(()=>api.releaseLease(owner,op,lease),"stale lease release accepted");
+  });
+  await test("owner-bound bounded pagination",async()=>{
+   const ids=[];for(let i=0;i<5;i++){const id=uuid();ids.push(id);await api.create({...base,operationId:id,selectedCharacterIds:[]})}
+   let cursor=null,seen=[],loops=0;
+   do{const p=await api.listPage(owner,{limit:2,cursor});ok(p.items.length<=2,"page exceeded limit");seen.push(...p.items.map(x=>x.operationId));cursor=p.nextCursor;ok(++loops<5,"pagination did not terminate")}while(cursor);
+   ok(ids.every(id=>seen.includes(id)),"pagination omitted operations");
+   const first=await api.listPage(owner,{limit:1});await rejects(()=>api.listPage(other,{limit:1,cursor:first.nextCursor}),"foreign cursor accepted");
+   await rejects(()=>api.listPage(owner,{limit:101}),"oversized page accepted");
+  });
+  await test("persisted tampering fails closed",async()=>{
+   const db=await new Promise((resolve,reject)=>{const q=indexedDB.open("pwa-studio-character-restore-journal-v1",1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+   try{await new Promise((resolve,reject)=>{const tx=db.transaction("operations","readwrite"),s=tx.objectStore("operations"),q=s.get(owner+":"+op);q.onsuccess=()=>{const r=q.result;r.ownerId=other;s.put(r)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}
+   await rejects(()=>api.get(owner,op),"tampered owner mapping accepted");
+  });
+  out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");document.documentElement.dataset.testResult="passed";
+ }catch(e){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(e.stack||e);document.documentElement.dataset.testResult="failed"}
+})();
+</script></body></html>
