@@ -7,6 +7,7 @@
   "use strict";
 
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const LOCAL_REFERENCE_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-[a-z0-9_-]{8,80})?$/;
   const MAX_PAGES = 100;
   const MAX_ITEMS = 10000;
   const MAX_PAGE_SIZE = 100;
@@ -42,7 +43,7 @@
     const refs = value.referenceImages === undefined ? [] : value.referenceImages;
     if (!Array.isArray(refs) || refs.length > 6) fail("Cloud passport reference manifest is invalid.");
     const manifest = refs.map(ref => {
-      if (!ref || typeof ref !== "object" || Array.isArray(ref) || typeof ref.id !== "string" || !ref.id.trim()) fail("Cloud reference descriptor is invalid.");
+      if (!ref || typeof ref !== "object" || Array.isArray(ref) || typeof ref.id !== "string" || !LOCAL_REFERENCE_KEY.test(ref.id)) fail("Cloud reference descriptor is invalid.");
       return {
         id: text(ref.id, 180, "cloud reference ID"),
         name: optionalText(ref.name, 120, "cloud reference name"),
@@ -79,7 +80,7 @@
     }))
   });
 
-  async function planRestore({ownerId, fetchPage, existingLocalItems, isCurrent = () => true}) {
+  async function planRestore({ownerId, fetchPage, fetchReferences, existingLocalItems, isCurrent = () => true}) {
     if (!isUuid(ownerId)) fail("A valid authenticated owner ID is required.");
     if (typeof fetchPage !== "function") fail("A cloud page loader is required.");
     if (!Array.isArray(existingLocalItems) || existingLocalItems.length > 100) fail("The local library is invalid or exceeds its supported limit.");
@@ -130,11 +131,81 @@
     } while (cursor);
 
     if (!isCurrent()) fail("Account changed before cloud restore planning completed.");
+
+    // Resolve every passport reference through the server's explicit,
+    // owner-scoped local_reference_id -> media asset catalog. Never infer
+    // identity from filenames, order, MIME, dimensions, or image similarity.
+    const cloudDataById = new Map(cloudRows.map(row => [row.id, safeReferenceData(row.reference_data || {})]));
+    const rowsWithReferences = cloudRows.filter(row => cloudDataById.get(row.id).referenceManifest.length);
+    const referenceAssetsByCharacter = new Map();
+    const seenCloudAssetIds = new Set();
+    if (rowsWithReferences.length) {
+      if (typeof fetchReferences !== "function") fail("A cloud reference asset loader is required for passports with images.");
+      for (let offset = 0; offset < rowsWithReferences.length; offset += 100) {
+        if (!isCurrent()) fail("Account changed during cloud reference mapping.");
+        const batch = rowsWithReferences.slice(offset, offset + 100);
+        const ids = batch.map(row => row.id);
+        const assets = await fetchReferences(ids);
+        if (!isCurrent()) fail("Account changed during cloud reference mapping.");
+        if (!Array.isArray(assets) || assets.length > 600) fail("Cloud reference catalog is invalid or exceeds its safe limit.");
+        const requested = new Set(ids);
+        for (const asset of assets) {
+          if (!asset || !isUuid(asset.id) || !isUuid(asset.character_id) || !requested.has(asset.character_id)) {
+            fail("Cloud reference asset identity is invalid or outside the requested character set.");
+          }
+          if (seenCloudAssetIds.has(asset.id)) fail("Cloud reference catalog contains duplicate asset IDs.");
+          seenCloudAssetIds.add(asset.id);
+          if (asset.local_reference_id === null || asset.local_reference_id === undefined) continue;
+          if (typeof asset.local_reference_id !== "string" || !LOCAL_REFERENCE_KEY.test(asset.local_reference_id)) {
+            fail("Cloud reference asset has an invalid local reference mapping.");
+          }
+          if (!["pending_upload", "object_uploaded", "ready", "upload_failed", "cleanup_pending", "deleted"].includes(asset.status)) {
+            fail("Cloud reference asset status is invalid.");
+          }
+          if (typeof asset.file_name !== "string" || !asset.file_name.trim() || asset.file_name.length > 255 ||
+              !["image/png", "image/jpeg", "image/webp"].includes(asset.file_type) ||
+              !Number.isSafeInteger(asset.size_bytes) || asset.size_bytes < 1 || asset.size_bytes > 8 * 1024 * 1024 ||
+              typeof asset.content_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(asset.content_sha256) ||
+              !Number.isInteger(asset.width) || asset.width < 1 || asset.width > 8192 ||
+              !Number.isInteger(asset.height) || asset.height < 1 || asset.height > 8192) {
+            fail("Cloud reference asset integrity metadata is invalid.");
+          }
+          let byReference = referenceAssetsByCharacter.get(asset.character_id);
+          if (!byReference) referenceAssetsByCharacter.set(asset.character_id, byReference = new Map());
+          if (byReference.has(asset.local_reference_id)) fail("Cloud reference catalog contains duplicate local reference mappings.");
+          byReference.set(asset.local_reference_id, asset);
+        }
+      }
+    }
+
+    const mappedManifestByCharacter = new Map();
+    for (const row of rowsWithReferences) {
+      const descriptors = cloudDataById.get(row.id).referenceManifest;
+      const byReference = referenceAssetsByCharacter.get(row.id) || new Map();
+      const mapped = descriptors.map(reference => {
+        const asset = byReference.get(reference.id);
+        if (!asset) fail("A cloud passport reference has no explicit media asset mapping.");
+        if (asset.status !== "ready") fail("A mapped cloud reference asset is not ready for restore.");
+        if (reference.type && reference.type !== asset.file_type) fail("Cloud reference MIME type does not match its passport descriptor.");
+        return {
+          ...reference,
+          cloudAssetId: asset.id,
+          expectedSha256: asset.content_sha256,
+          expectedSizeBytes: asset.size_bytes,
+          expectedMimeType: asset.file_type,
+          width: asset.width,
+          height: asset.height
+        };
+      });
+      if (byReference.size !== mapped.length) fail("Cloud reference catalog contains assets absent from the character passport.");
+      mappedManifestByCharacter.set(row.id, deepFreeze(mapped));
+    }
+
     const proposedItems = [];
     const unchanged = [];
     const conflicts = [];
     for (const row of cloudRows) {
-      const data = safeReferenceData(row.reference_data || {});
+      const data = cloudDataById.get(row.id);
       const existing = localById.get(row.source_local_id);
       const mappedLocal = localByCloudId.get(row.id);
       if (mappedLocal && mappedLocal.id !== row.source_local_id) {
@@ -158,7 +229,7 @@
           cloudBackup: {
             characterId: row.id,
             version: row.version,
-            referenceManifest: data.referenceManifest
+            referenceManifest: mappedManifestByCharacter.get(row.id) || []
           }
         });
         continue;
