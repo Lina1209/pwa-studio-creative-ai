@@ -271,6 +271,7 @@
       request.onsuccess = () => {
         const row = request.result;
         if (!row) return;
+        assertRecord(row);
         if (row.cloudCharacterId && row.cloudCharacterId !== cloudCharacterId) { try { request.transaction.abort(); } catch {} return; }
         row.cloudCharacterId = cloudCharacterId;
         row.updatedAt = new Date().toISOString();
@@ -279,6 +280,7 @@
     });
     const row = await readRecord(id);
     if (!row || row.cloudCharacterId !== cloudCharacterId) fail("Cloud character mapping was not persisted.");
+    assertRecord(row);
     return clone(row);
   }
 
