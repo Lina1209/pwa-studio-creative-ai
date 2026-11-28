@@ -94,10 +94,11 @@
         });
       } finally { db.close(); }
     }
-    async function deleteStagedBlob({ ownerId, operationId, cloudAssetId, localStagedBlobId, proof, inspectImage }) {
+    async function deleteStagedBlob({ ownerId, operationId, cloudAssetId, localStagedBlobId, proof, inspectImage, beforeDelete }) {
       if (!validUuid(ownerId) || !validUuid(operationId) || !validUuid(cloudAssetId) ||
-          !validUuid(localStagedBlobId) || !validProof(proof) || typeof inspectImage !== "function")
-        fail("Invalid exact staged Blob deletion identity, proof, or image inspector.");
+          !validUuid(localStagedBlobId) || !validProof(proof) || typeof inspectImage !== "function" ||
+          (beforeDelete !== undefined && typeof beforeDelete !== "function"))
+        fail("Invalid exact staged Blob deletion identity, proof, image inspector, or pre-delete guard.");
       // Verify the actual immutable Blob bytes before opening the delete transaction.
       // The caller must hold the owner-wide coordination lock throughout this method.
       const preflight = await readStagedBlob({ ownerId, operationId, cloudAssetId, localStagedBlobId });
@@ -111,6 +112,9 @@
       const dimensions = await inspectImage(preflight);
       if (!dimensions || dimensions.width !== proof.width || dimensions.height !== proof.height)
         fail("Staged Blob dimensions no longer match the durable deletion proof.");
+      // The owner lock may expire while bytes are hashed or image dimensions are decoded.
+      // Revalidate the caller's fencing token immediately before opening the delete transaction.
+      if (beforeDelete) await beforeDelete();
       const db = await open();
       try {
         return await new Promise((resolve, reject) => {
