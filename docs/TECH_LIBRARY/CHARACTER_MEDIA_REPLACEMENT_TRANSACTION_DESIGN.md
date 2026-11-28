@@ -51,10 +51,29 @@ Within the transaction, in a consistent lock order:
 3. Lock both media rows in deterministic asset-ID order.
 4. Validate same owner and character, old asset is the current referenced asset and is in an allowed live state, new asset is `ready`, and its immutable fingerprint matches the request.
 5. Update the manifest/reference slot to the new asset and increment the character version exactly once.
-6. Only after the reference no longer points to the old asset, mark the old asset `cleanup_pending` and insert the canonical cleanup outbox event in the SAME transaction.
+6. Only after the reference no longer points to the old asset, mark the old asset `cleanup_pending` and insert exactly one replacement-scoped outbox event in the SAME transaction.
 7. Commit. The cleanup worker later claims and deletes the old Storage object, then finalizes metadata. The browser never performs Storage deletion.
 
 The implementation must be a NEW replacement-specific server-only RPC/transaction. The existing `pwa_update_character_versioned` updates the character manifest/version but does not also tombstone a media asset and enqueue cleanup; calling it separately from cleanup would create an unsafe split transaction. The existing `pwa_request_character_media_cleanup` is a WHOLE-CHARACTER deletion workflow, not a single-reference cleanup API, and must not be repurposed for replacement. The new RPC must update the manifest, old asset status, and outbox row atomically while following the established character-version and media cleanup locking conventions. Do not introduce a second, weaker reference representation or bypass the existing reference guard.
+
+
+## 4A. Replacement cleanup is a distinct worker scope
+
+The existing cleanup outbox is NOT directly reusable for a single-reference replacement:
+
+- The current `media_cleanup_requested` claim path requires the character's `cleanup_operation_id` to equal the outbox operation ID. That flag represents whole-character deletion.
+- The existing completion path also requires that same whole-character cleanup intent.
+- The existing `pwa_request_character_media_cleanup` RPC tombstones the complete character asset set and sets the character deletion intent. It must never be called for replacing one image.
+
+Therefore a replacement must use a distinct event type, for example `media_reference_replacement_cleanup_requested`, and a distinct operation scope. The feature migration must extend the outbox event-type constraint and update the cleanup worker's claim/completion logic (or add narrowly scoped replacement claim/completion RPCs) so that:
+
+1. The event is eligible only when its asset is `cleanup_pending`, belongs to the owner and character, and its replacement operation is recorded.
+2. The character itself is still present and is NOT required to have `cleanup_operation_id` set.
+3. Before returning a Storage key, the claim transaction rechecks that no character passport, other media metadata, or other media row references the exact old object key. A surviving reference must fail closed and go to an auditable non-deleting state.
+4. Completion is fenced by event ID, owner, asset ID, operation ID, and claim token; it may mark the old asset `deleted` and detach it only after the worker confirms DELETE/404.
+5. Whole-character deletion events retain their existing stricter `cleanup_operation_id` checks and behavior. The two scopes must not be conflated.
+
+The pure outbox model and cleanup repository/worker allowlists must also recognize the new event type. Until this is implemented and race-tested, the replacement transaction must NOT enqueue the existing whole-character cleanup event and must NOT attempt to delete the old object.
 
 ## 4. Failure and retry semantics
 
@@ -83,6 +102,7 @@ Add disposable-PostgreSQL two-session tests for:
 9. Lost-response retry after commit: return the committed result without duplicate outbox events.
 10. Cleanup worker failure/dead-letter after switch: new pointer remains healthy and old tombstone remains auditable.
 11. Replacement RPC must reject any new asset still in `object_uploaded`, even when its object exists in Storage; only the verification worker may transition it to `ready`.
+12. Replacement cleanup claim/completion must be isolated from whole-character deletion intent; the existing worker's `media_cleanup_requested` contract cannot process a replacement-scoped event as-is.
 
 All race tests must run only against disposable CI PostgreSQL, never the live Supabase project.
 
