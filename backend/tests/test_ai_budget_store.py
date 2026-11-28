@@ -53,6 +53,17 @@ class SupabaseAIBudgetStoreTests(unittest.TestCase):
         self.assertEqual(args.kwargs["headers"]["Authorization"], "Bearer eyJ-test-service-role")
 
     @patch("app.services.ai_budget_store.httpx.Client")
+    def test_reserve_rejects_malformed_reservation_uuid(self, client_cls):
+        client_cls.return_value.__enter__.return_value.post.return_value.json.return_value = [{
+            "reservation_id": "not-a-uuid",
+            "reservation_status": "reserved",
+            "reserved_usd": "0.025",
+            "reservation_created": True,
+        }]
+        with self.assertRaises(AIBudgetStoreUnavailable):
+            self.store.reserve(self.request)
+
+    @patch("app.services.ai_budget_store.httpx.Client")
     def test_reserve_rejects_unknown_rpc_status(self, client_cls):
         client_cls.return_value.__enter__.return_value.post.return_value.json.return_value = [{
             "reservation_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
