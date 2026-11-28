@@ -526,3 +526,19 @@ The cleanup planner now also exposes `PWACharacterRestoreCleanup.inspectMarkedMa
 Browser tests verify retention cannot be bypassed, an expired candidate passes the read-only proof recheck, the staged Blob remains present afterward, and any changed local metadata blocks the manifest. CI run `46111142768` on commit `a082776` passed all three jobs, including the new cleanup retention/recheck browser cases.
 
 No deletion method, cleanup manifest mutation, automatic worker, or UI control has been added. The next gate is durable candidate cancellation/reconciliation and crash-safe per-candidate deletion design, followed by additional multi-tab race tests. Until those are complete, staged Blobs are never removed by this cleanup subsystem.
+
+
+## 24. Durable cleanup reconciliation and monotonic lock epochs
+
+The cleanup journal now supports one atomic compare-and-swap reconciliation from `marked` to `reconciled`. Each candidate receives exactly one durable outcome:
+
+- `eligible_for_delete_review` with a recheck timestamp, or
+- `retained` with a bounded reason code such as `metadata_changed`, `source_changed`, `reference_changed`, `proof_changed`, or `blob_missing`.
+
+The reconciliation transaction preserves every candidate identity/proof field, checks the expected manifest revision, and requires a strictly newer owner-lock epoch. Repeated inspection of a reconciled manifest is read-only and idempotent. A retained candidate cannot be promoted by a second inspection; a new fresh mark would be required after a new snapshot.
+
+A fencing issue found during this work was corrected: successful owner-lock release now leaves a tombstone containing the last epoch rather than deleting the lock row. The next acquisition therefore advances the epoch after both release and expiry/takeover. Real-browser tests verify release → reacquire increments the epoch and that stale holders remain fenced. Cleanup recheck tests verify the manifest stores the newer epoch, persists eligible/retained outcomes, and leaves Blob bytes untouched.
+
+CI run `46111523702` on commit `5e92777` passed all three jobs, including the complete browser cleanup-mark/recheck suite, owner-lock tests, backend unit tests, and disposable PostgreSQL integration tests.
+
+This is still not deletion authorization. `eligible_for_delete_review` is only a durable advisory state. Any future delete transaction must acquire a fresh owner lock and repeat all metadata, journal, source revision, reference-map, Blob identity, and byte-proof checks immediately before deleting the exact staged Blob key. No Blob deletion API exists.
