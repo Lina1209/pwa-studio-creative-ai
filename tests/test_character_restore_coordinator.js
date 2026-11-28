@@ -25,7 +25,7 @@ function makeJournal(){
    assert.equal(input.ownerId,owner);assert.equal(input.operationId,operation);
    assert.equal(input.leaseToken,row.lease.token);assert.equal(input.leaseEpoch,row.lease.epoch);
    assert.equal(input.expectedRevision,row.revision);
-   const allowed={planned:["staging"],staging:["staging","ready_to_activate","paused_retryable"],paused_retryable:["staging"]};
+   const allowed={planned:["staging"],staging:["staging","ready_to_activate","paused_retryable"],ready_to_activate:["paused_retryable"],paused_retryable:["staging"]};
    assert.ok(allowed[row.state].includes(input.state),"illegal state transition");
    row={...row,state:input.state,revision:row.revision+1,references:structuredClone(input.references||row.references),lease:row.lease,leaseEpoch:row.leaseEpoch};
    return structuredClone(row);
@@ -133,4 +133,15 @@ function adapters({badReadback=false}={}){
  assert.equal(seventh.inspect().references[0].state,"pending");
  assert.equal(seventh.inspect().lease,null);
  console.log("PASS confirmation expiring during staged Blob read-back prevents verified checkpoint");
+
+ const eighth=makeJournal(),readyGate=await issuedGate();let readyValid=true;
+ const readyJournal={
+  ...eighth,
+  async checkpoint(input){const result=await eighth.checkpoint(input);if(input.state==="ready_to_activate")readyValid=false;return result;}
+ };
+ await assert.rejects(()=>coordinator.stageRestoreReferences({ownerId:owner,operationId:operation,manifest,expectedRevision:1,journal:readyJournal,...readyGate,validateConfirmation:()=>readyValid,adapters:adapters()}),/confirmation/);
+ assert.equal(eighth.inspect().state,"paused_retryable");
+ assert.equal(eighth.inspect().references[0].state,"verified_staged");
+ assert.equal(eighth.inspect().lease,null);
+ console.log("PASS confirmation expiring during ready checkpoint is fenced back to paused_retryable before activation");
 })().catch(error=>{console.error(error);process.exitCode=1;});
