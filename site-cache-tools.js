@@ -10,11 +10,26 @@
     if (results.some(ok => !ok)) throw new Error("Не все кеши удалось очистить. Попробуйте ещё раз.");
     if ("serviceWorker" in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
+      const expectedScript = new URL("./sw.js", document.baseURI);
+      expectedScript.hash = "";
       const ours = registrations.filter(reg => {
-        const script = reg.active?.scriptURL || reg.waiting?.scriptURL || reg.installing?.scriptURL || "";
-        return script.startsWith(location.origin) && /\/sw\.js(?:$|\?)/.test(script);
+        // Match this app's exact service-worker script, not another PWA on the same origin.
+        return [reg.active, reg.waiting, reg.installing].some(worker => {
+          if (!worker?.scriptURL) return false;
+          try {
+            const actual = new URL(worker.scriptURL);
+            actual.hash = "";
+            return actual.href === expectedScript.href;
+          } catch { return false; }
+        });
       });
-      await Promise.all(ours.map(reg => reg.update().catch(() => undefined)));
+      const updateResults = await Promise.all(ours.map(reg => reg.update().then(
+        () => ({ ok: true }),
+        error => ({ ok: false, error })
+      )));
+      if (updateResults.some(result => !result.ok)) {
+        throw new Error("Кеш очищен, но обновить Service Worker не удалось. Перезагрузите страницу вручную.");
+      }
     }
     return { deleted: owned.length };
   }
