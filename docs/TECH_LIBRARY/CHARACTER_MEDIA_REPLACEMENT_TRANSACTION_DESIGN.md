@@ -138,3 +138,57 @@ A separate approval is required before any production migration, deployment, or 
 The repository currently has immutable media upload identity, upload verification, a local backup coordinator, a pure replacement planning service, and cleanup outbox infrastructure. The pure planner now requires the new asset to already be `ready`; it does not perform the state transition. The existing versioned character RPC and whole-character cleanup RPC cannot safely be composed to replace one image. These pieces do NOT yet constitute an end-to-end cloud replacement feature. The user-facing atomic replacement route/RPC and UI integration remain future work.
 
 This document records the required contract only. It does not claim that replacement is implemented.
+
+
+## 9. Verified manifest-to-asset mapping and identity gap
+
+A read-only inspection of the current frontend, upload API, and identity migration confirmed an important gap that must be resolved before implementing the replacement RPC:
+
+- The character passport currently stores `reference_data.referenceImages[]` entries with `id`, `name`, and `type`. The frontend's backup serializer copies those three fields; it does not store a cloud `asset_id`.
+- The upload API accepts `local_reference_id` and returns an explicit mapping containing `asset.id`, `asset.character_id`, and `asset.local_reference_id`.
+- Migration `0025_character_reference_identity_binding.sql` binds `media_assets.local_reference_id` to one immutable asset per owner/character. Reusing that identity for changed bytes is intentionally rejected.
+- The current UI generates a new composite reference ID for every newly selected file and uses that same value as the local IndexedDB image key and the manifest entry's `id`.
+- The owner-scoped media catalog can therefore resolve a manifest entry to its cloud asset by matching the entry's current `id` to `media_assets.local_reference_id`; it must not guess from array position, filename, or a client-supplied asset ID.
+
+This means the current `id` conflates two concepts: the logical reference slot shown in the character passport, and the immutable identity of the uploaded bytes. A changed image needs a new `local_reference_id`, but a replacement should preserve the logical slot. The current manifest has no separate field for those concepts.
+
+### Required additive manifest v2 contract
+
+Before the atomic replacement RPC is implemented, introduce a backward-compatible manifest representation with two distinct identifiers:
+
+```json
+{
+  "slot_id": "stable-logical-reference-id",
+  "asset_local_reference_id": "immutable-upload-identity",
+  "name": "Reference name",
+  "type": "image/jpeg"
+}
+```
+
+Rules:
+
+1. `slot_id` identifies the logical reference in the character passport and remains stable when its image changes.
+2. `asset_local_reference_id` identifies the immutable upload and must match exactly one `media_assets.local_reference_id` for the same owner and character.
+3. For a legacy entry containing only `id`, interpret that value as both the initial `slot_id` and the current `asset_local_reference_id`. Do not rewrite legacy rows as a side effect of reading them.
+4. A replacement keeps `slot_id`, assigns a fresh `asset_local_reference_id`, and changes only that slot's asset binding and permitted display metadata.
+5. The catalog response remains the authoritative source of cloud `asset_id`, lifecycle state, and verified fingerprint. The manifest must not become a second source of truth for those fields.
+6. Reject duplicate slot IDs, duplicate asset-local-reference bindings within one passport, missing catalog matches, ambiguous matches, cross-character matches, and a new identity already bound to another asset.
+7. The initial migration path must be additive and preserve old clients' ability to read legacy `id` entries. Any write that upgrades an entry must be version-checked and tested for round-trip compatibility.
+
+### Replacement RPC identity contract
+
+The future RPC should identify the target by `slot_id`, the expected old `asset_local_reference_id`, and the new `asset_local_reference_id`. It should resolve and lock the old/new `media_assets` rows server-side using the authenticated owner and character. The RPC must independently verify:
+
+- exactly one target slot exists and still points to the expected old local-reference identity;
+- exactly one old asset and one new asset match their respective local-reference identities for that owner and character;
+- the old asset is still live and is not already tombstoned;
+- the new asset is `ready` and its stored fingerprint is the one verified by the upload verifier;
+- no other passport slot or metadata reference still points to the old object before scheduling its deletion.
+
+The client must not choose a raw Storage path or supply authority to delete an object. The RPC returns a conflict if the slot binding or character version changed. The old pointer and old object remain intact on every rejected or rolled-back attempt.
+
+## 10. Implementation boundary after this audit
+
+The repository currently supports upload reservation, immutable local-reference binding, independent verification, and owner-scoped catalog lookup. It does not yet support a logical slot identity distinct from the immutable upload identity, nor does the current passport serializer persist a cloud asset ID.
+
+Consequently, the next implementation must first add and test the manifest v2 compatibility layer and catalog-to-manifest resolver. Only after that contract is stable should a new migration add the atomic replacement RPC and replacement-specific cleanup event/claim/completion path. Do not wire the current `id` field directly to a destructive replacement operation.
