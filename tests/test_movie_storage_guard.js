@@ -95,6 +95,6 @@ assert.match(app, /value\.some\(id=>!isUuid\(id\)\)/);
 assert.match(app, /!writeMovieTombstones\(\[\.\.\.deletedIds,project\.id\]\)\)return/);
 assert.match(app, /Remove only IDs handled by this request; preserve tombstones added while awaiting the network/);
 assert.match(app, /writeMovieTombstones\(readMovieTombstones\(\)\.filter\(id => !deletedIds\.includes\(id\)\)\)/);
-assert.doesNotMatch(app.match(/const loadMovieProjectsFromCloud = async \(\) => \{[\\s\\S]*?const movieRead = \(\) => \{/)[0], /writeMovieTombstones\(\[\]\)/);
+assert.doesNotMatch(app.match(/const loadMovieProjectsFromCloud = async \(\) => \{[\s\S]*?const movieRead = \(\) => \{/)[0], /writeMovieTombstones\(\[\]\)/);
 
 console.log("Movie storage guard tests passed.");
