@@ -29,7 +29,7 @@ def plan():
 def settings():
     return Settings(
         supabase_url="https://example.supabase.co",
-        supabase_service_role_key="server-secret",
+        supabase_service_role_key="eyJserver.secret",
     )
 
 
@@ -50,7 +50,7 @@ class MediaSignedUrlTests(unittest.TestCase):
         self.assertIn("/storage/v1/object/sign/studio-media/", args[0])
         self.assertEqual(kwargs["json"], {"expiresIn": SIGNED_URL_TTL_SECONDS})
         self.assertEqual(SIGNED_URL_TTL_SECONDS, 60)
-        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer server-secret")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer eyJserver.secret")
 
     @patch("app.services.media_signed_url.httpx.post")
     def test_normalizes_storage_relative_signed_path(self, post):
