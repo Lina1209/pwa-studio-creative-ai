@@ -455,3 +455,20 @@ Both operation and owner leases are renewed by the activation heartbeat. A faile
 Crash recovery follows the same lock order and holds the owner lock while it reads local metadata, compares the durable base/merged digest boundary, and checkpoints `committed`, `paused_retryable`, or `conflict`. It never rolls back an ambiguous third metadata state.
 
 The real-browser activation and reload-recovery pages load the actual owner lock module, so existing activation tests now exercise the shared critical-section lock rather than a mock. The owner lock remains cooperative: any future activation/deletion path must use it. No cleanup/delete method exists yet. The expanded cross-tab activation-versus-cleanup race matrix remains a prerequisite before cleanup implementation.
+
+
+## 20. Owner-lock contention verification
+
+The real-browser activation suite now explicitly holds the owner critical-section lock from a competing operation and verifies:
+
+- activation fails closed before acquiring its operation lease;
+- local metadata remains byte-for-byte/canonically unchanged;
+- the restore operation remains `ready_to_activate` with no lease mutation;
+- crash recovery likewise cannot inspect-and-checkpoint while another tab holds the owner lock;
+- the recovery operation remains `activating` and its journal lease remains unclaimed.
+
+CI run `46109968273` on commit `f636626` passed all three jobs. The browser job passed the full restore activation/reload-recovery suite, owner-lock multi-tab suite, and frontend syntax/account-switch checks; backend unit tests and disposable PostgreSQL integration also passed.
+
+### Cleanup implementation remains intentionally blocked
+
+The owner lock is now enforced by both restore activation and recovery, and contention is covered. However, the existing application UI's general local-library write paths have not yet been audited or brought under this owner lock. A cleanup worker must not delete staged rows until every path capable of creating or changing a reference to a staged Blob is proven to participate in the same owner critical section. Therefore the Blob store still has no delete API; no cleanup job, automatic sweep, or user-facing cleanup control is enabled.
