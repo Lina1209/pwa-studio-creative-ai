@@ -248,3 +248,12 @@ Consequently, the current `referenceManifest[].id` is **not** a `cloudAssetId`. 
 Required future API fields are `local_reference_id`, `asset_id`, `character_id`, `status`, `file_name`, `file_type`, `size_bytes`, `content_sha256`, `width`, and `height`. The local reference ID must be accepted only as a validated UUID or exact stable composite key and persisted atomically with the media reservation. The list endpoint must return the explicit mapping without exposing owner IDs, bucket names, Storage paths, internal metadata, or signed URLs. Uniqueness and ownership must be enforced in a reviewed migration and disposable PostgreSQL tests.
 
 Until this API contract and its cross-owner/idempotency tests exist, no metadata activation implementation may consume the current media manifest. Keep restore disabled; the existing staging-only coordinator remains isolated and must not be connected to the UI.
+
+
+## 14. Explicit cloud media catalog and planner join
+
+The authenticated bulk catalog endpoint is `GET /api/media/character-references?character_ids=<comma-separated UUIDs>`, bounded to 1–100 requested cloud characters and at most 600 media rows. Its response exposes only the safe mapping and integrity tuple; owner ID, bucket, Storage path, signed URLs, and internal metadata are never returned.
+
+The planner's `fetchReferences(characterIds)` adapter is called in batches of no more than 100 characters. It must return the endpoint's catalog rows. The planner joins descriptors only by exact `character_id + local_reference_id`, requires one-to-one mapping, `status=ready`, matching MIME, SHA-256, byte size, and dimensions, and writes the validated cloud asset ID plus expected integrity proof into the restore checkpoint manifest. Legacy assets with null local-reference IDs are ignored as unmapped. No filename/order/image-similarity heuristics are allowed.
+
+This enables the staging coordinator to download the exact asset IDs and verify the received bytes against the recorded proof. It does not activate local metadata or create local reference Blobs by itself. UI activation remains disabled pending the separate atomic-activation and crash-recovery implementation.
