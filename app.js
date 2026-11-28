@@ -293,7 +293,13 @@ const movieHistoryStyle = document.createElement("style");
     const response = await fetch(base + path, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(options.headers || {}) } });
     let data = {};
     try { data = await response.json(); } catch {}
-    if (!response.ok) throw new Error(data.detail || "Ошибка API (" + response.status + ").");
+    if (!response.ok) {
+      const detail = data.detail;
+      const error = new Error(typeof detail === "string" ? detail : (detail?.message || "Ошибка API (" + response.status + ")."));
+      error.status = response.status;
+      error.code = typeof detail === "object" && detail ? detail.code : null;
+      throw error;
+    }
     return data;
   };
 
@@ -2443,6 +2449,10 @@ const movieHistoryStyle = document.createElement("style");
     return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
   };
   const isCharacterUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || "");
+  const stableCharacterJson = value => JSON.stringify(value, (key,item) => {
+    if(item&&typeof item==="object"&&!Array.isArray(item))return Object.keys(item).sort().reduce((out,name)=>(out[name]=item[name],out),{});
+    return item;
+  });
   const backupCharacterLibrary = async () => {
     const status=$("#characterLibraryStatus"),button=$("#backupCharacterLibrary");
     const session=authSession,ownerId=session?.user?.id,contextVersion=authContextVersion;
@@ -2505,7 +2515,7 @@ const movieHistoryStyle = document.createElement("style");
           byLocalId.set(local.id,createdRow);created++;
         }else{
           if(!Number.isInteger(existing.version)||existing.version<1)throw new Error("У облачного паспорта отсутствует версия. Обновление остановлено.");
-          const same=existing.name===payload.name&&String(existing.description||"")===String(payload.description||"")&&JSON.stringify(existing.reference_data||{})===JSON.stringify(payload.reference_data);
+          const same=existing.name===payload.name&&String(existing.description||"")===String(payload.description||"")&&stableCharacterJson(existing.reference_data||{})===stableCharacterJson(payload.reference_data);
           if(same){unchanged++;continue;}
           try{
             const updatedRow=await apiRequest("/api/characters/"+encodeURIComponent(existing.id),{
@@ -2515,7 +2525,7 @@ const movieHistoryStyle = document.createElement("style");
             if(!updatedRow||updatedRow.id!==existing.id||updatedRow.version!==existing.version+1)throw new Error("Сервер не подтвердил новую версию паспорта.");
             byLocalId.set(local.id,updatedRow);updated++;
           }catch(error){
-            if(/409|conflict|конфликт|уже измен/i.test(String(error.message)))throw new Error("Паспорт «"+payload.name+"» изменён в облаке на другом устройстве. Ничего не перезаписано; обновите данные и разрешите конфликт вручную.");
+            if(error.status===409||error.code==="character_version_conflict"||/409|conflict|конфликт|уже измен/i.test(String(error.message)))throw new Error("Паспорт «"+payload.name+"» изменён в облаке на другом устройстве. Ничего не перезаписано; обновите данные и разрешите конфликт вручную.");
             throw error;
           }
         }
@@ -2525,7 +2535,7 @@ const movieHistoryStyle = document.createElement("style");
     }catch(error){
       say("Копирование не завершено: "+error.message+" Локальные карточки и изображения сохранены; повторный запуск безопасен.");
     }finally{
-      if(stillOwner()&&button){button.disabled=false;button.textContent="☁ Создать облачную копию";}
+      if(button){button.disabled=false;button.textContent="☁ Создать облачную копию";}
     }
   };
   $("#backupCharacterLibrary")?.addEventListener("click",backupCharacterLibrary);
