@@ -256,20 +256,20 @@ terminal_event_count="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1
 terminal_actual="$(psql "$DISPOSABLE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
   -c "select coalesce(actual_usd::text,'null') from public.ai_budget_reservations where id='$terminal_reservation_id'")"
 echo "AI budget release/settlement race: final=$terminal_status release_confirmations=$release_true settlement_successes=$terminal_settle_successes worker_failures=$terminal_worker_failures terminal_events=$terminal_event_count actual=$terminal_actual"
-if [[ "$terminal_worker_failures" != "0" || "$terminal_event_count" != "1" ]]; then
-  echo "AI budget release/settlement race invariant failed." >&2
+if [[ "$terminal_event_count" != "1" ]]; then
+  echo "AI budget release/settlement race invariant failed: expected one terminal ledger event." >&2
   for error_file in "$tmp_dir"/release-*.err "$tmp_dir"/terminal-settle-*.err; do
     [[ -s "$error_file" ]] && cat "$error_file" >&2
   done
   exit 1
 fi
 if [[ "$terminal_status" == "released" ]]; then
-  if [[ "$release_true" != "8" || "$terminal_settle_successes" != "0" || "$terminal_actual" != "null" ]]; then
+  if [[ "$terminal_worker_failures" != "8" || "$release_true" != "8" || "$terminal_settle_successes" != "0" || "$terminal_actual" != "null" ]]; then
     echo "Release-winning terminal outcome is inconsistent." >&2
     exit 1
   fi
 elif [[ "$terminal_status" == "settled" ]]; then
-  if [[ "$release_true" != "0" || "$terminal_settle_successes" != "8" || "$terminal_actual" != "0.0020000000" ]]; then
+  if [[ "$terminal_worker_failures" != "0" || "$release_true" != "0" || "$terminal_settle_successes" != "8" || "$terminal_actual" != "0.0020000000" ]]; then
     echo "Settlement-winning terminal outcome is inconsistent." >&2
     exit 1
   fi
