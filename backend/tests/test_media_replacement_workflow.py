@@ -22,7 +22,7 @@ def inputs(**changes):
         current_reference_asset_id=OLD,
         old_asset={"id": OLD, "owner_id": OWNER, "status": "ready",
                    "character_id": CHARACTER, "bucket": "studio-media", "storage_path": OLD_PATH},
-        new_asset={"id": NEW, "owner_id": OWNER, "status": "object_uploaded",
+        new_asset={"id": NEW, "owner_id": OWNER, "status": "ready",
                    "character_id": CHARACTER, "bucket": "studio-media", "storage_path": NEW_PATH},
         cleanup_event_id=str(uuid4()),
         cleanup_idempotency_key="replace-old-reference-0001",
