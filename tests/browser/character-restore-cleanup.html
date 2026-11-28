@@ -1,0 +1,95 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Restore cleanup mark-only tests</title><body><pre id="results">Running…</pre>
+<script src="../../character-owner-coordination-lock.js"></script>
+<script src="../../character-restore-journal.js"></script>
+<script src="../../character-restore-blob-store.js"></script>
+<script src="../../character-restore-cleanup-journal.js"></script>
+<script src="../../character-restore-cleanup.js"></script>
+<script>
+(async()=>{
+ const out=document.querySelector("#results"),passed=[];
+ const api=PWACharacterRestoreJournal,blobStore=PWACharacterRestoreBlobStore.createCharacterRestoreBlobStore(),cleanupJournal=PWACharacterRestoreCleanupJournal;
+ const uuid=()=>crypto.randomUUID(),sha=async blob=>{const h=await crypto.subtle.digest("SHA-256",await blob.arrayBuffer());return Array.from(new Uint8Array(h),x=>x.toString(16).padStart(2,"0")).join("")};
+ const assert=(v,m)=>{if(!v)throw Error(m)};
+ const rejects=async fn=>{let failed=false;try{await fn()}catch{failed=true}assert(failed,"expected rejection")};
+ const localFor=owner=>PWACharacterLocalStorageAdapter.createCharacterLocalStorageAdapter({storage:localStorage,ownerId:owner,isCurrent:()=>true});
+ const makeAborted=async({owner,operation,asset,blobId,blob,terminal="aborted"})=>{
+   const proof={sha256:await sha(blob),sizeBytes:blob.size,mimeType:blob.type,width:64,height:48};
+   await blobStore.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId,blob,proof});
+   await api.create({ownerId:owner,operationId:operation,localBaseFingerprint:"a".repeat(64),snapshotId:"snapshot-"+operation,selectedCharacterIds:[uuid()]});
+   let lease=await api.acquireLease(owner,operation,{ttlMs:10000}),row=await api.get(owner,operation);
+   const ref={cloudAssetId:asset,characterId:uuid(),sourceLocalId:uuid(),localReferenceId:uuid(),name:"restore.webp",type:"image/webp",localStagedBlobId:blobId,expectedSha256:proof.sha256,expectedSizeBytes:proof.sizeBytes,expectedMimeType:proof.mimeType,width:proof.width,height:proof.height,state:"verified_staged"};
+   row=await api.checkpoint({ownerId:owner,operationId:operation,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"planned",references:[ref]});
+   if(terminal==="aborted")row=await api.checkpoint({ownerId:owner,operationId:operation,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"aborted"});
+   else row=await api.checkpoint({ownerId:owner,operationId:operation,leaseToken:lease.token,leaseEpoch:lease.epoch,expectedRevision:row.revision,state:"paused_retryable"});
+   await api.releaseLease(owner,operation,lease);
+   return {proof,ref,row};
+ };
+ const mark=async(owner,local=localFor(owner),isCurrent=()=>true)=>PWACharacterRestoreCleanup.markAbortedRestoreBlobs({
+   ownerId:owner,restoreJournal:api,cleanupJournal,blobStore,localAdapter:local,
+   ownerLock:PWACharacterOwnerCoordinationLock,inspectImage:async()=>({width:64,height:48}),isCurrent
+ });
+ try{
+   await test("aborted verified staged Blob is marked with a 24-hour retention window",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["safe-cleanup-candidate"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     const result=await mark(owner);
+     assert(result.state==="marked"&&result.candidateCount===1,"expected exactly one marked candidate");
+     const manifest=await cleanupJournal.getManifest(owner,result.cleanupId);
+     assert(manifest.state==="marked"&&manifest.candidates[0].localStagedBlobId===blobId,"manifest identity mismatch");
+     assert(Date.parse(manifest.candidates[0].deleteAfter)-Date.parse(manifest.candidates[0].markedAt)>=86400000-1000,"retention window shorter than 24h");
+     const stillThere=await blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
+     assert(stillThere instanceof Blob,"marking deleted or changed the staged Blob");
+     passed.push("mark-only manifest and retention; Blob bytes remain untouched");
+   });
+   await test("repeated marking is idempotent for the same snapshot",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["idempotent"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     const first=await mark(owner),second=await mark(owner);
+     assert(first.cleanupId===second.cleanupId,"same snapshot generated a different cleanup identity");
+     const page=await cleanupJournal.listPage(owner,{limit:10});
+     assert(page.items.length===1,"repeated mark duplicated the manifest");
+     passed.push("deterministic cleanup identity and idempotent retry");
+   });
+   await test("active card reference is never marked",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["active-ref"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     localStorage.setItem("pwa-studio-character-library-v1:"+owner,JSON.stringify([{id:uuid(),name:"Active",referenceImages:[{id:blobId}]}]));
+     const result=await mark(owner);
+     assert(result.state==="no_candidates","active card reference was marked");
+     const stillThere=await blobStore.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:blobId});
+     assert(stillThere instanceof Blob,"active referenced Blob disappeared");
+     passed.push("active metadata references block cleanup marking");
+   });
+   await test("nonterminal operation and same cloud asset in another operation are retained",async()=>{
+     const owner=uuid(),blob=new Blob(["shared-source"],{type:"image/webp"});
+     const asset=uuid(),op1=uuid(),op2=uuid(),id1=uuid(),id2=uuid();
+     await makeAborted({owner,operation:op1,asset,blobId:id1,blob});
+     await makeAborted({owner,operation:op2,asset,blobId:id2,blob,terminal:"paused_retryable"});
+     const result=await mark(owner);
+     assert(result.state==="no_candidates","asset mapping used by another operation was marked");
+     passed.push("nonterminal and cross-operation asset mappings are retained");
+   });
+   await test("owner lock contention blocks marking before manifest creation",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["locked"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     const held=await PWACharacterOwnerCoordinationLock.acquire(owner,{ttlMs:5000});
+     try{await rejects(()=>mark(owner));}finally{await PWACharacterOwnerCoordinationLock.release(held);}
+     const page=await cleanupJournal.listPage(owner,{limit:10});
+     assert(page.items.length===0,"manifest created while owner lock was held");
+     passed.push("shared owner lock contention fails closed");
+   });
+   await test("account switch during marking aborts before durable manifest write",async()=>{
+     const owner=uuid(),operation=uuid(),asset=uuid(),blobId=uuid(),blob=new Blob(["switch"],{type:"image/webp"});
+     await makeAborted({owner,operation,asset,blobId,blob});
+     let calls=0;
+     await rejects(()=>mark(owner,localFor(owner),()=>++calls<4));
+     const page=await cleanupJournal.listPage(owner,{limit:10});
+     assert(page.items.length===0,"manifest was written after account context changed");
+     passed.push("account context fence prevents manifest commit");
+   });
+   out.textContent="PASS "+passed.length+" tests\n"+passed.map(x=>"✓ "+x).join("\n");
+   document.documentElement.dataset.testResult="passed";
+ }catch(error){out.textContent="FAIL after "+passed.length+" tests\n"+passed.join("\n")+"\n"+(error.stack||error);document.documentElement.dataset.testResult="failed";}
+ async function test(name,fn){await fn();passed.push(name);}
+})();
+</script></body></html>
