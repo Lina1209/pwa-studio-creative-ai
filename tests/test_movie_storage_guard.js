@@ -73,6 +73,9 @@ assert.match(app, /Фильм изменился на другом устрой�
 assert.match(app, /локальная копия при конфликте/);
 assert.match(app, /writeMovieStorage\(nextLocal\)/);
 assert.match(app, /writeMovieStorage\(nextLocal\);\s*renderMovieProjects\(\)/);
+assert.match(app, /localStorage\.setItem\(movieStorageKey\(\), JSON\.stringify\(projects\)\);\s*return true;/);
+assert.match(app, /\.eq\("settings", JSON\.stringify\(item\.expectedSettings\)\)/);
+assert.doesNotMatch(app, /else if \(sameContent\)\s*\{\s*merged\.set/);
 assert.match(app, /const movieStableContent = value/);
 assert.match(app, /if \(cloudTime >= localTime\)/);
 assert.match(app, /Облачная версия загружена, а локальный вариант сохранён отдельной копией/);
