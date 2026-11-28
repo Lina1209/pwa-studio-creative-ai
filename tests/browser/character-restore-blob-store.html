@@ -33,6 +33,9 @@
   await rejects(()=>api.stageBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof}));
   await rejects(()=>api.stageBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,blob,proof:{...proof,sha256:"0".repeat(64)}}));
   passed.push("collision and invalid proof rejected");
+  await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),beforeDelete:async()=>{throw new Error("lock lost")},proof}));
+  assert(await api.readStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id}) instanceof Blob,"pre-delete guard rejection removed the Blob");
+  passed.push("pre-delete fencing guard blocks mutation");
   assert(await api.deleteStagedBlob({ownerId:other,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof})==="missing","cross-owner delete did not fail closed");
   assert(await api.deleteStagedBlob({ownerId:owner,operationId:other,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof})==="missing","cross-operation delete did not fail closed");
   await rejects(()=>api.deleteStagedBlob({ownerId:owner,operationId:operation,cloudAssetId:asset,localStagedBlobId:id,inspectImage:async()=>({width:32,height:24}),proof:{...proof,sha256:"0".repeat(64)}}));
